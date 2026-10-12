@@ -5,65 +5,144 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'dart:ui' as ui;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'badge_service.dart';
 import 'navigation_service.dart';
+import 'active_content_registry.dart';
 import 'dm_active_conversation.dart';
+import 'notification_service.dart';
 import 'snack_chat_active_conversation.dart';
+import 'unread_notification_feed.dart';
 import 'language_service.dart';
 import '../utils/logger.dart';
+import '../utils/notification_delivery_policy.dart';
+import '../utils/notification_read_policy.dart';
+import '../utils/snack_chat_notification_policy.dart';
+import '../utils/chat_notification_presentation.dart';
+import '../utils/chat_work_queue.dart';
 import 'dart:io';
 
-enum PushInitState {
-  idle,
-  localeReady,
-  sessionReady,
-  appActive,
-  permissionResolved,
-  apnsRegistered,
-  tokenSynced,
-}
+const String _pushSessionUserIdPreferenceKey = 'active_push_session_user_id';
+const String _snackNotificationGroupPreferencePrefix =
+    'snack_notification_group_key:';
+const String _snackNotificationSequencePreferencePrefix =
+    'snack_notification_sequence:';
+const String _dmNotificationSentAtPreferencePrefix = 'dm_notification_sent_at:';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  final badgeStr = message.data['badge'];
-  if (badgeStr != null) {
-    final badge = int.tryParse(badgeStr.toString());
-    if (badge != null && badge >= 0) {
-      try {
-        await AppBadgePlus.updateBadge(badge);
-      } catch (_) {}
+  try {
+    final recipientUserId =
+        (message.data['recipientUserId'] ?? '').toString().trim();
+    if (recipientUserId.isEmpty) return;
+
+    // A delayed push for the previous account must never overwrite the badge
+    // after this device has switched users.
+    final preferences = await SharedPreferences.getInstance();
+    final activeUserId =
+        preferences.getString(_pushSessionUserIdPreferenceKey) ?? '';
+    if (activeUserId != recipientUserId) return;
+
+    final snackChatId = (message.data['snackChatId'] ?? '').toString().trim();
+    final notificationGroupKey = (message.data['notificationThreadKey'] ??
+            message.data['notificationGroupKey'] ??
+            '')
+        .toString()
+        .trim();
+    if (snackChatId.isNotEmpty && notificationGroupKey.isNotEmpty) {
+      await preferences.setString(
+        '$_snackNotificationGroupPreferencePrefix$snackChatId',
+        notificationGroupKey,
+      );
+      final sequence = int.tryParse(
+            (message.data['messageSequence'] ?? '').toString(),
+          ) ??
+          0;
+      final sequenceKey =
+          '$_snackNotificationSequencePreferencePrefix$recipientUserId::$snackChatId';
+      final previousSequence = preferences.getInt(sequenceKey) ?? 0;
+      if (sequence > previousSequence) {
+        await preferences.setInt(sequenceKey, sequence);
+      }
     }
-  }
+    final conversationId =
+        (message.data['conversationId'] ?? '').toString().trim();
+    if ((message.data['type'] ?? '').toString() == 'dm_received' &&
+        conversationId.isNotEmpty) {
+      final sentAtMillis = int.tryParse(
+            (message.data['sentAtMillis'] ?? '').toString(),
+          ) ??
+          0;
+      final sentAtKey =
+          '$_dmNotificationSentAtPreferencePrefix$recipientUserId::$conversationId';
+      final previousSentAt = preferences.getInt(sentAtKey) ?? 0;
+      if (sentAtMillis > previousSentAt) {
+        await preferences.setInt(sentAtKey, sentAtMillis);
+      }
+    }
+
+    final badgeStr = message.data['badge'];
+    if (badgeStr != null) {
+      final badge = int.tryParse(badgeStr.toString());
+      if (badge != null && badge >= 0) {
+        await AppBadgePlus.updateBadge(badge);
+      }
+    }
+  } catch (_) {}
 }
 
 class FCMService {
+  static final Map<String, int> _localNotificationWhenBySlot = <String, int>{};
+
+  static int _nextLocalNotificationWhen(
+      String owner, String slot, int serverMillis) {
+    final key = '$owner::$slot';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final base = serverMillis > 0 ? serverMillis : now;
+    final previous = _localNotificationWhenBySlot[key] ?? 0;
+    final next = base > previous ? base : previous + 1;
+    _localNotificationWhenBySlot[key] = next;
+    if (_localNotificationWhenBySlot.length > 256) {
+      _localNotificationWhenBySlot
+          .remove(_localNotificationWhenBySlot.keys.first);
+    }
+    return next;
+  }
+
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   final LanguageService _languageService = LanguageService();
 
   static Future<void>? _initializingFuture;
   static String? _initializedUserId;
-  static PushInitState _state = PushInitState.idle;
   static int _sessionEpoch = 0;
   static int _activeEpoch = 0;
-  static Timer? _delayedTokenSyncTimer;
   static Completer<void>? _appActiveCompleter;
   static AppLifecycleListener? _appLifecycleListener;
   static StreamSubscription<String>? _tokenRefreshSub;
   static StreamSubscription<RemoteMessage>? _onMessageSub;
   static StreamSubscription<RemoteMessage>? _onMessageOpenedAppSub;
+  static final _chatPreviewHistory = ChatNotificationPreviewHistory();
+  static final _notificationWrites = ChatWorkQueue();
+  static final _confirmedReadWrites = ChatWorkQueue();
+  static final SnackChatNotificationBurstGate _snackChatNotificationGate =
+      SnackChatNotificationBurstGate();
+  static const MethodChannel _notificationCenterChannel =
+      MethodChannel('com.wefilling.app/notification_center');
 
   static const String _channelHighImportanceId = 'high_importance_channel';
   static const String _channelHighImportanceName =
@@ -71,56 +150,39 @@ class FCMService {
   static const String _channelMeetupId = 'meetup_notifications';
   static const String _channelMeetupName = 'Meetup Notifications';
 
-  void _setState(PushInitState state, {String? reason}) {
-    _state = state;
-    final suffix = reason == null ? '' : ' ($reason)';
-    Logger.log('🧭 PushInitState: ${state.name}$suffix');
-  }
-
   Future<void> _waitUntilAppActive(int epoch) async {
-    Logger.log('🔍 [FCM 진단] _waitUntilAppActive 시작');
-    Logger.log('  - 현재 lifecycleState: ${WidgetsBinding.instance.lifecycleState}');
-    
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] _waitUntilAppActive 시작');
+    if (Logger.isVerboseEnabled)
+      Logger.log(
+          '  - 현재 lifecycleState: ${WidgetsBinding.instance.lifecycleState}');
+
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-      _setState(PushInitState.appActive, reason: 'already_resumed');
-      Logger.log('🔍 [FCM 진단] 앱이 이미 resumed 상태');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] 앱이 이미 resumed 상태');
       return;
     }
 
-    Logger.log('🔍 [FCM 진단] 앱이 resumed 될 때까지 대기 중...');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] 앱이 resumed 될 때까지 대기 중...');
     _appActiveCompleter ??= Completer<void>();
     _appLifecycleListener ??= AppLifecycleListener(
       onResume: () {
-        Logger.log('🔍 [FCM 진단] onResume 콜백 호출됨');
+        if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] onResume 콜백 호출됨');
         if (!(_appActiveCompleter?.isCompleted ?? true)) {
           _appActiveCompleter?.complete();
         }
+        unawaited(_replayConfirmedNotificationReads());
       },
     );
 
     await _appActiveCompleter!.future;
-    Logger.log('🔍 [FCM 진단] 앱 resumed 대기 완료');
-    
+    if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] 앱 resumed 대기 완료');
+
     if (epoch != _activeEpoch) {
-      Logger.log('🔍 [FCM 진단] stale epoch 감지 - 중단');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] stale epoch 감지 - 중단');
       throw StateError('stale epoch while waiting app active');
     }
-    _setState(PushInitState.appActive, reason: 'resumed');
-  }
-
-  void _scheduleDelayedTokenSync(int epoch, String userId) {
-    _delayedTokenSyncTimer?.cancel();
-    _delayedTokenSyncTimer = Timer(const Duration(seconds: 15), () {
-      if (epoch != _activeEpoch) {
-        Logger.log('⏭️ 지연 토큰 동기화 취소: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
-        return;
-      }
-      if (_initializedUserId != userId) {
-        Logger.log('⏭️ 지연 토큰 동기화 취소: stale user (현재=$_initializedUserId, 요청=$userId)');
-        return;
-      }
-      _startTokenSync(userId, epoch);
-    });
   }
 
   bool _isStaleEpoch(int epoch) => epoch != _activeEpoch;
@@ -156,7 +218,7 @@ class FCMService {
 
     // 초기화 설정
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@drawable/ic_notification');
 
     final DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings(
@@ -174,7 +236,8 @@ class FCMService {
     await _localNotifications.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) async {
-        Logger.log('📱 알림 클릭: ${response.payload}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('📱 알림 클릭: ${response.payload}');
         // 포그라운드 로컬 알림 탭 시 딥링크 라우팅
         final payload = response.payload;
         if (payload != null && payload.isNotEmpty) {
@@ -188,6 +251,33 @@ class FCMService {
         }
       },
     );
+    await _routeLocalNotificationLaunch();
+  }
+
+  static bool _localLaunchConsumed = false;
+
+  /// A tap on a *local* notification (foreground-rendered chat card, To-do
+  /// reminder) that cold-starts the app is not reported through
+  /// onDidReceiveNotificationResponse. Route it once from the launch details;
+  /// NavigationService holds it until auth and the navigator are ready.
+  Future<void> _routeLocalNotificationLaunch() async {
+    if (_localLaunchConsumed || kIsWeb) return;
+    _localLaunchConsumed = true;
+    try {
+      final details = await _localNotifications.getNotificationAppLaunchDetails();
+      final payload = details?.notificationResponse?.payload;
+      if (details?.didNotificationLaunchApp != true ||
+          payload == null ||
+          payload.isEmpty) {
+        return;
+      }
+      final data = jsonDecode(payload);
+      if (data is Map<String, dynamic>) {
+        await NavigationService.handlePushNavigation(data);
+      }
+    } catch (e) {
+      Logger.error('⚠️ 로컬 알림 launch payload 처리 실패: $e');
+    }
   }
 
   Future<bool> _ensureAndroidPostNotificationsPermission() async {
@@ -203,7 +293,8 @@ class FCMService {
 
       // 거부/영구 거부 상태: OS 팝업이 더 이상 안 뜰 수 있다.
       // 배포 품질: 최소한 로그로 원인 노출 (UI 안내는 상위 레이어에서 처리 권장)
-      Logger.log('❌ Android 알림 권한 미허용: $requested');
+      if (Logger.isVerboseEnabled)
+        Logger.log('❌ Android 알림 권한 미허용: $requested');
       return false;
     } catch (e) {
       Logger.error('❌ Android 알림 권한 요청 실패', e);
@@ -216,8 +307,6 @@ class FCMService {
   Future<void> reset() async {
     _sessionEpoch += 1;
     _activeEpoch = _sessionEpoch;
-    _delayedTokenSyncTimer?.cancel();
-    _delayedTokenSyncTimer = null;
     _appActiveCompleter = null;
     _appLifecycleListener?.dispose();
     _appLifecycleListener = null;
@@ -231,9 +320,18 @@ class FCMService {
     _tokenRefreshSub = null;
     _onMessageSub = null;
     _onMessageOpenedAppSub = null;
+    _snackChatNotificationGate.clear();
+    _chatPreviewHistory.clear();
+    _confirmedNotificationReads.clear();
+    _cleanupFailures.clear();
     _initializingFuture = null;
     _initializedUserId = null;
-    _setState(PushInitState.idle, reason: 'reset');
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.remove(_pushSessionUserIdPreferenceKey);
+    } catch (e) {
+      Logger.error('푸시 세션 사용자 초기화 실패', e);
+    }
   }
 
   // locale 안전성 검증
@@ -245,47 +343,28 @@ class FCMService {
       if (savedLocale == null || savedLocale.isEmpty) {
         // 기본 언어 강제 설정
         await prefs.setString('app_language', 'ko');
-        Logger.log('✅ locale 기본값 설정: ko');
+        if (Logger.isVerboseEnabled) Logger.log('✅ locale 기본값 설정: ko');
       } else {
-        Logger.log('✅ locale 확인됨: $savedLocale');
+        if (Logger.isVerboseEnabled) Logger.log('✅ locale 확인됨: $savedLocale');
       }
     } catch (e) {
       Logger.error('locale 초기화 실패 (무시)', e);
     }
   }
 
-  Future<bool> _waitForApnsReady() async {
-    if (kIsWeb || !Platform.isIOS) return true;
-
-    const int maxAttempts = 20; // 최대 10초 대기 (0.5초 * 20)
-    for (int i = 0; i < maxAttempts; i++) {
-      try {
-        final String? apnsToken = await _messaging.getAPNSToken();
-        if (apnsToken != null && apnsToken.isNotEmpty) {
-          Logger.log('✅ APNs 토큰 준비 완료');
-          return true;
-        }
-      } catch (e) {
-        Logger.error('APNs 토큰 확인 실패 (재시도)', e);
-      }
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    Logger.log('⚠️ APNs 토큰 미준비 - 이번 세션 FCM 토큰 조회 연기');
-    return false;
-  }
-
   // FCM 초기화
   Future<void> initialize(String userId) async {
     if (_initializedUserId == userId) {
-      Logger.log('ℹ️ FCM 초기화 스킵: 동일 세션 사용자($userId)');
+      if (Logger.isVerboseEnabled)
+        Logger.log('ℹ️ FCM 초기화 스킵: 동일 세션 사용자($userId)');
       return;
     }
 
     if (_initializingFuture != null) {
       await _initializingFuture;
       if (_initializedUserId == userId) {
-        Logger.log('ℹ️ FCM 초기화 스킵: 초기화 완료됨($userId)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('ℹ️ FCM 초기화 스킵: 초기화 완료됨($userId)');
         return;
       }
     }
@@ -294,28 +373,31 @@ class FCMService {
       await reset();
     }
 
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_pushSessionUserIdPreferenceKey, userId);
+    } catch (e) {
+      Logger.error('푸시 세션 사용자 저장 실패', e);
+    }
+
     _sessionEpoch += 1;
     _activeEpoch = _sessionEpoch;
     final int epoch = _activeEpoch;
-    _setState(PushInitState.idle, reason: 'initialize_start');
-
     final completer = Completer<void>();
     _initializingFuture = completer.future;
 
     try {
-      _setState(PushInitState.sessionReady, reason: 'user:$userId');
-
       // locale 안전성 검증 (Firebase Messaging 초기화 전 필수)
       try {
         await _languageService.initializeLanguage();
         await _ensureLocaleInitialized();
-        _setState(PushInitState.localeReady);
       } catch (e) {
         Logger.error('locale 초기화 실패 - 계속 진행', e);
       }
 
       if (_isStaleEpoch(epoch)) {
-        Logger.log('⏭️ FCM 초기화 중단: stale epoch(locale)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⏭️ FCM 초기화 중단: stale epoch(locale)');
         completer.complete();
         return;
       }
@@ -352,16 +434,14 @@ class FCMService {
 
         if (!kIsWeb && Platform.isIOS) {
           if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-            Logger.log('✅ iOS 알림 권한 승인됨');
-            _setState(PushInitState.permissionResolved);
+            if (Logger.isVerboseEnabled) Logger.log('✅ iOS 알림 권한 승인됨');
           } else if (settings.authorizationStatus ==
               AuthorizationStatus.provisional) {
-            Logger.log('✅ iOS 알림 권한 Provisional');
-            _setState(PushInitState.permissionResolved);
+            if (Logger.isVerboseEnabled) Logger.log('✅ iOS 알림 권한 Provisional');
           } else {
-            Logger.log('❌ iOS 알림 권한 거부됨 - FCM 기능 제한 (앱은 계속 실행)');
+            if (Logger.isVerboseEnabled)
+              Logger.log('❌ iOS 알림 권한 거부됨 - FCM 기능 제한 (앱은 계속 실행)');
             _initializedUserId = userId;
-            _setState(PushInitState.permissionResolved);
             completer.complete();
             return; // 권한 없어도 앱은 계속 실행
           }
@@ -380,12 +460,15 @@ class FCMService {
               .setForegroundNotificationPresentationOptions(
             alert: false,
             badge: false,
-            sound: true,
+            // Foreground display and sound are both owned by the local
+            // notification path below. Leaving system sound enabled here can
+            // play once from APNs and once again from the local notification.
+            sound: false,
           )
               .timeout(
             const Duration(seconds: 3),
             onTimeout: () {
-              Logger.log('⏱️ 포그라운드 설정 타임아웃');
+              if (Logger.isVerboseEnabled) Logger.log('⏱️ 포그라운드 설정 타임아웃');
             },
           );
         } catch (e) {
@@ -393,52 +476,44 @@ class FCMService {
         }
       }
 
-      // 토큰 동기화는 UI와 분리해서 백그라운드로 처리
-      try {
-        var canStartTokenSync = true;
-        if (!kIsWeb && Platform.isIOS) {
-          final apnsReady = await _waitForApnsReady();
-          if (!apnsReady) {
-            canStartTokenSync = false;
-            // _initializedUserId를 먼저 설정해야 토큰 동기화에서 stale user로 중단되지 않음
-            _initializedUserId = userId;
-            _scheduleDelayedTokenSync(epoch, userId);
-          } else {
-            _setState(PushInitState.apnsRegistered);
-          }
-        }
-
-        if (_isStaleEpoch(epoch)) {
-          Logger.log('⏭️ FCM 초기화 중단: stale epoch(token_sync_start)');
-          completer.complete();
-          return;
-        }
-
-        // _initializedUserId를 토큰 동기화 시작 전에 설정
-        // (microtask로 실행되는 _startTokenSync에서 stale user 체크 통과를 위해)
-        _initializedUserId = userId;
-
-        if (canStartTokenSync) {
-          _startTokenSync(userId, epoch);
-        }
-      } catch (e) {
-        Logger.error('토큰 동기화 시작 실패 - 계속 진행', e);
+      if (_isStaleEpoch(epoch)) {
+        if (Logger.isVerboseEnabled)
+          Logger.log('⏭️ FCM 초기화 중단: stale epoch(listener_setup)');
+        completer.complete();
+        return;
       }
+
+      // APNs가 늦게 준비되더라도 메시지 리스너는 즉시 연결한다. 토큰 동기화는
+      // 아래 재시도 루프에서 독립적으로 APNs 준비를 기다린다.
+      _initializedUserId = userId;
+      _startTokenSync(userId, epoch);
+      _appLifecycleListener ??= AppLifecycleListener(onResume: () {
+        if (!(_appActiveCompleter?.isCompleted ?? true))
+          _appActiveCompleter?.complete();
+        unawaited(_replayConfirmedNotificationReads());
+      });
+      unawaited(_replayConfirmedNotificationReads());
 
       // 토큰 갱신 리스너 등록
       try {
         await _tokenRefreshSub?.cancel();
         _tokenRefreshSub = _messaging.onTokenRefresh.listen((newToken) {
           if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
-            Logger.log('⏭️ 토큰 갱신 이벤트 무시: stale epoch/user');
+            if (Logger.isVerboseEnabled)
+              Logger.log('⏭️ 토큰 갱신 이벤트 무시: stale epoch/user');
             return;
           }
-          Logger.log('📱 FCM 토큰 갱신: $newToken');
+          if (Logger.isVerboseEnabled) {
+            Logger.log('📱 FCM 토큰 갱신됨 (length=${newToken.length})');
+          }
           _saveFCMToken(userId, newToken);
         });
       } catch (e) {
         Logger.error('토큰 갱신 리스너 등록 실패 - 계속 진행', e);
       }
+
+      // Active-content auto-read feed (no-op unless ACTIVE_CONTENT_AUTO_READ).
+      UnreadNotificationFeed.ensureStarted();
 
       // 포어그라운드 메시지 리스너 등록
       try {
@@ -446,18 +521,32 @@ class FCMService {
         _onMessageSub =
             FirebaseMessaging.onMessage.listen((RemoteMessage message) {
           try {
-            Logger.log('📱 포어그라운드 메시지 수신: ${message.messageId}');
-            Logger.log('📱 제목: ${message.notification?.title}');
-            Logger.log('📱 내용: ${message.notification?.body}');
-            Logger.log('📱 데이터: ${message.data}');
-
+            if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
+              if (Logger.isVerboseEnabled) {
+                Logger.log('⏭️ 이전 로그인 세션의 포어그라운드 푸시 무시');
+              }
+              return;
+            }
             // ✅ 포그라운드 알림 정책:
             // - iOS는 위에서 alert=false로 해뒀기 때문에, 여기서 로컬 알림을 "선택적으로" 띄운다.
             // - DM 채팅방을 보고 있는 경우(해당 conversationId 활성) DM 알림은 띄우지 않는다.
             final type = (message.data['type'] ?? '').toString();
+            final recipientUserId =
+                (message.data['recipientUserId'] ?? '').toString().trim();
+            if (recipientUserId.isNotEmpty && recipientUserId != userId) {
+              if (Logger.isVerboseEnabled)
+                Logger.log('⏭️ 이전 계정 대상 포어그라운드 푸시 무시');
+              return;
+            }
             final conversationId =
                 (message.data['conversationId'] ?? '').toString();
             final snackChatId = (message.data['snackChatId'] ?? '').toString();
+            if (Logger.isVerboseEnabled) {
+              Logger.log(
+                '📱 포어그라운드 푸시 수신: type=$type '
+                'roomId=$snackChatId messageId=${message.data['messageId'] ?? message.messageId ?? ''}',
+              );
+            }
             final isDm = type == 'dm_received' && conversationId.isNotEmpty;
             final isSnackChat =
                 type == 'snack_chat_message' && snackChatId.isNotEmpty;
@@ -469,13 +558,50 @@ class FCMService {
                           SnackChatActiveConversation.isActive(snackChatId));
 
               if (isActiveConversation) {
+                // Foreground delivery is suppressed here. The OS card is
+                // removed only after the room's server read call returns its
+                // authoritative boundary, so a newer push cannot be erased.
+                return;
+              }
+
+              // Non-chat push whose destination (post, comment, meetup, snap,
+              // request ...) is on screen right now: no banner, and the
+              // notification is confirmed read the same way the destination
+              // itself would confirm it. Scopes are target-bound.
+              final activeNotificationId =
+                  (message.data['notificationId'] ?? '').toString();
+              if (!isDm &&
+                  !isSnackChat &&
+                  type != 'ad_updates' &&
+                  type != 'personalTodoReminder' &&
+                  activeNotificationId.isNotEmpty &&
+                  ActiveContentRegistry.matches(
+                    ActiveContentRegistry.payloadAsNotification(message.data),
+                    owner: userId,
+                  )) {
+                unawaited(NotificationService()
+                    .markNotificationAsRead(
+                      activeNotificationId,
+                      readContext: (owner: userId, session: epoch),
+                    )
+                    .then<void>((_) {}, onError: (Object error) {
+                  Logger.error('활성 콘텐츠 푸시 읽음 처리 실패', error);
+                }));
                 return;
               }
 
               final badgeStr = (message.data['badge'] ?? '').toString();
+              if (_wasAlreadyConfirmedRead(message.data, userId)) {
+                unawaited(_reconcileReceivedNotification(
+                    message.data, userId, epoch));
+                return;
+              }
               final badge = int.tryParse(badgeStr);
-              if (badge != null && badge >= 0) {
-                unawaited(BadgeService.applyBadgeFromPush(badge));
+              if (badge != null && badge >= 0 && recipientUserId.isNotEmpty) {
+                unawaited(BadgeService.applyBadgeFromPush(
+                  badge,
+                  recipientUserId: recipientUserId,
+                ));
               }
 
               unawaited(_showLocalNotification(message));
@@ -494,8 +620,26 @@ class FCMService {
         _onMessageOpenedAppSub = FirebaseMessaging.onMessageOpenedApp
             .listen((RemoteMessage message) async {
           try {
-            Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
-            Logger.log('📱 데이터: ${message.data}');
+            if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
+              if (Logger.isVerboseEnabled) {
+                Logger.log('⏭️ 이전 로그인 세션의 푸시 딥링크 무시');
+              }
+              return;
+            }
+            if (Logger.isVerboseEnabled) {
+              Logger.log(
+                '📱 백그라운드 푸시로 앱 열림: '
+                'type=${message.data['type'] ?? ''} '
+                'roomId=${message.data['snackChatId'] ?? ''} '
+                'messageId=${message.data['messageId'] ?? message.messageId ?? ''}',
+              );
+            }
+            final recipientUserId =
+                (message.data['recipientUserId'] ?? '').toString().trim();
+            if (recipientUserId.isNotEmpty && recipientUserId != userId) {
+              if (Logger.isVerboseEnabled) Logger.log('⏭️ 이전 계정 대상 푸시 딥링크 무시');
+              return;
+            }
             await NavigationService.handlePushNavigation(message.data);
           } catch (e) {
             Logger.error('백그라운드 메시지 처리 실패', e);
@@ -511,21 +655,39 @@ class FCMService {
             await _messaging.getInitialMessage().timeout(
           const Duration(seconds: 3),
           onTimeout: () {
-            Logger.log('⏱️ getInitialMessage 타임아웃');
+            if (Logger.isVerboseEnabled)
+              Logger.log('⏱️ getInitialMessage 타임아웃');
             return null;
           },
         );
         if (initialMessage != null) {
-          Logger.log('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
-          Logger.log('📱 데이터: ${initialMessage.data}');
-          await NavigationService.handlePushNavigation(initialMessage.data);
+          if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
+            if (Logger.isVerboseEnabled) {
+              Logger.log('⏭️ 이전 로그인 세션의 초기 푸시 딥링크 무시');
+            }
+            completer.complete();
+            return;
+          }
+          if (Logger.isVerboseEnabled) {
+            Logger.log(
+              '📱 종료 상태 푸시로 앱 열림: '
+              'type=${initialMessage.data['type'] ?? ''} '
+              'roomId=${initialMessage.data['snackChatId'] ?? ''} '
+              'messageId=${initialMessage.data['messageId'] ?? initialMessage.messageId ?? ''}',
+            );
+          }
+          final recipientUserId =
+              (initialMessage.data['recipientUserId'] ?? '').toString().trim();
+          if (recipientUserId.isEmpty || recipientUserId == userId) {
+            await NavigationService.handlePushNavigation(initialMessage.data);
+          } else {
+            if (Logger.isVerboseEnabled) Logger.log('⏭️ 이전 계정 대상 초기 푸시 딥링크 무시');
+          }
         }
       } catch (e) {
         Logger.error('초기 메시지 처리 실패 - 계속 진행', e);
       }
 
-      _initializedUserId = userId;
-      _setState(PushInitState.tokenSynced, reason: 'initialize_completed');
       completer.complete();
     } catch (e) {
       completer.complete();
@@ -557,11 +719,14 @@ class FCMService {
 
     for (int i = 0; i < retrySeconds.length; i++) {
       if (_isStaleEpoch(epoch)) {
-        Logger.log('⏭️ 토큰 동기화 중단: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
+        if (Logger.isVerboseEnabled)
+          Logger.log('⏭️ 토큰 동기화 중단: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
         return;
       }
       if (_initializedUserId != userId) {
-        Logger.log('⏭️ 토큰 동기화 중단: stale user (현재=$_initializedUserId, 요청=$userId)');
+        if (Logger.isVerboseEnabled)
+          Logger.log(
+              '⏭️ 토큰 동기화 중단: stale user (현재=$_initializedUserId, 요청=$userId)');
         return;
       }
 
@@ -578,12 +743,15 @@ class FCMService {
             final String? apnsToken = await _messaging.getAPNSToken();
             if (apnsToken == null || apnsToken.isEmpty) {
               if (shouldLogRetry) {
-                Logger.log(
-                    '⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+                if (Logger.isVerboseEnabled)
+                  Logger.log(
+                      '⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
               }
               continue;
             } else {
-              Logger.log('📱 APNs 토큰 준비됨: ${apnsToken.substring(0, 20)}...');
+              if (Logger.isVerboseEnabled) {
+                Logger.log('📱 APNs 토큰 준비됨 (length=${apnsToken.length})');
+              }
             }
           } catch (e) {
             Logger.error('❌ APNs 토큰 가져오기 실패: $e');
@@ -599,45 +767,145 @@ class FCMService {
               );
 
           if (token != null && token.isNotEmpty) {
-            Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
-            await _saveFCMToken(userId, token);
-            if (!_isStaleEpoch(epoch) && _initializedUserId == userId) {
-              Logger.log('✅ [FCM] 토큰 동기화 성공 - userId=$userId, token=${token.substring(0, 20)}... (시도 ${i + 1}/${retrySeconds.length})');
-              _setState(PushInitState.tokenSynced, reason: 'token_uploaded');
-            } else {
-              Logger.log('⏭️ [FCM] 토큰 저장 완료 후 stale 감지 - 상태 업데이트 생략');
+            if (Logger.isVerboseEnabled) {
+              Logger.log('📱 FCM 토큰 준비됨 (length=${token.length})');
             }
+            await _saveFCMToken(userId, token);
             return;
           }
           if (shouldLogRetry) {
-            Logger.log(
-                '⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+            if (Logger.isVerboseEnabled)
+              Logger.log(
+                  '⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
           }
         } catch (e) {
           Logger.error('❌ FCM 토큰 가져오기 실패: $e');
         }
       } catch (e) {
-        Logger.error('FCM 토큰 동기화 실패 (재시도 ${i + 1}/${retrySeconds.length})', e);
+        if (i == retrySeconds.length - 1) {
+          Logger.error('FCM 토큰 동기화 최종 실패', e);
+        } else {
+          if (Logger.isVerboseEnabled) Logger.warning('FCM 토큰 동기화 재시도 예정');
+        }
         // 크래시 방지: 예외를 로그만 남기고 계속 진행
       }
     }
 
-    Logger.log('❌ FCM 토큰 동기화 최종 실패 - 다음 실행에서 재시도');
+    if (Logger.isVerboseEnabled) Logger.log('❌ FCM 토큰 동기화 최종 실패 - 다음 실행에서 재시도');
+  }
+
+  Timer? _registryRetryTimer;
+  int _registryRetryAttempt = 0;
+
+  void _scheduleRegistryRetry(String userId, String token) {
+    if (_registryRetryAttempt >= 4) return;
+    final delay = Duration(seconds: 30 * (1 << _registryRetryAttempt));
+    _registryRetryAttempt++;
+    _registryRetryTimer?.cancel();
+    _registryRetryTimer = Timer(delay, () async {
+      _registryRetryTimer = null;
+      if (FirebaseAuth.instance.currentUser?.uid != userId) return;
+      try {
+        final localeTag = await _languageService.getLanguage();
+        final String? platform = defaultTargetPlatform == TargetPlatform.iOS
+            ? 'ios'
+            : defaultTargetPlatform == TargetPlatform.android
+                ? 'android'
+                : null;
+        await _functions.httpsCallable('registerFcmToken').call(<String, dynamic>{
+          'token': token,
+          'locale': localeTag,
+          if (platform != null) 'platform': platform,
+        }).timeout(const Duration(seconds: 15));
+        _registryRetryAttempt = 0;
+        if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 registry 재등록 완료');
+      } catch (e) {
+        Logger.error('⚠️ FCM 토큰 registry 재등록 실패: $e');
+        _scheduleRegistryRetry(userId, token);
+      }
+    });
   }
 
   // 포그라운드 로컬 알림 표시
   // iOS: 포그라운드에서 자동 배너를 끈 뒤, 필요한 경우만 로컬 알림을 표시한다.
   // Android: 포그라운드에서 FCM notification을 자동 표시하지 않으므로 여기서 처리.
   Future<void> _showLocalNotification(RemoteMessage message) async {
+    final owner = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final epoch = _activeEpoch;
+    final type = (message.data['type'] ?? '').toString();
+    final room = (message.data[type == 'snack_chat_message'
+                ? 'snackChatId'
+                : 'conversationId'] ??
+            '')
+        .toString()
+        .trim();
+    if (type != 'snack_chat_message' && type != 'dm_received') {
+      return _renderLocalNotification(message, owner, epoch);
+    }
+    await _notificationWrites.run('$owner:$type:$room',
+        () => _renderLocalNotification(message, owner, epoch));
+  }
+
+  Future<void> _renderLocalNotification(
+      RemoteMessage message, String owner, int epoch) async {
+    if (owner.isEmpty ||
+        _isStaleEpoch(epoch) ||
+        FirebaseAuth.instance.currentUser?.uid != owner) return;
+    final recipient = (message.data['recipientUserId'] ?? '').toString().trim();
+    if (recipient.isNotEmpty && recipient != owner) return;
+    if (_wasAlreadyConfirmedRead(message.data, owner)) {
+      unawaited(_reconcileReceivedNotification(message.data, owner, epoch));
+      return;
+    }
     try {
       final notification = message.notification;
-      final title =
+      var title =
           notification?.title ?? (message.data['title'] ?? '').toString();
-      final body =
-          notification?.body ?? (message.data['body'] ?? '').toString();
+      var body = notification?.body ?? (message.data['body'] ?? '').toString();
       if (title.trim().isEmpty && body.trim().isEmpty) return;
 
       final type = (message.data['type'] ?? '').toString();
+      final snackChatId = (message.data['snackChatId'] ?? '').toString().trim();
+      final isGroupedSnackChat =
+          type == 'snack_chat_message' && snackChatId.isNotEmpty;
+      final presentation = ChatNotificationPresentation.parse(message.data,
+          owner: owner,
+          fallbackTitle: title,
+          fallbackBody: body,
+          fallbackEventId: message.messageId ?? '',
+          fallbackSentAtMillis: message.sentTime?.millisecondsSinceEpoch ?? 0);
+      final isGroupedChat = presentation != null;
+      final notificationId =
+          (message.data['notificationId'] ?? '').toString().trim();
+      final notificationGroupKey = (message.data['notificationThreadKey'] ??
+              message.data['notificationGroupKey'] ??
+              '')
+          .toString()
+          .trim();
+      final effectiveGroupKey = presentation?.roomKey ??
+          (notificationGroupKey.isNotEmpty
+              ? notificationGroupKey
+              : 'snack_$snackChatId');
+      var shouldAlert = true;
+      if (isGroupedChat) {
+        final eventId = (message.data['notificationEventId'] ??
+                message.data['messageId'] ??
+                message.messageId ??
+                '')
+            .toString();
+        final sentAtMillis = presentation.sentAtMillis;
+        final decision = _snackChatNotificationGate.evaluate(
+          roomKey: effectiveGroupKey,
+          eventId: eventId,
+          sentAtMillis: sentAtMillis,
+        );
+        if (!decision.shouldDisplay) return;
+        shouldAlert = isGroupedSnackChat ? decision.shouldAlert : true;
+      }
+      final unreadCount = int.tryParse(
+        (message.data['roomUnreadCount'] ?? message.data['unreadCount'] ?? '')
+            .toString(),
+      );
       final String androidChannelId =
           _isMeetupType(type) ? _channelMeetupId : _channelHighImportanceId;
       final String androidChannelName =
@@ -646,6 +914,38 @@ class FCMService {
           ? 'This channel is used for meetup-related notifications.'
           : 'This channel is used for important notifications.';
 
+      StyleInformation? expandedStyle;
+      String? subtitle;
+      if (chatPushPresentationV2 && presentation != null) {
+        try {
+          final history = _chatPreviewHistory.append(presentation);
+          expandedStyle =
+              buildChatMessagingStyle(presentation, history, owner: owner);
+          title = presentation.title;
+          body = presentation.isGroup && presentation.sender.isNotEmpty
+              ? '${presentation.sender}: ${presentation.text}'
+              : presentation.text;
+          subtitle = presentation.subtitle;
+        } catch (error) {
+          // Only preparation failure falls back, before any platform post.
+          Logger.error('Chat notification presentation fallback: $error');
+        }
+      }
+      final localSlot = isGroupedChat
+          ? effectiveGroupKey
+          : notificationId.isNotEmpty
+              ? appNotificationAndroidTag(notificationId)
+              : message.messageId ?? '';
+      final localWhen = !kIsWeb && Platform.isAndroid
+          ? _nextLocalNotificationWhen(
+              owner,
+              localSlot,
+              int.tryParse(
+                    (message.data['notificationCommitMillis'] ?? '').toString(),
+                  ) ??
+                  0,
+            )
+          : null;
       final AndroidNotificationDetails androidDetails =
           AndroidNotificationDetails(
         androidChannelId,
@@ -654,14 +954,32 @@ class FCMService {
         importance: Importance.high,
         priority: Priority.high,
         showWhen: true,
-        enableVibration: true,
-        playSound: true,
+        // Bind the later native metadata registration to this exact post.
+        // FCM's event timestamp uses the same committed server millisecond.
+        when: localWhen,
+        enableVibration: shouldAlert,
+        playSound: shouldAlert,
+        silent: isGroupedChat && !shouldAlert,
+        styleInformation: expandedStyle,
+        subText: subtitle,
+        onlyAlertOnce: isGroupedSnackChat,
+        tag: isGroupedChat
+            ? effectiveGroupKey
+            : notificationId.isNotEmpty
+                ? appNotificationAndroidTag(notificationId)
+                : null,
+        groupKey: isGroupedSnackChat ? snackChatAndroidGroupKey : null,
+        // Keep the existing launcher/count policy. DM's compact count belongs
+        // in subText, not a newly introduced Android badge count.
+        number: isGroupedSnackChat ? unreadCount : null,
       );
 
-      const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      final DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
-        presentSound: true,
+        presentSound: shouldAlert,
+        threadIdentifier: isGroupedChat ? effectiveGroupKey : null,
+        subtitle: subtitle,
       );
 
       final NotificationDetails details = NotificationDetails(
@@ -669,23 +987,578 @@ class FCMService {
         iOS: iosDetails,
       );
 
+      if (isGroupedSnackChat) {
+        try {
+          final preferences = await SharedPreferences.getInstance();
+          await preferences.setString(
+            '$_snackNotificationGroupPreferencePrefix$snackChatId',
+            effectiveGroupKey,
+          );
+          final sequence = int.tryParse(
+                (message.data['messageSequence'] ?? '').toString(),
+              ) ??
+              0;
+          final sequenceKey =
+              '$_snackNotificationSequencePreferencePrefix$owner::$snackChatId';
+          final previousSequence = preferences.getInt(sequenceKey) ?? 0;
+          if (sequence > previousSequence) {
+            await preferences.setInt(sequenceKey, sequence);
+          }
+        } catch (error) {
+          Logger.error('Notification grouping metadata save failed: $error');
+        }
+      }
+      if (presentation != null && !presentation.isGroup) {
+        final conversationId =
+            (message.data['conversationId'] ?? '').toString().trim();
+        if (conversationId.isNotEmpty && presentation.sentAtMillis > 0) {
+          try {
+            final preferences = await SharedPreferences.getInstance();
+            final sentAtKey =
+                '$_dmNotificationSentAtPreferencePrefix$owner::$conversationId';
+            final previousSentAt = preferences.getInt(sentAtKey) ?? 0;
+            if (presentation.sentAtMillis > previousSentAt) {
+              await preferences.setInt(sentAtKey, presentation.sentAtMillis);
+            }
+          } catch (error) {
+            Logger.error('DM notification metadata save failed: $error');
+          }
+        }
+      }
+      if (_isStaleEpoch(epoch) ||
+          FirebaseAuth.instance.currentUser?.uid != owner) return;
+      if (presentation != null &&
+          (presentation.isGroup
+              ? SnackChatActiveConversation.isActive(snackChatId)
+              : DMActiveConversation.isActive(
+                  (message.data['conversationId'] ?? '').toString()))) return;
+
+      final localId = isGroupedChat
+            ? (!kIsWeb && Platform.isAndroid
+                // The plugin keys click PendingIntents by id, not tag.
+                ? (isGroupedSnackChat
+                    ? stableSnackChatNotificationId(
+                        'snack_chat:$effectiveGroupKey')
+                    : dmLocalNotificationId(effectiveGroupKey))
+                : isGroupedSnackChat
+                    ? stableSnackChatNotificationId(
+                        'snack_chat:$effectiveGroupKey')
+                    : dmLocalNotificationId(effectiveGroupKey))
+            // One stable slot per notification document on every platform, so
+            // a redelivered push updates the card instead of adding a second.
+            : notificationId.isNotEmpty
+                ? stableSnackChatNotificationId('app:$notificationId')
+                : message.hashCode;
+      if (!kIsWeb && Platform.isAndroid && isGroupedChat) {
+        // FCM renders background pushes for this room in slot (tag, id 0); the
+        // local card uses (tag, localId). Drop the remote one first so the
+        // room never shows two cards.
+        unawaited(_notificationCenterChannel.invokeMethod<bool>(
+          'cancelNotificationSlot',
+          {'tag': effectiveGroupKey, 'id': 0},
+        ).catchError((_) => false));
+      }
       await _localNotifications.show(
-        message.hashCode,
+        localId,
         title,
         body,
         details,
         payload: jsonEncode(message.data),
       );
+      if (!kIsWeb && Platform.isAndroid) {
+        final tag = isGroupedChat
+            ? effectiveGroupKey
+            : notificationId.isNotEmpty
+                ? appNotificationAndroidTag(notificationId)
+                : '';
+        if (tag.isNotEmpty) {
+          // flutter_local_notifications puts payload on the click Intent,
+          // not Notification.extras. Register the posted slot explicitly for
+          // native read-through comparisons; never block delivery on failure.
+          unawaited(_notificationCenterChannel.invokeMethod<bool>(
+            'recordLocalNotificationMetadata', {
+              'tag': tag,
+              'id': localId,
+              'when': androidDetails.when,
+              'payload': <String, String>{
+                for (final entry in message.data.entries)
+                  entry.key: entry.value.toString(),
+                'recipientUserId': owner,
+              },
+            },
+          ).catchError((Object error) {
+            Logger.error('로컬 알림 제거 메타데이터 등록 실패', error);
+            return false;
+          }));
+        }
+      }
 
-      Logger.log('✅ 로컬 알림 표시 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 로컬 알림 표시 완료');
+      unawaited(_reconcileReceivedNotification(message.data, owner, epoch));
     } catch (e) {
       Logger.error('❌ 로컬 알림 표시 실패: $e');
     }
   }
 
+  /// Capture before starting a read, not after its network response.
+  bool _wasAlreadyConfirmedRead(Map<String, dynamic> data, String owner) {
+    final type = data['type'];
+    final kind = type == 'snack_chat_message'
+        ? 'snack_chat'
+        : type == 'dm_received'
+            ? 'dm'
+            : type == 'ad_updates'
+                ? 'ad'
+                : 'app';
+    final target = kind == 'snack_chat'
+        ? data['snackChatId']
+        : kind == 'dm'
+            ? data['conversationId']
+            : data['notificationId'];
+    final receipt = _confirmedNotificationReads['$owner:$kind:$target'];
+    return receipt != null &&
+        notificationPayloadWasConfirmedRead(data, receipt, owner);
+  }
+
+  Future<void> _reconcileReceivedNotification(
+      Map<String, dynamic> data, String owner, int epoch) async {
+    try {
+      if (!isNotificationSession(owner, epoch)) return;
+      final type = data['type']?.toString();
+      final id = data['notificationId']?.toString() ?? '';
+      if (id.isNotEmpty && type != 'ad_updates') {
+        final collection = type == 'personalTodoReminder'
+            ? 'todoNotificationDeliveries'
+            : 'notifications';
+        final doc = await FirebaseFirestore.instance
+            .collection(collection)
+            .doc(id)
+            .get(const GetOptions(source: Source.server));
+        if (doc.data()?['userId'] == owner && doc.data()?['isRead'] == true) {
+          await cancelAppNotification(id,
+              expectedOwner: owner, expectedSession: epoch);
+          if (isNotificationSession(owner, epoch))
+            unawaited(BadgeService.refreshNow());
+        }
+      } else {
+        final kind = type == 'ad_updates'
+            ? 'ad'
+            : type == 'snack_chat_message'
+                ? 'snack_chat'
+                : 'dm';
+        final target = id.isNotEmpty
+            ? id
+            : data[kind == 'snack_chat' ? 'snackChatId' : 'conversationId'];
+        final request = _confirmedNotificationReads['$owner:$kind:$target'];
+        if (request != null) {
+          await _runNotificationCleanup(owner, epoch, Map.of(request),
+              remember: false);
+          if (_wasAlreadyConfirmedRead(data, owner) &&
+              isNotificationSession(owner, epoch)) {
+            unawaited(BadgeService.refreshNow());
+          }
+        }
+      }
+    } catch (error) {
+      // Delivery and sound never depend on this best-effort read check.
+      Logger.error('지연 푸시 읽음 대조 실패', error);
+    }
+  }
+
+  int get notificationSession => _activeEpoch;
+
+  bool isNotificationSession(String owner, int session) =>
+      !_isStaleEpoch(session) &&
+      FirebaseAuth.instance.currentUser?.uid == owner;
+
+  /// Removes only the local notification slot associated with [snackChatId].
+  /// Android uses FCM's id 0 plus the server-issued stable room tag. iOS uses a
+  /// deterministic local id; APNs keeps remote deliveries grouped/collapsed by
+  /// the same room key.
+  /// [coversLatestVisible]: the caller has the room's newest message on
+  /// screen, so every card for this room is covered and may be removed even
+  /// when the OS card carries no readable metadata (FCM-rendered on Android).
+  Future<void> cancelSnackChatNotification(
+    String snackChatId, {
+    String? notificationGroupKey,
+    int? throughSequence,
+    bool coversLatestVisible = false,
+    String? expectedOwner,
+    int? expectedSession,
+  }) async {
+    final normalized = snackChatId.trim();
+    final owner = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+    final epoch = _activeEpoch;
+    if (normalized.isEmpty || owner.isEmpty || kIsWeb) return;
+    if ((expectedOwner != null && expectedOwner != owner) ||
+        (expectedSession != null && expectedSession != epoch)) return;
+    await _notificationWrites.run(
+        '$owner:snack_chat_message:$normalized',
+        () => _cancelSnackChatNotification(normalized, owner, epoch,
+            notificationGroupKey: notificationGroupKey,
+            throughSequence: throughSequence,
+            coversLatestVisible: coversLatestVisible));
+  }
+
+  Future<void> _cancelSnackChatNotification(
+    String room,
+    String owner,
+    int epoch, {
+    String? notificationGroupKey,
+    int? throughSequence,
+    bool coversLatestVisible = false,
+  }) async {
+    if (!isNotificationSession(owner, epoch)) return;
+    await _runNotificationCleanup(
+        owner,
+        epoch,
+        {
+          'kind': 'snack_chat',
+          'roomId': room,
+          'throughSequence': throughSequence ?? 0,
+          'removeAllInRoom': throughSequence == null || coversLatestVisible,
+          'androidTag': snackChatNotificationGroupKey(
+              recipientUserId: owner, snackChatId: room),
+        },
+        remember: throughSequence != null);
+  }
+
+  Future<void> cancelAdNotification(String bannerId, String version) async {
+    final owner = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final epoch = _activeEpoch;
+    if (owner.isEmpty || bannerId.isEmpty || version.isEmpty) return;
+    await _runNotificationCleanup(owner, epoch, {
+      'kind': 'ad',
+      'bannerId': bannerId,
+      'version': version,
+      'notificationId': 'ad:$bannerId:$version',
+      'androidTag': appNotificationAndroidTag('ad:$bannerId:$version'),
+    });
+  }
+
+  Future<void> cancelPersonalTodoNotification(
+    String todoId, {
+    required String expectedOwner,
+    required int expectedSession,
+  }) async {
+    // Local scheduled deliveries use the device's OS delivery clock, not a
+    // chat/server read watermark. Never persist this recurring-slot request.
+    final boundary = DateTime.now().millisecondsSinceEpoch;
+    await _runNotificationCleanup(
+        expectedOwner,
+        expectedSession,
+        {
+          'kind': 'todo_local',
+          'todoId': todoId,
+          'roomId': todoId,
+          'throughDeliveredAtMillis': boundary,
+        },
+        remember: false);
+  }
+
+  Future<void> cancelAppNotification(
+    String notificationId, {
+    String? expectedOwner,
+    int? expectedSession,
+  }) async {
+    final owner = expectedOwner ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+    final epoch = expectedSession ?? _activeEpoch;
+    if (notificationId.trim().isEmpty || !isNotificationSession(owner, epoch))
+      return;
+    await _runNotificationCleanup(owner, epoch, {
+      'kind': 'app',
+      'notificationId': notificationId.trim(),
+      'androidTag': appNotificationAndroidTag(notificationId),
+    });
+  }
+
+  Future<void> cancelAppNotifications(
+    Iterable<String> notificationIds, {
+    required String expectedOwner,
+    required int expectedSession,
+    bool remember = true,
+  }) async {
+    final ids = notificationIds.where((id) => id.isNotEmpty).toSet().toList()
+      ..sort();
+    if (ids.isEmpty || !isNotificationSession(expectedOwner, expectedSession))
+      return;
+    await _notificationWrites.run('$expectedOwner:app:cleanup', () async {
+      if (!isNotificationSession(expectedOwner, expectedSession)) return;
+      if (remember) {
+        for (final id in ids) {
+          _mergeConfirmedRead({
+            'kind': 'app',
+            'notificationId': id,
+            'androidTag': appNotificationAndroidTag(id),
+            'ownerUserId': expectedOwner,
+            'confirmedAt': DateTime.now().millisecondsSinceEpoch,
+          });
+        }
+        await _persistConfirmedReads(expectedOwner, expectedSession);
+      }
+      for (var offset = 0; offset < ids.length; offset += 450) {
+        final portion =
+            ids.sublist(offset, (offset + 450).clamp(0, ids.length));
+        await _runNotificationCleanup(
+            expectedOwner,
+            expectedSession,
+            {
+              'kind': 'app',
+              'notificationIds': portion,
+              'notificationId':
+                  'batch:${appNotificationAndroidTag(portion.join(','))}',
+              'androidTags': portion.map(appNotificationAndroidTag).toList(),
+            },
+            remember: false);
+      }
+    });
+  }
+
+  Future<void> cancelDmNotification(
+    String conversationId, {
+    String? notificationGroupKey,
+    int? throughSentAtMillis,
+    int throughSeconds = 0,
+    int throughNanos = 0,
+    bool coversLatestVisible = false,
+    String? expectedOwner,
+    int? expectedSession,
+  }) async {
+    final owner = expectedOwner ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+    final epoch = expectedSession ?? _activeEpoch;
+    if (conversationId.isEmpty ||
+        (throughSentAtMillis ?? 0) <= 0 ||
+        !isNotificationSession(owner, epoch)) return;
+    await _notificationWrites.run(
+        '$owner:dm_received:$conversationId',
+        () => _runNotificationCleanup(owner, epoch, {
+              'kind': 'dm',
+              'roomId': conversationId,
+              'throughSentAtMillis': throughSentAtMillis!,
+              'throughSeconds': throughSeconds,
+              'throughNanos': throughNanos,
+              'removeAllInRoom': coversLatestVisible,
+              'androidTag': dmNotificationAndroidTag(
+                  recipientUserId: owner, conversationId: conversationId),
+            }));
+  }
+
+  // Confirmed reads are not cleanup successes. Keep the immutable requests so
+  // a delayed remote delivery can be checked again on the next lifecycle event.
+  static final Map<String, Map<String, dynamic>> _confirmedNotificationReads = {};
+  static final Map<String, int> _cleanupFailures = {};
+  static int? _cleanupReplaySession;
+
+  Map<String, dynamic> _mergeConfirmedRead(Map<String, dynamic> incoming) {
+    final owner = incoming['ownerUserId']?.toString() ?? '';
+    final key = '$owner:${incoming['kind']}:${incoming['notificationId'] ?? incoming['roomId']}';
+    final previous = _confirmedNotificationReads[key];
+    final merged = <String, dynamic>{...?previous, ...incoming};
+    if (previous != null) {
+      final oldSeconds = (previous['throughSeconds'] as num?)?.toInt() ?? 0;
+      final newSeconds = (incoming['throughSeconds'] as num?)?.toInt() ?? 0;
+      final oldNanos = (previous['throughNanos'] as num?)?.toInt() ?? 0;
+      final newNanos = (incoming['throughNanos'] as num?)?.toInt() ?? 0;
+      if (oldSeconds > newSeconds ||
+          (oldSeconds == newSeconds && oldNanos > newNanos)) {
+        merged['throughSeconds'] = oldSeconds;
+        merged['throughNanos'] = oldNanos;
+      }
+      for (final field in ['throughSequence', 'throughSentAtMillis']) {
+        final old = (previous[field] as num?)?.toInt() ?? 0;
+        if (old > ((incoming[field] as num?)?.toInt() ?? 0)) {
+          merged[field] = old;
+        }
+      }
+      final oldConfirmed = (previous['confirmedAt'] as num?)?.toInt() ?? 0;
+      final newConfirmed = (incoming['confirmedAt'] as num?)?.toInt() ?? 0;
+      if (oldConfirmed > newConfirmed) merged['confirmedAt'] = oldConfirmed;
+    }
+    _confirmedNotificationReads[key] = merged;
+    return merged;
+  }
+
+  Future<void> _persistConfirmedReads(String owner, int epoch) async {
+    await _confirmedReadWrites.run(owner, () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (!isNotificationSession(owner, epoch)) return;
+        final encoded = prefs.getString('confirmed_push_reads::$owner');
+        if (encoded != null) {
+          for (final value in jsonDecode(encoded) as List) {
+            final entry = Map<String, dynamic>.from(value as Map);
+            if (entry['ownerUserId'] == owner) _mergeConfirmedRead(entry);
+          }
+        }
+        final oldest = DateTime.now()
+            .subtract(const Duration(days: 30)).millisecondsSinceEpoch;
+        _confirmedNotificationReads.removeWhere((_, entry) =>
+            ((entry['confirmedAt'] as num?)?.toInt() ?? 0) < oldest);
+        if (!isNotificationSession(owner, epoch)) return;
+        await prefs.setString('confirmed_push_reads::$owner', jsonEncode(
+            _confirmedNotificationReads.values
+                .where((entry) => entry['ownerUserId'] == owner).toList()));
+      } catch (error) {
+        Logger.error('읽음 알림 복구 메타데이터 저장 실패', error);
+      }
+    });
+  }
+
+  Future<void> _runNotificationCleanup(
+      String owner, int epoch, Map<String, dynamic> request,
+      {bool remember = true}) async {
+    if (!isNotificationSession(owner, epoch) || kIsWeb) return;
+    final key =
+        '$owner:${request['kind']}:${request['notificationId'] ?? request['roomId']}';
+    if (!remember && (_cleanupFailures[key] ?? 0) >= 3) return;
+    if (remember) {
+      request = _mergeConfirmedRead({
+        ...request,
+        'ownerUserId': owner,
+        'confirmedAt': DateTime.now().millisecondsSinceEpoch,
+      });
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (!isNotificationSession(owner, epoch)) return;
+        final room = request['roomId']?.toString() ?? '';
+        final kind = request['kind'];
+        final coveredPreview = kind == 'snack_chat'
+            ? canCancelSnackChatNotificationThrough(
+                latestNotificationSequence: prefs.getInt(
+                        '$_snackNotificationSequencePreferencePrefix$owner::$room') ??
+                    0,
+                readThroughSequence:
+                    (request['throughSequence'] as num?)?.toInt() ?? 0)
+            : kind == 'dm' &&
+                canCancelDmNotificationThrough(
+                    latestNotificationSentAtMillis: prefs.getInt(
+                            '$_dmNotificationSentAtPreferencePrefix$owner::$room') ??
+                        0,
+                    readThroughAtMillis:
+                        (request['throughSentAtMillis'] as num?)?.toInt() ?? 0);
+        if (coveredPreview) {
+          final tag = request['androidTag'] as String;
+          // Confirmed read projection, not an OS-cleanup completion flag.
+          _snackChatNotificationGate.clearRoom(tag);
+          _chatPreviewHistory.clearRoom(tag);
+        }
+      } catch (error) {
+        Logger.error('읽음 알림 복구 메타데이터 저장 실패', error);
+      }
+      await _persistConfirmedReads(owner, epoch);
+    }
+    if (!isNotificationSession(owner, epoch)) return;
+    try {
+      final removed = await _notificationCenterChannel.invokeMethod<int>(
+          'removeDeliveredNotifications', {'ownerUserId': owner, ...request});
+      if (!isNotificationSession(owner, epoch)) return;
+      if (removed == null) throw StateError('Missing native cleanup result');
+      _cleanupFailures.remove(key);
+      if (removed < 0) Logger.log('OS 알림 메타데이터 부족: ${request['kind']}');
+      if (removed == 0 && Logger.isVerboseEnabled)
+        Logger.log('OS 알림 선택 제거: 대상 없음');
+      await _cancelCoveredRoomSlots(owner, epoch, request, removed);
+    } on MissingPluginException {
+      _cleanupFailures[key] = 3;
+      Logger.log('OS 선택 제거 미지원: 새 네이티브 빌드 필요');
+    } on PlatformException catch (error) {
+      if (!isNotificationSession(owner, epoch)) return;
+      if (error.code == 'notification-removal-unsupported') {
+        _cleanupFailures[key] = 3;
+        Logger.log('OS 알림 선택 제거 미지원');
+        return;
+      }
+      _cleanupFailures[key] = (_cleanupFailures[key] ?? 0) + 1;
+      // No tag/id fallback: a grouped slot may have been replaced by a newer push.
+      Logger.error('OS 알림 제거 실패 (다음 앱 이벤트에서 재확인)', error);
+    } catch (error) {
+      _cleanupFailures[key] = (_cleanupFailures[key] ?? 0) + 1;
+      Logger.error('OS 알림 제거 실패', error);
+    }
+  }
+
+  /// Android belt-and-braces for chat rooms whose newest message is on
+  /// screen: the FCM-rendered card (tag, id 0) and the local card for the
+  /// same tag are removed by slot, so a card without readable metadata can
+  /// never outlive the read. Only runs when the caller asserted coverage.
+  Future<void> _cancelCoveredRoomSlots(
+    String owner,
+    int epoch,
+    Map<String, dynamic> request,
+    int removed,
+  ) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    if (request['removeAllInRoom'] != true) return;
+    final kind = request['kind'];
+    if (kind != 'snack_chat' && kind != 'dm') return;
+    final tag = (request['androidTag'] ?? '').toString();
+    if (tag.isEmpty || !isNotificationSession(owner, epoch)) return;
+    final localId = kind == 'snack_chat'
+        ? stableSnackChatNotificationId('snack_chat:$tag')
+        : dmLocalNotificationId(tag);
+    try {
+      await _notificationCenterChannel.invokeMethod<bool>(
+          'cancelNotificationSlot', {'tag': tag, 'id': 0});
+      await _localNotifications.cancel(localId, tag: tag);
+      if (removed <= 0 && Logger.isVerboseEnabled) {
+        Logger.log('OS 알림 슬롯 정리(tag fallback): $kind');
+      }
+    } catch (error) {
+      Logger.error('OS 알림 슬롯 정리 실패', error);
+    }
+  }
+
+  Future<void> _replayConfirmedNotificationReads() async {
+    if (kIsWeb) return;
+    final owner = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final epoch = _activeEpoch;
+    if (owner.isEmpty || _cleanupReplaySession == epoch) return;
+    _cleanupReplaySession = epoch;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!isNotificationSession(owner, epoch)) return;
+      final encoded = prefs.getString('confirmed_push_reads::$owner');
+      if (encoded != null) {
+        final entries = jsonDecode(encoded) as List;
+        final oldest = DateTime.now()
+            .subtract(const Duration(days: 30))
+            .millisecondsSinceEpoch;
+        for (final value in entries) {
+          final entry = Map<String, dynamic>.from(value as Map);
+          if (entry['ownerUserId'] != owner ||
+              ((entry['confirmedAt'] as num?)?.toInt() ?? 0) < oldest) continue;
+          _mergeConfirmedRead(entry);
+        }
+      }
+      final entries = _confirmedNotificationReads.values.toList();
+      await cancelAppNotifications(
+          entries
+              .where((entry) =>
+                  entry['ownerUserId'] == owner && entry['kind'] == 'app')
+              .map((entry) => entry['notificationId'] as String),
+          expectedOwner: owner,
+          expectedSession: epoch,
+          remember: false);
+      for (final entry in entries) {
+        if (!isNotificationSession(owner, epoch)) return;
+        if (entry['ownerUserId'] != owner) continue;
+        if (entry['kind'] == 'app') continue;
+        await _runNotificationCleanup(owner, epoch, Map.of(entry),
+            remember: false);
+      }
+    } catch (error) {
+      Logger.error('읽음 푸시 재확인 실패', error);
+    } finally {
+      if (_cleanupReplaySession == epoch) _cleanupReplaySession = null;
+    }
+  }
+
   bool _isMeetupType(String type) {
     if (type.isEmpty) return false;
-    if (type.startsWith('meetup_')) return true;
+    final normalized = type.toLowerCase();
+    if (normalized.startsWith('meetup_') || normalized == 'new_meetup') {
+      return true;
+    }
     // 서버/클라 타입이 바뀌는 경우를 대비한 안전장치
     switch (type) {
       case 'review_approval_request':
@@ -700,36 +1573,30 @@ class FCMService {
   // FCM 토큰 저장
   Future<void> _saveFCMToken(String userId, String token) async {
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🔍 [FCM 진단 1단계] FCM 토큰 저장 시작');
-      Logger.log('  - userId: $userId');
-      Logger.log('  - token (첫 20자): ${token.substring(0, 20)}...');
-      
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단 1단계] FCM 토큰 저장 시작');
+      if (Logger.isVerboseEnabled) {
+        Logger.log('  - token length: ${token.length}');
+      }
+
       // ✅ 서버에서 "토큰 중복(다른 계정에 남아있는 토큰)"을 정리하고,
       //    토큰 단위 locale(lang)까지 함께 저장하도록 Cloud Functions를 우선 사용.
       //    (한국어/영어 알림이 연속으로 2번 오는 문제의 핵심 원인 방지)
-      final locale = ui.PlatformDispatcher.instance.locale;
-      final String localeTag = (() {
-        try {
-          return locale.toLanguageTag();
-        } catch (_) {
-          final cc = locale.countryCode;
-          return cc == null || cc.isEmpty
-              ? locale.languageCode
-              : '${locale.languageCode}-$cc';
-        }
-      })();
-      Logger.log('  - locale: $localeTag');
+      // 푸시 언어도 OS locale이 아니라 앱에서 선택한 언어와 일치시킨다.
+      final localeTag = await _languageService.getLanguage();
+      if (Logger.isVerboseEnabled) Logger.log('  - locale: $localeTag');
 
       final String? platform = (() {
         if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';
         if (defaultTargetPlatform == TargetPlatform.android) return 'android';
         return null;
       })();
-      Logger.log('  - platform: $platform');
+      if (Logger.isVerboseEnabled) Logger.log('  - platform: $platform');
 
       try {
-        Logger.log('  - registerFcmToken 함수 호출 시작...');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - registerFcmToken 함수 호출 시작...');
         // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
         final callable = _functions.httpsCallable('registerFcmToken');
         await callable.call(<String, dynamic>{
@@ -739,29 +1606,15 @@ class FCMService {
         }).timeout(
           const Duration(seconds: 10),
           onTimeout: () {
-            Logger.log('⏱️ FCM 토큰 등록 타임아웃 (10초)');
+            if (Logger.isVerboseEnabled) Logger.log('⏱️ FCM 토큰 등록 타임아웃 (10초)');
             throw TimeoutException('FCM 토큰 등록 시간 초과');
           },
         );
-        Logger.log('✅ FCM 토큰 등록 완료 (서버 정리 + locale 저장)');
-        
-        // 🔍 진단: 실제로 Firestore에 저장되었는지 확인
-        try {
-          final userDoc = await _firestore.collection('users').doc(userId).get();
-          if (userDoc.exists) {
-            final data = userDoc.data();
-            Logger.log('🔍 [FCM 진단 1단계] Firestore 확인:');
-            Logger.log('  - fcmToken 존재: ${data?['fcmToken'] != null}');
-            Logger.log('  - fcmTokens 길이: ${(data?['fcmTokens'] as List?)?.length ?? 0}');
-            Logger.log('  - fcmTokenUpdatedAt: ${data?['fcmTokenUpdatedAt']}');
-          } else {
-            Logger.log('⚠️ [FCM 진단 1단계] users/{$userId} 문서가 없음!');
-          }
-        } catch (e) {
-          Logger.error('⚠️ [FCM 진단 1단계] Firestore 확인 실패: $e');
-        }
-        
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ FCM 토큰 등록 완료 (서버 정리 + locale 저장)');
+
+        if (Logger.isVerboseEnabled)
+          Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return;
       } catch (e) {
         // 네트워크/함수 오류 시 레거시 방식으로 fallback (토큰은 최소한 저장되도록)
@@ -770,17 +1623,36 @@ class FCMService {
 
       // fallback: 단일 토큰(fcmToken) + 멀티 토큰(fcmTokens)
       // ⚠️ merge set은 users 문서를 "부분 필드만 가진 상태로 생성"할 수 있으므로 update만 허용한다.
-      Logger.log('  - 레거시 방식 (Firestore 직접 update) 시작...');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - 레거시 방식 (Firestore 직접 update) 시작...');
       await _firestore.collection('users').doc(userId).update({
         'fcmToken': token,
         'fcmTokens': FieldValue.arrayUnion([token]),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       });
-      Logger.log('✅ FCM 토큰 저장 완료 (레거시 fallback)');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      // The registry (fcm_tokens/{token}) still names the previous owner until
+      // registerFcmToken succeeds, so pushes for that account could keep
+      // reaching this device. Retry the callable instead of waiting for the
+      // next app start.
+      _scheduleRegistryRetry(userId, token);
+      if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 저장 완료 (레거시 fallback)');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (e) {
       Logger.error('❌ [FCM 진단 1단계] FCM 토큰 저장 실패: $e');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    }
+  }
+
+  /// 언어 변경 직후 현재 토큰의 locale을 서버에 다시 등록한다.
+  Future<void> refreshTokenLocale(String userId) async {
+    try {
+      final token = await _messaging.getToken();
+      if (token == null || token.trim().isEmpty) return;
+      await _saveFCMToken(userId, token);
+    } catch (e) {
+      Logger.error('⚠️ FCM 토큰 locale 갱신 실패(다음 동기화에서 재시도): $e');
     }
   }
 
@@ -796,7 +1668,7 @@ class FCMService {
       await Future.wait([
         // FCM 토큰 삭제
         _messaging.deleteToken().then((_) {
-          Logger.log('✅ FCM 토큰 삭제 완료');
+          if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 삭제 완료');
         }),
         // 서버 레지스트리에서도 제거 (가능한 경우에만)
         if (token != null && token.isNotEmpty)
@@ -805,13 +1677,15 @@ class FCMService {
           }).timeout(
             const Duration(seconds: 10),
             onTimeout: () {
-              Logger.log('⏱️ FCM 토큰 해제 타임아웃 (10초)');
+              if (Logger.isVerboseEnabled)
+                Logger.log('⏱️ FCM 토큰 해제 타임아웃 (10초)');
               throw TimeoutException('FCM 토큰 해제 시간 초과');
             },
           ).then((_) {
-            Logger.log('✅ unregisterFcmToken 완료');
+            if (Logger.isVerboseEnabled) Logger.log('✅ unregisterFcmToken 완료');
           }, onError: (e) {
-            Logger.log('⚠️ unregisterFcmToken 실패(무시): $e');
+            if (Logger.isVerboseEnabled)
+              Logger.log('⚠️ unregisterFcmToken 실패(무시): $e');
           }),
         // Firestore에서도 "해당 토큰"만 제거 (다른 기기 토큰은 보존)
         if (token != null && token.isNotEmpty)
@@ -844,12 +1718,14 @@ class FCMService {
 
             tx.set(ref, updates, SetOptions(merge: true));
           }).then((_) {
-            Logger.log('✅ Firestore에서 현재 기기 FCM 토큰 제거 완료');
+            if (Logger.isVerboseEnabled)
+              Logger.log('✅ Firestore에서 현재 기기 FCM 토큰 제거 완료');
           }),
       ]).timeout(
         const Duration(seconds: 5),
         onTimeout: () {
-          Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (5초) - 로그아웃 계속 진행');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (5초) - 로그아웃 계속 진행');
           return [];
         },
       );
@@ -863,7 +1739,7 @@ class FCMService {
   Future<void> subscribeToTopic(String topic) async {
     try {
       await _messaging.subscribeToTopic(topic);
-      Logger.log('✅ 토픽 구독 완료: $topic');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 토픽 구독 완료: $topic');
     } catch (e) {
       Logger.error('❌ 토픽 구독 실패: $e');
       rethrow;
@@ -874,7 +1750,7 @@ class FCMService {
   Future<void> unsubscribeFromTopic(String topic) async {
     try {
       await _messaging.unsubscribeFromTopic(topic);
-      Logger.log('✅ 토픽 구독 취소 완료: $topic');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 토픽 구독 취소 완료: $topic');
     } catch (e) {
       Logger.error('❌ 토픽 구독 취소 실패: $e');
       rethrow;

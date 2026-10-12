@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import '../utils/country_flag_helper.dart';
+import '../l10n/ui_locale.dart';
 
 /// 국기 이모티콘을 표시하는 위젯 (동그라미 없이 이모티콘만)
 class CountryFlagCircle extends StatelessWidget {
@@ -24,7 +25,7 @@ class CountryFlagCircle extends StatelessWidget {
       flagEmoji,
       style: TextStyle(
         fontSize: size * 1.2, // 이모티콘 크기를 기존보다 크게 (24 → 28.8)
-        height: 1.0,
+        height: isChineseUi(context) ? 1.3 : 1.0,
       ),
       textAlign: TextAlign.center,
     );

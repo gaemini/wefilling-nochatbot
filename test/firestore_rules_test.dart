@@ -2,6 +2,8 @@
 // Firestore 보안 규칙 테스트
 // 새로운 리뷰 합의 기능의 보안 규칙 검증
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 // 보안 규칙 테스트를 위한 시뮬레이션 클래스
@@ -51,6 +53,45 @@ class FirestoreRulesTest {
 }
 
 void main() {
+  group('Firestore Rules - Post Snack Chat link', () {
+    // 실제 규칙 평가는 functions/scripts/test_post_snack_chat_emulator.js가
+    // 에뮬레이터로 검증한다. 여기서는 규칙 원문에서 불변 조건이 빠지지 않게 막는다.
+    final rules = File('firestore.rules').readAsStringSync();
+    final postsBlock = rules.substring(
+      rules.indexOf('    match /posts/{postId} {'),
+      rules.indexOf('    match /meetups/{meetupId} {'),
+    );
+
+    test('작성자를 포함해 누구도 클라이언트로 snackChatId를 바꿀 수 없다', () {
+      expect(
+        postsBlock,
+        contains(
+          "affectedKeys().hasAny(['linkPreview', 'video', 'snackChatId'])",
+        ),
+      );
+    });
+
+    test('비작성자 업데이트 allowlist에는 snackChatId가 없다', () {
+      final hasOnlyLists = RegExp(r"hasOnly\(\[([^\]]*)\]\)")
+          .allMatches(postsBlock)
+          .map((m) => m.group(1)!);
+      expect(hasOnlyLists, isNotEmpty);
+      expect(hasOnlyLists.any((list) => list.contains('snackChatId')), isFalse);
+    });
+
+    test('snack_chats 클라이언트 업데이트는 postId/allowPostJoin을 허용하지 않는다',
+        () {
+      final roomBlock = rules.substring(
+        rules.indexOf('    match /snack_chats/{chatId} {'),
+      );
+      expect(roomBlock, contains('allow create: if false;'));
+      final end = roomBlock.indexOf('\n    match /', 10);
+      final scoped = end > 0 ? roomBlock.substring(0, end) : roomBlock;
+      expect(scoped.contains("'postId'"), isFalse);
+      expect(scoped.contains("'allowPostJoin'"), isFalse);
+    });
+  });
+
   group('Firestore Rules - Admin Settings', () {
     test('관리자만 Feature Flag 설정 가능', () {
       // Given: 관리자와 일반 사용자

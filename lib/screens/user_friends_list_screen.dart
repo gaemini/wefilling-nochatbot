@@ -1,17 +1,21 @@
 // lib/screens/user_friends_list_screen.dart
 // 특정 사용자의 친구 목록 화면
-// 프로필 접근 없이 목록만 표시
+// 프로필 친구 네트워크 탐색 목록
 
+import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import '../services/relationship_service.dart';
-import '../models/relationship_status.dart';
+import '../services/cache/app_image_cache_manager.dart';
 import '../models/user_profile.dart';
 import '../constants/app_constants.dart';
 import '../widgets/country_flag_circle.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
-import 'main_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class UserFriendsListScreen extends StatefulWidget {
   final String userId;
@@ -29,135 +33,76 @@ class UserFriendsListScreen extends StatefulWidget {
 
 class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   final RelationshipService _relationshipService = RelationshipService();
-  List<UserProfile>? _friends;
-  Set<String>? _myFriendIds;
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  List<ProfileFriendNetworkMember> _friends =
+      const <ProfileFriendNetworkMember>[];
   final Set<String> _requestingIds = <String>{};
   final Set<String> _requestedIds = <String>{};
   bool _isLoading = true;
-  bool _permissionDenied = false;
+  bool _isLoadingMore = false;
+  int? _nextCursor;
+  int _totalCount = 0;
+  int _mutualCount = 0;
+  String _query = '';
+  Timer? _searchDebounce;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _checkPermissionAndLoad();
+    _scrollController.addListener(_handleScroll);
+    _loadFriends();
   }
 
-  Future<void> _checkPermissionAndLoad() async {
-    try {
-      final currentUserId = _relationshipService.currentUserId;
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
 
-      // 본인 친구 목록은 항상 허용
-      if (currentUserId != null && currentUserId == widget.userId) {
-        await _loadFriends();
-        return;
-      }
-
-      // 로그인 안 된 상태에서는 접근 불가
-      if (currentUserId == null) {
-        _denyAccess();
-        return;
-      }
-
-      // 친구가 아니면 접근 불가
-      final status =
-          await _relationshipService.getRelationshipStatus(widget.userId);
-      if (status != RelationshipStatus.friends) {
-        _denyAccess();
-        return;
-      }
-
-      await _loadFriends();
-    } catch (_) {
-      _denyAccess();
+  void _handleScroll() {
+    if (_scrollController.position.extentAfter < 260) {
+      unawaited(_loadMore());
     }
   }
 
-  void _denyAccess() {
-    if (!mounted) return;
-    setState(() {
-      _permissionDenied = true;
-      _isLoading = false;
-      _errorMessage = null;
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
       if (!mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.myFriendsOnly),
-          backgroundColor: Colors.black87,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      Navigator.of(context).maybePop();
+      final normalized = value.trim();
+      if (normalized == _query) return;
+      setState(() => _query = normalized);
+      unawaited(_loadFriends());
     });
   }
 
-  Future<void> _loadFriends() async {
+  Future<void> _loadFriends({bool forceRefresh = false}) async {
     try {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
       });
-
-      final currentUserId = _relationshipService.currentUserId;
-
-      final results = await Future.wait([
-        _relationshipService.getUserFriends(widget.userId),
-        currentUserId != null
-            ? _relationshipService.getUserFriends(currentUserId)
-            : Future.value(<UserProfile>[]),
-      ]);
-
-      // 친구의 친구 목록에서도 "나"가 보이도록 현재 사용자 필터링을 하지 않는다.
-      // (기존: 내 uid를 제외해서 목록에서 사라짐)
-      final friends = (results[0] as List<UserProfile>).toList(growable: false);
-
-      final myFriends = results[1] as List<UserProfile>;
-      final myFriendIds = myFriends.map((u) => u.uid).toSet();
-      // 내 카드가 "이미 친구" 섹션에 자연스럽게 포함되도록(액션 버튼/탭 동작 일관)
-      if (currentUserId != null) {
-        myFriendIds.add(currentUserId);
-      }
-
-      // 비친구 목록 중 "내가 이미 요청 보낸 상태"는 버튼을 요청됨으로 고정
-      final pendingOutIds = <String>{};
-      if (currentUserId != null) {
-        final nonFriends =
-            friends.where((u) => !myFriendIds.contains(u.uid)).toList();
-        if (nonFriends.isNotEmpty) {
-          final statuses = await Future.wait(
-            nonFriends.map(
-              (u) async {
-                try {
-                  return await _relationshipService
-                      .getRelationshipStatus(u.uid);
-                } catch (_) {
-                  return RelationshipStatus.none;
-                }
-              },
-            ),
-          );
-          for (var i = 0; i < nonFriends.length; i++) {
-            if (statuses[i] == RelationshipStatus.pendingOut) {
-              pendingOutIds.add(nonFriends[i].uid);
-            }
-          }
-        }
-      }
+      final page = await _relationshipService.getProfileFriendNetwork(
+        targetUid: widget.userId,
+        pageSize: 20,
+        query: _query,
+        forceRefresh: forceRefresh,
+      );
 
       if (mounted) {
         setState(() {
-          _friends = friends;
-          _myFriendIds = myFriendIds;
-          _requestedIds
-            ..clear()
-            ..addAll(pendingOutIds);
+          _friends = page.friends;
+          _nextCursor = page.nextCursor;
+          _totalCount = page.totalCount;
+          _mutualCount = page.mutualCount;
           _isLoading = false;
         });
-        Logger.log('✅ ${widget.userName}의 친구 목록 로드: ${friends.length}명');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ ${widget.userName}의 친구 목록 로드: ${page.friends.length}명');
       }
     } catch (e) {
       Logger.error('친구 목록 로드 오류: $e');
@@ -170,24 +115,62 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
     }
   }
 
+  Future<void> _loadMore() async {
+    final cursor = _nextCursor;
+    if (cursor == null || _isLoading || _isLoadingMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final page = await _relationshipService.getProfileFriendNetwork(
+        targetUid: widget.userId,
+        pageSize: 20,
+        cursor: cursor,
+        query: _query,
+      );
+      if (!mounted) return;
+      setState(() {
+        final known = _friends.map((item) => item.profile.uid).toSet();
+        _friends = [
+          ..._friends,
+          ...page.friends.where((item) => known.add(item.profile.uid)),
+        ];
+        _nextCursor = page.nextCursor;
+        _isLoadingMore = false;
+      });
+    } catch (error) {
+      Logger.error('친구 목록 추가 로드 오류: $error');
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        toolbarHeight: width < 360 ? 52 : 56,
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: Color(0xFF111827),
+          ),
+          iconSize: 22,
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           '${widget.userName}${AppLocalizations.of(context)!.friendsOfUser}',
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: context.rf(18).clamp(17, 19).toDouble(),
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
           ),
         ),
         centerTitle: true,
@@ -197,72 +180,10 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   }
 
   Widget _buildBody() {
-    if (_permissionDenied) {
-      final l10n = AppLocalizations.of(context)!;
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Icon(
-                  Icons.lock_outline,
-                  color: Color(0xFF6B7280),
-                  size: 30,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                l10n.myFriendsOnly,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.pointColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    l10n.back,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(
-          color: AppColors.pointColor,
+          color: Color(0xFF667085),
         ),
       );
     }
@@ -272,36 +193,34 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.grey[400],
+            const Icon(
+              Icons.error_outline_rounded,
+              size: 34,
+              color: Color(0xFF98A2B3),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
               _errorMessage!,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 16,
-                color: Colors.grey[600],
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF667085),
               ),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton(
+            const SizedBox(height: 8),
+            TextButton(
               onPressed: _loadFriends,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.pointColor,
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF344054),
               ),
-              child: const Text(
+              child: Text(
                 '다시 시도',
                 style: TextStyle(
-                  fontFamily: 'Pretendard',
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -312,31 +231,25 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       );
     }
 
-    if (_friends == null || _friends!.isEmpty) {
+    if (_friends.isEmpty && _query.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.people_outline,
-                size: 48,
-                color: Colors.grey[400],
-              ),
+            const Icon(
+              Icons.people_outline_rounded,
+              size: 34,
+              color: Color(0xFF98A2B3),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
               AppLocalizations.of(context)!.noFriendsYet,
               style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[600],
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF667085),
               ),
             ),
           ],
@@ -344,238 +257,398 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       );
     }
 
-    final myFriendIds = _myFriendIds ?? <String>{};
-    final friendsGroup = _friends!
-        .where((u) => myFriendIds.contains(u.uid))
+    final mutualGroup =
+        _friends.where((member) => member.isMutual).toList(growable: false);
+    final alreadyFriendsGroup = _friends
+        .where((member) =>
+            !member.isMutual && (member.isMyFriend || member.isCurrentUser))
         .toList(growable: false);
-    final nonFriendsGroup = _friends!
-        .where((u) => !myFriendIds.contains(u.uid))
+    final otherGroup = _friends
+        .where((member) =>
+            !member.isMutual && !member.isMyFriend && !member.isCurrentUser)
         .toList(growable: false);
 
     final l10n = AppLocalizations.of(context)!;
 
     return RefreshIndicator(
-      color: AppColors.pointColor,
+      color: const Color(0xFF667085),
       onRefresh: _loadFriends,
       child: CustomScrollView(
+        controller: _scrollController,
+        scrollCacheExtent: const ScrollCacheExtent.viewport(1),
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
         slivers: [
-          const SliverToBoxAdapter(child: SizedBox(height: 12)),
-          if (friendsGroup.isNotEmpty) ...[
+          SliverToBoxAdapter(child: _buildSearchField()),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
+              child: Text(
+                (isChineseUi(context) ? '${_totalCount}位好友' : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '친구 $_totalCount명'
+                        '${_mutualCount > 0 ? ' · 함께 아는 친구 $_mutualCount명' : ''}'
+                    : '$_totalCount friends'
+                        '${_mutualCount > 0 ? ' · $_mutualCount mutual' : ''}'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF667085),
+                ),
+              ),
+            ),
+          ),
+          if (_friends.isEmpty && _query.isNotEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Text(
+                  (isChineseUi(context) ? '没有匹配的好友。' : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '검색 결과가 없어요.'
+                      : 'No matching friends.'),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: ['NotoSansKR'],
+                    fontSize: 14,
+                    color: Color(0xFF98A2B3),
+                  ),
+                ),
+              ),
+            ),
+          if (mutualGroup.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: (isChineseUi(context) ? '共同好友' : Localizations.localeOf(context).languageCode == 'ko'
+                    ? '함께 아는 친구'
+                    : 'Mutual friends'),
+                count: mutualGroup.length,
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _buildFriendCard(
+                  mutualGroup[index],
+                ),
+                childCount: mutualGroup.length,
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
+          ],
+          if (alreadyFriendsGroup.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: _SectionHeader(
                 title: l10n.alreadyFriends,
-                count: friendsGroup.length,
+                count: alreadyFriendsGroup.length,
               ),
             ),
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) => _buildFriendCard(
-                  friendsGroup[index],
-                  isFriend: true,
+                  alreadyFriendsGroup[index],
                 ),
-                childCount: friendsGroup.length,
+                childCount: alreadyFriendsGroup.length,
               ),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
           ],
-          if (nonFriendsGroup.isNotEmpty) ...[
+          if (otherGroup.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: _SectionHeader(
                 title: l10n.notFriends,
-                count: nonFriendsGroup.length,
+                count: otherGroup.length,
               ),
             ),
             SliverList(
               delegate: SliverChildBuilderDelegate(
-                (context, index) => _buildFriendCard(
-                  nonFriendsGroup[index],
-                  isFriend: false,
-                ),
-                childCount: nonFriendsGroup.length,
+                (context, index) => _buildFriendCard(otherGroup[index]),
+                childCount: otherGroup.length,
               ),
             ),
           ],
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          if (_isLoadingMore)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(18),
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: MediaQuery.paddingOf(context).bottom + 24,
+            ),
+          ),
         ],
       ),
     );
   }
 
+  Widget _buildSearchField() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: (isChineseUi(context) ? '搜索昵称' : isKo ? '닉네임 검색' : 'Search by nickname'),
+          prefixIcon: const Icon(Icons.search_rounded, size: 21),
+          suffixIcon: _searchController.text.isEmpty
+              ? null
+              : IconButton(
+                  onPressed: () {
+                    _searchController.clear();
+                    _onSearchChanged('');
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.close_rounded, size: 19),
+                ),
+          filled: false,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 13),
+          enabledBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          focusedBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: Color(0xFF475569), width: 1.3),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFriendCard(
-    UserProfile friend, {
-    required bool isFriend,
-  }) {
+    ProfileFriendNetworkMember member,
+  ) {
+    final friend = member.profile;
     final l10n = AppLocalizations.of(context)!;
     final currentUserId = _relationshipService.currentUserId;
     final isMe = currentUserId != null && friend.uid == currentUserId;
     final isRequesting = _requestingIds.contains(friend.uid);
-    final isRequested = _requestedIds.contains(friend.uid);
+    final isRequested =
+        member.isPendingOut || _requestedIds.contains(friend.uid);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: (isFriend || isMe)
-            ? () {
-                if (isMe) {
-                  _openMyPage();
-                } else {
-                  _openProfile(friend);
-                }
-              }
-            : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Color(0xFFE5E7EB),
-                ),
-                child: friend.hasProfileImage
-                    ? ClipOval(
-                        child: Image.network(
-                          friend.photoURL!,
-                          width: 44,
-                          height: 44,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.person_outline,
-                            size: 22,
-                            color: Color(0xFF6B7280),
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < 360;
+    final horizontalPadding = isCompact ? 12.0 : (width < 600 ? 16.0 : 24.0);
+    final avatarSize = isCompact ? 40.0 : 44.0;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Material(
+              color: Colors.white,
+              child: InkWell(
+                onTap: () => _openProfile(friend),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    10,
+                    horizontalPadding - 4,
+                    10,
+                  ),
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.2,
+                    child: Row(
+                      children: [
+                        _friendAvatar(friend, avatarSize),
+                        SizedBox(width: isCompact ? 10 : 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _displayNameWithMeSuffix(
+                                  friend.displayNameOrNickname,
+                                  isMe,
+                                ),
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize:
+                                      context.rf(14).clamp(13, 15).toDouble(),
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF111827),
+                                  height: isChineseUi(context) ? 1.3 : 1.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (friend.isSchoolVerified) ...[
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.verified_rounded,
+                                        size: 14, color: AppColors.pointColor),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        (isChineseUi(context) ? '已通过学校认证' : Localizations.localeOf(context)
+                                                    .languageCode ==
+                                                'ko'
+                                            ? '학교 인증'
+                                            : 'School verified'),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontFamily: uiFontFamily(context, 'Inter'),
+                                          fontFamilyFallback: ['NotoSansKR'],
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              if (friend.nationality != null &&
+                                  friend.nationality!.isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    CountryFlagCircle(
+                                      nationality: friend.nationality!,
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Expanded(
+                                      child: Text(
+                                        friend.nationality!,
+                                        style: TextStyle(
+                                          fontFamily: uiFontFamily(context, 'Inter'),
+                                          fontFamilyFallback: const [
+                                            'NotoSansKR'
+                                          ],
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: Color(0xFF8B93A1),
+                                          height: isChineseUi(context) ? 1.3 : 1.2,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                      )
-                    : const Icon(
-                        Icons.person_outline,
-                        size: 22,
-                        color: Color(0xFF6B7280),
-                      ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _displayNameWithMeSuffix(
-                          friend.displayNameOrNickname, isMe),
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF111827),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (friend.nationality != null &&
-                        friend.nationality!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CountryFlagCircle(
-                            nationality: friend.nationality!,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              friend.nationality!,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 13,
-                                fontWeight: FontWeight.w400,
-                                color: Color(0xFF6B7280),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                        const SizedBox(width: 4),
+                        if (member.isMyFriend || isMe || member.isCurrentUser)
+                          const SizedBox.square(
+                            dimension: 40,
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              size: 20,
+                              color: Color(0xFF98A2B3),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (isFriend || isMe)
-                const Icon(
-                  Icons.chevron_right,
-                  color: Color(0xFF9CA3AF),
-                )
-              else
-                SizedBox(
-                  height: 32,
-                  child: OutlinedButton(
-                    onPressed: (isRequesting || isRequested)
-                        ? null
-                        : () => _sendFriendRequest(friend),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.pointColor,
-                      side: BorderSide(
-                        color: (isRequesting || isRequested)
-                            ? const Color(0xFFE5E7EB)
-                            : AppColors.pointColor,
-                      ),
-                      backgroundColor: (isRequesting || isRequested)
-                          ? const Color(0xFFF3F4F6)
-                          : Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (isRequesting)
-                          const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         else
-                          const Icon(Icons.person_add_alt_1, size: 16),
-                        const SizedBox(width: 6),
-                        Text(
-                          isRequested
-                              ? l10n.requestPending
-                              : l10n.friendRequest,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                          TextButton(
+                            onPressed: (isRequesting || isRequested)
+                                ? null
+                                : () => _sendFriendRequest(friend),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF344054),
+                              disabledForegroundColor: const Color(0xFF98A2B3),
+                              minimumSize: const Size(44, 40),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 6,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: isRequesting
+                                ? const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF667085),
+                                    ),
+                                  )
+                                : Text(
+                                    isRequested
+                                        ? l10n.requestPending
+                                        : l10n.friendRequest,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
                           ),
-                        ),
                       ],
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+            ),
+            Divider(
+              height: 1,
+              thickness: 1,
+              indent: horizontalPadding + avatarSize + (isCompact ? 10 : 12),
+              endIndent: horizontalPadding,
+              color: const Color(0xFFEAECF0),
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _friendAvatar(UserProfile friend, double size) {
+    final cacheWidth =
+        (size * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(96, 256);
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Color(0xFFE5E7EB),
+      ),
+      child: friend.hasProfileImage
+          ? ClipOval(
+              child: CachedNetworkImage(
+                imageUrl: friend.photoURL!,
+                cacheManager: AppImageCacheManager.instance,
+                width: size,
+                height: size,
+                memCacheWidth: cacheWidth,
+                fit: BoxFit.cover,
+                fadeInDuration: Duration.zero,
+                fadeOutDuration: Duration.zero,
+                placeholder: (_, __) => Icon(
+                  Icons.person_outline_rounded,
+                  size: size * 0.5,
+                  color: const Color(0xFF667085),
+                ),
+                errorWidget: (_, __, ___) => Icon(
+                  Icons.person_outline_rounded,
+                  size: size * 0.5,
+                  color: const Color(0xFF667085),
+                ),
+              ),
+            )
+          : Icon(
+              Icons.person_outline_rounded,
+              size: size * 0.5,
+              color: const Color(0xFF667085),
+            ),
     );
   }
 
@@ -589,25 +662,16 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           photoURL: user.photoURL,
           email: user.email,
           university: user.university,
+          allowNonFriendsPreview: true,
         ),
       ),
-    );
-  }
-
-  void _openMyPage() {
-    // 하단 네비게이션바가 있는 "원래" 마이페이지 탭으로 이동
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => const MainScreen(initialTabIndex: 3),
-      ),
-      (route) => false,
     );
   }
 
   String _displayNameWithMeSuffix(String name, bool isMe) {
     if (!isMe) return name;
     final locale = Localizations.localeOf(context).languageCode;
-    return locale == 'ko' ? '$name (나)' : '$name (Me)';
+    return (isChineseUi(context) ? '${name}（我）' : locale == 'ko' ? '$name (나)' : '$name (Me)');
   }
 
   Future<void> _sendFriendRequest(UserProfile user) async {
@@ -645,10 +709,11 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         SnackBar(content: Text(msg)),
       );
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _requestingIds.remove(user.uid);
-      });
+      if (mounted) {
+        setState(() {
+          _requestingIds.remove(user.uid);
+        });
+      }
     }
   }
 }
@@ -664,38 +729,32 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = width < 360 ? 12.0 : (width < 600 ? 16.0 : 24.0);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            10,
+            horizontalPadding,
+            7,
+          ),
+          child: Text(
+            '$title  ${count > 99 ? '99+' : count}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF6B7280),
+              color: Color(0xFF667085),
               letterSpacing: -0.2,
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              count > 99 ? '99+' : count.toString(),
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF6B7280),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -1,8 +1,14 @@
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../l10n/app_localizations.dart';
-import '../../models/snack_chat.dart';
 import '../../design/tokens.dart';
+import '../../models/snack_chat.dart';
+import '../../models/user_profile.dart';
+import '../../repositories/users_repository.dart';
+import '../../services/cache/app_image_cache_manager.dart';
+import 'audience_ring.dart';
+import '../../l10n/ui_locale.dart';
 
 class SnackChatCard extends StatelessWidget {
   final SnackChat snackChat;
@@ -11,6 +17,7 @@ class SnackChatCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final String? currentUserId;
   final bool isMuted;
+  final bool isPast;
 
   const SnackChatCard({
     super.key,
@@ -20,179 +27,411 @@ class SnackChatCard extends StatelessWidget {
     this.onLongPress,
     this.currentUserId,
     this.isMuted = false,
+    this.isPast = false,
   });
+
+  String _formattedListTime(BuildContext context) {
+    final timestamp = snackChat.lastMessageTime;
+    final now = DateTime.now();
+    final isToday = timestamp.year == now.year &&
+        timestamp.month == now.month &&
+        timestamp.day == now.day;
+
+    if (!isToday) {
+      if (timestamp.year == now.year) {
+        return '${timestamp.month}/${timestamp.day}';
+      }
+      return '${timestamp.year % 100}.${timestamp.month}.${timestamp.day}';
+    }
+
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final period = timestamp.hour < 12
+        ? ((isChineseUi(context)
+            ? '上午'
+            : isKo
+                ? '오전'
+                : 'AM'))
+        : ((isChineseUi(context)
+            ? '下午'
+            : isKo
+                ? '오후'
+                : 'PM'));
+    final hour = timestamp.hour % 12 == 0 ? 12 : timestamp.hour % 12;
+    final minute = timestamp.minute.toString().padLeft(2, '0');
+    if (isChineseUi(context)) return '$period $hour:$minute';
+    return isKo ? '$period $hour:$minute' : '$hour:$minute $period';
+  }
+
+  String? _remainingTimeLabel(BuildContext context, {required bool isKo}) {
+    if (snackChat.activeDurationHours != 24) return null;
+    final remaining = snackChat.expiresAt.difference(DateTime.now());
+    if (remaining <= Duration.zero)
+      return (isChineseUi(context)
+          ? '已过期'
+          : isKo
+              ? '만료됨'
+              : 'Expired');
+    if (remaining.inSeconds < 60)
+      return (isChineseUi(context)
+          ? '即将结束'
+          : isKo
+              ? '곧 만료'
+              : 'Ending soon');
+
+    final minutes = (remaining.inSeconds / 60).ceil();
+    if (minutes < 60) {
+      return (isChineseUi(context)
+          ? '剩余${minutes}分钟'
+          : isKo
+              ? '$minutes분 남음'
+              : '$minutes min left');
+    }
+    final hours = (minutes / 60).ceil();
+    return (isChineseUi(context)
+        ? '剩余${hours}小时'
+        : isKo
+            ? '$hours시간 남음'
+            : '$hours h left');
+  }
+
+  String _localizedSystemPreview(BuildContext context, String raw,
+      {required bool isKo}) {
+    RegExpMatch? match =
+        RegExp(r'^(.+) joined the Snack Chat\.$').firstMatch(raw);
+    match ??= RegExp(r'^(.+)님이 스낵챗에 참여했어요\.$').firstMatch(raw);
+    if (match != null) {
+      final name = match.group(1)!.trim();
+      return (isChineseUi(context)
+          ? '${name}加入了群聊。'
+          : isKo
+              ? '$name님이 스낵챗에 참여했어요.'
+              : '$name joined the Snack Chat.');
+    }
+
+    match = RegExp(r'^(.+) left the Snack Chat\.$').firstMatch(raw);
+    match ??= RegExp(r'^(.+)님이 스낵챗에서 나갔어요\.$').firstMatch(raw);
+    if (match != null) {
+      final name = match.group(1)!.trim();
+      return (isChineseUi(context)
+          ? '${name}退出了群聊。'
+          : isKo
+              ? '$name님이 스낵챗에서 나갔어요.'
+              : '$name left the Snack Chat.');
+    }
+
+    match =
+        RegExp(r'^The Snack Chat name changed to "(.+)"\.$').firstMatch(raw);
+    match ??= RegExp(r'^스낵챗 이름이 "(.+)"로 변경됐어요\.$').firstMatch(raw);
+    if (match != null) {
+      final title = match.group(1)!.trim();
+      return (isChineseUi(context)
+          ? '群聊名称已改为“${title}”。'
+          : isKo
+              ? '스낵챗 이름이 "$title"로 변경됐어요.'
+              : 'The Snack Chat name changed to "$title".');
+    }
+
+    match = RegExp(r'^(.+) created a poll: (.+)$').firstMatch(raw);
+    match ??= RegExp(r'^(.+)님이 투표를 만들었어요: (.+)$').firstMatch(raw);
+    if (match != null) {
+      final name = match.group(1)!.trim();
+      final question = match.group(2)!.trim();
+      return (isChineseUi(context)
+          ? '${name}创建了投票：${question}'
+          : isKo
+              ? '$name님이 투표를 만들었어요: $question'
+              : '$name created a poll: $question');
+    }
+
+    match = RegExp(r'^Poll ended: (.+)$').firstMatch(raw);
+    match ??= RegExp(r'^투표가 종료됐어요: (.+)$').firstMatch(raw);
+    if (match != null) {
+      final question = match.group(1)!.trim();
+      return (isChineseUi(context)
+          ? '投票已结束：${question}'
+          : isKo
+              ? '투표가 종료됐어요: $question'
+              : 'Poll ended: $question');
+    }
+
+    return raw;
+  }
 
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final l10n = AppLocalizations.of(context)!;
+    if (isPast) return _buildPastCard(context, isKo: isKo);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final horizontalPadding =
+        (screenWidth * 0.045).clamp(14.0, 20.0).toDouble();
+    final isCompact = screenWidth < 360;
+    final is24HourChat = snackChat.activeDurationHours == 24;
+    final remainingTimeLabel = _remainingTimeLabel(context, isKo: isKo);
     final isFavorited = snackChat.isFavoritedBy(currentUserId);
-    final unreadCount = currentUserId != null
-        ? snackChat.getMyUnreadCount(currentUserId!)
-        : 0;
+    final unreadCount =
+        currentUserId == null ? 0 : snackChat.getMyUnreadCount(currentUserId!);
     final hasUnread = unreadCount > 0;
-    final accentColor = hasUnread
-        ? const Color(0xFF3B82F6)
-        : isFavorited
-            ? const Color(0xFFF59E0B)
-            : const Color(0xFFD1D5DB);
     final rawLastMessage = snackChat.lastMessage.trim();
-    final localizedLastMessage = rawLastMessage == '[이미지]'
-        ? (isKo ? '[이미지]' : '[Image]')
-        : rawLastMessage;
-    return Container(
-      margin: EdgeInsets.zero,
-      child: Material(
-        color: BrandColors.surface,
-        borderRadius: BorderRadius.zero,
-        child: InkWell(
-          borderRadius: BorderRadius.zero,
-          onTap: onTap,
-          onLongPress: onLongPress,
+    final fileSummaryExpired = snackChat.lastMessageType == 'file' &&
+        snackChat.lastMessageExpiresAt != null &&
+        !DateTime.now().isBefore(snackChat.lastMessageExpiresAt!);
+    final lastMessage = fileSummaryExpired
+        ? ((isChineseUi(context)
+            ? '文件已过期'
+            : isKo
+                ? '만료된 파일입니다'
+                : 'File expired'))
+        : snackChat.lastMessageType == 'system'
+            ? _localizedSystemPreview(context, rawLastMessage, isKo: isKo)
+            : rawLastMessage == '[이미지]'
+                ? ((isChineseUi(context)
+                    ? '[图片]'
+                    : isKo
+                        ? '[이미지]'
+                        : '[Image]'))
+                : rawLastMessage.isEmpty
+                    ? ((isChineseUi(context)
+                        ? '暂无消息'
+                        : isKo
+                            ? '아직 메시지가 없습니다'
+                            : 'No messages yet'))
+                    : rawLastMessage;
+
+    return Material(
+      color: BrandColors.surface,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(
-              DesignTokens.s20,
-              DesignTokens.s12,
-              DesignTokens.s20,
-              DesignTokens.s8,
+            constraints: const BoxConstraints(minHeight: 82),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              10,
+              isCompact ? 10 : 12,
+              10,
             ),
-            decoration: const BoxDecoration(
-              color: BrandColors.surface,
-              border: Border(
-                bottom: BorderSide(color: BrandColors.divider),
-              ),
-            ),
-            child: Stack(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Positioned(
-                  left: 0,
-                  top: 6,
-                  bottom: 6,
-                  child: Container(
-                    width: 3,
-                    decoration: BoxDecoration(
-                      color: accentColor,
-                      borderRadius: BorderRadius.circular(999),
+                if (is24HourChat)
+                  AudienceRing(
+                    restricted: true,
+                    size: 52,
+                    ringWidth: 3,
+                    innerGap: 1.5,
+                    borderRadius: BorderRadius.circular(11),
+                    semanticLabel: (isChineseUi(context)
+                        ? '24小时群聊'
+                        : isKo
+                            ? '24시간 스낵챗'
+                            : '24-hour Snack Chat'),
+                    child: _ParticipantAvatarMosaic(
+                      participantIds: snackChat.participantIds,
+                      currentUserId: currentUserId,
                     ),
+                  )
+                else
+                  _ParticipantAvatarMosaic(
+                    participantIds: snackChat.participantIds,
+                    currentUserId: currentUserId,
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
+                SizedBox(width: isCompact ? 9 : 11),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          Expanded(
+                          Flexible(
                             child: Text(
                               snackChat.title,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF111827),
-                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize: 17,
+                                height: isChineseUi(context) ? 1.3 : 1.25,
+                                fontWeight: hasUnread
+                                    ? FontWeight.w800
+                                    : FontWeight.w700,
+                                color: BrandColors.textPrimary,
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          if (hasUnread)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 7, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF3B82F6),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                unreadCount > 99 ? '99+' : '$unreadCount',
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                          const SizedBox(width: 5),
+                          Text(
+                            '${snackChat.participantCount}',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: ['NotoSansKR'],
+                              fontSize: 14,
+                              height: isChineseUi(context) ? 1.3 : 1.25,
+                              fontWeight: FontWeight.w600,
+                              color: BrandColors.neutral500,
+                            ),
+                          ),
+                          if (isMuted) ...[
+                            const SizedBox(width: 3),
+                            const Icon(
+                              Icons.notifications_off_rounded,
+                              size: 14,
+                              color: BrandColors.neutral500,
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        lastMessage,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 13,
+                          height: 1.35,
+                          fontWeight:
+                              hasUnread ? FontWeight.w600 : FontWeight.w400,
+                          color: rawLastMessage.isEmpty
+                              ? BrandColors.textHint
+                              : hasUnread
+                                  ? BrandColors.textPrimary
+                                  : BrandColors.neutral500,
+                        ),
+                      ),
+                      if (remainingTimeLabel != null) ...[
+                        const SizedBox(height: 2),
+                        SnackChatDurationStatus(
+                          label: remainingTimeLabel,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 72,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        _formattedListTime(context),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 11,
+                          height: isChineseUi(context) ? 1.3 : 1.25,
+                          fontWeight:
+                              hasUnread ? FontWeight.w700 : FontWeight.w500,
+                          color: hasUnread
+                              ? BrandColors.textPrimary
+                              : BrandColors.neutral500,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (hasUnread) ...[
+                            Semantics(
+                              label: (isChineseUi(context)
+                                  ? '$unreadCount条未读消息'
+                                  : isKo
+                                      ? '읽지 않은 메시지 $unreadCount개'
+                                      : '$unreadCount unread messages'),
+                              excludeSemantics: true,
+                              child: Container(
+                                constraints: const BoxConstraints(
+                                  minWidth: 18,
+                                  minHeight: 18,
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 5),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: BrandColors.info,
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Text(
+                                  unreadCount > 99 ? '99+' : '$unreadCount',
+                                  style: TextStyle(
+                                    fontFamily:
+                                        uiFontFamily(context, 'Inter'),
+                                    fontSize: 11,
+                                    height: 1.2,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
                             ),
-                          if (hasUnread) const SizedBox(width: 6),
-                          if (isMuted)
-                            const Padding(
-                              padding: EdgeInsets.only(right: 4),
-                              child: Icon(
-                                Icons.notifications_off_outlined,
-                                size: 16,
-                                color: Color(0xFF9CA3AF),
+                            const SizedBox(width: 4),
+                          ],
+                          Semantics(
+                            button: true,
+                            selected: isFavorited,
+                            label: isFavorited
+                                ? ((isChineseUi(context)
+                                    ? '取消收藏'
+                                    : isKo
+                                        ? '즐겨찾기 해제'
+                                        : 'Remove from favorites'))
+                                : ((isChineseUi(context)
+                                    ? '加入收藏'
+                                    : isKo
+                                        ? '즐겨찾기 추가'
+                                        : 'Add to favorites')),
+                            child: Tooltip(
+                              message: isFavorited
+                                  ? ((isChineseUi(context)
+                                      ? '取消收藏'
+                                      : isKo
+                                          ? '즐겨찾기 해제'
+                                          : 'Remove from favorites'))
+                                  : ((isChineseUi(context)
+                                      ? '加入收藏'
+                                      : isKo
+                                          ? '즐겨찾기 추가'
+                                          : 'Add to favorites')),
+                              child: SizedBox.square(
+                                dimension: 44,
+                                child: InkResponse(
+                                  onTap: onToggleFavorite,
+                                  radius: 22,
+                                  child: Center(
+                                    child: AnimatedSwitcher(
+                                      duration:
+                                          const Duration(milliseconds: 160),
+                                      transitionBuilder: (child, animation) =>
+                                          ScaleTransition(
+                                        scale: Tween<double>(
+                                          begin: 0.88,
+                                          end: 1,
+                                        ).animate(animation),
+                                        child: FadeTransition(
+                                          opacity: animation,
+                                          child: child,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        isFavorited
+                                            ? Icons.star_rounded
+                                            : Icons.star_border_rounded,
+                                        key: ValueKey<bool>(isFavorited),
+                                        size: 18,
+                                        color: isFavorited
+                                            ? BrandColors.textPrimary
+                                            : BrandColors.neutral400,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          InkWell(
-                            onTap: onToggleFavorite,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                isFavorited
-                                    ? Icons.star
-                                    : Icons.star_border,
-                                size: 20,
-                                color: isFavorited
-                                    ? const Color(0xFFF59E0B)
-                                    : const Color(0xFF9CA3AF),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.forum_outlined,
-                            size: 14,
-                            color: accentColor,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              rawLastMessage.isEmpty
-                                  ? (isKo ? '아직 메시지가 없습니다' : 'No messages yet')
-                                  : localizedLastMessage,
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: hasUnread
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                color: rawLastMessage.isEmpty
-                                    ? const Color(0xFF6B7280)
-                                    : hasUnread
-                                        ? const Color(0xFF111827)
-                                        : const Color(0xFF4B5563),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.people_outline,
-                            size: 15,
-                            color: Color(0xFF6B7280),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            isKo
-                                ? '${snackChat.participantCount}명 참여'
-                                : '${snackChat.participantCount} ${l10n.participants}',
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF6B7280),
                             ),
                           ),
                         ],
@@ -204,6 +443,299 @@ class SnackChatCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPastCard(BuildContext context, {required bool isKo}) {
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = (width * 0.045).clamp(14.0, 20.0).toDouble();
+    final createdAt = snackChat.createdAt.toLocal();
+    final dateLabel = '${createdAt.month}/${createdAt.day}';
+    final memberLabel = isChineseUi(context)
+        ? '${snackChat.participantCount}人'
+        : isKo
+            ? '${snackChat.participantCount}명'
+            : '${snackChat.participantCount} members';
+    final reopenLabel = isChineseUi(context)
+        ? '再次打开'
+        : isKo
+            ? '다시 열기'
+            : 'Open again';
+
+    return Material(
+      color: BrandColors.surface,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding:
+              EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 8),
+          child: Row(
+            children: [
+              _ParticipantAvatarMosaic(
+                participantIds: snackChat.participantIds,
+                currentUserId: currentUserId,
+                size: 40,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      snackChat.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: BrandColors.neutral500,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '$dateLabel · $memberLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 11,
+                        color: BrandColors.neutral500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onToggleFavorite,
+                tooltip: (isChineseUi(context)
+                    ? '取消收藏'
+                    : isKo
+                        ? '즐겨찾기 해제'
+                        : 'Remove from favorites'),
+                icon: const Icon(Icons.star_rounded, size: 18),
+                color: BrandColors.neutral500,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              ),
+              OutlinedButton(
+                onPressed: onTap,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: BrandColors.textPrimary,
+                  side: const BorderSide(color: BrandColors.divider),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: const Size(0, 36),
+                  shape: const StadiumBorder(),
+                ),
+                child: Text(
+                  reopenLabel,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 24시간 Snack Chat의 남은 시간과 만료 상태에 공통으로 쓰는 표시입니다.
+class SnackChatDurationStatus extends StatelessWidget {
+  const SnackChatDurationStatus({
+    super.key,
+    required this.label,
+  });
+
+  static const Color statusColor = BrandColors.info;
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const ExcludeSemantics(
+          child: Icon(
+            Icons.schedule_rounded,
+            size: 12,
+            color: statusColor,
+          ),
+        ),
+        const SizedBox(width: 3),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 11,
+              height: isChineseUi(context) ? 1.3 : 1.2,
+              fontWeight: FontWeight.w700,
+              color: statusColor,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ParticipantAvatarMosaic extends StatefulWidget {
+  final List<String> participantIds;
+  final String? currentUserId;
+  final double size;
+
+  const _ParticipantAvatarMosaic({
+    required this.participantIds,
+    required this.currentUserId,
+    this.size = 52,
+  });
+
+  @override
+  State<_ParticipantAvatarMosaic> createState() =>
+      _ParticipantAvatarMosaicState();
+}
+
+class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
+  static final UsersRepository _usersRepository = UsersRepository();
+
+  List<UserProfile> _profiles = const [];
+
+  List<String> get _displayIds {
+    final ids = widget.participantIds.toSet().toList();
+    ids.sort((a, b) {
+      if (a == widget.currentUserId) return 1;
+      if (b == widget.currentUserId) return -1;
+      return 0;
+    });
+    return ids.take(4).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _profiles = _usersRepository.getCachedUserProfiles(_displayIds);
+    _loadProfiles();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ParticipantAvatarMosaic oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.participantIds, widget.participantIds) ||
+        oldWidget.currentUserId != widget.currentUserId) {
+      _profiles = _usersRepository.getCachedUserProfiles(_displayIds);
+      _loadProfiles();
+    }
+  }
+
+  Future<void> _loadProfiles() async {
+    final ids = _displayIds;
+    final loadedProfiles = await _usersRepository.getUserProfilesBatch(ids);
+    if (!mounted || !listEquals(ids, _displayIds)) return;
+
+    final profilesById = {
+      for (final profile in loadedProfiles) profile.uid: profile,
+    };
+    setState(() {
+      _profiles = [
+        for (final id in ids)
+          if (profilesById[id] != null) profilesById[id]!,
+      ];
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profilesById = {
+      for (final profile in _profiles) profile.uid: profile,
+    };
+    final ids = _displayIds;
+
+    return Semantics(
+      label: (isChineseUi(context)
+          ? '参与者资料'
+          : Localizations.localeOf(context).languageCode == 'ko'
+              ? '참여자 프로필'
+              : 'Participant profiles'),
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: widget.size,
+          height: widget.size,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final availableSize = constraints.biggest.shortestSide;
+              final tileSize = (availableSize - 4) / 2;
+              return Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: List.generate(4, (index) {
+                  final profile =
+                      index < ids.length ? profilesById[ids[index]] : null;
+                  return _AvatarTile(
+                    profile: profile,
+                    size: tileSize,
+                  );
+                }),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AvatarTile extends StatelessWidget {
+  final UserProfile? profile;
+  final double size;
+
+  const _AvatarTile({this.profile, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl =
+        profile?.hasProfileImage == true ? profile!.photoURL : null;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(7),
+      child: Container(
+        width: size,
+        height: size,
+        color: const Color(0xFFE8EEF3),
+        child: imageUrl == null
+            ? const Icon(
+                Icons.person_rounded,
+                size: 15,
+                color: Color(0xFF7790A3),
+              )
+            : CachedNetworkImage(
+                imageUrl: imageUrl,
+                cacheManager: AppImageCacheManager.instance,
+                memCacheWidth: 96,
+                fit: BoxFit.cover,
+                useOldImageOnUrlChange: true,
+                fadeInDuration: Duration.zero,
+                fadeOutDuration: Duration.zero,
+                placeholder: (_, __) => const Icon(
+                  Icons.person_rounded,
+                  size: 15,
+                  color: Color(0xFF7790A3),
+                ),
+                errorWidget: (_, __, ___) => const Icon(
+                  Icons.person_rounded,
+                  size: 15,
+                  color: Color(0xFF7790A3),
+                ),
+              ),
       ),
     );
   }

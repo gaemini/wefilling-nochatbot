@@ -1,0 +1,576 @@
+import * as admin from 'firebase-admin';
+import * as functions from 'firebase-functions';
+import {bucketFor, callables, isKnownStorageBucket, triggers} from './backend';
+import {FieldValue, Timestamp} from 'firebase-admin/firestore';
+import {dmCovered, dmTimeCompare, dmNotificationBoundary, nextDMReceiptToken} from './dm_read_policy';
+import {chatHotRunWithOptions} from './runtime_scaling';
+
+const MAX_RECEIPT_PAGES_PER_CALL = 25;
+const RECEIPT_PAGE_SIZE = 400;
+const DM_UNREAD_COUNTER_VERSION = 2;
+const ALLOWED_DM_REACTIONS = new Set([
+  '👍', '❤️', '😂', '😮', '😢', '🙏',
+]);
+
+function requireUid(context: functions.https.CallableContext): string {
+  const uid = context.auth?.uid?.trim() ?? '';
+  if (!uid) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'Authentication is required.',
+    );
+  }
+  return uid;
+}
+
+function firestoreId(value: unknown): string {
+  const id = (value ?? '').toString().trim();
+  if (!id || id.length > 1500 || id.includes('/')) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'A valid conversation id is required.',
+    );
+  }
+  return id;
+}
+
+function nonNegativeInteger(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
+}
+
+function timestampMillis(value: unknown): number {
+  return value instanceof Timestamp ? value.toMillis() : 0;
+}
+
+/**
+ * Rebuilds a DM message's reaction aggregate from the authoritative per-user
+ * documents. Trigger retries and out-of-order rapid taps therefore converge
+ * without touching room ordering, unread counters, receipts, or push paths.
+ */
+export const onDMReactionWritten = triggers()
+  .runWith({timeoutSeconds: 60, memory: '256MB', failurePolicy: true})
+  .firestore
+  .document(
+    'conversations/{conversationId}/messages/{messageId}/reactions/{userId}',
+  )
+  .onWrite(async (_change, context) => {
+    const conversationId = firestoreId(context.params.conversationId);
+    const messageId = firestoreId(context.params.messageId);
+    const firestore = admin.firestore();
+    const messageRef = firestore.collection('conversations')
+      .doc(conversationId)
+      .collection('messages')
+      .doc(messageId);
+
+    await firestore.runTransaction(async (transaction) => {
+      const message = await transaction.get(messageRef);
+      if (!message.exists) return;
+      const reactions = await transaction.get(messageRef.collection('reactions'));
+      const counts: Record<string, number> = {};
+      for (const reaction of reactions.docs) {
+        const emoji = (reaction.get('emoji') ?? '').toString();
+        if (!ALLOWED_DM_REACTIONS.has(emoji)) continue;
+        counts[emoji] = (counts[emoji] ?? 0) + 1;
+      }
+      transaction.update(messageRef, {reactionCounts: counts});
+    });
+    return null;
+  });
+
+function roomUnreadForUser(
+  data: FirebaseFirestore.DocumentData,
+  userId: string,
+  conversationId: string,
+): number {
+  const archivedBy = Array.isArray(data.archivedBy) ?
+    data.archivedBy.filter((value: unknown): value is string =>
+      typeof value === 'string') : [];
+  if (archivedBy.includes(userId)) return 0;
+
+  const userLeftAt = data.userLeftAt && typeof data.userLeftAt === 'object' ?
+    data.userLeftAt as Record<string, unknown> : {};
+  const participants = Array.isArray(data.participants) ?
+    data.participants.filter((value: unknown): value is string =>
+      typeof value === 'string' && value.length > 0) : [];
+  if (conversationId.startsWith('anon_')) {
+    const otherIds = participants.filter((id: string) => id !== userId);
+    if (otherIds.length > 0 && otherIds.every((id: string) =>
+      userLeftAt[id] != null)) return 0;
+  }
+  const leftAt = timestampMillis(userLeftAt[userId]);
+  const lastMessageTime = timestampMillis(data.lastMessageTime);
+  if (leftAt > 0 && lastMessageTime > 0 && lastMessageTime <= leftAt) return 0;
+
+  const unreadCount = data.unreadCount &&
+    typeof data.unreadCount === 'object' &&
+    !Array.isArray(data.unreadCount) ?
+    data.unreadCount as Record<string, unknown> : {};
+  return nonNegativeInteger(unreadCount[userId]);
+}
+
+/**
+ * One-time migration for legacy accounts. It sums trusted room counters in a
+ * serializable transaction and stamps a schema version; no message collection
+ * is scanned and later launches use users.dmUnreadTotal directly.
+ */
+export const reconcileDMUnreadTotalSecure = callables()
+  .runWith({timeoutSeconds: 60, memory: '512MB'})
+  .https.onCall(async (_raw, context) => {
+    const userId = requireUid(context);
+    const firestore = admin.firestore();
+    const userRef = firestore.collection('users').doc(userId);
+    const roomsQuery = firestore.collection('conversations')
+      .where('participants', 'array-contains', userId);
+    const outgoingBlocksQuery = firestore.collection('blocks')
+      .where('blocker', '==', userId);
+    const incomingBlocksQuery = firestore.collection('blocks')
+      .where('blocked', '==', userId);
+
+    const total = await firestore.runTransaction(async (transaction) => {
+      const [user, rooms, outgoingBlocks, incomingBlocks] = await Promise.all([
+        transaction.get(userRef),
+        transaction.get(roomsQuery),
+        transaction.get(outgoingBlocksQuery),
+        transaction.get(incomingBlocksQuery),
+      ]);
+      if (!user.exists) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'The authenticated user profile does not exist.',
+        );
+      }
+      const excludedUserIds = new Set<string>();
+      outgoingBlocks.docs.forEach((document) => {
+        const value = (document.get('blocked') ?? '').toString().trim();
+        if (value) excludedUserIds.add(value);
+      });
+      incomingBlocks.docs.forEach((document) => {
+        const value = (document.get('blocker') ?? '').toString().trim();
+        if (value) excludedUserIds.add(value);
+      });
+      const unreadTotal = rooms.docs.reduce((sum, room) => {
+        const participants = Array.isArray(room.get('participants')) ?
+          room.get('participants') as unknown[] : [];
+        const hasExcludedPeer = participants.some((value) => {
+          const participantId = (value ?? '').toString().trim();
+          return participantId !== userId && excludedUserIds.has(participantId);
+        });
+        return hasExcludedPeer ? sum : sum + roomUnreadForUser(
+          room.data(),
+          userId,
+          room.id,
+        );
+      }, 0);
+      transaction.update(userRef, {
+        dmUnreadTotal: unreadTotal,
+        dmUnreadCounterVersion: DM_UNREAD_COUNTER_VERSION,
+      });
+
+
+      return unreadTotal;
+    });
+    return {success: true, dmUnreadTotal: total};
+  });
+
+async function materializeDMReceipts(
+  conversationRef: FirebaseFirestore.DocumentReference,
+  userId: string,
+  readThroughAt: Timestamp,
+  initialCursor: string,
+  requestToken?: Timestamp,
+): Promise<{receiptsUpdated: number; cleanupComplete: boolean}> {
+  const firestore = admin.firestore();
+    let cursorId = initialCursor;
+    let receiptsUpdated = 0;
+    let cleanupComplete = true;
+    for (let pageIndex = 0;
+      pageIndex < MAX_RECEIPT_PAGES_PER_CALL;
+      pageIndex += 1) {
+      let query: FirebaseFirestore.Query = conversationRef
+        .collection('messages')
+        .where('isRead', '==', false)
+        .orderBy(admin.firestore.FieldPath.documentId())
+        .limit(RECEIPT_PAGE_SIZE);
+      if (cursorId) query = query.startAfter(cursorId);
+      if (requestToken) {
+        const latest = await conversationRef.get();
+        if (!requestToken.isEqual(latest.get('receiptCleanupRequestedAtBy')?.[userId]))
+          return {receiptsUpdated, cleanupComplete: false};
+      }
+      const page = await query.get();
+      if (page.empty) break;
+
+      const batch = firestore.batch();
+      let writes = 0;
+      page.docs.forEach((message) => {
+        const data = message.data();
+        const senderId = (data.senderId ?? '').toString().trim();
+        // createdAt is authored by the sender's device and can be skewed.
+        // Firestore createTime is server-owned, so it is safe to compare with
+        // the server read-through watermark.
+        const serverCreatedAt = message.createTime!;
+        if (senderId && senderId !== userId &&
+            dmCovered(serverCreatedAt, readThroughAt)) {
+          batch.update(message.ref, {
+            isRead: true,
+            readAt: readThroughAt,
+          });
+          writes += 1;
+        }
+      });
+      if (writes > 0) {
+        await batch.commit();
+        receiptsUpdated += writes;
+      }
+      cursorId = page.docs[page.docs.length - 1].id;
+      if (page.size < RECEIPT_PAGE_SIZE) break;
+      if (pageIndex === MAX_RECEIPT_PAGES_PER_CALL - 1) {
+        cleanupComplete = false;
+      }
+    }
+
+    // A bounded call can resume after its last scanned page instead of
+    // repeatedly rereading old outgoing (still-unread-for-the-peer) messages.
+    // Once the end is reached the cursor wraps to null for the next cycle.
+    try {
+      await admin.firestore().runTransaction(async (tx) => {
+        const latest = await tx.get(conversationRef);
+        if (!latest.exists) return;
+        if (requestToken && !requestToken.isEqual(
+          latest.get('receiptCleanupRequestedAtBy')?.[userId])) return;
+        tx.update(conversationRef,
+          new admin.firestore.FieldPath('readReceiptCursorBy', userId),
+          cleanupComplete ? null : cursorId);
+      });
+    } catch (error) {
+      // The conversation can be deleted after the counter transaction. Read
+      // state is already correct; losing only this optimization cursor is safe.
+      console.warn('Could not persist the DM receipt cursor.', error);
+    }
+
+
+  return {receiptsUpdated, cleanupComplete};
+}
+
+// Deploy this worker BEFORE enabling deferred receipts in the callable/client.
+export const onDMReceiptCleanupRequested = triggers()
+  .runWith({timeoutSeconds: 120, memory: '512MB', failurePolicy: true})
+  .firestore.document('conversations/{conversationId}')
+  .onUpdate(async (change) => {
+    const before = change.before.get('receiptCleanupRequestedAtBy') ?? {};
+    const after = change.after.get('receiptCleanupRequestedAtBy') ?? {};
+    for (const [uid, token] of Object.entries(after)) {
+      if (!(token instanceof Timestamp) ||
+          (before[uid] instanceof Timestamp && dmTimeCompare(before[uid], token) >= 0)) continue;
+      const current = await change.after.ref.get();
+      if (!current.exists ||
+          !token.isEqual(current.get('receiptCleanupRequestedAtBy')?.[uid])) continue;
+      if (!(current.get('participants') ?? []).includes(uid)) continue;
+      const readThrough = current.get('lastReadAtBy')?.[uid];
+      if (!(readThrough instanceof Timestamp)) continue;
+      const result = await materializeDMReceipts(change.after.ref, uid,
+        readThrough, current.get('readReceiptCursorBy')?.[uid] ?? '', token);
+      if (!result.cleanupComplete) {
+        // Continue bounded pages even when the reader has already closed the app.
+        await admin.firestore().runTransaction(async (tx) => {
+          const latest = await tx.get(change.after.ref);
+          if (!latest.exists || !token.isEqual(
+            latest.get('receiptCleanupRequestedAtBy')?.[uid])) return;
+          tx.update(change.after.ref,
+            new admin.firestore.FieldPath('receiptCleanupRequestedAtBy', uid),
+            nextDMReceiptToken(token));
+        });
+      }
+    }
+    return null;
+  });
+
+/**
+ * Clears the room/user unread counters in one transaction, then materializes
+ * per-message read receipts in bounded batches. Counter convergence is O(1)
+ * regardless of conversation length; receipt cleanup never uses one write per
+ * round trip.
+ */
+async function markDMConversationRead(
+  raw: any, context: functions.https.CallableContext,
+): Promise<Record<string, unknown>> {
+    const userId = requireUid(context);
+    if (raw?.readerId != null && raw.readerId !== userId) {
+      throw new functions.https.HttpsError('permission-denied', 'Read account changed.');
+    }
+    const conversationId = firestoreId(raw?.conversationId);
+    const firestore = admin.firestore();
+    const conversationRef = firestore.collection('conversations')
+      .doc(conversationId);
+    const userRef = firestore.collection('users').doc(userId);
+    const throughMessageId = raw?.throughMessageId == null ? null :
+      firestoreId(raw.throughMessageId);
+    let readThroughAt = Timestamp.now();
+
+    const counterResult = await firestore.runTransaction(async (transaction) => {
+      const [conversation, user] = await Promise.all([
+        transaction.get(conversationRef),
+        transaction.get(userRef),
+      ]);
+      if (!user.exists) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'The authenticated user profile does not exist.',
+        );
+      }
+      readThroughAt = Timestamp.now();
+      const userData = user.data() ?? {};
+      const previousTotal = nonNegativeInteger(userData.dmUnreadTotal);
+      if (!conversation.exists) {
+        return {
+          clearedCount: 0,
+          newDmUnreadTotal: previousTotal,
+          exists: false,
+          receiptCursor: '',
+        };
+      }
+      const data = conversation.data() ?? {};
+      const participants = Array.isArray(data.participants) ?
+        Array.from(new Set(data.participants
+          .filter((value: unknown): value is string =>
+            typeof value === 'string' && value.length > 0))) :
+        [];
+      if (!participants.includes(userId)) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Only conversation participants can mark it as read.',
+        );
+      }
+
+      if (throughMessageId) {
+        const target = await transaction.get(
+          conversationRef.collection('messages').doc(throughMessageId));
+        if (!target.exists || !target.createTime) {
+          throw new functions.https.HttpsError('failed-precondition',
+            'The read boundary no longer exists.');
+        }
+        readThroughAt = target.createTime;
+      }
+
+      const unreadCount = data.unreadCount &&
+        typeof data.unreadCount === 'object' &&
+        !Array.isArray(data.unreadCount) ?
+        {...data.unreadCount} as Record<string, unknown> : {};
+      // A bounded request must not clear a message received after the reader
+      // left. When newer counted messages exist, legacy receipt events clear
+      // only their own counted message; no collection scan on this path.
+      const lastCounted = data.lastUnreadCreatedAtBy?.[userId];
+      const clearCounters = !throughMessageId || dmCovered(lastCounted, readThroughAt);
+      const clearedCount = clearCounters ? nonNegativeInteger(unreadCount[userId]) : 0;
+      if (clearCounters) unreadCount[userId] = 0;
+
+      const lastReadAtBy = data.lastReadAtBy &&
+        typeof data.lastReadAtBy === 'object' &&
+        !Array.isArray(data.lastReadAtBy) ?
+        {...data.lastReadAtBy} as Record<string, unknown> : {};
+      let watermarkAdvanced = false;
+      if (!dmCovered(readThroughAt, lastReadAtBy[userId])) {
+        lastReadAtBy[userId] = readThroughAt;
+        watermarkAdvanced = true;
+      }
+      readThroughAt = lastReadAtBy[userId] as Timestamp;
+      // The read-through message id lets new senders resolve "read" by list
+      // order without waiting for the trigger-written receiptCreatedAt. It is
+      // only written when the watermark actually advanced, so a stale or
+      // out-of-order bounded request never regresses it. Old clients ignore it.
+      const lastReadMessageIdBy = data.lastReadMessageIdBy &&
+        typeof data.lastReadMessageIdBy === 'object' &&
+        !Array.isArray(data.lastReadMessageIdBy) ?
+        {...data.lastReadMessageIdBy} as Record<string, unknown> : {};
+      const writeReadMessageId = watermarkAdvanced && !!throughMessageId;
+      if (writeReadMessageId) lastReadMessageIdBy[userId] = throughMessageId;
+      const unreadClearedAtBy = {...(data.unreadClearedAtBy ?? data.lastReadAtBy ?? {})};
+      if (clearCounters) unreadClearedAtBy[userId] = readThroughAt;
+      const readReceiptCursorBy = data.readReceiptCursorBy &&
+        typeof data.readReceiptCursorBy === 'object' &&
+        !Array.isArray(data.readReceiptCursorBy) ?
+        data.readReceiptCursorBy as Record<string, unknown> : {};
+      // A prior bounded scan belongs to its old read range. A new read must
+      // start from the beginning even on the legacy synchronous path.
+      const receiptCursor = '';
+
+      const newDmUnreadTotal = Math.max(0, previousTotal - clearedCount);
+      transaction.update(conversationRef, {
+        unreadCount,
+        lastReadAtBy,
+        unreadClearedAtBy,
+        readReceiptCursorBy: {...readReceiptCursorBy, [userId]: null},
+        updatedAt: FieldValue.serverTimestamp(),
+        ...(writeReadMessageId ? {lastReadMessageIdBy} : {}),
+        ...(raw?.deferReceipts === true ? {
+          receiptCleanupRequestedAtBy: {
+            ...(data.receiptCleanupRequestedAtBy ?? {}),
+            [userId]: nextDMReceiptToken(data.receiptCleanupRequestedAtBy?.[userId]),
+          },
+        } : {}),
+      });
+      transaction.update(userRef, {
+        dmUnreadTotal: newDmUnreadTotal,
+        dmUnreadCounterVersion: DM_UNREAD_COUNTER_VERSION,
+      });
+      return {
+        clearedCount,
+        newDmUnreadTotal,
+        exists: true,
+        receiptCursor,
+      };
+    });
+
+    if (!counterResult.exists) {
+      return {
+        success: true,
+        clearedCount: 0,
+        newDmUnreadTotal: counterResult.newDmUnreadTotal,
+        receiptsUpdated: 0,
+        cleanupComplete: true,
+        readThroughAtMillis: 0,
+      };
+    }
+
+    // New clients return after the O(1) counter transaction. The durable
+    // conversation request below is processed by onDMReceiptCleanupRequested.
+    if (raw?.deferReceipts === true) {
+      return {success: true, clearedCount: counterResult.clearedCount,
+        newDmUnreadTotal: counterResult.newDmUnreadTotal,
+        receiptsUpdated: 0, cleanupComplete: false,
+        readThroughAtMillis: dmNotificationBoundary(readThroughAt),
+        readThroughAtSeconds: readThroughAt.seconds,
+        readThroughAtNanos: readThroughAt.nanoseconds,
+        boundedRead: !!throughMessageId};
+    }
+    const receipts = await materializeDMReceipts(conversationRef, userId,
+      readThroughAt, counterResult.receiptCursor);
+    return {success: true, clearedCount: counterResult.clearedCount,
+      newDmUnreadTotal: counterResult.newDmUnreadTotal,
+      readThroughAtMillis: dmNotificationBoundary(readThroughAt),
+      readThroughAtSeconds: readThroughAt.seconds,
+      readThroughAtNanos: readThroughAt.nanoseconds,
+      boundedRead: !!throughMessageId, ...receipts};
+}
+
+export const markDMConversationReadSecure = callables()
+  .runWith({timeoutSeconds: 120, memory: '512MB'})
+  .https.onCall(markDMConversationRead);
+
+// Distinct endpoint: an old deployment would silently ignore throughMessageId
+// and mark through server-now. A missing v2 endpoint must instead fail closed.
+export const markDMConversationReadBoundedSecure = callables()
+  // The bounded path returns after one O(1) counter transaction (receipts are
+  // deferred to the worker), so it does not need the legacy 512MB/120s budget.
+  .runWith({timeoutSeconds: 60, memory: '256MB', ...chatHotRunWithOptions()})
+  .https.onCall((raw, context) => {
+    firestoreId(raw?.throughMessageId);
+    return markDMConversationRead(raw, context);
+  });
+
+/** A leave is one server-owned read boundary, archive, and unread adjustment. */
+export const leaveDMConversationSecure = callables()
+  .runWith({timeoutSeconds: 60, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const userId = requireUid(context);
+    const conversationId = firestoreId(raw?.conversationId);
+    const firestore = admin.firestore();
+    const roomRef = firestore.collection('conversations').doc(conversationId);
+    const userRef = firestore.collection('users').doc(userId);
+    const result = await firestore.runTransaction(async (tx) => {
+      const [room, user] = await Promise.all([tx.get(roomRef), tx.get(userRef)]);
+      if (!room.exists || !user.exists) {
+        throw new functions.https.HttpsError('not-found', 'Conversation or account not found.');
+      }
+      const data = room.data() ?? {};
+      if (!Array.isArray(data.participants) || !data.participants.includes(userId)) {
+        throw new functions.https.HttpsError('permission-denied',
+          'Only a conversation participant can leave.');
+      }
+      const clearedCount = nonNegativeInteger(data.unreadCount?.[userId]);
+      const total = nonNegativeInteger(user.get('dmUnreadTotal'));
+      const archivedBy = Array.isArray(data.archivedBy) ? data.archivedBy : [];
+      const token = nextDMReceiptToken(data.receiptCleanupRequestedAtBy?.[userId]);
+      tx.update(roomRef, {
+        archivedBy: Array.from(new Set([...archivedBy, userId])),
+        userLeftAt: {...(data.userLeftAt ?? {}),
+          [userId]: FieldValue.serverTimestamp()},
+        unreadCount: {...(data.unreadCount ?? {}), [userId]: 0},
+        lastReadAtBy: {...(data.lastReadAtBy ?? {}),
+          [userId]: FieldValue.serverTimestamp()},
+        unreadClearedAtBy: {...(data.unreadClearedAtBy ?? {}),
+          [userId]: FieldValue.serverTimestamp()},
+        readReceiptCursorBy: {...(data.readReceiptCursorBy ?? {}), [userId]: null},
+        receiptCleanupRequestedAtBy: {
+          ...(data.receiptCleanupRequestedAtBy ?? {}), [userId]: token,
+        },
+      });
+      tx.update(userRef, {
+        dmUnreadTotal: Math.max(0, total - clearedCount),
+        dmUnreadCounterVersion: DM_UNREAD_COUNTER_VERSION,
+      });
+      return {clearedCount};
+    });
+    // Firestore commit time is the boundary. The function host's wall clock
+    // and a legacy device-authored userLeftAt are not authoritative.
+    const confirmed = await roomRef.get();
+    const leftAt = confirmed.get('userLeftAt')?.[userId];
+    const readThrough = confirmed.get('lastReadAtBy')?.[userId];
+    if (!(leftAt instanceof Timestamp) || !(readThrough instanceof Timestamp)) {
+      throw new functions.https.HttpsError('internal', 'Leave boundary was not confirmed.');
+    }
+    return {
+      success: true,
+      leftAtSeconds: leftAt.seconds,
+      leftAtNanos: leftAt.nanoseconds,
+      readThroughAtSeconds: readThrough.seconds,
+      readThroughAtNanos: readThrough.nanoseconds,
+      readThroughAtMillis: dmNotificationBoundary(readThrough),
+      clearedCount: result.clearedCount,
+    };
+  });
+
+/**
+ * DM attachments (dm_files/ documents and videos, dm_images/ photos) are
+ * create-only for clients. When a message document is deleted the object
+ * is removed here so leaving/deleting a conversation frees storage.
+ */
+export const onDMMessageDeletedStorageCleanup = triggers().firestore
+  .document('conversations/{conversationId}/messages/{messageId}')
+  .onDelete(async (snapshot, context) => {
+    const data = snapshot.data() ?? {};
+    const conversationId = String(context.params.conversationId);
+    const messageId = String(context.params.messageId);
+    const senderId = String(data.senderId ?? '');
+    const targets: Array<{path: string; bucket?: string}> = [];
+    const filePath = String(data.fileStoragePath ?? '');
+    if (filePath.startsWith(`dm_files/${senderId}/${conversationId}/${messageId}/`) && !filePath.includes('..')) {
+      targets.push({path: filePath, bucket: String(data.storageBucket ?? '') || undefined});
+    }
+    const imageUrl = String(data.imageUrl ?? '');
+    try {
+      const url = new URL(imageUrl);
+      const match = url.hostname === 'firebasestorage.googleapis.com'
+        ? url.pathname.match(/^\/v0\/b\/([^/]+)\/o\/(.+)$/)
+        : null;
+      if (match) {
+        const bucket = decodeURIComponent(match[1]);
+        const objectPath = decodeURIComponent(match[2]);
+        if (isKnownStorageBucket(bucket) &&
+            objectPath.startsWith(`dm_images/${senderId}/${conversationId}/`) &&
+            !objectPath.includes('..')) {
+          targets.push({path: objectPath, bucket});
+        }
+      }
+    } catch (_) {
+      // not a storage URL
+    }
+    await Promise.all(targets.map(async (target) => {
+      try {
+        await bucketFor(target.bucket).file(target.path).delete({ignoreNotFound: true});
+      } catch (error) {
+        console.warn('dm attachment cleanup failed', {path: target.path, message: (error as Error)?.message});
+      }
+    }));
+  });

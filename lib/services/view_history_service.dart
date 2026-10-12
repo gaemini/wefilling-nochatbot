@@ -62,7 +62,7 @@ class ViewHistoryService {
     final count = _viewedItems.length;
     _viewedItems.clear();
     
-    Logger.log('🗑️ [ViewHistory] 조회 이력 초기화: ${count}개 항목 삭제됨');
+    if (Logger.isVerboseEnabled) Logger.log('🗑️ [ViewHistory] 조회 이력 초기화: ${count}개 항목 삭제됨');
   }
   
   /// 현재 조회 이력 개수 반환 (디버깅용)

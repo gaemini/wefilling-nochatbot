@@ -1,0 +1,2545 @@
+import * as admin from 'firebase-admin';
+import * as crypto from 'crypto';
+import * as functions from 'firebase-functions';
+import {callables} from './backend';
+import * as https from 'https';
+import {COL} from './firestore_paths';
+import {hasActiveHanyangClaim} from './hanyang_verification';
+import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
+import {
+  detectSourceLanguageHint,
+  detectTemporalProfile,
+  immutableTokens,
+  IMMUTABLE_TEXT_PATTERN,
+  protectImmutableText,
+  preservesImmutableTokens,
+  ProtectedText,
+  restoreImmutableText,
+  validateTemporalTranslation,
+} from './content_translation_policy';
+import {canAccessSnapshot} from './snapshot';
+
+const GEMINI_API_VERSION = 'v1beta';
+const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+const GEMINI_FALLBACK_MODEL = 'gemini-3.5-flash';
+const TRANSLATION_VERSION = 7;
+const PROMPT_VERSION = 7;
+const TRANSLATION_POLICY_VERSION = '2026-09-temporal-quality-v7';
+const GLOSSARY_VERSION = 1;
+const QUALITY_POLICY_VERSION = 2;
+// Failed results are short-lived, but a corrected validator must be able to
+// retry old false negatives immediately without invalidating good translations.
+const FAILURE_CACHE_POLICY_VERSION = 4;
+// Keep callable response metadata compatible with the currently released
+// client. Server-side cache identity advances independently, so bad v6 cache
+// entries are regenerated without making older app builds reject every result.
+const CLIENT_RESPONSE_METADATA = Object.freeze({
+  translationVersion: 6,
+  promptVersion: 6,
+  translationPolicyVersion: '2026-08-context-quality-v6',
+  glossaryVersion: 1,
+  qualityPolicyVersion: 1,
+});
+const CURRENT_MODELS = new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL]);
+const SOURCE_INTENTS = new Set([
+  'question',
+  'statement',
+  'answer',
+  'suggestion',
+  'request',
+  'command',
+  'exclamation',
+  'unknown',
+]);
+const TYPO_HINTS: Record<string, string> = {
+  '뮤슨': '무슨의 명백한 오타일 가능성이 높음',
+  '해염': '해요의 구어체·오타 표현',
+  '머해': '뭐 해의 구어체 표현',
+  '할려구': '하려고의 구어체·오타 표현',
+  'ㅇㅋ': '오케이의 축약형 표현',
+  'ㄱㄱ': '가자 또는 진행하자는 뜻의 축약형 표현',
+};
+const WEFILLING_GLOSSARY: Record<string, string> = {
+  '위필링': 'Wefilling',
+  '스낵챗': 'Snack Chat',
+  '스낵샷': 'Snackshot',
+  '밋업': 'Meetup',
+  '한양대 ERICA': 'Hanyang University ERICA',
+};
+const PRESERVE_IF_UNCERTAIN = ['섭픽'];
+const TARGET_LANGUAGE_NAMES: Record<string, string> = {
+  ko: 'Korean',
+  en: 'English',
+  ja: 'Japanese',
+  zh: 'Chinese',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  ru: 'Russian',
+  pt: 'Portuguese',
+  it: 'Italian',
+  ro: 'Romanian',
+  ar: 'Arabic',
+  hi: 'Hindi',
+  th: 'Thai',
+  vi: 'Vietnamese',
+  id: 'Indonesian',
+  ms: 'Malay (Bahasa Melayu)',
+  tr: 'Turkish',
+  nl: 'Dutch',
+  pl: 'Polish',
+  uk: 'Ukrainian',
+  mn: 'Mongolian',
+};
+const MAX_BATCH_SIZE = 5;
+const SNACK_CONTEXT_HISTORY_LIMIT = 3;
+const PENDING_TTL_MS = 60_000;
+// The client retries a rejected translation after two seconds and a provider
+// outage after fifteen seconds. Keeping every failure for fifteen seconds made
+// the fast retry read the same failed document and exhaust without regenerating.
+const QUALITY_FAILED_RETRY_TTL_MS = 1_250;
+const PROVIDER_FAILED_RETRY_TTL_MS = 12_000;
+// A manual retry may replace an abandoned pending lock after the client has
+// already waited for a visible failure. Very recent locks remain protected so
+// a double tap cannot start duplicate Gemini work.
+const MANUAL_PENDING_RETRY_AGE_MS = 5_000;
+// 사용자별 제공자(Gemini) 호출 상한. 캐시 적중·동일 언어·pending 대기 항목은
+// 세지 않고, 잠금을 잡아 실제로 모델을 호출하는 항목만 센다. 사람이 읽는
+// 속도보다 훨씬 높게 잡아 정상 사용은 막지 않고 스크립트 남용 비용만 묶는다.
+const TRANSLATION_USAGE_COLLECTION = 'content_translation_usage';
+const TRANSLATION_SHORT_WINDOW_MS = 10 * 60 * 1000;
+const TRANSLATION_MAX_PROVIDER_ITEMS_PER_SHORT_WINDOW = 600;
+const TRANSLATION_MAX_REGENERATE_ITEMS_PER_SHORT_WINDOW = 60;
+const TRANSLATION_DAY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const TRANSLATION_MAX_PROVIDER_ITEMS_PER_DAY = 5000;
+const MAX_SOURCE_CHARS = 12_000;
+const MAX_CONTEXT_FIELD_CHARS = 1_500;
+const MAX_CONTEXT_CHARS = 6_000;
+// Reuse TLS connections while a warm Functions instance is alive. This avoids
+// paying a new DNS/TCP/TLS setup cost for each summary or translation request,
+// without keeping an instance warm or adding a fixed hosting cost.
+const GEMINI_HTTPS_AGENT = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 15_000,
+  maxSockets: 8,
+  maxFreeSockets: 2,
+});
+const SUPPORTED_TYPES = new Set([
+  'post',
+  'comment',
+  'meetup',
+  'snack_chat_message',
+  'dm',
+  // 스낵 공개 댓글: snapshots/{parentId}/feed_comments/{contentId}
+  'snapshot_comment',
+]);
+
+type TranslationRequest = {
+  contentType: string;
+  contentId: string;
+  parentId?: string;
+  forceRetry?: boolean;
+  forceRegenerate?: boolean;
+};
+
+type ResolvedContent = TranslationRequest & {
+  fields: Record<string, string>;
+  context: Record<string, string>;
+  contextHash: string;
+  typoHints: string[];
+  matchedGlossary: Array<{source: string; preferred: string}>;
+  preserveIfUncertain: string[];
+  contextSeed: Record<string, unknown>;
+  sourceHash: string;
+};
+
+type ResolutionCache = {
+  snackRooms: Map<string, Promise<admin.firestore.DocumentSnapshot>>;
+  dmConversations: Map<string, Promise<admin.firestore.DocumentSnapshot>>;
+  documents: Map<string, Promise<admin.firestore.DocumentSnapshot>>;
+};
+
+type GeminiTranslation = {
+  id: string;
+  sourceLanguage: string;
+  sourceIntent: string;
+  coverageComplete: boolean;
+  uncertainTerms: string[];
+  translations: Record<string, string>;
+  modelUsed: string;
+};
+
+type GeminiRequestDiagnostics = {
+  requestStage: string;
+  model: string;
+};
+
+type TranslationRunDiagnostics = {
+  failureCodes: Map<string, string>;
+  repairAttempted: Set<string>;
+  repairSucceeded: Set<string>;
+};
+
+/** Safe provider metadata without request bodies, prompts, or credentials. */
+export class GeminiHttpError extends Error {
+  constructor(args: {
+    httpStatus: number;
+    providerCode?: number;
+    providerStatus?: string;
+    providerMessage?: string;
+    requestStage?: string;
+    model?: string;
+  }) {
+    const status = args.providerStatus || 'HTTP_ERROR';
+    const detail = args.providerMessage ? `: ${args.providerMessage}` : '';
+    super(`Gemini HTTP ${args.httpStatus} ${status}${detail}`);
+    this.name = 'GeminiHttpError';
+    this.httpStatus = args.httpStatus;
+    this.providerCode = args.providerCode;
+    this.providerStatus = args.providerStatus || '';
+    this.providerMessage = args.providerMessage || '';
+    this.requestStage = args.requestStage || 'provider_request';
+    this.model = args.model || '';
+  }
+
+  readonly httpStatus: number;
+  readonly providerCode?: number;
+  readonly providerStatus: string;
+  readonly providerMessage: string;
+  readonly requestStage: string;
+  readonly model: string;
+}
+
+export class GeminiStructuredResponseError extends Error {
+  constructor(message: string, requestStage: string, model: string) {
+    super(message);
+    this.name = 'GeminiStructuredResponseError';
+    this.requestStage = requestStage;
+    this.model = model;
+  }
+
+  readonly requestStage: string;
+  readonly model: string;
+}
+
+export function structuredGeminiRuntimeInfo(preferQualityModel = false): {
+  apiVersion: string;
+  model: string;
+} {
+  return {
+    apiVersion: GEMINI_API_VERSION,
+    model: preferQualityModel ? GEMINI_FALLBACK_MODEL : GEMINI_MODEL,
+  };
+}
+
+function stringValue(value: unknown): string {
+  return value == null ? '' : String(value);
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+function normalizeLanguageCode(value: unknown): string {
+  const raw = stringValue(value).trim().toLowerCase().replace('_', '-');
+  const code = raw.split('-')[0] || raw;
+  const allowed = new Set([
+    'ko', 'en', 'ja', 'zh', 'es', 'fr', 'de', 'ru', 'pt', 'it', 'ar',
+    'hi', 'th', 'vi', 'id', 'ms', 'tr', 'nl', 'pl', 'uk', 'mn', 'ro',
+  ]);
+  if (!allowed.has(code)) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Unsupported target language.',
+    );
+  }
+  return code;
+}
+
+function safeId(value: unknown, field: string): string {
+  const id = stringValue(value).trim();
+  if (!id || id.length > 160 || id.includes('/')) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      `Invalid ${field}.`,
+    );
+  }
+  return id;
+}
+
+function canonicalFields(fields: Record<string, string>): string {
+  return Object.keys(fields)
+    .sort()
+    .map((key) => `${key}\u0000${fields[key].replace(/\r\n?/g, '\n')}`)
+    .join('\u0001');
+}
+
+function sha256(value: string): string {
+  return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+function requestKey(item: TranslationRequest): string {
+  return `${item.contentType}:${item.parentId ?? ''}:${item.contentId}`;
+}
+
+function cacheId(item: TranslationRequest, targetLanguage: string): string {
+  return sha256([
+    TRANSLATION_VERSION,
+    PROMPT_VERSION,
+    TRANSLATION_POLICY_VERSION,
+    GLOSSARY_VERSION,
+    QUALITY_POLICY_VERSION,
+    GEMINI_MODEL,
+    requestKey(item),
+    targetLanguage,
+  ].join(':'));
+}
+
+function timestampMillis(value: unknown): number | null {
+  return value instanceof admin.firestore.Timestamp ? value.toMillis() : null;
+}
+
+function hasMatchingIdentity(
+  cached: Record<string, unknown>,
+  item: ResolvedContent,
+  targetLanguage: string,
+): boolean {
+  return cached.contentType === item.contentType &&
+    cached.contentId === item.contentId &&
+    (cached.parentId ?? null) === (item.parentId ?? null) &&
+    cached.sourceHash === item.sourceHash &&
+    cached.targetLanguage === targetLanguage;
+}
+
+function isCurrentCompletedCache(
+  cached: Record<string, unknown> | undefined,
+  item: ResolvedContent,
+  targetLanguage: string,
+): cached is Record<string, unknown> {
+  if (!cached || cached.status !== 'completed') return false;
+  const translatedFields = cached.translatedFields;
+  if (!translatedFields || typeof translatedFields !== 'object' ||
+      Array.isArray(translatedFields)) {
+    return false;
+  }
+  const expectedFields = Object.keys(item.fields).sort();
+  const actualFields = Object.keys(translatedFields).sort();
+  if (expectedFields.length !== actualFields.length ||
+      expectedFields.some((field, index) => field !== actualFields[index])) {
+    return false;
+  }
+  return hasMatchingIdentity(cached, item, targetLanguage) &&
+    cached.translationVersion === TRANSLATION_VERSION &&
+    cached.promptVersion === PROMPT_VERSION &&
+    cached.translationPolicyVersion === TRANSLATION_POLICY_VERSION &&
+    cached.glossaryVersion === GLOSSARY_VERSION &&
+    cached.qualityPolicyVersion === QUALITY_POLICY_VERSION &&
+    SOURCE_INTENTS.has(stringValue(cached.sourceIntent)) &&
+    typeof cached.contextHash === 'string' && cached.contextHash.length > 0 &&
+    cached.coverageComplete === true &&
+    Array.isArray(cached.uncertainTerms) &&
+    CURRENT_MODELS.has(stringValue(cached.modelUsed)) &&
+    expectedFields.every((field) =>
+      typeof (translatedFields as Record<string, unknown>)[field] === 'string' &&
+      isPlausibleTranslation(
+        item.fields[field],
+        (translatedFields as Record<string, string>)[field],
+        targetLanguage,
+        false,
+      ) &&
+      !isUnexpectedlyUnchangedTranslation(
+        item.fields[field],
+        (translatedFields as Record<string, string>)[field],
+        stringValue(cached.sourceLanguage),
+        targetLanguage,
+      ) &&
+      validateTemporalTranslation(
+        item.fields[field],
+        (translatedFields as Record<string, string>)[field],
+        detectSourceLanguageHint(item.fields[field]) ||
+          stringValue(cached.sourceLanguage),
+        targetLanguage,
+      ) == null,
+    );
+}
+
+function isCurrentPendingCache(
+  cached: Record<string, unknown> | undefined,
+  item: ResolvedContent,
+  targetLanguage: string,
+): boolean {
+  if (!cached || cached.status !== 'pending') return false;
+  const pendingAt = timestampMillis(cached.pendingAt) ?? 0;
+  return hasMatchingIdentity(cached, item, targetLanguage) &&
+    cached.translationVersion === TRANSLATION_VERSION &&
+    cached.promptVersion === PROMPT_VERSION &&
+    cached.translationPolicyVersion === TRANSLATION_POLICY_VERSION &&
+    cached.glossaryVersion === GLOSSARY_VERSION &&
+    cached.qualityPolicyVersion === QUALITY_POLICY_VERSION &&
+    cached.modelUsed === GEMINI_MODEL &&
+    Date.now() - pendingAt < PENDING_TTL_MS;
+}
+
+function isCurrentFailedCache(
+  cached: Record<string, unknown> | undefined,
+  item: ResolvedContent,
+  targetLanguage: string,
+): cached is Record<string, unknown> {
+  if (!cached || cached.status !== 'failed') return false;
+  const failedAt = timestampMillis(cached.failedAt) ?? 0;
+  const retryTtlMs = stringValue(cached.errorCode) ===
+    'provider_unavailable' ?
+    PROVIDER_FAILED_RETRY_TTL_MS : QUALITY_FAILED_RETRY_TTL_MS;
+  return hasMatchingIdentity(cached, item, targetLanguage) &&
+    cached.translationVersion === TRANSLATION_VERSION &&
+    cached.promptVersion === PROMPT_VERSION &&
+    cached.translationPolicyVersion === TRANSLATION_POLICY_VERSION &&
+    cached.glossaryVersion === GLOSSARY_VERSION &&
+    cached.qualityPolicyVersion === QUALITY_POLICY_VERSION &&
+    cached.failureCachePolicyVersion === FAILURE_CACHE_POLICY_VERSION &&
+    Date.now() - failedAt < retryTtlMs;
+}
+
+function cachedFailureResponse(
+  item: ResolvedContent,
+  targetLanguage: string,
+  cached: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    id: requestKey(item),
+    status: 'failed',
+    sourceHash: item.sourceHash,
+    targetLanguage,
+    modelUsed: stringValue(cached.modelUsed) || GEMINI_MODEL,
+    ...CLIENT_RESPONSE_METADATA,
+    contextHash: stringValue(cached.contextHash),
+    translatedAt: timestampMillis(cached.failedAt) ?? Date.now(),
+    cacheSource: 'firestore',
+    errorCode: stringValue(cached.errorCode) || 'quality_validation_failed',
+  };
+}
+
+function isUnexpectedlyUnchangedTranslation(
+  source: string,
+  translated: string,
+  sourceLanguage: string,
+  targetLanguage: string,
+): boolean {
+  const sourceCode = sourceLanguage.trim().toLowerCase().split('-')[0];
+  const targetCode = targetLanguage.trim().toLowerCase().split('-')[0];
+  if (!targetCode) return false;
+
+  const normalizedSource = source.replace(/\s+/gu, ' ').trim();
+  const normalizedTranslation = translated.replace(/\s+/gu, ' ').trim();
+  if (!normalizedSource || normalizedSource !== normalizedTranslation) {
+    return false;
+  }
+  const temporal = detectTemporalProfile(normalizedSource);
+  if (temporal.detected && sourceCode !== targetCode) return true;
+  const meaningful = normalizedSource
+    .replace(IMMUTABLE_TEXT_PATTERN, '')
+    .trim();
+  const letters = meaningful.match(/\p{L}/gu) ?? [];
+  if (letters.length < 4) return false;
+
+  const latinTargets = new Set([
+    'en', 'es', 'fr', 'de', 'pt', 'it', 'ro', 'nl', 'pl', 'tr', 'vi', 'id', 'ms',
+  ]);
+  const clearlyNonLatin = /[가-힣ぁ-ゟ゠-ヿ一-龯\u0400-\u04FF\u0600-\u06FF\u0E00-\u0E7F]/u
+    .test(meaningful);
+  if (latinTargets.has(targetCode) && clearlyNonLatin) return true;
+  if (!sourceCode || sourceCode === targetCode) return false;
+
+  // 긴 문장이 다른 목표 언어로 요청됐는데 완전히 동일하면 번역 누락으로
+  // 본다. 짧은 사람·장소 이름과 보호 토큰은 위 조건에서 제외한다.
+  const words = meaningful.match(/\p{L}+/gu) ?? [];
+  return words.length >= 4 && meaningful.length >= 16;
+}
+
+function looksLikeSameLanguage(text: string, target: string): boolean {
+  const meaningful = text
+    .replace(IMMUTABLE_TEXT_PATTERN, '')
+    .trim();
+  if (!meaningful) return true;
+  const letters = meaningful.match(/\p{L}/gu) ?? [];
+  const ratio = (pattern: RegExp) =>
+    (meaningful.match(pattern) ?? []).length / Math.max(letters.length, 1);
+  if (target === 'ko') {
+    const hangul = meaningful.match(/[가-힣]/g) ?? [];
+    return hangul.length >= 2 && ratio(/[가-힣]/g) >= 0.95;
+  }
+  if (target === 'ja') {
+    return /[ぁ-んァ-ン]/.test(meaningful) &&
+      !/[가-힣]/.test(meaningful) &&
+      ratio(/[ぁ-ン\u3400-\u9FFF]/g) >= 0.95;
+  }
+  if (target === 'zh') {
+    return (meaningful.match(/[\u3400-\u9FFF]/g) ?? []).length >= 2 &&
+      !/[ぁ-ン가-힣]/.test(meaningful) &&
+      ratio(/[\u3400-\u9FFF]/g) >= 0.97;
+  }
+  if (target === 'ru' || target === 'uk') {
+    return ratio(/[\u0400-\u04FF]/g) >= 0.9 && letters.length >= 3;
+  }
+  if (target === 'ar') {
+    return ratio(/[\u0600-\u06FF]/g) >= 0.9 && letters.length >= 3;
+  }
+  if (target === 'th') {
+    return ratio(/[\u0E00-\u0E7F]/g) >= 0.9 && letters.length >= 3;
+  }
+  const latinHints: Record<string, Set<string>> = {
+    en: new Set(['the', 'and', 'is', 'are', 'this', 'that', 'hello', 'thanks', 'with', 'for']),
+    es: new Set(['el', 'la', 'los', 'las', 'es', 'hola', 'gracias', 'con', 'para', 'que']),
+    fr: new Set(['le', 'la', 'les', 'est', 'bonjour', 'merci', 'avec', 'pour', 'que', 'des']),
+    de: new Set(['der', 'die', 'das', 'ist', 'hallo', 'danke', 'mit', 'für', 'und', 'ein']),
+    pt: new Set(['o', 'a', 'os', 'as', 'é', 'olá', 'obrigado', 'com', 'para', 'que']),
+    it: new Set(['il', 'la', 'gli', 'è', 'ciao', 'grazie', 'con', 'per', 'che', 'un']),
+    ro: new Set(['și', 'este', 'sunt', 'acest', 'această', 'cu', 'pentru', 'bună', 'mulțumesc', 'că']),
+    tr: new Set(['bir', 've', 'bu', 'ile', 'için', 'merhaba', 'teşekkürler', 'çok']),
+    id: new Set(['dan', 'ini', 'itu', 'dengan', 'untuk', 'halo', 'terima', 'kasih']),
+    ms: new Set(['dan', 'ini', 'itu', 'dengan', 'untuk', 'hai', 'terima', 'kasih']),
+    vi: new Set(['và', 'là', 'này', 'với', 'cho', 'xin', 'chào', 'cảm', 'ơn']),
+  };
+  const hints = latinHints[target];
+  if (hints && /[A-Za-zÀ-ỹ]/.test(meaningful)) {
+    const words = meaningful.toLocaleLowerCase()
+      .match(/[\p{L}]+/gu) ?? [];
+    const hits = words.filter((word) => hints.has(word)).length;
+    const latinRatio = ratio(/[A-Za-zÀ-ỹ]/g);
+    // One-word Latin messages are ambiguous (shared vocabulary or names), so
+    // they must not become a permanent same-language cache entry.
+    if (words.length === 1) return false;
+    return words.length >= 3 && hits >= 2 && latinRatio >= 0.9 &&
+      hits / words.length >= 0.3;
+  }
+  return false;
+}
+
+async function canReadAudienceDocument(
+  uid: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  // Firestore canReadPostData/canReadMeetupData와 같은 저장 시점 snapshot만
+  // 사용한다. 현재 친구/그룹 구성은 다시 조회하지 않는다. 유효한 v2 frozen
+  // snapshot이 있으면 그것만 최종 기준으로 사용하고, 없을 때만 legacy 필드로
+  // fallback한다. 그래야 오래된 allowedUserIds가 새 권한을 덮어쓰지 않는다.
+  const frozenOwnerId = stringValue(data.ownerId);
+  const frozenVisibility = stringValue(data.visibilityMode);
+  const frozenAudience = stringList(data.audienceUserIdsFrozen);
+  const hasFrozenAudience = Number(data.visibilitySchemaVersion || 0) >= 2 &&
+    frozenOwnerId.length > 0 &&
+    ['public', 'friends', 'category'].includes(frozenVisibility) &&
+    Array.isArray(data.audienceUserIdsFrozen) &&
+    Array.isArray(data.sourceGroupIds) &&
+    data.visibilityLockedAt instanceof admin.firestore.Timestamp &&
+    frozenAudience.includes(frozenOwnerId);
+
+  if (hasFrozenAudience && frozenOwnerId === uid) return true;
+  const legacyOwnerId = stringValue(data.userId);
+  if (!hasFrozenAudience && legacyOwnerId === uid) return true;
+  if (data.requiresHanyangVerification === true &&
+      !(await hasActiveHanyangClaim(uid))) {
+    return false;
+  }
+  if (hasFrozenAudience) {
+    if (frozenVisibility === 'public') return true;
+    return frozenAudience.includes(uid);
+  }
+
+  const legacyVisibility = stringValue(data.visibility);
+  if (legacyVisibility === 'public') return true;
+  if (legacyVisibility !== 'friends' && legacyVisibility !== 'category') {
+    return false;
+  }
+  return stringList(data.allowedUserIds).includes(uid);
+}
+
+// This cache belongs to one authenticated callable invocation only. Sharing
+// in-flight reads saves repeated post/thread reads without carrying access
+// decisions or stale documents across users or requests.
+function readTranslationDocument(
+  path: string,
+  cache?: ResolutionCache,
+): Promise<admin.firestore.DocumentSnapshot> {
+  const existing = cache?.documents.get(path);
+  if (existing) return existing;
+  const read = admin.firestore().doc(path).get();
+  cache?.documents.set(path, read);
+  return read;
+}
+
+async function resolveContent(
+  uid: string,
+  request: TranslationRequest,
+  resolutionCache?: ResolutionCache,
+): Promise<ResolvedContent> {
+  const db = admin.firestore();
+  const contentType = request.contentType;
+  const contentId = request.contentId;
+  let fields: Record<string, string> = {};
+  let contextSeed: Record<string, unknown> = {};
+
+  if (contentType === 'post') {
+    const snap = await readTranslationDocument(
+      `${COL.posts}/${contentId}`, resolutionCache,
+    );
+    if (!snap.exists) throw new functions.https.HttpsError('not-found', 'Post not found.');
+    const data = snap.data() as Record<string, unknown>;
+    if (!(await canReadAudienceDocument(uid, data))) {
+      throw new functions.https.HttpsError('permission-denied', 'Post is not accessible.');
+    }
+    const rawContent = stringValue(data.content);
+    const rawTitle = stringValue(data.title);
+    // Post.displayText trims the value on the client. Hash and translate the
+    // same normalized source so legacy documents with surrounding whitespace
+    // are not rejected as stale after a successful server translation.
+    const content = rawContent.trim().length > 0 ?
+      rawContent.trim() : rawTitle.trim();
+    if (content) fields.content = content;
+    if (stringValue(data.type) === 'poll' && Array.isArray(data.pollOptions)) {
+      data.pollOptions.forEach((rawOption, index) => {
+        const option = rawOption && typeof rawOption === 'object' &&
+          !Array.isArray(rawOption) ?
+          rawOption as Record<string, unknown> : {};
+        const optionText = stringValue(option.text);
+        if (!optionText.trim()) return;
+        const optionId = stringValue(option.id).trim() || `index${index}`;
+        fields[`pollOption:${optionId}`] = optionText;
+      });
+    }
+    contextSeed = {
+      title: rawContent.trim().length > 0 ? rawTitle : '',
+      category: data.category,
+      type: data.type,
+    };
+  } else if (contentType === 'meetup') {
+    const snap = await readTranslationDocument(
+      `${COL.meetups}/${contentId}`, resolutionCache,
+    );
+    if (!snap.exists) throw new functions.https.HttpsError('not-found', 'Meetup not found.');
+    const data = snap.data() as Record<string, unknown>;
+    if (!(await canReadAudienceDocument(uid, data))) {
+      throw new functions.https.HttpsError('permission-denied', 'Meetup is not accessible.');
+    }
+    fields = {
+      description: stringValue(data.description),
+      location: stringValue(data.location),
+    };
+    contextSeed = {
+      category: data.category,
+      type: data.type,
+    };
+  } else if (contentType === 'comment') {
+    const snap = await readTranslationDocument(
+      `${COL.comments}/${contentId}`, resolutionCache,
+    );
+    if (!snap.exists) throw new functions.https.HttpsError('not-found', 'Comment not found.');
+    const data = snap.data() as Record<string, unknown>;
+    if (data.isDeleted === true) {
+      throw new functions.https.HttpsError('failed-precondition', 'Deleted comment.');
+    }
+    const parentId = stringValue(data.postId || request.parentId).trim();
+    if (!parentId) throw new functions.https.HttpsError('failed-precondition', 'Comment parent is missing.');
+    const [post, meetup] = await Promise.all([
+      readTranslationDocument(`${COL.posts}/${parentId}`, resolutionCache),
+      readTranslationDocument(`${COL.meetups}/${parentId}`, resolutionCache),
+    ]);
+    const parent = post.exists ? post : meetup;
+    if (!parent.exists ||
+        !(await canReadAudienceDocument(uid, parent.data() as Record<string, unknown>))) {
+      throw new functions.https.HttpsError('permission-denied', 'Comment is not accessible.');
+    }
+    const parentData = parent.data() as Record<string, unknown>;
+    fields = {content: stringValue(data.content)};
+    contextSeed = {
+      parentTitle: parentData.title,
+      parentBody: post.exists ? parentData.content : parentData.description,
+      parentType: post.exists ? 'post' : 'meetup',
+      parentCommentId: data.parentCommentId,
+      replyToCommentId: data.replyToCommentId,
+      createdAt: data.createdAt,
+    };
+    request.parentId = parentId;
+  } else if (contentType === 'snapshot_comment') {
+    // 스낵 공개 댓글은 부모 스낵을 지금 볼 수 있는 사용자만 번역한다
+    // (만료·공개 범위·차단은 스낵 상세와 같은 canAccessSnapshot 기준).
+    const snapshotId = safeId(request.parentId, 'parentId');
+    const [snapshot, comment] = await Promise.all([
+      readTranslationDocument(`${COL.snapshots}/${snapshotId}`, resolutionCache),
+      readTranslationDocument(
+        `${COL.snapshots}/${snapshotId}/feed_comments/${contentId}`,
+        resolutionCache,
+      ),
+    ]);
+    if (!snapshot.exists || !comment.exists) {
+      throw new functions.https.HttpsError('not-found', 'Snack comment not found.');
+    }
+    const snapshotData = snapshot.data() as Record<string, unknown>;
+    if (!(await canAccessSnapshot(uid, snapshotData))) {
+      throw new functions.https.HttpsError('permission-denied', 'Snack is not accessible.');
+    }
+    const data = comment.data() as Record<string, unknown>;
+    if (data.isDeleted === true) {
+      throw new functions.https.HttpsError('failed-precondition', 'Deleted comment.');
+    }
+    fields = {content: stringValue(data.content)};
+    contextSeed = {
+      parentType: 'snapshot',
+      parentBody: stringValue(snapshotData.overlayText),
+      createdAt: data.createdAt,
+    };
+    request.parentId = snapshotId;
+  } else if (contentType === 'snack_chat_message') {
+    const roomId = safeId(request.parentId, 'parentId');
+    const roomRef = db.collection(COL.snackChats).doc(roomId);
+    let roomRequest = resolutionCache?.snackRooms.get(roomId);
+    if (!roomRequest) {
+      roomRequest = roomRef.get();
+      resolutionCache?.snackRooms.set(roomId, roomRequest);
+    }
+    const room = await roomRequest;
+    if (!room.exists || !stringList(room.data()?.participantIds).includes(uid)) {
+      throw new functions.https.HttpsError('permission-denied', 'Snack Chat is not accessible.');
+    }
+    const message = await room.ref.collection('messages').doc(contentId).get();
+    if (!message.exists) throw new functions.https.HttpsError('not-found', 'Message not found.');
+    const data = message.data() as Record<string, unknown>;
+    const messageType = stringValue(data.type);
+    if (data.isDeleted === true || messageType === 'system') {
+      throw new functions.https.HttpsError('failed-precondition', 'Message cannot be translated.');
+    }
+    const rawPoll = messageType === 'poll' && data.poll &&
+      typeof data.poll === 'object' && !Array.isArray(data.poll) ?
+      data.poll as Record<string, unknown> : undefined;
+    fields = {
+      text: stringValue(rawPoll?.question || data.text),
+    };
+    const pollOptions = Array.isArray(rawPoll?.options) ?
+      rawPoll.options : [];
+    pollOptions.forEach((rawOption, index) => {
+      const option = rawOption && typeof rawOption === 'object' &&
+        !Array.isArray(rawOption) ?
+        rawOption as Record<string, unknown> : {};
+      const text = stringValue(option.text);
+      if (text.trim()) fields[`pollOption${index}`] = text;
+    });
+    contextSeed = {
+      roomPath: room.ref.path,
+      messageType,
+      replyToMessageId: data.replyToMessageId,
+      senderId: data.senderId,
+      sequence: data.sequence,
+      createdAt: data.createdAt,
+    };
+  } else {
+    const conversationId = safeId(request.parentId, 'parentId');
+    const conversationRef = db.collection(COL.conversations)
+      .doc(conversationId);
+    let conversationRequest = resolutionCache?.dmConversations
+      .get(conversationId);
+    if (!conversationRequest) {
+      conversationRequest = conversationRef.get();
+      resolutionCache?.dmConversations.set(
+        conversationId,
+        conversationRequest,
+      );
+    }
+    const conversation = await conversationRequest;
+    if (!conversation.exists ||
+        !stringList(conversation.data()?.participants).includes(uid)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'DM conversation is not accessible.',
+      );
+    }
+
+    const message = await conversation.ref.collection('messages')
+      .doc(contentId).get();
+    if (!message.exists) {
+      throw new functions.https.HttpsError('not-found', 'Message not found.');
+    }
+    const data = message.data() as Record<string, unknown>;
+    const messageType = stringValue(data.type) || 'text';
+    if (data.isDeleted === true || data.deleted === true ||
+        data.deletedAt != null || messageType === 'system') {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Message cannot be translated.',
+      );
+    }
+    fields = {text: stringValue(data.text)};
+    contextSeed = {
+      roomPath: conversation.ref.path,
+      messageType,
+      replyToMessageId: data.replyToMessageId,
+      senderId: data.senderId,
+      createdAt: data.createdAt,
+    };
+  }
+
+  const sourceHashFields: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    const normalized = value.slice(0, MAX_SOURCE_CHARS);
+    sourceHashFields[key] = normalized;
+    if (normalized.trim().length > 0) {
+      fields[key] = normalized;
+    } else {
+      delete fields[key];
+    }
+  }
+  if (!Object.values(fields).some((value) => value.trim().length > 0)) {
+    throw new functions.https.HttpsError('failed-precondition', 'Content is empty.');
+  }
+  return {
+    ...request,
+    fields,
+    context: {},
+    contextHash: '',
+    typoHints: [],
+    matchedGlossary: [],
+    preserveIfUncertain: [],
+    contextSeed,
+    sourceHash: sha256(canonicalFields(sourceHashFields)),
+  };
+}
+
+function storedDocumentId(value: unknown): string {
+  const id = stringValue(value).trim();
+  return id && id.length <= 160 && !id.includes('/') ? id : '';
+}
+
+function addContextField(
+  context: Record<string, string>,
+  key: string,
+  value: unknown,
+): void {
+  const used = Object.values(context).reduce(
+    (total, field) => total + field.length,
+    0,
+  );
+  const available = Math.max(0, MAX_CONTEXT_CHARS - used);
+  if (available === 0) return;
+  const normalized = stringValue(value)
+    .replace(/\r\n?/g, '\n')
+    .slice(0, Math.min(MAX_CONTEXT_FIELD_CHARS, available));
+  if (normalized.trim()) context[key] = normalized;
+}
+
+function readableContextText(data: Record<string, unknown>): string {
+  if (data.isDeleted === true || stringValue(data.type) === 'system') return '';
+  const poll = data.poll && typeof data.poll === 'object' &&
+    !Array.isArray(data.poll) ? data.poll as Record<string, unknown> : null;
+  if (stringValue(data.type) === 'poll' && poll) {
+    return stringValue(poll.question);
+  }
+  return stringValue(data.content || data.text);
+}
+
+function snackContextKey(
+  base: string,
+  contextSenderId: unknown,
+  targetSenderId: unknown,
+): string {
+  const contextSender = stringValue(contextSenderId).trim();
+  const targetSender = stringValue(targetSenderId).trim();
+  if (!contextSender || !targetSender) return base;
+  return `${base}_${contextSender === targetSender ?
+    'sameSpeaker' : 'otherSpeaker'}`;
+}
+
+async function buildTranslationContext(
+  item: ResolvedContent,
+  resolutionCache?: ResolutionCache,
+): Promise<ResolvedContent> {
+  const db = admin.firestore();
+  const context: Record<string, string> = {};
+  const seed = item.contextSeed;
+
+  if (item.contentType === 'post') {
+    addContextField(context, 'postTitle', seed.title);
+    addContextField(context, 'category', seed.category);
+    addContextField(context, 'postType', seed.type);
+  } else if (item.contentType === 'meetup') {
+    addContextField(context, 'category', seed.category);
+    addContextField(context, 'meetupType', seed.type);
+  } else if (item.contentType === 'snapshot_comment') {
+    addContextField(context, 'parentContentType', seed.parentType);
+    addContextField(context, 'parentExcerpt', seed.parentBody);
+  } else if (item.contentType === 'comment') {
+    addContextField(context, 'parentContentType', seed.parentType);
+    addContextField(context, 'parentTitle', seed.parentTitle);
+    addContextField(context, 'parentExcerpt', seed.parentBody);
+
+    const threadParentId = storedDocumentId(seed.parentCommentId);
+    const replyToCommentId = storedDocumentId(seed.replyToCommentId);
+    const directIds = [...new Set([
+      threadParentId,
+      replyToCommentId,
+    ].filter(Boolean))];
+    if (directIds.length > 0) {
+      try {
+        const direct = await Promise.all(directIds.map((id) =>
+          readTranslationDocument(`${COL.comments}/${id}`, resolutionCache),
+        ));
+        for (const snap of direct) {
+          if (!snap.exists) continue;
+          const data = snap.data() as Record<string, unknown>;
+          if (stringValue(data.postId) !== item.parentId) continue;
+          const text = readableContextText(data);
+          if (!text) continue;
+          addContextField(
+            context,
+            snap.id === replyToCommentId ?
+              'replyToComment' : 'threadParentComment',
+            text,
+          );
+        }
+      } catch (_) {
+        // Context is optional. Translation safely continues without it.
+      }
+    }
+
+    const createdAt = seed.createdAt;
+    const rootId = threadParentId || replyToCommentId;
+    if (rootId && createdAt instanceof admin.firestore.Timestamp) {
+      try {
+        const recent = await db.collection(COL.comments)
+          .where('postId', '==', item.parentId)
+          .orderBy('createdAt', 'desc')
+          .startAfter(createdAt)
+          .limit(6)
+          .get();
+        const directIdSet = new Set(directIds);
+        const related = recent.docs.filter((snap) => {
+          const data = snap.data() as Record<string, unknown>;
+          return !directIdSet.has(snap.id) &&
+            stringValue(data.parentCommentId) === rootId;
+        }).slice(0, 2).reverse();
+        related.forEach((snap, index) => {
+          addContextField(
+            context,
+            `previousReply${index + 1}`,
+            readableContextText(snap.data() as Record<string, unknown>),
+          );
+        });
+      } catch (_) {
+        // Missing indexes must not change the existing comment read path.
+      }
+    }
+  } else if (item.contentType === 'snack_chat_message' ||
+      item.contentType === 'dm') {
+    const roomPath = stringValue(seed.roomPath);
+    const replyToMessageId = storedDocumentId(seed.replyToMessageId);
+    const targetSenderId = seed.senderId;
+    addContextField(context, 'messageType', seed.messageType);
+    if (roomPath) {
+      const messages = db.doc(roomPath).collection('messages');
+      if (replyToMessageId) {
+        try {
+          const reply = await messages.doc(replyToMessageId).get();
+          if (reply.exists) {
+            addContextField(
+              context,
+              snackContextKey(
+                'replyToMessage',
+                (reply.data() as Record<string, unknown>).senderId,
+                targetSenderId,
+              ),
+              readableContextText(reply.data() as Record<string, unknown>),
+            );
+          }
+        } catch (_) {
+          // Reply context is optional.
+        }
+      }
+
+      try {
+        let previousDocs: admin.firestore.QueryDocumentSnapshot[] = [];
+        if (typeof seed.sequence === 'number') {
+          previousDocs = (await messages
+            .where('sequence', '<', seed.sequence)
+            .orderBy('sequence', 'desc')
+            .limit(SNACK_CONTEXT_HISTORY_LIMIT)
+            .get()).docs;
+        } else if (seed.createdAt instanceof admin.firestore.Timestamp) {
+          previousDocs = (await messages
+            .orderBy('createdAt', 'desc')
+            .orderBy(admin.firestore.FieldPath.documentId(), 'desc')
+            .startAfter(seed.createdAt, item.contentId)
+            .limit(SNACK_CONTEXT_HISTORY_LIMIT)
+            .get()).docs;
+        }
+        previousDocs
+          .filter((snap) => snap.id !== replyToMessageId)
+          .reverse()
+          .forEach((snap, index) => {
+            addContextField(
+              context,
+              snackContextKey(
+                `previousMessage${index + 1}`,
+                (snap.data() as Record<string, unknown>).senderId,
+                targetSenderId,
+              ),
+              readableContextText(snap.data() as Record<string, unknown>),
+            );
+          });
+      } catch (_) {
+        // If ordering needs a new index, omit history instead of changing data.
+      }
+    }
+  }
+
+  const targetText = Object.values(item.fields).join('\n');
+  const allText = [targetText, ...Object.values(context)].join('\n');
+  item.context = context;
+  item.contextHash = sha256(canonicalFields(context));
+  item.typoHints = Object.entries(TYPO_HINTS)
+    .filter(([source]) => allText.includes(source))
+    .map(([source, hint]) => `${source}: ${hint}`);
+  item.matchedGlossary = Object.entries(WEFILLING_GLOSSARY)
+    .filter(([source]) => allText.includes(source))
+    .map(([source, preferred]) => ({source, preferred}));
+  item.preserveIfUncertain = PRESERVE_IF_UNCERTAIN
+    .filter((term) => targetText.includes(term));
+  return item;
+}
+
+function postJson(
+  url: string,
+  apiKey: string,
+  body: unknown,
+  timeoutMs = 45_000,
+  diagnostics?: GeminiRequestDiagnostics,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const parsed = new URL(url);
+    const req = https.request({
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      agent: GEMINI_HTTPS_AGENT,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'x-goog-api-key': apiKey,
+      },
+      timeout: timeoutMs,
+    }, (response) => {
+      let raw = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk: string) => { raw += chunk; });
+      response.on('end', () => {
+        if ((response.statusCode ?? 500) >= 400) {
+          let providerCode: number | undefined;
+          let providerStatus = '';
+          let providerMessage = '';
+          try {
+            const parsedError = JSON.parse(raw) as {
+              error?: {code?: unknown; status?: unknown; message?: unknown};
+            };
+            const rawCode = Number(parsedError.error?.code);
+            if (Number.isFinite(rawCode)) providerCode = rawCode;
+            providerStatus = stringValue(parsedError.error?.status)
+              .replace(/[^A-Z0-9_]/gi, '')
+              .slice(0, 80);
+            providerMessage = stringValue(parsedError.error?.message)
+              .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED]')
+              .replace(/[\r\n]+/g, ' ')
+              .slice(0, 240);
+          } catch (_) {
+            // 응답 본문 전체나 API key는 로그에 남기지 않는다.
+          }
+          reject(new GeminiHttpError({
+            httpStatus: response.statusCode ?? 500,
+            providerCode,
+            providerStatus,
+            providerMessage,
+            requestStage: diagnostics?.requestStage,
+            model: diagnostics?.model,
+          }));
+          return;
+        }
+        try {
+          resolve(JSON.parse(raw));
+        } catch (_) {
+          reject(new GeminiStructuredResponseError(
+            'Gemini HTTP response was not valid JSON.',
+            `${diagnostics?.requestStage || 'provider_request'}_parse`,
+            diagnostics?.model || '',
+          ));
+        }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('Gemini request timed out.')));
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+function parseGeminiJson(value: unknown): {items?: GeminiTranslation[]} {
+  let text = stringValue(value).trim();
+  if (text.startsWith('```')) {
+    text = text
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+  }
+  if (!text) throw new Error('Gemini returned an empty response.');
+  return JSON.parse(text) as {items?: GeminiTranslation[]};
+}
+
+/**
+ * Shared low-temperature structured generation path for authenticated product
+ * features that already bind GEMINI_API_KEY on their own Cloud Function.
+ * Keeping transport/model parsing here avoids a second Gemini HTTP stack while
+ * leaving the stricter translation prompt and cache pipeline untouched.
+ */
+export async function generateStructuredGeminiJson(args: {
+  prompt: string;
+  responseJsonSchema?: Record<string, unknown>;
+  maxOutputTokens?: number;
+  timeoutMs?: number;
+  preferQualityModel?: boolean;
+}): Promise<Record<string, unknown>> {
+  const apiKey = stringValue(process.env.GEMINI_API_KEY).trim();
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+  const model = args.preferQualityModel ?
+    GEMINI_FALLBACK_MODEL : GEMINI_MODEL;
+  const response = await postJson(
+    `https://generativelanguage.googleapis.com/${GEMINI_API_VERSION}/models/${model}:generateContent`,
+    apiKey,
+    {
+      contents: [{role: 'user', parts: [{text: args.prompt}]}],
+      generationConfig: {
+        maxOutputTokens: args.maxOutputTokens ?? 1800,
+        thinkingConfig: {
+          thinkingLevel: args.preferQualityModel ? 'low' : 'minimal',
+        },
+        responseMimeType: 'application/json',
+        ...(args.responseJsonSchema ? {
+          responseJsonSchema: args.responseJsonSchema,
+        } : {}),
+      },
+    },
+    args.timeoutMs ?? 20_000,
+    {requestStage: 'structured_output_request', model},
+  ) as Record<string, unknown>;
+  const candidates = response.candidates as
+    Array<Record<string, unknown>> | undefined;
+  const content = candidates?.[0]?.content as
+    Record<string, unknown> | undefined;
+  const parts = content?.parts as Array<Record<string, unknown>> | undefined;
+  let text = stringValue(parts?.[0]?.text).trim();
+  if (text.startsWith('```')) {
+    text = text
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+  }
+  if (!text) {
+    throw new GeminiStructuredResponseError(
+      'Gemini returned an empty response.',
+      'structured_output_parse',
+      model,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch (_) {
+    throw new GeminiStructuredResponseError(
+      'Gemini returned invalid JSON.',
+      'structured_output_parse',
+      model,
+    );
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new GeminiStructuredResponseError(
+      'Gemini returned invalid structured JSON.',
+      'structured_output_parse',
+      model,
+    );
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function geminiErrorLogFields(error: unknown): {
+  errorCategory: string;
+  httpStatus?: number;
+} {
+  const message = error instanceof Error ? error.message : '';
+  const httpStatus = /Gemini HTTP (\d{3})/i.exec(message);
+  if (httpStatus) {
+    return {
+      errorCategory: Number(httpStatus[1]) === 429 ? 'quota' : 'http',
+      httpStatus: Number(httpStatus[1]),
+    };
+  }
+  if (/timed out/i.test(message)) return {errorCategory: 'timeout'};
+  if (/GEMINI_API_KEY/i.test(message)) return {errorCategory: 'configuration'};
+  if (error instanceof SyntaxError ||
+      /invalid JSON|empty response/i.test(message)) {
+    return {errorCategory: 'invalid_response'};
+  }
+  return {errorCategory: 'unknown'};
+}
+
+function isProviderUnavailableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : '';
+  const code = stringValue(
+    error && typeof error === 'object' ?
+      (error as Record<string, unknown>).code : '',
+  );
+  return /GEMINI_API_KEY|Gemini HTTP|timed out|socket hang up|network/i
+    .test(message) ||
+    /^(?:ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT)$/i
+      .test(code);
+}
+
+async function callGeminiModel(
+  items: ResolvedContent[],
+  targetLanguage: string,
+  model: string,
+  strict: boolean,
+  temporalRepair = false,
+): Promise<Map<string, GeminiTranslation>> {
+  const apiKey = stringValue(process.env.GEMINI_API_KEY).trim();
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+  const targetLanguageName =
+    TARGET_LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
+  const protectedItems = new Map<string, Record<string, ProtectedText>>();
+  const compactItems = items.map((item) => {
+    const fields: Record<string, string> = {};
+    for (const [field, value] of Object.entries(item.fields)) {
+      const protectedText = protectImmutableText(value);
+      const key = requestKey(item);
+      const itemProtection = protectedItems.get(key) ?? {};
+      itemProtection[field] = protectedText;
+      protectedItems.set(key, itemProtection);
+      fields[field] = protectedText.text;
+    }
+    const originalText = Object.values(item.fields).join('\n');
+    const temporalProfile = detectTemporalProfile(originalText);
+    return {
+      id: requestKey(item),
+      contentType: item.contentType,
+      sourceLanguageHint: detectSourceLanguageHint(originalText),
+      temporalExpressionTypes: temporalProfile.types,
+      CONTEXT: item.context,
+      TARGET: fields,
+      typoHints: item.typoHints,
+      matchedGlossary: item.matchedGlossary,
+      preserveIfUncertain: item.preserveIfUncertain,
+    };
+  });
+  // 투표 문항은 pollOption0, pollOption1처럼 동적으로 늘어난다. 고정 schema가
+  // 이를 막으면 Gemini가 옵션을 반환할 수 없어 Lite 재시도와 Flash fallback을
+  // 연달아 호출하게 된다. 현재 batch에 실제로 존재하는 필드만 허용한다.
+  const translationFieldProperties = Object.fromEntries(
+    [...new Set(items.flatMap((item) => Object.keys(item.fields)))]
+      .map((field) => [field, {type: 'string'}]),
+  );
+  const response = await postJson(
+    `https://generativelanguage.googleapis.com/${GEMINI_API_VERSION}/models/${model}:generateContent`,
+    apiKey,
+    {
+      contents: [{role: 'user', parts: [{text: [
+        `Translate every field into ${targetLanguageName} (${targetLanguage}) as a professional native translator.`,
+        'Complete preservation of the source meaning takes priority over naturalness; achieve both without dropping content.',
+        'Return sourceLanguage as an ISO 639-1 language code.',
+        'CONTEXT is read-only evidence for meaning, speaker/listener roles, and references. Never translate it and never return any CONTEXT field.',
+        'TARGET contains the only fields that may be translated and returned.',
+        'typoHints are conservative interpretation hints only. Do not rewrite the source or treat names, brands, memes, or nicknames as typos.',
+        'matchedGlossary contains only terms present in this item. Use each preferred form exactly without inventing glossary entries.',
+        'If a TARGET term is in preserveIfUncertain or its meaning is genuinely uncertain, keep the original term verbatim and include it in uncertainTerms.',
+        'Set coverageComplete to true only after confirming that every TARGET meaning unit is represented.',
+        'Set sourceIntent to exactly one of question, statement, answer, suggestion, request, command, exclamation, or unknown.',
+        '__WF...KEEP_N__ placeholders contain only URLs, contact data, explicit identifiers/placeholders, code, paths, markup, emoji, or line breaks. Preserve each placeholder exactly once, including its spelling and position.',
+        'Numbers with natural-language meaning—including dates, times, durations, quantities, money, places, units, counts, ranges, and order—are ordinary TARGET text, not protected IDs. Never omit them.',
+        'Preserve numeric meaning without unnecessary value changes, while translating the surrounding unit and expression naturally for the target reader. For example, 3명 means 3 people and 1박 2일 means the natural target-language equivalent of 1 night and 2 days; use context rather than fixed wording.',
+        'Distinguish clock time from duration and preserve AM versus PM, ranges, and every value in compound expressions.',
+        'Do not treat ordinary words as temporal units: 서울시 means Seoul City, 한 분 means one person, 오늘 일이 많아요 means there is much work today, 달이 밝아요 means the moon is bright, and 시를 읽었어요 means reading a poem.',
+        'Produce idiomatic, publication-ready text for a native reader; do not use awkward word-for-word phrasing.',
+        'Preserve meaning, nuance, tone, emotion, repetition, laughter, slang, and intentional informality.',
+        'Never summarize, shorten a long sentence, remove repetition, or omit any meaning unit.',
+        'Preserve who did what to whom, time, place, target, conditions, cause, result, quantities, numbers, and positive or negative meaning.',
+        'Keep each question, answer, suggestion, command, and exclamation as the same speech act, and never change the speaker or listener.',
+        'Every existing paragraph boundary and line break is protected by a placeholder. Never add spaces or line breaks inside a placeholder.',
+        'Keep every emoji unchanged and in the same relative position. Never translate, split, lowercase, or add spaces to URLs, emails, mentions, hashtags, IDs, or other protected values.',
+        'Keep punctuation and intentional emphasis unless target-language grammar requires an equivalent natural form.',
+        'Do not explain, add information, censor, invent names or brands, or rewrite proper nouns unnecessarily.',
+        'Use an obvious typo only to infer the intended meaning internally. Never alter the source, and if an expression is uncertain, preserve it instead of guessing a person, brand, apology, or unrelated word.',
+        'Use natural social-post and comment language for post/comment, natural conversational language for snack_chat_message and dm, and clear informational language for meetup.',
+        'Do not add explanations. Return one result per input id. A failure for one item must not remove other results.',
+        strict ?
+          'Before returning, verify sentence by sentence that no meaning unit was omitted, every protected token remains exactly once, paragraph structure is unchanged, and the result is fluent.' :
+          'Before returning, verify completeness and fluency without adding any explanation.',
+        temporalRepair ?
+          'TEMPORAL REPAIR: the previous candidate failed date/time validation. Re-translate this one item from the original TARGET, preserve numeric meaning and AM/PM, and ensure temporal units are expressed naturally in the target language.' :
+          '',
+        'Return only JSON shaped exactly as {"items":[{"id":"input id","sourceLanguage":"ISO 639-1 code","sourceIntent":"question","coverageComplete":true,"uncertainTerms":[],"translations":{"TARGET field name":"translated text"}}]}.',
+        JSON.stringify(compactItems),
+      ].join('\n')}]}],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+        responseJsonSchema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['items'],
+          properties: {
+            items: {
+              type: 'array',
+              minItems: compactItems.length,
+              maxItems: compactItems.length,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: [
+                  'id',
+                  'sourceLanguage',
+                  'sourceIntent',
+                  'coverageComplete',
+                  'uncertainTerms',
+                  'translations',
+                ],
+                properties: {
+                  id: {
+                    type: 'string',
+                    enum: compactItems.map((item) => item.id),
+                  },
+                  sourceLanguage: {type: 'string'},
+                  sourceIntent: {
+                    type: 'string',
+                    enum: [...SOURCE_INTENTS],
+                  },
+                  coverageComplete: {type: 'boolean'},
+                  uncertainTerms: {
+                    type: 'array',
+                    items: {type: 'string'},
+                  },
+                  translations: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: translationFieldProperties,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    45_000,
+    {requestStage: 'translation_request', model},
+  ) as Record<string, unknown>;
+  const candidates = response.candidates as Array<Record<string, unknown>> | undefined;
+  const content = candidates?.[0]?.content as Record<string, unknown> | undefined;
+  const parts = content?.parts as Array<Record<string, unknown>> | undefined;
+  const parsed = parseGeminiJson(parts?.[0]?.text);
+  const results = new Map<string, GeminiTranslation>();
+  const invalidIds = new Set<string>();
+  for (const item of parsed.items ?? []) {
+    if (item && typeof item.id === 'string' && item.translations &&
+        typeof item.translations === 'object' &&
+        protectedItems.has(item.id) && !invalidIds.has(item.id)) {
+      if (results.has(item.id)) {
+        results.delete(item.id);
+        invalidIds.add(item.id);
+        continue;
+      }
+      const protections = protectedItems.get(item.id) ?? {};
+      const translations: Record<string, string> = {};
+      let invalidTranslationField = false;
+      for (const [field, value] of Object.entries(item.translations)) {
+        const protection = protections[field];
+        if (!protection) {
+          invalidTranslationField = true;
+          break;
+        }
+        const restored = restoreImmutableText(stringValue(value), protection);
+        if (restored != null) translations[field] = restored;
+      }
+      if (!invalidTranslationField) {
+        results.set(item.id, {...item, translations, modelUsed: model});
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * Reuses the existing protected-token and translation quality pipeline for a
+ * very small set of already-authorized strings. This is intentionally not a
+ * second translation implementation: unread-summary fallback uses it only
+ * when deterministic output would otherwise be empty because source and
+ * target languages differ.
+ */
+/**
+ * 저장된 문서가 없는 일반 텍스트를 기존 Gemini 파이프라인 입력으로 만든다.
+ * 용어집·오타 힌트·고유어 보존 규칙을 콘텐츠 번역과 똑같이 적용한다.
+ */
+function plainTextItems(texts: string[], idPrefix: string): ResolvedContent[] {
+  return texts.map((value, index) => ({
+    contentType: 'snack_chat_message',
+    contentId: `${idPrefix}-${index}`,
+    fields: {text: value},
+    context: {},
+    contextHash: sha256(''),
+    typoHints: Object.entries(TYPO_HINTS)
+      .filter(([source]) => value.includes(source))
+      .map(([source, hint]) => `${source}: ${hint}`),
+    matchedGlossary: Object.entries(WEFILLING_GLOSSARY)
+      .filter(([source]) => value.includes(source))
+      .map(([source, preferred]) => ({source, preferred})),
+    preserveIfUncertain: PRESERVE_IF_UNCERTAIN
+      .filter((term) => value.includes(term)),
+    contextSeed: {},
+    sourceHash: sha256(value),
+  }));
+}
+
+export async function translatePlainTextsWithExistingPipeline(
+  texts: string[],
+  targetLanguage: string,
+  options?: {canaryModel?: 'primary' | 'fallback'},
+): Promise<string[]> {
+  const target = normalizeLanguageCode(targetLanguage);
+  const bounded = texts
+    .map((value) => stringValue(value).trim().slice(0, 4000))
+    .filter(Boolean)
+    .slice(0, MAX_BATCH_SIZE);
+  if (bounded.length === 0) return [];
+  const items = plainTextItems(bounded, 'summary-fallback');
+  if (options?.canaryModel) {
+    const model = options.canaryModel === 'fallback' ?
+      GEMINI_FALLBACK_MODEL : GEMINI_MODEL;
+    const direct = await callGeminiModel(items, target, model, true);
+    return items.map((item) => {
+      const candidate = direct.get(requestKey(item));
+      if (!isValidItemTranslation(item, candidate, target) &&
+          !isSafeFallbackItemTranslation(item, candidate, target)) {
+        throw new Error(
+          `Temporal canary validation failed: ${safeFallbackFailureCode(
+            item,
+            candidate,
+            target,
+          )}`,
+        );
+      }
+      return candidate.translations.text.trim();
+    });
+  }
+  const result = await callGemini(items, target);
+  return items.map((item) =>
+    result.translations.get(requestKey(item))?.translations.text?.trim() || '',
+  );
+}
+
+function inferredSourceIntent(value: string): string {
+  const text = value.trim();
+  if (!text) return 'unknown';
+  if (/[?？؟]/.test(text) ||
+      /(?:무슨|뭐|왜|어떻게|어디|누구|언제|몇|어느).*(?:나요|까요|인가요|습니까|니|냐|건가요)\s*[.!~]*$/u.test(text) ||
+      /(?:나요|인가요|습니까|건가요)\s*[.!~]*$/u.test(text)) {
+    return 'question';
+  }
+  if (/(?:해주세요|해\s*주세요|부탁(?:해|드려|합니다))/u.test(text)) {
+    return 'request';
+  }
+  if (/(?:하지\s*마|해라|하세요)\s*[.!~]*$/u.test(text)) return 'command';
+  if (/(?:하자|어때요|어때|하는\s*게\s*어때)\s*[.!~]*$/u.test(text)) {
+    return 'suggestion';
+  }
+  if (/^\s*(?:네|예|응|아니요|아뇨)(?:[\s,.!~]|$)/u.test(text)) {
+    return 'answer';
+  }
+  if (/!|！/.test(text)) return 'exclamation';
+  return 'unknown';
+}
+
+function intentIsCompatible(inferred: string, returned: string): boolean {
+  if (inferred === 'unknown') return true;
+  if (inferred === 'question') return returned === 'question';
+  if (inferred === 'request') {
+    return returned === 'request' || returned === 'command';
+  }
+  if (inferred === 'command') {
+    return returned === 'command' || returned === 'request';
+  }
+  if (inferred === 'suggestion') {
+    return returned === 'suggestion' || returned === 'question';
+  }
+  if (inferred === 'answer') {
+    return returned === 'answer' || returned === 'statement';
+  }
+  if (inferred === 'exclamation') {
+    return returned === 'exclamation' || returned === 'statement';
+  }
+  return inferred === returned;
+}
+
+function looksLikeTranslatedQuestion(value: string, target: string): boolean {
+  const text = value.trim();
+  if (/[?？؟¿]/.test(text)) return true;
+  if (target === 'en') {
+    return /^(?:who|what|when|where|why|how|which|whose|do|does|did|is|are|am|was|were|can|could|will|would|should|have|has)\b/i.test(text);
+  }
+  if (target === 'ko') return /(?:나요|까요|인가요|습니까|니|냐)\s*[.!~]*$/u.test(text);
+  if (target === 'ja') return /(?:か|の)\s*[。！!~]*$/u.test(text);
+  if (target === 'zh') return /(?:吗|呢|么)\s*[。！!~]*$/u.test(text);
+  if (target === 'ar') return /^\s*هل\b/u.test(text);
+  return false;
+}
+
+function hasNegation(value: string): boolean {
+  return /(?:^|[\s,.!?])(?:안(?:\s+|해|돼|되|가|오|먹|보)|못(?:\s+|해|하|가|오|먹|보)|아니(?=$|[\s,.!?])|아니(?:야|에요|예요|다|고|면)|없|않|하지\s*마|말고)|(?:not|no|never|none|nothing|without|n't)\b|\b(?:ne|pas|non|nicht|kein|ningún|nunca|não|sem|нет|не|без)\b|[不没無ない]/iu.test(value);
+}
+
+function isShortReaction(value: string): boolean {
+  return /^(?:ㅋ+|ㅎ+|응+|네+|예+|ㅇㅇ|ok(?:ay)?|yes|no)[\s.!?~]*$/iu.test(value.trim());
+}
+
+function isPlausibleTranslation(
+  source: string,
+  translated: string,
+  targetLanguage: string,
+  requireLexicalNegation = true,
+): boolean {
+  const normalizedSource = source.replace(/\r\n?/g, '\n');
+  const normalizedTranslation = translated.replace(/\r\n?/g, '\n');
+  const sourceLength = normalizedSource.trim().length;
+  const translatedLength = normalizedTranslation.trim().length;
+  if (translatedLength < 1) return false;
+  if ((normalizedSource.match(/\n/g) ?? []).length !==
+      (normalizedTranslation.match(/\n/g) ?? []).length) {
+    return false;
+  }
+  if (!preservesImmutableTokens(normalizedSource, normalizedTranslation)) {
+    return false;
+  }
+  if (sourceLength >= 12 && !isShortReaction(normalizedSource)) {
+    const sourceWords = normalizedSource.match(/\p{L}+/gu) ?? [];
+    let minimumRatio = sourceWords.length >= 4 ? 0.35 : 0.25;
+    if (targetLanguage === 'en' && /[가-힣]/.test(normalizedSource)) {
+      minimumRatio = Math.max(minimumRatio, 0.58);
+    }
+    const minimumLength = Math.max(2, Math.floor(sourceLength * minimumRatio));
+    const maximumLength = sourceLength * 6 + 200;
+    if (translatedLength < minimumLength || translatedLength > maximumLength) {
+      return false;
+    }
+  }
+  if (requireLexicalNegation &&
+      hasNegation(normalizedSource) &&
+      !hasNegation(normalizedTranslation)) {
+    return false;
+  }
+  return true;
+}
+
+function hasUngroundedEnglishProperNoun(
+  item: ResolvedContent,
+  result: GeminiTranslation,
+  targetLanguage: string,
+): boolean {
+  if (targetLanguage !== 'en') return false;
+  const grounding = [
+    ...Object.values(item.fields),
+    ...Object.values(item.context),
+    ...item.matchedGlossary.flatMap((entry) => [
+      entry.source,
+      entry.preferred,
+    ]),
+  ].join(' ').toLocaleLowerCase();
+  const allowed = new Set([
+    'i', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+    'saturday', 'sunday', 'january', 'february', 'march', 'april',
+    'may', 'june', 'july', 'august', 'september', 'october',
+    'november', 'december', 'korean', 'english', 'japanese', 'chinese',
+  ]);
+  for (const translated of Object.values(result.translations)) {
+    const properNounPattern = /\b[A-Z][a-z]{2,}\b/g;
+    let match: RegExpExecArray | null;
+    while ((match = properNounPattern.exec(translated)) !== null) {
+      const word = match[0];
+      const offset = match.index;
+      const prefix = translated.slice(0, offset).trimEnd();
+      const sentenceInitial = prefix.length === 0 || /[.!?\n]\s*$/.test(prefix);
+      if (!sentenceInitial && !allowed.has(word.toLocaleLowerCase()) &&
+          !grounding.includes(word.toLocaleLowerCase())) {
+        // Be conservative: transliterated real place/person names can also be
+        // new Latin tokens. Reject only when the item already contains an
+        // explicit typo/uncertainty signal.
+        if (item.typoHints.length > 0 || result.uncertainTerms.length > 0) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function isValidItemTranslation(
+  item: ResolvedContent,
+  result: GeminiTranslation | undefined,
+  targetLanguage: string,
+): result is GeminiTranslation {
+  if (!result || !result.translations ||
+      typeof result.translations !== 'object') {
+    return false;
+  }
+  if (result.id !== requestKey(item) ||
+      !/^[a-z]{2}$/i.test(stringValue(result.sourceLanguage)) ||
+      !SOURCE_INTENTS.has(stringValue(result.sourceIntent)) ||
+      result.coverageComplete !== true ||
+      !Array.isArray(result.uncertainTerms) ||
+      result.uncertainTerms.some((term) =>
+        typeof term !== 'string' || !term.trim()
+      ) ||
+      new Set(result.uncertainTerms).size !== result.uncertainTerms.length) {
+    return false;
+  }
+  const expectedFields = Object.keys(item.fields).sort();
+  const actualFields = Object.keys(result.translations).sort();
+  if (expectedFields.length !== actualFields.length ||
+      expectedFields.some((field, index) => field !== actualFields[index])) {
+    return false;
+  }
+  if (!expectedFields.every((field) =>
+    isPlausibleTranslation(
+      item.fields[field],
+      result.translations[field],
+      targetLanguage,
+    ) &&
+    !isUnexpectedlyUnchangedTranslation(
+      item.fields[field],
+      result.translations[field],
+      result.sourceLanguage,
+      targetLanguage,
+    ) &&
+    validateTemporalTranslation(
+      item.fields[field],
+      result.translations[field],
+      detectSourceLanguageHint(item.fields[field]) || result.sourceLanguage,
+      targetLanguage,
+    ) == null,
+  )) return false;
+
+  const sourceText = Object.values(item.fields).join('\n');
+  const translatedText = Object.values(result.translations).join('\n');
+  const inferredIntent = inferredSourceIntent(sourceText);
+  if (!intentIsCompatible(inferredIntent, result.sourceIntent)) return false;
+  if ((inferredIntent === 'question' || result.sourceIntent === 'question') &&
+      !looksLikeTranslatedQuestion(translatedText, targetLanguage)) {
+    return false;
+  }
+  for (const field of expectedFields) {
+    if (inferredSourceIntent(item.fields[field]) === 'question' &&
+        !looksLikeTranslatedQuestion(
+          result.translations[field],
+          targetLanguage,
+        )) {
+      return false;
+    }
+  }
+  const uncertainTerms = result.uncertainTerms.map((term) => term.trim());
+  if (uncertainTerms.some((term) =>
+    !sourceText.includes(term) || !translatedText.includes(term)
+  )) return false;
+  if (item.preserveIfUncertain.some((term) =>
+    !uncertainTerms.includes(term) || !translatedText.includes(term)
+  )) return false;
+
+  if (targetLanguage === 'en') {
+    const hasFirstPerson = /(?:저는|제가|나는|내가|우리는|우리가)/u.test(sourceText);
+    const hasSecondPerson = /(?:당신은|당신이|너는|네가|니가|여러분)/u.test(sourceText);
+    if (hasFirstPerson && !/\b(?:I|me|my|mine|we|us|our|ours)\b/i.test(translatedText)) {
+      return false;
+    }
+    if (hasSecondPerson && !/\b(?:you|your|yours)\b/i.test(translatedText)) {
+      return false;
+    }
+  }
+  return !hasUngroundedEnglishProperNoun(item, result, targetLanguage);
+}
+
+// Gemini occasionally returns a complete, usable translation whose auxiliary
+// intent/uncertainty metadata fails one of the stricter quality heuristics. We
+// still prefer a fully validated result, but after both the strict Lite retry
+// and the Flash fallback have been exhausted it is better to use a structurally
+// safe candidate than to leave the card/message untranslated and repeatedly
+// spend another request on the same source.
+function isSafeFallbackItemTranslation(
+  item: ResolvedContent,
+  result: GeminiTranslation | undefined,
+  targetLanguage: string,
+): result is GeminiTranslation {
+  if (!result || result.id !== requestKey(item) ||
+      !/^[a-z]{2}$/i.test(stringValue(result.sourceLanguage)) ||
+      result.coverageComplete !== true ||
+      !result.translations || typeof result.translations !== 'object') {
+    return false;
+  }
+  const expectedFields = Object.keys(item.fields).sort();
+  const actualFields = Object.keys(result.translations).sort();
+  if (expectedFields.length !== actualFields.length ||
+      expectedFields.some((field, index) => field !== actualFields[index])) {
+    return false;
+  }
+  return expectedFields.every((field) =>
+    isPlausibleTranslation(
+      item.fields[field],
+      result.translations[field],
+      targetLanguage,
+      false,
+    ) &&
+    !isUnexpectedlyUnchangedTranslation(
+      item.fields[field],
+      result.translations[field],
+      result.sourceLanguage,
+      targetLanguage,
+    ) &&
+    validateTemporalTranslation(
+      item.fields[field],
+      result.translations[field],
+      detectSourceLanguageHint(item.fields[field]) || result.sourceLanguage,
+      targetLanguage,
+    ) == null,
+  );
+}
+
+function safeFallbackFailureCode(
+  item: ResolvedContent,
+  result: GeminiTranslation | undefined,
+  targetLanguage: string,
+): string {
+  if (!result) return 'missing_result';
+  if (result.id !== requestKey(item)) return 'id_mismatch';
+  if (!/^[a-z]{2}$/i.test(stringValue(result.sourceLanguage))) {
+    return 'invalid_source_language';
+  }
+  if (result.coverageComplete !== true) return 'coverage_incomplete';
+  if (!result.translations || typeof result.translations !== 'object') {
+    return 'missing_translations';
+  }
+  const expectedFields = Object.keys(item.fields).sort();
+  const actualFields = Object.keys(result.translations).sort();
+  if (expectedFields.length !== actualFields.length ||
+      expectedFields.some((field, index) => field !== actualFields[index])) {
+    return 'field_mismatch';
+  }
+  if (!expectedFields.every((field) =>
+    isPlausibleTranslation(
+      item.fields[field],
+      result.translations[field],
+      targetLanguage,
+      false,
+    ),
+  )) return 'semantic_or_structure_guard';
+  for (const field of expectedFields) {
+    const temporalFailure = validateTemporalTranslation(
+      item.fields[field],
+      result.translations[field],
+      detectSourceLanguageHint(item.fields[field]) || result.sourceLanguage,
+      targetLanguage,
+    );
+    if (temporalFailure) return temporalFailure;
+  }
+  return 'strict_metadata_guard';
+}
+
+function temporalFailureForItem(
+  item: ResolvedContent,
+  result: GeminiTranslation | undefined,
+  targetLanguage: string,
+): string | null {
+  if (!result?.translations) return null;
+  for (const field of Object.keys(item.fields)) {
+    const translated = result.translations[field];
+    if (typeof translated !== 'string') continue;
+    const failure = validateTemporalTranslation(
+      item.fields[field],
+      translated,
+      detectSourceLanguageHint(item.fields[field]) || result.sourceLanguage,
+      targetLanguage,
+    );
+    if (failure) return failure;
+  }
+  return null;
+}
+
+function logTranslationItemDiagnostic(
+  item: ResolvedContent,
+  targetLanguage: string,
+  details: {
+    sourceLanguage: string;
+    modelUsed: string;
+    validationFailureCode?: string;
+    repairAttempted?: boolean;
+    repairSucceeded?: boolean;
+    cacheSource: string;
+    durationMs: number;
+  },
+): void {
+  if (!runtimeLogsEnabled) return;
+  const sourceText = Object.values(item.fields).join('\n');
+  const temporal = detectTemporalProfile(sourceText);
+  const protectedTokenCount = Object.values(item.fields).reduce(
+    (count, value) =>
+      count + Object.keys(protectImmutableText(value).tokens).length,
+    0,
+  );
+  const immutableIdentifierCount = Object.values(item.fields).reduce(
+    (count, value) => count + immutableTokens(value).length,
+    0,
+  );
+  runtimeInfo('content_translation_item', {
+    contentType: item.contentType,
+    messageIdHash: sha256(item.contentId).slice(0, 16),
+    sourceLanguage: details.sourceLanguage ||
+      detectSourceLanguageHint(sourceText) || 'unknown',
+    targetLanguage,
+    temporalExpressionDetected: temporal.detected,
+    temporalExpressionType: temporal.types.join(','),
+    protectedTokenCount,
+    immutableIdentifierCount,
+    modelUsed: details.modelUsed,
+    validationFailureCode: details.validationFailureCode ?? '',
+    repairAttempted: details.repairAttempted ?? false,
+    repairSucceeded: details.repairSucceeded ?? false,
+    cacheSource: details.cacheSource,
+    durationMs: details.durationMs,
+  });
+}
+
+async function runTranslationRepairTasks(
+  tasks: Array<() => Promise<void>>,
+): Promise<void> {
+  let next = 0;
+  await Promise.all(Array.from({
+    length: Math.min(MAX_BATCH_SIZE, tasks.length),
+  }, async () => {
+    while (next < tasks.length) {
+      const task = tasks[next++];
+      await task();
+    }
+  }));
+}
+
+async function callGemini(
+  items: ResolvedContent[],
+  targetLanguage: string,
+): Promise<{
+  translations: Map<string, GeminiTranslation>;
+  providerUnavailable: boolean;
+  diagnostics: TranslationRunDiagnostics;
+}> {
+  // Keep the normal batch fast and inexpensive. Only malformed or incomplete
+  // items are retried, so a single bad result never discards valid siblings.
+  let batch = new Map<string, GeminiTranslation>();
+  try {
+    batch = await callGeminiModel(
+      items,
+      targetLanguage,
+      GEMINI_MODEL,
+      false,
+    );
+  } catch (error) {
+    if (isProviderUnavailableError(error)) throw error;
+    console.warn('content_translation_batch_structure_retry', {
+      targetLanguage,
+      modelUsed: GEMINI_MODEL,
+      translationVersion: TRANSLATION_VERSION,
+      promptVersion: PROMPT_VERSION,
+      cacheSource: 'gemini',
+      ...geminiErrorLogFields(error),
+    });
+  }
+  const results = new Map<string, GeminiTranslation>();
+  const safeFallbacks = new Map<string, GeminiTranslation>();
+  const latestCandidates = new Map<string, GeminiTranslation>(batch);
+  const repairAttempted = new Set<string>();
+  const repairSucceeded = new Set<string>();
+  let providerUnavailable = false;
+  for (const item of items) {
+    const key = requestKey(item);
+    const result = batch.get(key);
+    if (isValidItemTranslation(item, result, targetLanguage)) {
+      results.set(key, result);
+    } else if (isSafeFallbackItemTranslation(item, result, targetLanguage)) {
+      safeFallbacks.set(key, result);
+    }
+  }
+
+  // A temporal semantic failure gets one isolated repair request. Keeping it
+  // single-item prevents one malformed date/time from invalidating siblings,
+  // while parallel execution avoids serial latency for a busy viewport.
+  const temporalRepairItems = items.filter((item) => {
+    const key = requestKey(item);
+    return !results.has(key) && temporalFailureForItem(
+      item,
+      batch.get(key),
+      targetLanguage,
+    ) != null;
+  });
+  const temporalRepairs = temporalRepairItems.map((item) => async () => {
+    const key = requestKey(item);
+    repairAttempted.add(key);
+    try {
+      const repaired = await callGeminiModel(
+        [item],
+        targetLanguage,
+        GEMINI_MODEL,
+        true,
+        true,
+      );
+      const result = repaired.get(key);
+      if (result) latestCandidates.set(key, result);
+      if (isValidItemTranslation(item, result, targetLanguage) ||
+          isSafeFallbackItemTranslation(item, result, targetLanguage)) {
+        results.set(key, result);
+        repairSucceeded.add(key);
+      }
+    } catch (error) {
+      console.warn('content_translation_temporal_repair_failed', {
+        contentType: item.contentType,
+        contentIdHash: sha256(item.contentId).slice(0, 16),
+        targetLanguage,
+        modelUsed: GEMINI_MODEL,
+        validationFailureCode: temporalFailureForItem(
+          item,
+          batch.get(key),
+          targetLanguage,
+        ),
+        ...geminiErrorLogFields(error),
+      });
+    }
+  });
+
+  // Retry every rejected sibling in one strict request. The previous
+  // per-item loop serialized up to ten provider calls for a five-item batch,
+  // which made one difficult chat message block the rest of the viewport.
+  const strictItems = items.filter((item) => {
+    const key = requestKey(item);
+    return !results.has(key) && !temporalRepairItems.includes(item);
+  });
+  const retryStrictItems = async () => {
+    if (strictItems.length === 0) return;
+    try {
+      const retried = await callGeminiModel(
+        strictItems,
+        targetLanguage,
+        GEMINI_MODEL,
+        true,
+      );
+      for (const item of strictItems) {
+        const key = requestKey(item);
+        const result = retried.get(key);
+        if (result) latestCandidates.set(key, result);
+        if (isValidItemTranslation(item, result, targetLanguage)) {
+          results.set(key, result);
+        } else if (isSafeFallbackItemTranslation(
+          item,
+          result,
+          targetLanguage,
+        )) {
+          safeFallbacks.set(key, result);
+        }
+      }
+    } catch (error) {
+      console.warn('content_translation_item_retry_failed', {
+        itemCount: strictItems.length,
+        targetLanguage,
+        modelUsed: GEMINI_MODEL,
+        translationVersion: TRANSLATION_VERSION,
+        promptVersion: PROMPT_VERSION,
+        cacheSource: 'gemini',
+        ...geminiErrorLogFields(error),
+      });
+      providerUnavailable = isProviderUnavailableError(error);
+    }
+  };
+
+  // Different rejected items do not depend on each other's repair result.
+  // Start the strict batch alongside temporal repairs, within the existing
+  // five-item repair ceiling. Do not serialize a temporal-only batch that was
+  // already parallel. Quality gates and attempt counts remain unchanged;
+  // successful items still never enter a repair request.
+  await runTranslationRepairTasks([
+    ...(strictItems.length > 0 ? [retryStrictItems] : []),
+    ...temporalRepairs,
+  ]);
+
+  // A structurally complete strict result has already preserved fields,
+  // protected tokens, line breaks, length and negation. Auxiliary intent or
+  // uncertainty metadata should not force another multi-second model call or
+  // leave the message untranslated.
+  for (const [key, result] of safeFallbacks) {
+    if (!results.has(key)) results.set(key, result);
+  }
+
+  const fallbackItems = providerUnavailable ? [] :
+    items.filter((item) => !results.has(requestKey(item)));
+  if (fallbackItems.length > 0) {
+    try {
+      const fallback = await callGeminiModel(
+        fallbackItems,
+        targetLanguage,
+        GEMINI_FALLBACK_MODEL,
+        true,
+      );
+      for (const item of fallbackItems) {
+        const key = requestKey(item);
+        const result = fallback.get(key);
+        if (result) latestCandidates.set(key, result);
+        if (isValidItemTranslation(item, result, targetLanguage) ||
+            isSafeFallbackItemTranslation(item, result, targetLanguage)) {
+          results.set(key, result);
+        }
+      }
+    } catch (error) {
+      console.warn('content_translation_item_fallback_failed', {
+        itemCount: fallbackItems.length,
+        targetLanguage,
+        modelUsed: GEMINI_FALLBACK_MODEL,
+        translationVersion: TRANSLATION_VERSION,
+        promptVersion: PROMPT_VERSION,
+        cacheSource: 'gemini',
+        ...geminiErrorLogFields(error),
+      });
+      providerUnavailable = isProviderUnavailableError(error);
+    }
+  }
+
+  const failureCodes = new Map<string, string>();
+  for (const item of items) {
+    const key = requestKey(item);
+    if (results.has(key)) continue;
+    const failureCode = safeFallbackFailureCode(
+      item,
+      latestCandidates.get(key),
+      targetLanguage,
+    );
+    failureCodes.set(key, failureCode);
+    console.warn('content_translation_quality_rejected', {
+      contentType: item.contentType,
+      contentIdHash: sha256(item.contentId).slice(0, 16),
+      targetLanguage,
+      modelUsed: GEMINI_FALLBACK_MODEL,
+      translationVersion: TRANSLATION_VERSION,
+      promptVersion: PROMPT_VERSION,
+      reason: failureCode,
+      repairAttempted: repairAttempted.has(key),
+      repairSucceeded: repairSucceeded.has(key),
+    });
+  }
+  return {
+    translations: results,
+    providerUnavailable,
+    diagnostics: {failureCodes, repairAttempted, repairSucceeded},
+  };
+}
+
+function nonNegativeInt(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
+
+type ProviderQuotaDecision = {allowed: true} | {allowed: false; reason: string};
+
+/**
+ * Consumes the per-user provider quota for the items about to be sent to
+ * Gemini. A quota-store failure never blocks translation.
+ */
+async function consumeTranslationProviderQuota(
+  uid: string,
+  items: ResolvedContent[],
+): Promise<ProviderQuotaDecision> {
+  const providerItems = items.length;
+  if (providerItems === 0) return {allowed: true};
+  const regenerateItems = items.filter((item) => item.forceRegenerate).length;
+  const ref = admin.firestore().collection(TRANSLATION_USAGE_COLLECTION).doc(uid);
+  try {
+    return await admin.firestore().runTransaction(async (transaction) => {
+      const snap = await transaction.get(ref);
+      const data = snap.data() ?? {};
+      const now = Date.now();
+      const shortStart = timestampMillis(data.shortWindowStartedAt) ?? 0;
+      const sameShort = shortStart > 0 &&
+        now - shortStart < TRANSLATION_SHORT_WINDOW_MS;
+      const shortCount = sameShort ? nonNegativeInt(data.shortProviderItems) : 0;
+      const shortRegenerate = sameShort ?
+        nonNegativeInt(data.shortRegenerateItems) : 0;
+      const dayStart = timestampMillis(data.dayWindowStartedAt) ?? 0;
+      const sameDay = dayStart > 0 && now - dayStart < TRANSLATION_DAY_WINDOW_MS;
+      const dayCount = sameDay ? nonNegativeInt(data.dayProviderItems) : 0;
+      if (shortCount + providerItems > TRANSLATION_MAX_PROVIDER_ITEMS_PER_SHORT_WINDOW) {
+        return {allowed: false, reason: 'short_window'} as ProviderQuotaDecision;
+      }
+      if (shortRegenerate + regenerateItems >
+          TRANSLATION_MAX_REGENERATE_ITEMS_PER_SHORT_WINDOW) {
+        return {allowed: false, reason: 'regenerate_window'} as ProviderQuotaDecision;
+      }
+      if (dayCount + providerItems > TRANSLATION_MAX_PROVIDER_ITEMS_PER_DAY) {
+        return {allowed: false, reason: 'day_window'} as ProviderQuotaDecision;
+      }
+      transaction.set(ref, {
+        shortWindowStartedAt: admin.firestore.Timestamp.fromMillis(
+          sameShort ? shortStart : now,
+        ),
+        shortProviderItems: shortCount + providerItems,
+        shortRegenerateItems: shortRegenerate + regenerateItems,
+        dayWindowStartedAt: admin.firestore.Timestamp.fromMillis(
+          sameDay ? dayStart : now,
+        ),
+        dayProviderItems: dayCount + providerItems,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, {merge: true});
+      return {allowed: true} as ProviderQuotaDecision;
+    });
+  } catch (error) {
+    console.warn('content_translation_quota_unavailable', {
+      uidHash: sha256(uid).slice(0, 16),
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return {allowed: true};
+  }
+}
+
+export const translateContentBatch = callables()
+  .runWith({secrets: ['GEMINI_API_KEY'], timeoutSeconds: 60, memory: '512MB'})
+  .https.onCall(async (raw, context) => {
+    const uid = context.auth?.uid;
+    if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Sign-in is required.');
+    const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+    const targetLanguage = normalizeLanguageCode(data.targetLanguage);
+    if (!Array.isArray(data.items) || data.items.length < 1 || data.items.length > MAX_BATCH_SIZE) {
+      throw new functions.https.HttpsError('invalid-argument', 'Provide 1 to 5 items.');
+    }
+    const requests = data.items.map((value): TranslationRequest => {
+      const item = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+      const contentType = stringValue(item.contentType).trim();
+      if (!SUPPORTED_TYPES.has(contentType)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Unsupported content type.');
+      }
+      return {
+        contentType,
+        contentId: safeId(item.contentId, 'contentId'),
+        parentId: stringValue(item.parentId).trim() || undefined,
+        forceRetry: item.forceRetry === true,
+        forceRegenerate: item.forceRegenerate === true,
+      };
+    });
+    if (new Set(requests.map(requestKey)).size !== requests.length) {
+      throw new functions.https.HttpsError('invalid-argument', 'Duplicate items are not allowed.');
+    }
+
+    const startedAt = Date.now();
+    const responses = new Map<string, Record<string, unknown>>();
+    const db = admin.firestore();
+    const resolutionCache: ResolutionCache = {
+      // 한 callable batch의 스낵챗 메시지는 보통 모두 같은 방에 속한다.
+      // 참여 권한 원본인 방 문서를 메시지마다 다시 과금/조회하지 않는다.
+      snackRooms: new Map(),
+      dmConversations: new Map(),
+      documents: new Map(),
+    };
+    const resolvedAttempts = await Promise.all(requests.map(async (item) => {
+      try {
+        return await resolveContent(uid, item, resolutionCache);
+      } catch (error) {
+        const key = requestKey(item);
+        const errorCode = error instanceof functions.https.HttpsError ?
+          error.code : 'internal';
+        responses.set(key, {
+          id: key,
+          status: 'failed',
+          errorCode,
+        });
+        console.warn('content_translation_source_resolution_failed', {
+          contentType: item.contentType,
+          contentIdHash: sha256(item.contentId).slice(0, 16),
+          errorCode,
+        });
+        return null;
+      }
+    }));
+    const resolved = resolvedAttempts.filter(
+      (item): item is ResolvedContent => item != null,
+    );
+    const acquired: ResolvedContent[] = [];
+    // 잠금 직전 캐시 상태. 할당량 초과로 호출을 포기할 때 되돌리는 데 쓴다.
+    const preLockCache = new Map<string, Record<string, unknown> | null>();
+    let cacheHits = 0;
+    let pendingBlocked = 0;
+
+    // Every cache document is independent. Resolve the five cache locks in
+    // parallel so a warm viewport pays one Firestore round trip instead of up
+    // to five serial round trips before Gemini can even start.
+    await Promise.all(resolved.map(async (item) => {
+      const key = requestKey(item);
+      if (looksLikeSameLanguage(Object.values(item.fields).join('\n'), targetLanguage)) {
+        const sourceIntent = inferredSourceIntent(
+          Object.values(item.fields).join('\n'),
+        );
+        responses.set(key, {
+          id: key,
+          status: 'same_language',
+          sourceHash: item.sourceHash,
+          sourceLanguage: targetLanguage,
+          targetLanguage,
+          translatedFields: item.fields,
+          modelUsed: 'same-language',
+          ...CLIENT_RESPONSE_METADATA,
+          sourceIntent,
+          contextHash: sha256(canonicalFields({})),
+          coverageComplete: true,
+          uncertainTerms: [],
+          translatedAt: Date.now(),
+          cacheSource: 'same_language',
+        });
+        logTranslationItemDiagnostic(item, targetLanguage, {
+          sourceLanguage: targetLanguage,
+          modelUsed: 'same-language',
+          cacheSource: 'same_language',
+          durationMs: Date.now() - startedAt,
+        });
+        return;
+      }
+      const ref = db.collection(COL.contentTranslations).doc(cacheId(item, targetLanguage));
+      const acquiredLock = await db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(ref);
+        const cached = snap.data();
+        // An explicit message-level retry must run the provider again. Reusing
+        // the same completed document here made "retry translation" return a
+        // previously rejected/unchanged sentence without doing new work.
+        // Automatic requests keep the existing completed-cache fast path.
+        if (!item.forceRegenerate &&
+            isCurrentCompletedCache(cached, item, targetLanguage)) {
+          cacheHits++;
+          responses.set(key, {
+            id: key,
+            status: 'completed',
+            sourceHash: item.sourceHash,
+            sourceLanguage: stringValue(cached.sourceLanguage),
+            targetLanguage,
+            translatedFields: cached.translatedFields ?? {},
+            modelUsed: stringValue(cached.modelUsed),
+            ...CLIENT_RESPONSE_METADATA,
+            sourceIntent: stringValue(cached.sourceIntent),
+            contextHash: stringValue(cached.contextHash),
+            coverageComplete: true,
+            uncertainTerms: Array.isArray(cached.uncertainTerms) ?
+              cached.uncertainTerms : [],
+            translatedAt: timestampMillis(cached.translatedAt) ?? Date.now(),
+            cacheSource: 'firestore',
+          });
+          logTranslationItemDiagnostic(item, targetLanguage, {
+            sourceLanguage: stringValue(cached.sourceLanguage),
+            modelUsed: stringValue(cached.modelUsed),
+            cacheSource: 'firestore',
+            durationMs: Date.now() - startedAt,
+          });
+          return false;
+        }
+        if (!item.forceRetry &&
+            isCurrentFailedCache(cached, item, targetLanguage)) {
+          cacheHits++;
+          responses.set(
+            key,
+            cachedFailureResponse(item, targetLanguage, cached),
+          );
+          logTranslationItemDiagnostic(item, targetLanguage, {
+            sourceLanguage: stringValue(cached.sourceLanguage),
+            modelUsed: stringValue(cached.modelUsed) || GEMINI_MODEL,
+            validationFailureCode: stringValue(cached.errorCode),
+            cacheSource: 'firestore',
+            durationMs: Date.now() - startedAt,
+          });
+          return false;
+        }
+        const pendingAge = cached?.status === 'pending' ?
+          Date.now() - (timestampMillis(cached.pendingAt) ?? 0) : 0;
+        if (isCurrentPendingCache(cached, item, targetLanguage) &&
+            !(item.forceRetry &&
+              pendingAge >= MANUAL_PENDING_RETRY_AGE_MS)) {
+          pendingBlocked++;
+          return false;
+        }
+        transaction.set(ref, {
+          contentType: item.contentType,
+          contentId: item.contentId,
+          parentId: item.parentId ?? null,
+          targetLanguage,
+          sourceHash: item.sourceHash,
+          modelUsed: GEMINI_MODEL,
+          translationVersion: TRANSLATION_VERSION,
+          promptVersion: PROMPT_VERSION,
+          translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+          glossaryVersion: GLOSSARY_VERSION,
+          qualityPolicyVersion: QUALITY_POLICY_VERSION,
+          status: 'pending',
+          pendingAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+        preLockCache.set(key, cached ? {...cached} : null);
+        return true;
+      });
+      if (acquiredLock) acquired.push(item);
+    }));
+
+    if (acquired.length > 0) {
+      const quota = await consumeTranslationProviderQuota(uid, acquired);
+      if (!quota.allowed) {
+        console.warn('content_translation_quota_exceeded', {
+          uidHash: sha256(uid).slice(0, 16),
+          providerItems: acquired.length,
+          reason: quota.reason,
+        });
+        await Promise.all(acquired.map(async (item) => {
+          const key = requestKey(item);
+          const ref = db.collection(COL.contentTranslations)
+            .doc(cacheId(item, targetLanguage));
+          const previousCache = preLockCache.get(key);
+          // 방금 잡은 pending 잠금을 되돌려 할당량이 풀리면 자동 재시도가 다시 동작한다.
+          if (previousCache) await ref.set(previousCache);
+          else await ref.delete();
+          responses.set(key, {
+            id: key,
+            status: 'failed',
+            errorCode: 'resource-exhausted',
+          });
+        }));
+        acquired.splice(0, acquired.length);
+      }
+    }
+
+    if (acquired.length > 0) {
+      try {
+        await Promise.all(acquired.map((item) =>
+          buildTranslationContext(item, resolutionCache),
+        ));
+        const gemini = await callGemini(acquired, targetLanguage);
+        const translated = gemini.translations;
+        await Promise.all(acquired.map(async (item) => {
+          const key = requestKey(item);
+          const result = translated.get(key);
+          const translatedFields: Record<string, string> = {};
+          if (result) {
+            for (const field of Object.keys(item.fields)) {
+              const value = stringValue(result.translations[field])
+                .replace(/\r\n?/g, '\n');
+              if (value.trim()) translatedFields[field] = value;
+            }
+          }
+          const complete = Object.keys(translatedFields).length === Object.keys(item.fields).length;
+          const validationFailureCode = gemini.diagnostics.failureCodes
+            .get(key);
+          logTranslationItemDiagnostic(item, targetLanguage, {
+            sourceLanguage: stringValue(result?.sourceLanguage),
+            modelUsed: result?.modelUsed ?? GEMINI_MODEL,
+            validationFailureCode,
+            repairAttempted: gemini.diagnostics.repairAttempted.has(key),
+            repairSucceeded: gemini.diagnostics.repairSucceeded.has(key),
+            cacheSource: 'gemini',
+            durationMs: Date.now() - startedAt,
+          });
+          const ref = db.collection(COL.contentTranslations).doc(cacheId(item, targetLanguage));
+          await ref.set(complete ? {
+            contentType: item.contentType,
+            contentId: item.contentId,
+            parentId: item.parentId ?? null,
+            status: 'completed',
+            sourceHash: item.sourceHash,
+            sourceLanguage: stringValue(result?.sourceLanguage).toLowerCase(),
+            targetLanguage,
+            translatedFields,
+            modelUsed: result?.modelUsed ?? GEMINI_MODEL,
+            translationVersion: TRANSLATION_VERSION,
+            promptVersion: PROMPT_VERSION,
+            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+            glossaryVersion: GLOSSARY_VERSION,
+            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            sourceIntent: result?.sourceIntent ?? 'unknown',
+            contextHash: item.contextHash,
+            coverageComplete: result?.coverageComplete === true,
+            uncertainTerms: result?.uncertainTerms ?? [],
+            cacheSource: 'gemini',
+            translatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          } : {
+            contentType: item.contentType,
+            contentId: item.contentId,
+            parentId: item.parentId ?? null,
+            status: 'failed',
+            sourceHash: item.sourceHash,
+            targetLanguage,
+            modelUsed: result?.modelUsed ?? GEMINI_MODEL,
+            translationVersion: TRANSLATION_VERSION,
+            promptVersion: PROMPT_VERSION,
+            translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+            glossaryVersion: GLOSSARY_VERSION,
+            qualityPolicyVersion: QUALITY_POLICY_VERSION,
+            failureCachePolicyVersion: FAILURE_CACHE_POLICY_VERSION,
+            contextHash: item.contextHash,
+            errorCode: gemini.providerUnavailable ?
+              'provider_unavailable' :
+              (validationFailureCode || 'quality_validation_failed'),
+            failedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, {merge: true});
+          responses.set(key, complete ? {
+            id: key,
+            status: 'completed',
+            sourceHash: item.sourceHash,
+            sourceLanguage: stringValue(result?.sourceLanguage).toLowerCase(),
+            targetLanguage,
+            translatedFields,
+            modelUsed: result?.modelUsed ?? GEMINI_MODEL,
+            ...CLIENT_RESPONSE_METADATA,
+            sourceIntent: result?.sourceIntent ?? 'unknown',
+            contextHash: item.contextHash,
+            coverageComplete: result?.coverageComplete === true,
+            uncertainTerms: result?.uncertainTerms ?? [],
+            translatedAt: Date.now(),
+            cacheSource: 'gemini',
+          } : {
+            id: key,
+            status: 'failed',
+            sourceHash: item.sourceHash,
+            targetLanguage,
+            modelUsed: result?.modelUsed ?? GEMINI_MODEL,
+            ...CLIENT_RESPONSE_METADATA,
+            contextHash: item.contextHash,
+            errorCode: gemini.providerUnavailable ?
+              'provider_unavailable' :
+              (validationFailureCode || 'quality_validation_failed'),
+            translatedAt: Date.now(),
+            cacheSource: 'gemini',
+          });
+        }));
+      } catch (error) {
+        const providerUnavailable = isProviderUnavailableError(error);
+        const failureCode = providerUnavailable ?
+          'provider_unavailable' : 'translation_failed';
+        console.warn('content_translation_gemini_failed', {
+          targetLanguage,
+          modelUsed: GEMINI_MODEL,
+          translationVersion: TRANSLATION_VERSION,
+          promptVersion: PROMPT_VERSION,
+          cacheSource: 'gemini',
+          providerUnavailable,
+          ...geminiErrorLogFields(error),
+        });
+        await Promise.all(acquired.map(async (item) => {
+          const key = requestKey(item);
+          logTranslationItemDiagnostic(item, targetLanguage, {
+            sourceLanguage: detectSourceLanguageHint(
+              Object.values(item.fields).join('\n'),
+            ),
+            modelUsed: GEMINI_MODEL,
+            validationFailureCode: failureCode,
+            cacheSource: 'gemini',
+            durationMs: Date.now() - startedAt,
+          });
+          await db.collection(COL.contentTranslations)
+            .doc(cacheId(item, targetLanguage)).set({
+              contentType: item.contentType,
+              contentId: item.contentId,
+              parentId: item.parentId ?? null,
+              status: 'failed',
+              sourceHash: item.sourceHash,
+              targetLanguage,
+              modelUsed: GEMINI_MODEL,
+              translationVersion: TRANSLATION_VERSION,
+              promptVersion: PROMPT_VERSION,
+              translationPolicyVersion: TRANSLATION_POLICY_VERSION,
+              glossaryVersion: GLOSSARY_VERSION,
+              qualityPolicyVersion: QUALITY_POLICY_VERSION,
+              failureCachePolicyVersion: FAILURE_CACHE_POLICY_VERSION,
+              contextHash: item.contextHash || sha256(canonicalFields({})),
+              errorCode: failureCode,
+              failedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, {merge: true});
+          responses.set(key, {
+            id: key,
+            status: 'failed',
+            sourceHash: item.sourceHash,
+            targetLanguage,
+            modelUsed: GEMINI_MODEL,
+            ...CLIENT_RESPONSE_METADATA,
+            contextHash: item.contextHash || sha256(canonicalFields({})),
+            translatedAt: Date.now(),
+            cacheSource: 'gemini',
+            errorCode: failureCode,
+          });
+        }));
+      }
+    }
+
+    for (const item of resolved) {
+      const key = requestKey(item);
+      if (responses.has(key)) continue;
+      const snap = await db.collection(COL.contentTranslations)
+        .doc(cacheId(item, targetLanguage)).get();
+      const cached = snap.data();
+      if (isCurrentCompletedCache(cached, item, targetLanguage)) {
+        responses.set(key, {
+          id: key,
+          status: 'completed',
+          sourceHash: item.sourceHash,
+          sourceLanguage: stringValue(cached.sourceLanguage),
+          targetLanguage,
+          translatedFields: cached.translatedFields ?? {},
+          modelUsed: stringValue(cached.modelUsed),
+          ...CLIENT_RESPONSE_METADATA,
+          sourceIntent: stringValue(cached.sourceIntent),
+          contextHash: stringValue(cached.contextHash),
+          coverageComplete: true,
+          uncertainTerms: Array.isArray(cached.uncertainTerms) ?
+            cached.uncertainTerms : [],
+          translatedAt: timestampMillis(cached.translatedAt) ?? Date.now(),
+          cacheSource: 'firestore',
+        });
+      } else if (isCurrentFailedCache(cached, item, targetLanguage)) {
+        responses.set(
+          key,
+          cachedFailureResponse(item, targetLanguage, cached),
+        );
+      } else {
+        responses.set(key, {
+        id: key,
+        status: 'pending',
+        sourceHash: item.sourceHash,
+        targetLanguage,
+        modelUsed: GEMINI_MODEL,
+        ...CLIENT_RESPONSE_METADATA,
+        translatedAt: Date.now(),
+        cacheSource: 'firestore',
+        });
+      }
+    }
+
+    const durationMs = Date.now() - startedAt;
+    runtimeLogsEnabled && runtimeInfo('content_translation_batch', {
+      requested: requests.length,
+      resolved: resolved.length,
+      generated: acquired.length,
+      cacheHits,
+      cacheMisses: acquired.length,
+      pendingBlocked,
+      snackRoomReads: resolutionCache.snackRooms.size,
+      dmConversationReads: resolutionCache.dmConversations.size,
+      completed: [...responses.values()].filter((item) => item.status === 'completed').length,
+      failed: [...responses.values()].filter((item) => item.status === 'failed').length,
+      durationMs,
+      averageItemLatencyMs: Math.round(durationMs / Math.max(1, requests.length)),
+      targetLanguage,
+    });
+    return {items: requests.map((item) => responses.get(requestKey(item)))};
+  });

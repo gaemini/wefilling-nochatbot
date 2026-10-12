@@ -3,6 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../design/tokens.dart';
+import '../../l10n/ui_locale.dart';
+import 'motion_press.dart';
+import 'motion_selection_pulse.dart';
+import 'motion_state_icon.dart';
 
 /// 피드 카드와 게시글 상세가 공유하는 반응형 액션 그룹.
 ///
@@ -28,6 +32,17 @@ class PostActionGroup extends StatelessWidget {
   final bool isSaving;
   final String? saveLabel;
   final VoidCallback? onSaveTap;
+  final bool compact;
+  final bool hideEmptyMetrics;
+  final bool trailingActionsAtEnd;
+  final bool prioritizeComments;
+  final bool showCommentLabel;
+  final bool spreadMetrics;
+  final double? iconSizeOverride;
+  final double? countFontSizeOverride;
+  final double? minExtentOverride;
+  final bool animateLike;
+  final bool showViews;
 
   const PostActionGroup({
     super.key,
@@ -50,6 +65,17 @@ class PostActionGroup extends StatelessWidget {
     this.isSaving = false,
     this.saveLabel,
     this.onSaveTap,
+    this.compact = false,
+    this.hideEmptyMetrics = false,
+    this.trailingActionsAtEnd = false,
+    this.prioritizeComments = false,
+    this.showCommentLabel = false,
+    this.spreadMetrics = false,
+    this.iconSizeOverride,
+    this.countFontSizeOverride,
+    this.minExtentOverride,
+    this.animateLike = false,
+    this.showViews = true,
   });
 
   String _labelWithCount(String label, int count) {
@@ -59,97 +85,227 @@ class PostActionGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const actionColor = BrandColors.iconDefault;
+    final responsiveIconSize = iconSizeOverride ??
+        context
+            .iconToken(compact ? 20 : 21)
+            .clamp(compact ? 18.5 : 20, compact ? 20.5 : 22)
+            .toDouble();
+    final responsiveCountSize = countFontSizeOverride ??
+        context
+            .fontToken(compact ? 13 : 14)
+            .clamp(compact ? 12 : 13, compact ? 13.5 : 15)
+            .toDouble();
+    final responsiveMinExtent = minExtentOverride ??
+        context
+            .spacingToken(compact ? 36 : 42)
+            .clamp(compact ? 34 : 40, compact ? 38 : 44)
+            .toDouble();
 
-    return Wrap(
-      spacing: DesignTokens.s8,
-      runSpacing: DesignTokens.s4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
+    final likeIcon =
+        isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded;
+    final likeIconColor = isLiked ? BrandColors.textSecondary : actionColor;
+    final likeButton = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: onLikeTapDown,
+      onTapCancel: onLikeTapCancel,
+      onTapUp: onLikeTapUp,
+      child: _PostActionItem(
+        icon: animateLike ? null : likeIcon,
+        iconWidget: animateLike
+            ? MotionSelectionPulse(
+                key: const ValueKey('post_selection_pulse'),
+                selected: isLiked,
+                activePeak: 1.28,
+                activeDip: .96,
+                inactiveDip: .88,
+                child: SizedBox.square(
+                  dimension: responsiveIconSize,
+                  child: MotionStateIcon(
+                    selected: isLiked,
+                    inactiveIcon: Icons.favorite_border_rounded,
+                    activeIcon: Icons.favorite_rounded,
+                    color: likeIconColor,
+                    size: responsiveIconSize,
+                  ),
+                ),
+              )
+            : null,
+        iconColor: likeIconColor,
+        iconSize: responsiveIconSize,
+        count: likes,
+        compact: compact,
+        countFontSize: responsiveCountSize,
+        minExtent: responsiveMinExtent,
+        animateCount: animateLike,
+      ),
+    );
+    final likeAction = Semantics(
+      button: true,
+      selected: isLiked,
+      label: _labelWithCount(likeLabel, likes),
+      excludeSemantics: true,
+      child: animateLike
+          ? MotionPress(
+              enabled: onLikeTapUp != null,
+              resetToken: isLiked,
+              pressedScale: .88,
+              child: likeButton,
+            )
+          : likeButton,
+    );
+
+    final showComments = prioritizeComments ||
+        !hideEmptyMetrics ||
+        comments > 0 ||
+        onCommentTap != null;
+    final commentAction = Semantics(
+      button: onCommentTap != null,
+      label: _labelWithCount(commentLabel, comments),
+      excludeSemantics: true,
+      child: MotionPress(
+        enabled: onCommentTap != null,
+        pressedScale: .88,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onCommentTap,
+          child: _PostActionItem(
+            icon: Icons.chat_bubble_outline_rounded,
+            iconColor: actionColor,
+            iconSize: responsiveIconSize,
+            count: comments,
+            label: showCommentLabel ? commentLabel : null,
+            emphasized: prioritizeComments,
+            compact: compact,
+            countFontSize: responsiveCountSize,
+            minExtent: responsiveMinExtent,
+            animateCount: true,
+          ),
+        ),
+      ),
+    );
+
+    final viewsAction = Semantics(
+      label: '$viewsLabel $views',
+      excludeSemantics: true,
+      child: _PostActionItem(
+        icon: Icons.visibility_outlined,
+        iconColor: actionColor,
+        iconSize: responsiveIconSize,
+        count: views,
+        compact: compact,
+        countFontSize: responsiveCountSize,
+        minExtent: responsiveMinExtent,
+      ),
+    );
+
+    final metricActions = <Widget>[
+      if (prioritizeComments && showComments) commentAction,
+      // 좋아요는 개수가 0이어도 사용자가 반응을 시작할 수 있어야 하므로
+      // 빈 메트릭 숨김 정책과 관계없이 항상 노출한다.
+      likeAction,
+      if (!prioritizeComments && showComments) commentAction,
+      if (showViews && (!hideEmptyMetrics || views > 0)) viewsAction,
+    ];
+
+    final trailingActions = <Widget>[
+      if (showDirectMessage)
         Semantics(
           button: true,
-          selected: isLiked,
-          label: _labelWithCount(likeLabel, likes),
+          label: directMessageLabel,
           excludeSemantics: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: onLikeTapDown,
-            onTapCancel: onLikeTapCancel,
-            onTapUp: onLikeTapUp,
-            child: _PostActionItem(
-              icon: isLiked
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              iconColor: isLiked ? BrandColors.error : actionColor,
-              count: likes,
-            ),
-          ),
-        ),
-        Semantics(
-          button: onCommentTap != null,
-          label: _labelWithCount(commentLabel, comments),
-          excludeSemantics: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onCommentTap,
-            child: _PostActionItem(
-              icon: Icons.chat_bubble_outline_rounded,
-              iconColor: actionColor,
-              count: comments,
-            ),
-          ),
-        ),
-        Semantics(
-          label: '$viewsLabel $views',
-          excludeSemantics: true,
-          child: _PostActionItem(
-            icon: Icons.visibility_outlined,
-            iconColor: actionColor,
-            count: views,
-          ),
-        ),
-        if (showDirectMessage)
-          Semantics(
-            button: true,
-            label: directMessageLabel,
-            excludeSemantics: true,
+          child: MotionPress(
+            enabled: onDirectMessageTap != null,
+            pressedScale: .9,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onDirectMessageTap,
               child: _PostActionItem(
                 iconWidget: Transform.rotate(
                   angle: -math.pi / 4,
-                  child: const Icon(
+                  child: Icon(
                     Icons.send_rounded,
-                    size: 21,
+                    size: responsiveIconSize,
                     color: actionColor,
                   ),
+                ),
+                compact: compact,
+                countFontSize: responsiveCountSize,
+                minExtent: responsiveMinExtent,
+              ),
+            ),
+          ),
+        ),
+      if (showSave)
+        Semantics(
+          button: true,
+          selected: isSaved,
+          label: saveLabel,
+          excludeSemantics: true,
+          child: MotionPress(
+            enabled: !isSaving && onSaveTap != null,
+            resetToken: isSaved,
+            pressedScale: .9,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: isSaving ? null : onSaveTap,
+              child: MotionSelectionPulse(
+                key: const ValueKey('post_selection_pulse'),
+                selected: isSaved,
+                activePeak: 1.18,
+                activeDip: 1,
+                inactiveDip: .9,
+                child: _PostActionItem(
+                  icon: isSaved
+                      ? Icons.bookmark_rounded
+                      : Icons.bookmark_border_rounded,
+                  iconColor: actionColor,
+                  progress: isSaving,
+                  iconSize: responsiveIconSize + 1,
+                  compact: compact,
+                  countFontSize: responsiveCountSize,
+                  minExtent: responsiveMinExtent,
                 ),
               ),
             ),
           ),
-        if (showSave)
-          Semantics(
-            button: true,
-            selected: isSaved,
-            label: saveLabel,
-            excludeSemantics: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: isSaving ? null : onSaveTap,
-              child: _PostActionItem(
-                icon: isSaved
-                    ? Icons.bookmark_rounded
-                    : Icons.bookmark_border_rounded,
-                iconColor: actionColor,
-                progress: isSaving,
-                iconSize: 24,
-              ),
+        ),
+    ];
+
+    if (trailingActionsAtEnd && trailingActions.isNotEmpty) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Wrap(
+              spacing: compact ? DesignTokens.s2 : DesignTokens.s8,
+              runSpacing: DesignTokens.s4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: metricActions,
             ),
           ),
-      ],
+          SizedBox(width: compact ? DesignTokens.s4 : DesignTokens.s8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: trailingActions,
+          ),
+        ],
+      );
+    }
+
+    return SizedBox(
+      width: spreadMetrics ? double.infinity : null,
+      child: Wrap(
+        alignment:
+            spreadMetrics ? WrapAlignment.spaceBetween : WrapAlignment.start,
+        spacing: compact ? DesignTokens.s2 : DesignTokens.s8,
+        runSpacing: DesignTokens.s2,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [...metricActions, ...trailingActions],
+      ),
     );
   }
 }
+
 
 class _PostActionItem extends StatelessWidget {
   final IconData? icon;
@@ -158,6 +314,12 @@ class _PostActionItem extends StatelessWidget {
   final double iconSize;
   final int count;
   final bool progress;
+  final bool compact;
+  final double countFontSize;
+  final double minExtent;
+  final String? label;
+  final bool emphasized;
+  final bool animateCount;
 
   const _PostActionItem({
     this.icon,
@@ -166,17 +328,40 @@ class _PostActionItem extends StatelessWidget {
     this.iconSize = 21,
     this.count = 0,
     this.progress = false,
+    this.compact = false,
+    this.countFontSize = 14,
+    this.minExtent = 44,
+    this.label,
+    this.emphasized = false,
+    this.animateCount = false,
   }) : assert(icon != null || iconWidget != null || progress);
 
   @override
   Widget build(BuildContext context) {
+    Widget countText() => Text(
+          '$count',
+          key: animateCount ? ValueKey(count) : null,
+          maxLines: 1,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: countFontSize,
+            fontWeight: FontWeight.w600,
+            color: BrandColors.textSecondary,
+            height: isChineseUi(context) ? 1.3 : 1.15,
+            letterSpacing: -0.15,
+          ),
+        );
+
     return ConstrainedBox(
-      constraints: const BoxConstraints(
-        minWidth: 44,
-        minHeight: 44,
+      constraints: BoxConstraints(
+        minWidth: minExtent,
+        minHeight: minExtent,
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: DesignTokens.s4),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? DesignTokens.s2 : DesignTokens.s4,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -192,19 +377,48 @@ class _PostActionItem extends StatelessWidget {
                     size: iconSize,
                     color: iconColor,
                   ),
-            if (!progress && count > 0) ...[
-              const SizedBox(width: DesignTokens.s4),
+            if (!progress && label != null) ...[
+              SizedBox(width: compact ? 4 : DesignTokens.s4),
               Text(
-                '$count',
+                label!,
                 maxLines: 1,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: countFontSize,
+                  fontWeight: emphasized ? FontWeight.w700 : FontWeight.w600,
                   color: BrandColors.textSecondary,
-                  height: 1.2,
+                  height: isChineseUi(context) ? 1.3 : 1.15,
+                  letterSpacing: -0.15,
                 ),
               ),
+            ],
+            if (!progress && animateCount)
+              AnimatedSwitcher(
+                duration: MotionTokens.reduceMotion(context)
+                    ? Duration.zero
+                    : MotionTokens.state,
+                switchInCurve: MotionTokens.curve,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: child,
+                ),
+                child: count > 0
+                    ? Row(
+                        key: ValueKey('count_$count'),
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(width: compact ? 4 : DesignTokens.s4),
+                          countText(),
+                        ],
+                      )
+                    : const SizedBox.shrink(key: ValueKey('count_0')),
+              )
+            else if (!progress && count > 0) ...[
+              SizedBox(width: compact ? 4 : DesignTokens.s4),
+              countText(),
             ],
           ],
         ),

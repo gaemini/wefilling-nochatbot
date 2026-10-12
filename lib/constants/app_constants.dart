@@ -683,7 +683,8 @@ class AppTheme {
     height: 1.2,
     letterSpacing: -0.5,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // Dynamic sizing (24px headline)
@@ -693,7 +694,8 @@ class AppTheme {
     height: 1.3,
     letterSpacing: -0.3, // -0.25 → -0.3 (tighter spacing)
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   static TextStyle get titleLarge => TextStyle(
@@ -701,7 +703,8 @@ class AppTheme {
     fontWeight: FontWeight.w700, // w600 → w700 (더 굵게)
     height: 1.4,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   static TextStyle get titleMedium => TextStyle(
@@ -709,7 +712,8 @@ class AppTheme {
     fontWeight: FontWeight.w600, // w500 → w600 (더 굵게)
     height: 1.4,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // Body with better readability (16px → 18px)
@@ -718,7 +722,8 @@ class AppTheme {
     fontWeight: FontWeight.w600, // w500 → w600 (더 굵게)
     height: 1.6, // 1.5 → 1.6 (더 넉넉한 행간)
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   static TextStyle get bodyMedium => TextStyle(
@@ -726,7 +731,8 @@ class AppTheme {
     fontWeight: FontWeight.w500, // w400 → w500 (더 굵게)
     height: 1.5,
     color: AppTheme.textPrimary, // textSecondary → textPrimary (더 진한 색)
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   static TextStyle get bodySmall => TextStyle(
@@ -741,7 +747,8 @@ class AppTheme {
     fontWeight: FontWeight.w600, // w500 → w600 (더 굵게)
     height: 1.4,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   static TextStyle get labelMedium => TextStyle(
@@ -749,7 +756,8 @@ class AppTheme {
     fontWeight: FontWeight.w600, // w500 → w600 (더 굵게)
     height: 1.3,
     color: AppTheme.textPrimary, // textSecondary → textPrimary (더 진한 색)
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   static TextStyle get labelSmall => TextStyle(
@@ -757,7 +765,8 @@ class AppTheme {
     fontWeight: FontWeight.w500,
     height: 1.2,
     color: AppTheme.textTertiary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // === 2024-2025 트렌드 추가 타이포그래피 ===
@@ -769,7 +778,8 @@ class AppTheme {
     height: 1.1,
     letterSpacing: -0.8,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // Enhanced Title (Card headers, Section titles)
@@ -779,7 +789,8 @@ class AppTheme {
     height: 1.3,
     letterSpacing: -0.2,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // Readable Body (Long form content)
@@ -789,7 +800,8 @@ class AppTheme {
     height: 1.7, // 매우 넉넉한 행간
     letterSpacing: 0.1,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // Caption with emphasis
@@ -799,7 +811,8 @@ class AppTheme {
     height: 1.3,
     letterSpacing: 0.3,
     color: AppTheme.textSecondary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // Micro text (Legal, timestamps)
@@ -809,7 +822,8 @@ class AppTheme {
     height: 1.3,
     letterSpacing: 0.2,
     color: AppTheme.textTertiary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 }
 
@@ -824,7 +838,8 @@ extension AppThemeExtensions on AppTheme {
     height: 1.1,
     letterSpacing: -1.0,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard', // 산세리프
+    fontFamily: 'Inter', // 산세리프
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   static TextStyle get displayMedium => TextStyle(
@@ -833,7 +848,8 @@ extension AppThemeExtensions on AppTheme {
     height: 1.2,
     letterSpacing: -0.8,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // 본문 계층 (충분한 행간)
@@ -843,7 +859,8 @@ extension AppThemeExtensions on AppTheme {
     height: 1.6, // 모바일 가독성을 위한 넉넉한 행간
     letterSpacing: 0.1,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   static TextStyle get bodyMediumReadable => TextStyle(
@@ -852,7 +869,8 @@ extension AppThemeExtensions on AppTheme {
     height: 1.5,
     letterSpacing: 0.1,
     color: AppTheme.textSecondary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // 캡션 계층
@@ -862,7 +880,8 @@ extension AppThemeExtensions on AppTheme {
     height: 1.4,
     letterSpacing: 0.2,
     color: AppTheme.textTertiary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   static TextStyle get captionMedium => TextStyle(
@@ -871,7 +890,8 @@ extension AppThemeExtensions on AppTheme {
     height: 1.3,
     letterSpacing: 0.3,
     color: AppTheme.textTertiary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // === 카드 디자인 시스템 ===
@@ -977,7 +997,8 @@ extension AppThemeExtensions on AppTheme {
     fontSize: 16,
     fontWeight: FontWeight.w400,
     color: AppTheme.textHint,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // === 빈 상태 디자인 ===
@@ -1004,7 +1025,8 @@ extension AppThemeExtensions on AppTheme {
     fontWeight: FontWeight.w600,
     height: 1.3,
     color: AppTheme.textPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // 빈 상태 설명 스타일
@@ -1013,7 +1035,8 @@ extension AppThemeExtensions on AppTheme {
     fontWeight: FontWeight.w400,
     height: 1.5,
     color: AppTheme.textSecondary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // 빈 상태 CTA 버튼 스타일
@@ -1091,7 +1114,11 @@ extension AppThemeExtensions on AppTheme {
     Widget? suffixIcon,
   }) => InputDecoration(
     hintText: hintText,
-    hintStyle: TextStyle(color: AppTheme.textHint, fontFamily: 'Pretendard'),
+    hintStyle: TextStyle(
+      color: AppTheme.textHint,
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
+    ),
     prefixIcon: prefixIcon,
     suffixIcon: suffixIcon,
     filled: true,
@@ -1220,7 +1247,8 @@ extension AppThemeExtensions on AppTheme {
     fontSize: 24,
     fontWeight: FontWeight.w700,
     color: AppTheme.primary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // 통계 라벨 스타일
@@ -1228,7 +1256,8 @@ extension AppThemeExtensions on AppTheme {
     fontSize: 12,
     fontWeight: FontWeight.w500,
     color: AppTheme.textSecondary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // === 친구 페이지 탭 시스템 ===
@@ -1253,7 +1282,8 @@ extension AppThemeExtensions on AppTheme {
     fontSize: 14,
     fontWeight: FontWeight.w600,
     color: AppTheme.backgroundPrimary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // 비활성 탭 텍스트
@@ -1261,7 +1291,8 @@ extension AppThemeExtensions on AppTheme {
     fontSize: 14,
     fontWeight: FontWeight.w500,
     color: AppTheme.textSecondary,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // 추천 사용자 카드
@@ -1618,7 +1649,8 @@ extension AppThemeExtensions on AppTheme {
     fontSize: 14,
     fontWeight: FontWeight.w500,
     color: AppTheme.error,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 
   // === 성공 상태 스타일 ===
@@ -1635,7 +1667,8 @@ extension AppThemeExtensions on AppTheme {
     fontSize: 14,
     fontWeight: FontWeight.w500,
     color: AppTheme.success,
-    fontFamily: 'Pretendard',
+    fontFamily: 'Inter',
+    fontFamilyFallback: const ['NotoSansKR'],
   );
 }
 

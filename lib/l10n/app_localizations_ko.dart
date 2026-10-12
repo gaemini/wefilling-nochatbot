@@ -48,6 +48,76 @@ class AppLocalizationsKo extends AppLocalizations {
   String get resetPassword => '비밀번호 재설정';
 
   @override
+  String get passwordResetDescription => '이메일로 받은 6자리 인증번호를 입력해 비밀번호를 재설정하세요.';
+
+  @override
+  String get emailAddress => '이메일 주소';
+
+  @override
+  String get sendCode => '인증번호 보내기';
+
+  @override
+  String get passwordResetCodeSent => '해당 이메일로 가입한 계정이 있다면 인증번호를 보냈습니다.';
+
+  @override
+  String get verificationCodeHint => '6자리 인증번호 입력';
+
+  @override
+  String get newPassword => '새 비밀번호';
+
+  @override
+  String get resendCode => '인증번호 다시 보내기';
+
+  @override
+  String resendCodeIn(int seconds) {
+    return '$seconds초 후 다시 보내기';
+  }
+
+  @override
+  String get passwordChangedSuccessfully => '비밀번호가 변경되었습니다.';
+
+  @override
+  String get signInWithNewPassword => '새 비밀번호로 로그인해 주세요.';
+
+  @override
+  String get backToEmailLogin => '이메일 로그인으로 돌아가기';
+
+  @override
+  String get invalidVerificationCode => '인증번호가 올바르지 않습니다.';
+
+  @override
+  String get expiredVerificationCode => '인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.';
+
+  @override
+  String get tooManyVerificationAttempts => '입력 횟수를 초과했습니다. 새 인증번호를 요청해 주세요.';
+
+  @override
+  String get passwordResetRateLimited => '잠시 후 인증번호를 다시 요청해 주세요.';
+
+  @override
+  String get passwordResetGenericError => '비밀번호를 재설정하지 못했어요. 잠시 후 다시 시도해 주세요.';
+
+  @override
+  String get passwordResetNetworkError => '인터넷 연결을 확인한 뒤 다시 시도해 주세요.';
+
+  @override
+  String get passwordResetRequestVerificationFailed =>
+      '요청을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.';
+
+  @override
+  String get currentPassword => '현재 비밀번호';
+
+  @override
+  String get currentPasswordHint => '현재 비밀번호 입력';
+
+  @override
+  String get emailReauthenticationDescription =>
+      '안전을 위해 회원 탈퇴 전에 현재 비밀번호를 확인해 주세요.';
+
+  @override
+  String get reauthenticationFailedTryAgain => '본인 확인에 실패했습니다. 다시 시도해 주세요.';
+
+  @override
   String get sendResetEmail => '재설정 이메일 보내기';
 
   @override
@@ -79,6 +149,24 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get myPage => '내 정보';
+
+  @override
+  String get snackChat => '스낵챗';
+
+  @override
+  String get snackChatTabSemantic => '스낵챗 탭';
+
+  @override
+  String get groupsTabSemantic => '그룹 탭';
+
+  @override
+  String get groupNoFriendsSelected => '선택한 친구가 여기에 표시됩니다.';
+
+  @override
+  String get groupNoSearchResults => '검색 결과가 없습니다.';
+
+  @override
+  String get groupRemoveFriendHint => '두 번 탭하여 이 그룹에서 제외합니다.';
 
   @override
   String get home => '홈';
@@ -189,7 +277,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get todayPostsSectionTitle => '오늘의 포스트';
 
   @override
-  String get todayNoMeetups => '오늘 올라온 밋업이 없어요.';
+  String get todayNoMeetups => '오늘 만들었거나 예정된 밋업이 없어요.';
 
   @override
   String get todayNoPosts => '오늘 올라온 포스트가 없어요.';
@@ -288,20 +376,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get snackChatVisibilityDuration => '유지 시간';
 
   @override
-  String get snackChatVisibilityDurationHint =>
-      '마지막 대화 기준으로 24시간 또는 48시간 동안 노출됩니다.';
+  String get snackChatVisibilityDurationHint => '24시간 후 종료하거나 계속 유지할 수 있습니다.';
 
   @override
   String get snackChatDuration24Hours => '24시간';
 
   @override
-  String get snackChatDuration48Hours => '48시간';
+  String get snackChatDurationNoEnd => '종료 없음';
 
   @override
   String get snackChatSelectParticipants => '참여자 선택';
 
   @override
-  String get snackChatParticipantLimit => '최대 6명까지 친구를 초대할 수 있습니다';
+  String get snackChatParticipantLimit => '함께할 친구를 자유롭게 초대하세요';
+
+  @override
+  String snackChatParticipantCount(int count) {
+    return '$count명 참여';
+  }
 
   @override
   String get snackChatMe => '나';
@@ -313,6 +405,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get snackChatInviteFriends => '친구 초대';
 
   @override
+  String get snackChatInviteStepTitle => '친구 초대';
+
+  @override
+  String get snackChatInviteStepHint => '함께할 친구를 한 명 이상 선택해주세요.';
+
+  @override
+  String get snackChatSelectedFriends => '선택한 친구';
+
+  @override
+  String get snackChatNoFriendsSelected => '선택한 친구가 여기에 표시됩니다.';
+
+  @override
+  String get snackChatFriendList => '친구 목록';
+
+  @override
+  String get snackChatDragForFriends => '드래그해서 더 보기';
+
+  @override
   String snackChatSelectionComplete(int count) {
     return '$count명 선택 완료';
   }
@@ -321,7 +431,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get snackChatNoFriendsToInvite => '초대 가능한 친구가 없습니다.';
 
   @override
-  String get snackChatMaxParticipants => '참여자는 최대 6명(본인 포함)까지 선택할 수 있습니다.';
+  String get snackChatMaxParticipants => '초대할 친구를 선택해주세요.';
 
   @override
   String get snackChatEnterTitle => 'Snack Chat 제목을 입력해주세요.';
@@ -345,7 +455,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get snackChatGuideTitle => '즐거운 스낵 챗을\n시작해보세요';
 
   @override
-  String get snackChatGuideDesc => '최대 6명과 함께 가볍게\n즐기는 소셜 채팅 공간입니다.';
+  String get snackChatGuideDesc => '친구들과 가볍게\n즐기는 소셜 채팅 공간입니다.';
 
   @override
   String get editPost => '포스트 수정';
@@ -1198,11 +1308,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get categoryNameHint => '예: 대학 친구';
 
   @override
-  String get createFirstCategory => '그룹으로 친구 관리하기';
+  String get createFirstCategory => '친구 그룹으로 공개 범위를 관리해요';
 
   @override
   String get createFirstCategoryDescription =>
-      '친구들을 그룹으로 관리해보세요.\n아래 추가 버튼을 통해 그룹을 만들어보세요.';
+      '친구들을 그룹으로 관리하고,\n포스트와 밋업의 공개 범위를 간편하게 설정해 보세요.';
 
   @override
   String get editAction => '수정';
@@ -1255,7 +1365,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String deleteCategoryConfirm(String name) {
-    return '\'$name\' 그룹을 삭제하시겠습니까?\n\n이 그룹에 속한 친구들은 다른 그룹으로 이동됩니다.';
+    return '\'$name\' 그룹을 삭제하시겠습니까?\n\n그룹만 삭제되며 친구들은 다른 그룹으로 이동하지 않습니다.';
   }
 
   @override
@@ -1380,6 +1490,38 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get viewRecommendedFriends => '추천 친구 보기';
+
+  @override
+  String get userSearchIdleTitle => '사용자를 검색해보세요';
+
+  @override
+  String get userSearchIdleDescription => '닉네임이나 이름으로 새로운 친구를 찾아보세요.';
+
+  @override
+  String get interestFriendDiscoveryTitle => '관심사로 친구 찾기';
+
+  @override
+  String get interestFriendDiscoveryDescription =>
+      '관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.';
+
+  @override
+  String interestPeopleTitle(String interest) {
+    return '#$interest에 관심 있는 사람';
+  }
+
+  @override
+  String interestNoUsersTitle(String interest) {
+    return '아직 #$interest에 관심사를 등록한 사용자가 없어요';
+  }
+
+  @override
+  String get interestNoUsersDescription => '다른 관심사를 선택해 새로운 친구를 찾아보세요.';
+
+  @override
+  String get interestSearchErrorTitle => '관심사 검색을 불러오지 못했어요';
+
+  @override
+  String get interestSearchErrorDescription => '잠시 후 다시 시도해 주세요.';
 
   @override
   String get tryDifferentKeyword => '다른 검색어를 시도해보세요';
@@ -1545,6 +1687,11 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String friendRequestAcceptedMessage(String name) {
+    return '$name님이 회원님의 친구요청을 수락했습니다';
+  }
+
+  @override
   String get emailSignup => '이메일 회원가입';
 
   @override
@@ -1641,7 +1788,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get or => '또는';
 
   @override
-  String get appName => 'Wefilling';
+  String get appName => '위필링';
 
   @override
   String get appTagline => '함께하는 커뮤니티';
@@ -1650,7 +1797,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get welcomeTitle => '환영합니다!';
 
   @override
-  String get googleLoginDescription => '구글 계정으로 로그인하고\n다양한 기능을 이용해 보세요.';
+  String get googleLoginDescription => '원하는 방법으로 로그인하고\n위필링을 시작해 보세요.';
 
   @override
   String get googleLogin => '구글 계정으로 로그인';
@@ -1685,7 +1832,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get signupRequired =>
-      '회원가입이 필요합니다.\n\n신규 사용자이거나 탈퇴한 계정인 경우 \'회원가입하기\' 버튼을 눌러 가입을 진행해주세요.';
+      '회원가입이 필요합니다.\n\n신규 사용자이거나 탈퇴한 계정인 경우 \'회원가입하기\' 버튼을 눌러 한양메일 인증을 진행해주세요.';
 
   @override
   String get meetupNotifications => '모임 알림';
@@ -2209,7 +2356,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get dmFriendsOnlyHint => '친구추가 후 디엠을 보내보세요';
 
   @override
-  String get signUpFirstMessage => '아래 \"회원가입하기\" 버튼을 눌러\n가입을 먼저 진행해주세요.';
+  String get signUpFirstMessage => '아래 \"회원가입하기\" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.';
 
   @override
   String get none => '없음';
@@ -2368,6 +2515,37 @@ class AppLocalizationsKo extends AppLocalizations {
   String get nicknameQuestion => '닉네임이 무엇인가요?';
 
   @override
+  String get nicknamePolicyHelp =>
+      '한글과 영문만 2~20자로 입력해 주세요. 숫자, 공백, 특수문자는 사용할 수 없어요.';
+
+  @override
+  String get nicknameChecking => '사용 가능 여부를 확인하고 있어요.';
+
+  @override
+  String get nicknameAvailable => '사용 가능한 닉네임이에요.';
+
+  @override
+  String get nicknameTaken => '이미 사용 중인 닉네임이에요.';
+
+  @override
+  String get nicknameInvalidCharacters =>
+      '한글과 영문만 입력해 주세요. 숫자, 공백, 특수문자는 사용할 수 없어요.';
+
+  @override
+  String get nicknameLetterRequired => '한글 또는 영문자를 하나 이상 포함해 주세요.';
+
+  @override
+  String get nicknameReserved => '사용할 수 없는 닉네임이에요.';
+
+  @override
+  String get nicknameCheckNetworkError => '닉네임을 확인하지 못했어요. 다시 시도해 주세요.';
+
+  @override
+  String nicknameNormalizedPreview(String nickname) {
+    return '저장될 닉네임: $nickname';
+  }
+
+  @override
   String get notification => '알림';
 
   @override
@@ -2388,7 +2566,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get cafe => '카페';
 
   @override
-  String get drink => '술';
+  String get trip => '여행';
+
+  @override
+  String get hangout => '행아웃';
 
   @override
   String get friendsOnlyBadge => '친구 공개';
@@ -2404,6 +2585,49 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get friendSelection => '친구 선택';
+
+  @override
+  String get dmRecipientSelectionTitle => '새 메시지';
+
+  @override
+  String get dmRecipientFriendsTab => '친구';
+
+  @override
+  String get dmRecipientIdSearchTab => '아이디 검색';
+
+  @override
+  String get dmRecipientFriendSearchHint => '친구 아이디 검색';
+
+  @override
+  String get dmRecipientIdSearchHint => '사용자 아이디 검색';
+
+  @override
+  String get dmRecipientNoFriendsTitle => '아직 친구가 없어요';
+
+  @override
+  String get dmRecipientNoFriendsDescription => '아이디 검색에서 메시지를 보낼 사람을 찾아보세요.';
+
+  @override
+  String get dmRecipientSearchPromptTitle => '아이디로 찾아보세요';
+
+  @override
+  String get dmRecipientSearchPromptDescription =>
+      '아이디 일부만 입력해도 사용자를 찾을 수 있어요.';
+
+  @override
+  String get dmRecipientNoResultsDescription => '아이디 철자를 확인하거나 다른 검색어를 입력해보세요.';
+
+  @override
+  String get dmRecipientSearchFailedTitle => '검색하지 못했어요';
+
+  @override
+  String get dmRecipientSearchFailedDescription => '연결을 확인하고 다시 시도해주세요.';
+
+  @override
+  String get dmRecipientFriendsLoadFailedTitle => '친구 목록을 불러오지 못했어요';
+
+  @override
+  String get dmRecipientFriendsLoadFailedDescription => '잠시 후 다시 시도해주세요.';
 
   @override
   String get noFriendsInCategory => '친구가 없습니다';
@@ -2612,19 +2836,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get profileSetupWelcome => '환영합니다! 프로필을 설정해주세요.';
 
   @override
-  String get signupCancelDialogTitle => '가입을 중단할까요?';
-
-  @override
-  String get signupCancelDialogContent =>
-      '지금 나가면 입력한 정보가 모두 삭제되고\n처음부터 다시 가입해야 합니다.';
-
-  @override
-  String get signupCancelDialogContinue => '계속 가입하기';
-
-  @override
-  String get signupCancelDialogQuit => '가입 취소하기';
-
-  @override
   String get profileSetupSuccess => '프로필이 설정되었습니다.';
 
   @override
@@ -2654,8 +2865,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get signUpMethodSelectionHeading => '가입 방식을 선택해주세요';
 
   @override
-  String get signUpMethodSelectionDescription =>
-      '한양메일 인증이 완료되었습니다.\n원하는 회원가입 방식을 선택할 수 있어요.';
+  String get signUpMethodSelectionDescription => '사용할 계정으로 계속 진행해주세요.';
 
   @override
   String get signUpWithApple => 'Apple로 회원가입';
@@ -2668,6 +2878,23 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get signUpWithId => '아이디로 회원가입';
+
+  @override
+  String get generalEmailVerificationTitle => '이메일 인증';
+
+  @override
+  String get generalEmailVerificationHeading => '이메일을 인증해주세요';
+
+  @override
+  String get generalEmailVerificationDescription =>
+      '사용할 이메일로 4자리 인증번호를 보내드릴게요.';
+
+  @override
+  String get verifiedEmailLabel => '인증된 이메일';
+
+  @override
+  String get generalEmailPasswordDescription =>
+      '인증한 이메일에 사용할 비밀번호를 설정해주세요.\n최소 8자 이상이어야 합니다.';
 
   @override
   String get appleSignupIosOnlyError => 'Apple 회원가입은 iOS에서만 사용할 수 있습니다.';
@@ -2846,7 +3073,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get postImageUploading => '이미지를 업로드 중입니다. 잠시만 기다려주세요...';
 
   @override
-  String get postComposeImageRequired => '이미지 첨부';
+  String get postComposeImageRequired => '이미지/동영상 첨부하기';
 
   @override
   String get postComposeImageHelper => '최대 15장까지 첨부할 수 있어요.';
@@ -2855,13 +3082,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get postComposeVisibilityPrompt => '공개 대상을 선택해주세요.';
 
   @override
-  String get postVisibilityPublicTitle => '모두에게 공개';
+  String get postVisibilityPublicTitle => '전체 공개';
 
   @override
   String get postVisibilityPublicDescription => '모든 사용자가 게시글을 볼 수 있습니다';
 
   @override
-  String get postVisibilityGroupTitle => '그룹 선택';
+  String get postVisibilityAnonymousTitle => '전체 익명 공개';
+
+  @override
+  String get postVisibilityAnonymousDescription => '작성자 정보 없이 모든 사용자에게 공개됩니다';
+
+  @override
+  String get postVisibilityGroupTitle => '그룹 공개';
 
   @override
   String get postVisibilityGroupDescription => '선택한 그룹 친구에게만 공개됩니다';
@@ -2930,6 +3163,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get exitMeetupCreationMessage => '정말 나가시겠습니까?\n입력한 정보는 저장되지 않습니다.';
 
   @override
+  String get exitMeetupEditing => '모임 수정 나가기';
+
+  @override
+  String get exitMeetupEditingMessage => '정말 나가시겠습니까?\n수정한 내용은 저장되지 않습니다.';
+
+  @override
   String get exit => '나가기';
 
   @override
@@ -2946,4 +3185,255 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get snackChatUnfavoriteMessage => '이 Snack Chat을 즐겨찾기에서 해제할까요?';
+
+  @override
+  String get postCategoriesTitle => '카테고리';
+
+  @override
+  String get postCategoriesSubtitle => '관심 있는 주제에서 새로운 이야기를 찾아보세요.';
+
+  @override
+  String get postCategorySelectTitle => '게시글 카테고리';
+
+  @override
+  String get postCategorySelectAction => '카테고리 선택';
+
+  @override
+  String get postCategoryRequired => '게시글 카테고리를 선택해 주세요.';
+
+  @override
+  String postCategoryEmpty(String category) {
+    return '아직 $category 카테고리에 글이 없어요.';
+  }
+
+  @override
+  String get postCategoryEmptySubtitle => '첫 번째 기록을 남겨보세요.';
+
+  @override
+  String get postCategoryCreateAction => '글 작성하기';
+
+  @override
+  String get postCategoryStyle => '스타일';
+
+  @override
+  String get postCategoryStyleDescription => '패션·뷰티·아이템';
+
+  @override
+  String get postCategoryCreate => '레스토랑';
+
+  @override
+  String get postCategoryCreateDescription => '맛집·외식·음식';
+
+  @override
+  String get postCategoryPhoto => '사진';
+
+  @override
+  String get postCategoryPhotoDescription => '사진·영상·카메라';
+
+  @override
+  String get postCategoryContent => '콘텐츠';
+
+  @override
+  String get postCategoryContentDescription => '음악·영화·드라마';
+
+  @override
+  String get postCategoryCafe => '카페';
+
+  @override
+  String get postCategoryCafeDescription => '카페·디저트·공간';
+
+  @override
+  String get postCategoryAcademicStudy => '학업·스터디';
+
+  @override
+  String get postCategoryAcademicStudyDescription => '수업·과제·시험·스터디';
+
+  @override
+  String get postCategoryBooksWriting => '책·글';
+
+  @override
+  String get postCategoryBooksWritingDescription => '독서·글쓰기·문장';
+
+  @override
+  String get postCategoryTravelLocal => '여행·로컬';
+
+  @override
+  String get postCategoryTravelLocalDescription => '여행·동네·장소';
+
+  @override
+  String get postCategoryGlobal => '글로벌';
+
+  @override
+  String get postCategoryGlobalDescription => '언어·문화·유학생';
+
+  @override
+  String get postCategoryOther => '기타';
+
+  @override
+  String get postCategoryOtherDescription => '기존 글과 자유로운 이야기';
+
+  @override
+  String get meetupTabLabel => '밋업';
+
+  @override
+  String get meetupEmptyTitle => 'Wefilling의 뜻을 아시나요?';
+
+  @override
+  String get meetupEmptyDescription =>
+      '\"We\"와 \"filling\"의 합성어로,\n사람과 사람 사이의 공간을 채운다는 뜻입니다.';
+
+  @override
+  String get postSubmitAction => '등록';
+
+  @override
+  String get chatReactionAdd => '반응 추가';
+
+  @override
+  String get chatReactionRemove => '반응 취소';
+
+  @override
+  String get chatReactionPeople => '반응한 사람';
+
+  @override
+  String get chatReactionSaveFailed => '반응을 저장하지 못했습니다.';
+
+  @override
+  String get chatReply => '답장';
+
+  @override
+  String get chatReportMessage => '메시지 신고';
+
+  @override
+  String get chatTranslationTranslating => '번역 중';
+
+  @override
+  String get chatTranslationTranslated => '번역됨';
+
+  @override
+  String get chatTranslationRetry => '다시 번역';
+
+  @override
+  String semesterGuideTitleById(String guideId) {
+    String _temp0 = intl.Intl.selectLogic(
+      guideId,
+      {
+        'check_enrollment': '수강신청 내역 확인하기',
+        'exchange_orientation': '교환학생 오리엔테이션 확인하기',
+        'campus_welcome_meetup': '새 학기 모임 둘러보기',
+        'check_syllabus': '강의계획서와 평가 방식 확인하기',
+        'course_change_period': '수강 정정 기간 확인하기',
+        'club_fair': '동아리와 학생 활동 찾아보기',
+        'academic_calendar': '학사 일정 저장하기',
+        'arc_documents': '외국인등록 관련 서류 확인하기',
+        'language_exchange': '언어교환 모임 참여하기',
+        'campus_services': '교내 지원 서비스 알아두기',
+        'dorm_rules': '기숙사 생활 규칙 확인하기',
+        'buddy_program': '버디 프로그램 찾아보기',
+        'assignment_check': '밀린 과제와 출석 확인하기',
+        'study_meetup': '전공 또는 시험 스터디 찾아보기',
+        'midterm_schedule': '중간고사 일정 정리하기',
+        'library_space': '집중할 공부 장소 찾아보기',
+        'midterm_readiness': '중간고사 준비 상태 점검하기',
+        'study_break': '짧은 휴식 모임 참여하기',
+        'midterm_followup': '시험 후 과목별 계획 다시 세우기',
+        'wellbeing_check': '이번 학기 컨디션 돌아보기',
+        'festival_events': '교내 행사 일정 확인하기',
+        'exchange_culture_event': '문화 교류 행사 참여하기',
+        'grade_progress': '과목별 성취도 확인하기',
+        'academic_advising': '필요한 학업 상담 예약하기',
+        'final_projects': '기말 과제와 팀 프로젝트 일정 확인하기',
+        'career_program': '진로·취업 프로그램 찾아보기',
+        'next_term_notice': '다음 학기 주요 일정 확인하기',
+        'exchange_departure_plan': '귀국 전 행정 절차 확인하기',
+        'final_schedule': '기말고사 일정 확정하기',
+        'semester_memory': '학기 마무리 모임 계획하기',
+        'final_readiness': '기말 준비 상태 점검하기',
+        'return_items': '대여 물품과 도서 반납 일정 확인하기',
+        'final_submissions': '최종 제출물 확인하기',
+        'semester_reflection': '이번 학기 기록 돌아보기',
+        'stay_connected': '함께한 친구들과 연락 이어가기',
+        'semester_wrap_up': '학기 마무리 항목 확인하기',
+        'next_semester_plan': '다음 학기 계획 세우기',
+        'other': '',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String semesterGuideDescriptionById(String guideId) {
+    String _temp0 = intl.Intl.selectLogic(
+      guideId,
+      {
+        'check_enrollment': '포털에서 강의 시간과 강의실을 다시 확인하세요.',
+        'exchange_orientation': '국제처 일정과 준비물을 확인하세요.',
+        'campus_welcome_meetup': '관심사가 맞는 학생들과 가볍게 인사해 보세요.',
+        'check_syllabus': '과제, 시험, 출석 기준을 일정에 정리하세요.',
+        'course_change_period': '변경이 필요하다면 마감 전에 처리하세요.',
+        'club_fair': '이번 학기에 함께할 활동을 하나 찾아보세요.',
+        'academic_calendar': '시험, 휴일, 수강 철회 일정을 캘린더에 기록하세요.',
+        'arc_documents': '신청 대상이라면 국제처 안내와 준비 서류를 확인하세요.',
+        'language_exchange': '서로의 언어와 문화를 나눌 친구를 만나보세요.',
+        'campus_services': '보건, 상담, 학습 지원센터의 위치와 이용 방법을 확인하세요.',
+        'dorm_rules': '거주 중이라면 출입, 분리수거, 시설 이용 규칙을 확인하세요.',
+        'buddy_program': '교환학생과 한국인 학생이 함께하는 교류 프로그램을 확인하세요.',
+        'assignment_check': '과목별 누락 항목이 없는지 점검하세요.',
+        'study_meetup': '혼자 준비하기 어려운 과목은 함께 공부해 보세요.',
+        'midterm_schedule': '시험일, 범위, 과제 마감일을 한곳에 정리하세요.',
+        'library_space': '도서관이나 교내 학습 공간을 이용해 보세요.',
+        'midterm_readiness': '과목별 남은 분량과 준비 시간을 확인하세요.',
+        'study_break': '시험 준비 사이에 식사나 산책으로 재충전해 보세요.',
+        'midterm_followup': '피드백과 남은 평가 일정을 반영해 계획을 조정하세요.',
+        'wellbeing_check': '수면, 식사, 스트레스 상태를 확인하고 필요한 도움을 받으세요.',
+        'festival_events': '축제, 공연, 전시 등 관심 있는 행사를 저장하세요.',
+        'exchange_culture_event': '다른 배경의 학생들과 자연스럽게 교류해 보세요.',
+        'grade_progress': '현재 점수와 남은 평가 비중을 확인하세요.',
+        'academic_advising': '수업이나 학점에 고민이 있다면 담당 부서에 문의하세요.',
+        'final_projects': '역할, 중간 마감, 제출 형식을 미리 확인하세요.',
+        'career_program': '관심 있는 진로 상담, 특강, 채용 행사를 확인하세요.',
+        'next_term_notice': '휴학, 복학, 기숙사, 수강신청 관련 일정을 확인하세요.',
+        'exchange_departure_plan': '성적표, 기숙사 퇴실, 체류 관련 안내를 확인하세요.',
+        'final_schedule': '시험일, 장소, 범위와 제출 마감을 최종 확인하세요.',
+        'semester_memory': '함께한 친구들과 가볍게 학기를 마무리해 보세요.',
+        'final_readiness': '남은 학습량과 제출물을 과목별로 확인하세요.',
+        'return_items': '도서관 도서와 교내 대여 물품의 반납일을 확인하세요.',
+        'final_submissions': '제출 완료 여부와 파일 상태를 마지막으로 확인하세요.',
+        'semester_reflection': '좋았던 활동과 다음 학기에 이어갈 목표를 기록해 보세요.',
+        'stay_connected': '학기 중 만난 사람들과 다음 약속을 만들어 보세요.',
+        'semester_wrap_up': '성적 확인 일정, 반납할 물품, 남은 행정 절차를 점검하세요.',
+        'next_semester_plan': '이번 학기를 돌아보고 다음 학기에 이어갈 목표를 정리하세요.',
+        'other': '',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String postViewCountMeta(int count) {
+    return '조회 $count';
+  }
+
+  @override
+  String postSnackChatTalking(int count) {
+    return '$count명이 이야기 중';
+  }
+
+  @override
+  String get postSnackChatContinue => '스낵챗에서 이어가기';
+
+  @override
+  String get postSnackChatOpen => '스낵챗 열기';
+
+  @override
+  String get postSnackChatSheetSubtitle => '이 포스트가 채팅방 위에 고정돼요';
+
+  @override
+  String get postSnackChatNoInvite =>
+      '댓글 단 사람에게는 초대 대신 ‘열린 스낵챗’ 표시만 보여요. 들어올지는 각자 정해요.';
+
+  @override
+  String get commentLikeAction => '좋아요';
+
+  @override
+  String get commentUnlikeAction => '좋아요 취소';
 }

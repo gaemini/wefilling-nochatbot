@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../models/friend_category.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
+import '../ui/widgets/group_audience_preview.dart';
+import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_state_icon.dart';
 
 class MeetupVisibilityGroupSelectScreen extends StatefulWidget {
   final List<FriendCategory> categories;
@@ -64,6 +68,13 @@ class _MeetupVisibilityGroupSelectScreenState
     return ids;
   }
 
+  List<UserProfile> _membersForCategory(FriendCategory category) {
+    final memberIds = category.friendIds.toSet();
+    return _selectedMembers
+        .where((member) => memberIds.contains(member.uid))
+        .toList(growable: false);
+  }
+
   Future<void> _refreshSelectedMembers() async {
     final currentSeq = ++_membersLoadSeq;
     final friendIds = _selectedFriendIds().toList();
@@ -96,184 +107,86 @@ class _MeetupVisibilityGroupSelectScreenState
     });
   }
 
-  Widget _buildMemberChips(AppLocalizations l10n, List<UserProfile> members) {
-    // 너무 길어지지 않도록 UI에서 일부만 보여주고 나머지는 요약
-    const maxVisible = 18;
-    final visible = members.take(maxVisible).toList();
-    final remaining = members.length - visible.length;
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final m in visible)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-            ),
-            child: Text(
-              m.displayNameOrNickname,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                height: 1.0,
-                color: Color(0xFF374151),
-              ),
-            ),
-          ),
-        if (remaining > 0)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFBFDBFE)),
-            ),
-            child: Text(
-              '+$remaining${l10n.people ?? ''}',
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                height: 1.0,
-                color: Color(0xFF1D4ED8),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildGroupItem(AppLocalizations l10n, FriendCategory category) {
+  Widget _buildGroupItem(FriendCategory category) {
     final isSelected = _selectedCategoryIds.contains(category.id);
 
-    final bg = isSelected ? AppColors.pointColor.withOpacity(0.10) : Colors.white;
-    final border =
-        isSelected ? AppColors.pointColor : const Color(0xFFE1E6EE);
-    final subColor = isSelected ? const Color(0xFF374151) : const Color(0xFF6B7280);
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _toggleSelection(category.id),
-        borderRadius: BorderRadius.circular(12),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: border, width: isSelected ? 1.4 : 1),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                isSelected
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-                size: 20,
-                color:
-                    isSelected ? AppColors.pointColor : const Color(0xFF9CA3AF),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  category.name,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    height: 1.1,
-                    color: Color(0xFF111827),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                '(${category.friendIds.length}${l10n.people ?? ''})',
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  height: 1.1,
-                  color: subColor,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSelectedMembersSection(AppLocalizations l10n) {
-    final friendCount = _selectedFriendIds().length;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE1E6EE)),
-      ),
+    return Semantics(
+      button: true,
+      selected: isSelected,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '${l10n.friends} (${friendCount}${l10n.people ?? ''})',
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              height: 1.2,
-              letterSpacing: -0.1,
-              color: Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (_selectedCategoryIds.isEmpty)
-            Text(
-              l10n.noGroupSelectedWarning,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                height: 1.25,
-                color: Color(0xFF6B7280),
-              ),
-            )
-          else if (_isLoadingSelectedMembers)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _toggleSelection(category.id),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: AnimatedDefaultTextStyle(
+                          duration:
+                              MotionTokens.of(context, MotionTokens.state),
+                          curve: MotionTokens.curve,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                            fontWeight:
+                                isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: const Color(0xFF111827),
+                          ),
+                          child: Text(
+                            category.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      MotionStateIcon(
+                        selected: isSelected,
+                        inactiveIcon: Icons.circle_outlined,
+                        activeIcon: Icons.check_circle_rounded,
+                        size: context.ri(21).clamp(20, 23).toDouble(),
+                        color: isSelected
+                            ? const Color(0xFF475467)
+                            : const Color(0xFFD0D5DD),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            )
-          else if (_selectedMembers.isEmpty)
-            Text(
-              l10n.noFriendsYet,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                height: 1.25,
-                color: Color(0xFF6B7280),
-              ),
-            )
-          else
-            _buildMemberChips(l10n, _selectedMembers),
+            ),
+          ),
+          if (isSelected)
+            GroupAudiencePreview(
+              members: _membersForCategory(category),
+              loading:
+                  _isLoadingSelectedMembers && category.friendIds.isNotEmpty,
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSelectionSummary(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        _selectedCategoryIds.isEmpty
+            ? l10n.postVisibilityNoGroupsSelected
+            : l10n.postVisibilityGroupsSelected(_selectedCategoryIds.length),
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: ['NotoSansKR'],
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF667085),
+        ),
       ),
     );
   }
@@ -283,100 +196,142 @@ class _MeetupVisibilityGroupSelectScreenState
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFBFC),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        centerTitle: false,
+        surfaceTintColor: Colors.white,
+        centerTitle: true,
+        toolbarHeight: context.rh(56, min: 54, max: 60),
+        leadingWidth: 48,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
+          icon: Icon(
+            Icons.arrow_back_rounded,
+            color: const Color(0xFF111827),
+            size: context.ri(22).clamp(21, 24).toDouble(),
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(
-          l10n.selectMeetupGroupsTitle,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            height: 1.2,
-            letterSpacing: -0.2,
-            color: Color(0xFF111827),
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            color: const Color(0xFFE6EAF0),
+        title: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.2,
+          child: Text(
+            l10n.selectMeetupGroupsTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: context.rf(18).clamp(16, 19).toDouble(),
+              fontWeight: FontWeight.w700,
+              height: isChineseUi(context) ? 1.3 : 1.2,
+              letterSpacing: -0.2,
+              color: const Color(0xFF111827),
+            ),
           ),
         ),
       ),
       body: widget.categories.isEmpty
           ? SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(
-                  l10n.noFriendGroupsYet,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    height: 1.3,
-                    color: Colors.grey[700],
+              padding: EdgeInsets.symmetric(
+                horizontal: MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Text(
+                      l10n.noFriendGroupsYet,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                        fontWeight: FontWeight.w500,
+                        height: 1.3,
+                        color: const Color(0xFF667085),
+                      ),
+                    ),
                   ),
                 ),
               ),
             )
-          : Column(
-              children: [
-                Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                    itemCount: widget.categories.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final category = widget.categories[index];
-                      return _buildGroupItem(l10n, category);
-                    },
+          : ListView.builder(
+              padding: EdgeInsets.fromLTRB(
+                MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+                8,
+                MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+                12,
+              ),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              itemCount: widget.categories.length + 1,
+              itemBuilder: (context, index) {
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: index == 0
+                        ? _buildSelectionSummary(l10n)
+                        : Column(
+                            children: [
+                              _buildGroupItem(widget.categories[index - 1]),
+                              if (index != widget.categories.length)
+                                const Divider(
+                                  height: 1,
+                                  color: Color(0xFFEAECF0),
+                                ),
+                            ],
+                          ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                  child: _buildSelectedMembersSection(l10n),
-                ),
-              ],
+                );
+              },
             ),
       bottomNavigationBar: SafeArea(
+        top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-          child: SizedBox(
-            height: 52,
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: widget.categories.isEmpty
-                  ? null
-                  : () {
-                      Navigator.of(context).pop(_selectedCategoryIds);
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.pointColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
-                disabledBackgroundColor: const Color(0xFFE5E7EB),
-                disabledForegroundColor: const Color(0xFF9CA3AF),
-              ),
-              child: Text(
-                l10n.done,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  height: 1.1,
-                  letterSpacing: -0.1,
+          padding: EdgeInsets.fromLTRB(
+            MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+            8,
+            MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+            10,
+          ),
+          // bottomNavigationBar의 loose constraint에서 Center가 남은 높이를
+          // 모두 차지하지 않도록 콘텐츠 높이로 축소한다.
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: SizedBox(
+                height: context.rh(48, min: 44, max: 50),
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: widget.categories.isEmpty
+                      ? null
+                      : () {
+                          Navigator.of(context).pop(_selectedCategoryIds);
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF344054),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                    disabledBackgroundColor: const Color(0xFFE5E7EB),
+                    disabledForegroundColor: const Color(0xFF9CA3AF),
+                  ),
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.2,
+                    child: Text(
+                      l10n.done,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                        fontWeight: FontWeight.w700,
+                        height: isChineseUi(context) ? 1.3 : 1.1,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -386,4 +341,3 @@ class _MeetupVisibilityGroupSelectScreenState
     );
   }
 }
-

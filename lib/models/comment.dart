@@ -16,14 +16,20 @@ class Comment {
   final String authorNickname;
   final String authorPhotoUrl;
   final String content;
+  final String gifStoragePath;
+  /// Bucket holding [gifStoragePath]; empty means the legacy bucket.
+  final String storageBucket;
   final DateTime createdAt;
-  
+  final bool isDeleted;
+  final DateTime? deletedAt;
+
   // 대댓글 관련 필드
   final String? parentCommentId; // 대댓글인 경우 부모 댓글 ID
   final int depth; // 댓글 깊이 (0: 원댓글, 1: 대댓글)
+  final String? replyToCommentId; // 실제 답글 대상 댓글 ID
   final String? replyToUserId; // 답글 대상 사용자 ID
   final String? replyToUserNickname; // 답글 대상 사용자 닉네임
-  
+
   // 좋아요 관련 필드
   final int likeCount; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
@@ -38,9 +44,14 @@ class Comment {
     required this.authorNickname,
     required this.authorPhotoUrl,
     required this.content,
+    this.gifStoragePath = '',
+    this.storageBucket = '',
     required this.createdAt,
+    this.isDeleted = false,
+    this.deletedAt,
     this.parentCommentId,
     this.depth = 0,
+    this.replyToCommentId,
     this.replyToUserId,
     this.replyToUserNickname,
     this.likeCount = 0,
@@ -58,12 +69,18 @@ class Comment {
       authorNickname: data['authorNickname'] ?? '익명',
       authorPhotoUrl: data['authorPhotoUrl'] ?? '',
       content: data['content'] ?? '',
-      createdAt:
-          data['createdAt'] != null
-              ? (data['createdAt'] as Timestamp).toDate()
-              : DateTime.now(),
+      gifStoragePath: (data['gifStoragePath'] ?? '').toString(),
+      storageBucket: (data['storageBucket'] ?? '').toString(),
+      createdAt: data['createdAt'] != null
+          ? (data['createdAt'] as Timestamp).toDate()
+          : DateTime.now(),
+      isDeleted: data['isDeleted'] == true,
+      deletedAt: data['deletedAt'] is Timestamp
+          ? (data['deletedAt'] as Timestamp).toDate()
+          : null,
       parentCommentId: data['parentCommentId'],
       depth: data['depth'] ?? 0,
+      replyToCommentId: data['replyToCommentId'],
       replyToUserId: data['replyToUserId'],
       replyToUserNickname: data['replyToUserNickname'],
       likeCount: data['likeCount'] ?? 0,
@@ -79,11 +96,11 @@ class Comment {
 
     if (difference.inDays > 0) {
       // 지역화 함수 호출 (숫자 전달)
-        return AppLocalizations.of(context)!.daysAgo(difference.inDays);
-      } else if (difference.inHours > 0) {
-        return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
-      } else if (difference.inMinutes > 0) {
-        return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
+      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
+    } else if (difference.inHours > 0) {
+      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
+    } else if (difference.inMinutes > 0) {
+      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow;
     }
@@ -98,9 +115,14 @@ class Comment {
       'authorNickname': authorNickname,
       'authorPhotoUrl': authorPhotoUrl,
       'content': content,
+      'gifStoragePath': gifStoragePath,
+      'storageBucket': storageBucket,
       'createdAt': createdAt.millisecondsSinceEpoch,
+      'isDeleted': isDeleted,
+      'deletedAt': deletedAt?.millisecondsSinceEpoch,
       'parentCommentId': parentCommentId,
       'depth': depth,
+      'replyToCommentId': replyToCommentId,
       'replyToUserId': replyToUserId,
       'replyToUserNickname': replyToUserNickname,
       'likeCount': likeCount,
@@ -117,11 +139,18 @@ class Comment {
       authorNickname: map['authorNickname'] ?? '익명',
       authorPhotoUrl: map['authorPhotoUrl'] ?? '',
       content: map['content'] ?? '',
+      gifStoragePath: (map['gifStoragePath'] ?? '').toString(),
+      storageBucket: (map['storageBucket'] ?? '').toString(),
       createdAt: map['createdAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),
+      isDeleted: map['isDeleted'] == true,
+      deletedAt: map['deletedAt'] is int
+          ? DateTime.fromMillisecondsSinceEpoch(map['deletedAt'])
+          : null,
       parentCommentId: map['parentCommentId'],
       depth: map['depth'] ?? 0,
+      replyToCommentId: map['replyToCommentId'],
       replyToUserId: map['replyToUserId'],
       replyToUserNickname: map['replyToUserNickname'],
       likeCount: map['likeCount'] ?? 0,
@@ -146,9 +175,14 @@ class Comment {
     String? authorNickname,
     String? authorPhotoUrl,
     String? content,
+    String? gifStoragePath,
+    String? storageBucket,
     DateTime? createdAt,
+    bool? isDeleted,
+    DateTime? deletedAt,
     String? parentCommentId,
     int? depth,
+    String? replyToCommentId,
     String? replyToUserId,
     String? replyToUserNickname,
     int? likeCount,
@@ -161,9 +195,14 @@ class Comment {
       authorNickname: authorNickname ?? this.authorNickname,
       authorPhotoUrl: authorPhotoUrl ?? this.authorPhotoUrl,
       content: content ?? this.content,
+      gifStoragePath: gifStoragePath ?? this.gifStoragePath,
+      storageBucket: storageBucket ?? this.storageBucket,
       createdAt: createdAt ?? this.createdAt,
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
       parentCommentId: parentCommentId ?? this.parentCommentId,
       depth: depth ?? this.depth,
+      replyToCommentId: replyToCommentId ?? this.replyToCommentId,
       replyToUserId: replyToUserId ?? this.replyToUserId,
       replyToUserNickname: replyToUserNickname ?? this.replyToUserNickname,
       likeCount: likeCount ?? this.likeCount,
@@ -174,7 +213,7 @@ class Comment {
   // 유틸리티 메서드들
   bool get isReply => parentCommentId != null;
   bool get isTopLevel => parentCommentId == null;
-  
+
   // 사용자가 이 댓글에 좋아요를 눌렀는지 확인
   bool isLikedBy(String userId) => likedBy.contains(userId);
 }

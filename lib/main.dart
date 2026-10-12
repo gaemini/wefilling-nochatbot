@@ -13,13 +13,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:provider/provider.dart';
 import 'design/theme.dart';
+import 'ui/widgets/motion_press.dart';
+import 'ui/widgets/app_start_motion.dart';
+import 'l10n/ui_locale.dart';
 import 'screens/main_screen.dart';
 import 'screens/edit_meetup_screen.dart';
 import 'models/meetup.dart';
@@ -27,265 +31,273 @@ import 'providers/auth_provider.dart' as app_auth;
 import 'providers/relationship_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/nickname_setup_screen.dart';
+import 'screens/hanyang_email_verification_screen.dart';
 import 'firebase_options.dart';
 import 'services/feature_flag_service.dart';
 import 'services/fcm_service.dart';
 import 'services/language_service.dart';
+import 'services/semester_todo_service.dart';
 import 'services/cache/cache_manager.dart';
+import 'services/cache/app_image_cache_manager.dart';
+import 'services/content_translation_service.dart';
 import 'l10n/app_localizations.dart';
 import 'services/navigation_service.dart';
 import 'screens/admin_migration_screen.dart';
 import 'services/app_messenger.dart';
+import 'services/external_share_service.dart';
+import 'services/ios_shared_auth_service.dart';
+import 'services/firebase_app_check_service.dart';
+import 'services/release_metadata_service.dart';
+import 'services/app_update_service.dart';
+import 'screens/release_diagnostics_screen.dart';
+import 'screens/button_lab_screen.dart';
+import 'screens/relationship_orbit_preview_screen.dart';
+import 'screens/organization_home_screen.dart';
+import 'screens/organization_invite_screen.dart';
+import 'services/organization_account_service.dart';
+
+void _ignoreCrashlyticsReport(Future<void> report) {
+  unawaited(report.catchError((Object error, StackTrace stackTrace) {
+    // 오류 보고 실패를 Logger/Crashlytics로 다시 보내면 전역 오류 처리기가
+    // 같은 실패를 반복 수집할 수 있으므로 디버그 출력으로만 종료한다.
+    if (kDebugMode) debugPrint('Crashlytics report failed: $error');
+  }));
+}
 
 void main() {
+  var applicationStarted = false;
   runZonedGuarded(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
-
-      // 시스템 UI 최적화 (갤럭시 S23 등 최신 Android 기기 대응)
-      SystemChrome.setSystemUIOverlayStyle(
-        const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark, // 라이트모드용
-          systemNavigationBarColor: Colors.transparent,
-          systemNavigationBarIconBrightness: Brightness.dark, // 라이트모드용
-          systemNavigationBarDividerColor: Colors.transparent,
-        ),
-      );
-
-      // Edge-to-edge 모드 활성화
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-
-      // 화면 회전 제한 (세로 방향만 허용)
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-      ]);
-
-      // 1. Firebase 기본 초기화 (중복 초기화 방지)
       try {
-        await Firebase.initializeApp(
-            options: DefaultFirebaseOptions.currentPlatform);
-        if (kDebugMode) {
-          debugPrint('🔥 Firebase 초기화 완료');
-        }
-      } catch (e) {
-        if (e.toString().contains('duplicate-app')) {
-          if (kDebugMode) {
-            debugPrint('🔥 Firebase는 이미 초기화되어 있습니다.');
-          }
-        } else {
-          if (kDebugMode) {
-            debugPrint('🔥 Firebase 초기화 실패: $e');
-          }
-        }
-      }
+        WidgetsFlutterBinding.ensureInitialized();
+        // Show Flutter UI while the original bootstrap runs in its original order.
+        // No AuthProvider, subscriptions or routing are started in this surface.
+        runApp(const AppStartupSurface());
 
-      // 2. locale 초기화 (비동기로 빠르게 처리)
-      try {
-        final languageService = LanguageService();
-        await languageService.initializeLanguage();
-        final lang = await languageService.getLanguage();
-        if (kDebugMode) {
-          debugPrint('🌐 locale 초기화 완료: $lang');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('⚠️ locale 초기화 실패 - 기본값 사용: $e');
-        }
-      }
-
-      // 3. Firebase Messaging 백그라운드 핸들러 등록 (즉시 실행)
-      try {
+        // Android gallery actions must only expose media explicitly selected by
+        // the user. This enables Android's system Photo Picker for every
+        // image_picker call while leaving the iOS implementation untouched.
         if (!kIsWeb && Platform.isAndroid) {
-          FirebaseMessaging.onBackgroundMessage(
-              firebaseMessagingBackgroundHandler);
-          if (kDebugMode) {
-            debugPrint('📱 Android FCM 백그라운드 핸들러 등록 완료');
+          final imagePickerImplementation = ImagePickerPlatform.instance;
+          if (imagePickerImplementation is ImagePickerAndroid) {
+            imagePickerImplementation.useAndroidPhotoPicker = true;
           }
-        } else if (!kIsWeb && Platform.isIOS && kDebugMode) {
-          debugPrint('📱 iOS는 안전 모드로 지연 초기화 - 백그라운드 핸들러 등록 생략');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('⚠️ Firebase Messaging 핸들러 등록 실패: $e');
-        }
-      }
-
-      // 4. App Check 초기화
-      try {
-        // ⚠️ 임시: iOS에서 App Check 완전 비활성화 (TestFlight 크래시 방지)
-        // TODO: 나중에 제대로 된 App Check 설정 필요
-        if (Platform.isIOS) {
-          await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(false);
-          if (kDebugMode) {
-            debugPrint('🛡️ App Check: iOS 토큰 자동 갱신 비활성화 (임시)');
-          }
-        } else {
-          await FirebaseAppCheck.instance.activate(
-            providerAndroid: const AndroidDebugProvider(),
-            providerApple: const AppleDeviceCheckProvider(),
-          );
-          if (kDebugMode) debugPrint('🛡️ App Check 활성화 완료');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('⚠️ App Check 초기화 실패(무시): $e');
-        }
-      }
-
-      // 5. Crashlytics 설정
-      try {
-        await FirebaseCrashlytics.instance
-            .setCrashlyticsCollectionEnabled(!kDebugMode);
-
-        FlutterError.onError = (FlutterErrorDetails details) {
-          try {
-            FirebaseCrashlytics.instance.recordFlutterError(details);
-          } catch (_) {}
-        };
-
-        PlatformDispatcher.instance.onError = (error, stack) {
-          try {
-            FirebaseCrashlytics.instance
-                .recordError(error, stack, fatal: false);
-          } catch (_) {}
-          return true;
-        };
-
-        if (kDebugMode) {
-          debugPrint('🐞 Crashlytics 초기화 완료 (debug mode: $kDebugMode)');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('⚠️ Crashlytics 초기화 실패: $e');
-        }
-      }
-
-      // 6. 캐시 시스템 초기화
-      try {
-        await CacheManager.initialize();
-        if (kDebugMode) {
-          debugPrint('💾 캐시 시스템 초기화 완료');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('⚠️ 캐시 시스템 초기화 실패 (앱은 정상 작동): $e');
-        }
-      }
-
-      // 7. Firebase Auth 및 Firestore 설정 (병렬 처리로 최적화)
-      try {
-        if (kDebugMode) {
-          debugPrint('🔥 Firebase 추가 초기화 시작: ${DateTime.now()}');
-          debugPrint(
-              '🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
-          debugPrint(
-              '🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
         }
 
-        // Firestore 설정 (즉시 실행)
+        // 시스템 UI 최적화 (갤럭시 S23 등 최신 Android 기기 대응)
+        SystemChrome.setSystemUIOverlayStyle(
+          const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.dark, // 라이트모드용
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarIconBrightness: Brightness.dark, // 라이트모드용
+            systemNavigationBarDividerColor: Colors.transparent,
+          ),
+        );
+
+        // Edge-to-edge 모드 활성화
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+        // 화면 회전 제한 (세로 방향만 허용)
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+
+        // 1. Firebase 기본 초기화 (중복 초기화 방지)
         try {
-          if (kDebugMode) {
-            debugPrint('🗃️ Firestore 설정 시작');
-          }
-          final firestore = FirebaseFirestore.instance;
-          firestore.settings = const Settings(
-            persistenceEnabled: true,
-            cacheSizeBytes: 100 * 1024 * 1024, // 100MB
+          // Android는 네이티브 google-services 설정을 사용해 빌드 variant의
+          // applicationId와 Firebase App ID를 항상 일치시킨다.
+          await Firebase.initializeApp(
+            options: !kIsWeb && Platform.isAndroid
+                ? null
+                : DefaultFirebaseOptions.currentPlatform,
           );
           if (kDebugMode) {
-            debugPrint('✅ Firestore 설정 완료 (캐시: 100MB)');
+            debugPrint('🔥 Firebase 초기화 완료');
           }
-        } catch (firestoreError) {
-          if (kDebugMode) {
-            debugPrint('⚠️ Firestore 설정 중 오류: $firestoreError');
-          }
-        }
-
-        // Firebase Auth 상태 변화 로깅 (비동기로 처리)
-        FirebaseAuth.instance.authStateChanges().listen((User? user) {
-          if (kDebugMode) {
-            debugPrint(
-              '🔐 Auth State Changed: ${user != null ? "Authenticated" : "Not Authenticated"}',
-            );
-            debugPrint('🔐 User ID: ${user?.uid ?? "null"}');
-            debugPrint('🔐 Timestamp: ${DateTime.now()}');
-          }
-        });
-
-        // 현재 로그인 상태만 확인 (대기 시간 제거)
-        final currentUser = FirebaseAuth.instance.currentUser;
-        if (kDebugMode) {
-          if (currentUser != null) {
-            debugPrint('🔐 사용자 로그인 확인: ${currentUser.email}');
-          } else {
-            debugPrint('🔐 로그인된 사용자 없음');
-          }
-          debugPrint('🔐 인증 초기화 완료: ${DateTime.now()}');
-        }
-
-        // Firebase Storage 접근 테스트 (백그라운드로 이동)
-        if (currentUser != null) {
-          unawaited(Future(() async {
-            try {
-              if (kDebugMode) {
-                debugPrint('🗄️ Storage 접근 테스트 시작 (백그라운드)');
-              }
-              final storageRef = FirebaseStorage.instance.ref();
-              await storageRef.listAll();
-              if (kDebugMode) {
-                debugPrint('✅ Firebase Storage 접근 테스트: 성공');
-              }
-            } catch (storageError) {
-              if (kDebugMode) {
-                debugPrint('⚠️ Firebase Storage 접근 테스트 실패: $storageError');
-              }
+        } catch (e) {
+          if (e.toString().contains('duplicate-app')) {
+            if (kDebugMode) {
+              debugPrint('🔥 Firebase는 이미 초기화되어 있습니다.');
             }
-          }));
+          } else {
+            if (kDebugMode) {
+              debugPrint('🔥 Firebase 초기화 실패: $e');
+            }
+          }
         }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('⚠️ Firebase 추가 초기화 중 오류: $e');
-        }
-      }
 
-      // 8. FeatureFlagService 초기화 (백그라운드로 이동)
-      unawaited(Future(() async {
+        // App Check must be activated once before Firestore, Storage, Functions,
+        // Messaging, or auth-state driven app initialization can start.
+        await FirebaseAppCheckService.instance.initialize();
+
+        // The immutable artifact identity is read before caches, auth routing or
+        // app services. A mismatch disables update prompting instead of risking
+        // an update against the wrong Store listing.
+        await ReleaseMetadataService.instance.initialize();
+
+        // 2. locale 초기화 (비동기로 빠르게 처리)
         try {
-          await FeatureFlagService().init();
+          final languageService = LanguageService();
+          await languageService.initializeLanguage();
+          final lang = await languageService.getLanguage();
           if (kDebugMode) {
-            debugPrint('🚩 FeatureFlagService 초기화 완료');
+            debugPrint('🌐 locale 초기화 완료: $lang');
           }
         } catch (e) {
           if (kDebugMode) {
-            debugPrint('⚠️ FeatureFlagService 초기화 오류: $e');
+            debugPrint('⚠️ locale 초기화 실패 - 기본값 사용: $e');
           }
         }
-      }));
 
-      // 9. 앱 시작 (대기 시간 제거)
-      if (kDebugMode) {
-        debugPrint('🚀 runApp 호출: ${DateTime.now()}');
-      }
+        // 3. Firebase Messaging 백그라운드 핸들러 등록 (즉시 실행)
+        try {
+          if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+            FirebaseMessaging.onBackgroundMessage(
+                firebaseMessagingBackgroundHandler);
+            if (kDebugMode) {
+              debugPrint('📱 FCM 백그라운드 핸들러 등록 완료');
+            }
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('⚠️ Firebase Messaging 핸들러 등록 실패: $e');
+          }
+        }
 
-      runApp(
-        MultiProvider(
-          providers: [
-            ChangeNotifierProvider(create: (_) {
-              if (kDebugMode) {
-                debugPrint('🔐 AuthProvider 생성 요청: ${DateTime.now()}');
-              }
-              return app_auth.AuthProvider();
-            }),
-            ChangeNotifierProvider(create: (_) => RelationshipProvider()),
-          ],
-          child: const MeetupApp(),
-        ),
-      );
+        // 4. Crashlytics 설정
+        try {
+          await FirebaseCrashlytics.instance
+              .setCrashlyticsCollectionEnabled(!kDebugMode);
 
-      if (kDebugMode) {
-        debugPrint('🎉 runApp 완료: ${DateTime.now()}');
+          FlutterError.onError = (FlutterErrorDetails details) {
+            try {
+              _ignoreCrashlyticsReport(
+                FirebaseCrashlytics.instance.recordFlutterError(details),
+              );
+            } catch (_) {}
+          };
+
+          PlatformDispatcher.instance.onError = (error, stack) {
+            try {
+              _ignoreCrashlyticsReport(
+                FirebaseCrashlytics.instance
+                    .recordError(error, stack, fatal: false),
+              );
+            } catch (_) {}
+            return true;
+          };
+
+          if (kDebugMode) {
+            debugPrint('🐞 Crashlytics 초기화 완료 (debug mode: $kDebugMode)');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('⚠️ Crashlytics 초기화 실패: $e');
+          }
+        }
+
+        // 6. 캐시 시스템 초기화
+        try {
+          await CacheManager.initialize(
+            releaseMetadata: ReleaseMetadataService.instance.metadata,
+          );
+          // 명시적으로 cacheManager를 전달하지 않은 썸네일/상세 이미지도
+          // 포스트 피드와 같은 디스크 저장소를 사용해 화면 이동 시 재다운로드와
+          // 중복 파일 보관이 생기지 않게 한다.
+          CachedNetworkImageProvider.defaultCacheManager =
+              AppImageCacheManager.instance;
+          if (kDebugMode) {
+            debugPrint('💾 캐시 시스템 초기화 완료');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('⚠️ 캐시 시스템 초기화 실패 (앱은 정상 작동): $e');
+          }
+        }
+
+        // Update policy has a bounded startup budget. Remote Config or Store
+        // outages never block login; the service falls back to a paused policy.
+        final updateInitialization = AppUpdateService.instance.initialize();
+        try {
+          await updateInitialization.timeout(const Duration(seconds: 12));
+        } on TimeoutException {
+          if (kDebugMode) {
+            debugPrint('⚠️ 업데이트 정책 확인 지연 - 정상 앱 진입 계속');
+          }
+        }
+
+        // Release identity, cache migration and update policy are settled before
+        // the first Auth read. Existing iOS sessions are then shared safely.
+        await IosSharedAuthService.configure();
+
+        // 7. Firebase Auth 및 Firestore 설정 (병렬 처리로 최적화)
+        try {
+          if (kDebugMode) {
+            debugPrint('🔥 Firebase 추가 초기화 시작: ${DateTime.now()}');
+            debugPrint(
+                '🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
+            debugPrint(
+                '🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
+          }
+
+          // Firestore 설정 (즉시 실행)
+          try {
+            if (kDebugMode) {
+              debugPrint('🗃️ Firestore 설정 시작');
+            }
+            // 상세 SDK 로깅은 데이터 흐름과 무관하며, 네트워크가 불안정할 때
+            // WatchStream 재연결 스택을 대량으로 출력할 수 있다. 경고/오류와
+            // Firestore 자체 재시도 동작은 그대로 두고 상세 로깅만 끈다.
+            await FirebaseFirestore.setLoggingEnabled(false);
+            final firestore = FirebaseFirestore.instance;
+            firestore.settings = const Settings(
+              persistenceEnabled: true,
+              cacheSizeBytes: 100 * 1024 * 1024, // 100MB
+            );
+            if (kDebugMode) {
+              debugPrint('✅ Firestore 설정 완료 (캐시: 100MB)');
+            }
+          } catch (firestoreError) {
+            if (kDebugMode) {
+              debugPrint('⚠️ Firestore 설정 중 오류: $firestoreError');
+            }
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('⚠️ Firebase 추가 초기화 중 오류: $e');
+          }
+        }
+
+        // 8. 앱 시작 (가입 완료 뒤에만 앱 기능 서비스를 초기화한다.)
+        if (kDebugMode) {
+          debugPrint('🚀 runApp 호출: ${DateTime.now()}');
+        }
+
+        runApp(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider(create: (_) {
+                if (kDebugMode) {
+                  debugPrint('🔐 AuthProvider 생성 요청: ${DateTime.now()}');
+                }
+                return app_auth.AuthProvider();
+              }),
+              ChangeNotifierProvider(create: (_) => RelationshipProvider()),
+            ],
+            child: const MeetupApp(),
+          ),
+        );
+        applicationStarted = true;
+        if (kDebugMode) {
+          debugPrint('🎉 runApp 완료: ${DateTime.now()}');
+        }
+      } catch (error, stack) {
+        if (!applicationStarted) {
+          runApp(const AppStartupSurface(failed: true));
+        }
+        Error.throwWithStackTrace(error, stack);
       }
     },
     (error, stack) {
@@ -296,7 +308,9 @@ void main() {
       }
 
       try {
-        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        _ignoreCrashlyticsReport(
+          FirebaseCrashlytics.instance.recordError(error, stack, fatal: true),
+        );
       } catch (crashlyticsError) {
         // Crashlytics 리포트 실패해도 앱 실행은 계속
         if (kDebugMode) {
@@ -322,20 +336,25 @@ class MeetupApp extends StatefulWidget {
 }
 
 class _MeetupAppState extends State<MeetupApp> {
+  bool _loginWasShown = false;
   Locale _locale = const Locale('ko'); // 기본 언어: 한국어
   final LanguageService _languageService = LanguageService();
-  StreamSubscription<User?>? _authSub;
   String? _lastSyncedLanguageCode;
+  Future<void>? _languageSyncInFlight;
+  String? _completedServicesUid;
 
   @override
   void initState() {
     super.initState();
     _loadLanguage();
-    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user == null) return;
-      // 로그인 시점에 서버에도 언어 동기화 (푸시 i18n용)
-      unawaited(_syncLanguageToFirestore(_locale.languageCode));
-    });
+    unawaited(OrganizationAccountService.instance.initialize());
+    unawaited(
+      AppUpdateService.instance.initialize().whenComplete(() {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(AppUpdateService.instance.presentIfNeeded());
+        });
+      }),
+    );
   }
 
   Future<void> _syncLanguageToFirestore(String languageCode) async {
@@ -344,16 +363,56 @@ class _MeetupAppState extends State<MeetupApp> {
 
     // 동일 세션에서 중복 쓰기 최소화
     if (_lastSyncedLanguageCode == languageCode) return;
-    _lastSyncedLanguageCode = languageCode;
+
+    final activeSync = _languageSyncInFlight;
+    if (activeSync != null) {
+      await activeSync;
+      if (_lastSyncedLanguageCode == languageCode) return;
+    }
+
+    final request = _syncLanguageToExistingUser(
+      uid: user.uid,
+      languageCode: languageCode,
+    );
+    _languageSyncInFlight = request;
+    await request.whenComplete(() {
+      if (identical(_languageSyncInFlight, request)) {
+        _languageSyncInFlight = null;
+      }
+    });
+  }
+
+  Future<void> _syncLanguageToExistingUser({
+    required String uid,
+    required String languageCode,
+  }) async {
+    if (FirebaseAuth.instance.currentUser?.uid != uid) return;
 
     try {
-      final uid = user.uid;
       final firestore = FirebaseFirestore.instance;
+      final userRef = firestore.collection('users').doc(uid);
 
-      // ⚠️ 주의: users/{uid} 문서의 "존재 여부"는 회원가입 완료 여부 판단에 사용된다.
-      // 따라서 여기서 merge set으로 문서를 "새로 생성"하면 스키마가 부분만 생기거나
-      // 가입 흐름이 왜곡될 수 있으므로, 문서가 있을 때만 update로 반영한다.
-      await firestore.collection('users').doc(uid).update({
+      // Social Auth creates an Auth session before the final sign-up function
+      // creates users/{uid}. Do not turn that expected pending state into a
+      // permission-denied write, and never create a partial users document
+      // from language synchronization.
+      final userSnapshot = await userRef.get(const GetOptions(
+        source: Source.server,
+      ));
+      if (!userSnapshot.exists) {
+        if (kDebugMode) {
+          debugPrint('ℹ️ 언어 Firestore 동기화 보류: 회원가입 완료 전');
+        }
+        return;
+      }
+      final userData = userSnapshot.data() ?? const <String, dynamic>{};
+      final status = (userData['registrationStatus'] ?? '').toString();
+      final legacyComplete = status.isEmpty &&
+          userData['emailVerified'] == true &&
+          (userData['nickname'] ?? '').toString().trim().isNotEmpty;
+      if (status != 'complete' && !legacyComplete) return;
+
+      await userRef.update({
         'preferredLanguage': languageCode,
         'preferredLanguageUpdatedAt': FieldValue.serverTimestamp(),
       });
@@ -363,6 +422,9 @@ class _MeetupAppState extends State<MeetupApp> {
         'updated_at': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
+      if (FirebaseAuth.instance.currentUser?.uid == uid) {
+        _lastSyncedLanguageCode = languageCode;
+      }
       if (kDebugMode) {
         debugPrint('✅ 언어 Firestore 동기화 완료: $languageCode (uid=$uid)');
       }
@@ -378,43 +440,75 @@ class _MeetupAppState extends State<MeetupApp> {
     final languageCode = await _languageService.getLanguage();
     if (mounted) {
       setState(() {
-        _locale = Locale(languageCode);
+        _locale = uiLocale(languageCode);
       });
     }
-    // 푸시 i18n을 위해 서버에도 동기화
-    unawaited(_syncLanguageToFirestore(languageCode));
     if (kDebugMode) {
       debugPrint('🌐 언어 로드 완료: $languageCode');
     }
   }
 
+  void _initializeCompletedServices(app_auth.AuthProvider authProvider) {
+    final uid = authProvider.user?.uid;
+    if (uid == null || _completedServicesUid == uid) return;
+    _completedServicesUid = uid;
+    unawaited(Future<void>(() async {
+      try {
+        await FeatureFlagService().init();
+        await ExternalShareService.instance.initialize();
+        await ContentTranslationService.instance
+            .synchronizeAutomaticLanguageWithUi(_locale.languageCode);
+        await _syncLanguageToFirestore(_locale.languageCode);
+      } catch (error) {
+        if (kDebugMode) debugPrint('완료 사용자 서비스 초기화 실패: $error');
+      }
+    }));
+  }
+
   /// 언어 변경
   void changeLanguage(String languageCode) {
-    if (_locale.languageCode != languageCode) {
+    if (_locale != uiLocale(languageCode)) {
       setState(() {
-        _locale = Locale(languageCode);
+        _locale = uiLocale(languageCode);
       });
-      _languageService.saveLanguage(languageCode);
-      // 푸시 i18n을 위해 서버에도 동기화
-      unawaited(_syncLanguageToFirestore(languageCode));
+      unawaited(_saveLanguageAndRefreshNotifications(languageCode));
+      if (_completedServicesUid != null) {
+        unawaited(
+          ContentTranslationService.instance
+              .synchronizeAutomaticLanguageWithUi(_locale.languageCode),
+        );
+        unawaited(_syncLanguageToFirestore(_locale.languageCode));
+      }
       if (kDebugMode) {
         debugPrint('🌐 언어 변경: $languageCode');
       }
     }
   }
 
-  @override
-  void dispose() {
-    _authSub?.cancel();
-    _authSub = null;
-    super.dispose();
+  Future<void> _saveLanguageAndRefreshNotifications(
+    String languageCode,
+  ) async {
+    await _languageService.saveLanguage(languageCode);
+    if (_completedServicesUid == null) return;
+    try {
+      await SemesterTodoService.instance
+          .refreshPersonalTodoNotificationLanguage();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ 로컬 할 일 알림 언어 갱신 실패(다음 화면 진입 시 재시도): $e');
+      }
+    }
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId != null) {
+      await FCMService().refreshTokenLocale(userId);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Wefilling',
-      theme: AppTheme.light(),
+      theme: AppTheme.light(locale: _locale),
       themeMode: ThemeMode.light, // 강제 라이트모드
       locale: _locale, // 현재 선택된 언어
       scaffoldMessengerKey: AppMessenger.scaffoldMessengerKey,
@@ -427,23 +521,29 @@ class _MeetupAppState extends State<MeetupApp> {
       supportedLocales: const [
         Locale('ko'), // 한국어
         Locale('en'), // 영어
+        Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
       ],
       // 전역 탭-투-디스미스: 빈 공간 탭 시 키보드 닫힘 + SnackBar 닫힘
       builder: (context, child) {
-        return GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () {
-            // 키보드 닫기
-            final currentFocus = FocusScope.of(context);
-            if (!currentFocus.hasPrimaryFocus &&
-                currentFocus.focusedChild != null) {
-              FocusManager.instance.primaryFocus?.unfocus();
-            }
-            // SnackBar 닫기 (전역 ScaffoldMessenger 키 사용)
-            AppMessenger.scaffoldMessengerKey.currentState
-                ?.hideCurrentSnackBar();
-          },
-          child: child,
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(NavigationService.flushPendingPushes());
+        });
+        return MotionAccessibility(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () {
+              // 키보드 닫기
+              final currentFocus = FocusScope.of(context);
+              if (!currentFocus.hasPrimaryFocus &&
+                  currentFocus.focusedChild != null) {
+                FocusManager.instance.primaryFocus?.unfocus();
+              }
+              // SnackBar 닫기 (전역 ScaffoldMessenger 키 사용)
+              AppMessenger.scaffoldMessengerKey.currentState
+                  ?.hideCurrentSnackBar();
+            },
+            child: child,
+          ),
         );
       },
       routes: {
@@ -452,31 +552,94 @@ class _MeetupAppState extends State<MeetupApp> {
           return EditMeetupScreen(meetup: meetup);
         },
         '/admin-migration': (context) => const AdminMigrationScreen(),
+        if (kDebugMode)
+          '/release-diagnostics': (context) => const ReleaseDiagnosticsScreen(),
+        if (kDebugMode) '/button-lab': (context) => const ButtonLabScreen(),
+        if (kDebugMode)
+          '/orbit-lab': (context) => const RelationshipOrbitPreviewScreen(),
       },
       navigatorKey: NavigationService.navigatorKey,
-      home: Consumer<app_auth.AuthProvider>(
-        builder: (context, authProvider, _) {
-          if (authProvider.isLoading) {
-            return const Scaffold(
-              backgroundColor: Color(0xFFDEEFFF),
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
+      navigatorObservers: [NavigationService.routeObserver],
+      home: AnimatedBuilder(
+        animation: OrganizationAccountService.instance,
+        builder: (context, _) => Consumer<app_auth.AuthProvider>(
+          builder: (context, authProvider, _) {
+            final organizationService = OrganizationAccountService.instance;
+            if (organizationService.hasInvitation) {
+              _loginWasShown = false;
+              ExternalShareService.instance.setRoutingReady(false);
+              NavigationService.setRoutingReady(false, null);
+              return const OrganizationInviteScreen();
+            }
+            final canRouteExternalShare = !authProvider.isLoading &&
+                authProvider.isLoggedIn &&
+                authProvider.isRegistrationComplete &&
+                !authProvider.isOrganizationOnlyAccount;
+            if (!canRouteExternalShare) {
+              NavigationService.setRoutingReady(false, null);
+            }
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ExternalShareService.instance
+                  .setRoutingReady(canRouteExternalShare);
+              NavigationService.setRoutingReady(
+                canRouteExternalShare,
+                canRouteExternalShare ? authProvider.user?.uid : null,
+              );
+            });
 
-          // 로그인되어 있으면
-          if (authProvider.isLoggedIn) {
-            // 프로필 완성 여부 확인 (닉네임 + 국적 모두 필수)
-            if (!authProvider.isProfileComplete) {
-              return const NicknameSetupScreen();
+            if (authProvider.isLoading) {
+              // Keep the existing login State during submitting/failure. Never
+              // retain an authenticated screen while another session is loading.
+              return AppLoginSurface(
+                restoring: true,
+                keepLogin: _loginWasShown,
+                login: const LoginScreen(),
+              );
             }
 
-            // 프로필 완성되었으면 메인 화면
-            return const MainScreen();
-          }
+            // 로그인되어 있으면
+            if (authProvider.isLoggedIn) {
+              _loginWasShown = false;
+              if (authProvider.isOrganizationOnlyAccount) {
+                return OrganizationHomeScreen(
+                  key: ValueKey(
+                    'organization_session_${authProvider.user!.uid}',
+                  ),
+                );
+              }
+              // Firebase Auth 존재 여부가 아니라 서버의 최종 가입 완료 상태를
+              // 기준으로만 앱 진입을 허용한다.
+              if (!authProvider.isRegistrationComplete) {
+                if (authProvider.registrationState ==
+                    app_auth.AccountRegistrationState.authCreated) {
+                  final signupLanguage =
+                      (authProvider.userData?['signupLanguage'] ?? 'ko')
+                          .toString();
+                  return signupLanguage.startsWith('en')
+                      ? const HanyangEmailVerificationScreen.general(
+                          signupLanguage: 'en',
+                        )
+                      : const HanyangEmailVerificationScreen();
+                }
+                return const NicknameSetupScreen();
+              }
 
-          // 로그인되어 있지 않으면
-          return const LoginScreen();
-        },
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _initializeCompletedServices(authProvider);
+              });
+
+              return MainScreen(
+                key: ValueKey('main_session_${authProvider.user!.uid}'),
+              );
+            }
+
+            // 로그인되어 있지 않으면
+            _loginWasShown = true;
+            return const AppLoginSurface(
+              restoring: false, keepLogin: true, login: LoginScreen(),
+            );
+          },
+        ),
       ),
       debugShowCheckedModeBanner: false,
     );

@@ -5,10 +5,214 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function currentUserAccountAllowed() {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('isDeleted', false) != true
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('deleted', false) != true
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('disabled', false) != true
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('isSuspended', false) != true
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('status', '') != 'deleted'
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('status', '') != 'suspended';
+    }
+
+    function isAdmin() {
+      return currentUserAccountAllowed()
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('isAdmin', false) == true;
+    }
+
+    function isPlatformAdmin() {
+      return isSignedIn()
+        && request.auth.token.get('platformAdmin', false) == true;
+    }
+
+    function canEditOrganizationMedia(organizationId) {
+      let membershipPath = /databases/(default)/documents/organization_memberships/$(organizationId + '_' + request.auth.uid);
+      return isPlatformAdmin()
+        || (
+          isSignedIn()
+          && firestore.exists(membershipPath)
+          && firestore.get(membershipPath).data.get('status', '') == 'active'
+          && firestore.get(membershipPath).data.get('role', '') in [
+            'owner', 'manager', 'editor'
+          ]
+        );
+    }
+
+    function contentBlockFree(ownerId) {
+      return !firestore.exists(/databases/(default)/documents/blocks/$(request.auth.uid + '_' + ownerId))
+        && !firestore.exists(/databases/(default)/documents/blocks/$(ownerId + '_' + request.auth.uid));
+    }
+
     // Firestore conversations/{conversationId}.participants 기반으로 참여자 여부 확인
     function isConversationParticipant(conversationId) {
-      return firestore.exists(/databases/(default)/documents/conversations/$(conversationId)) &&
-        request.auth.uid in firestore.get(/databases/(default)/documents/conversations/$(conversationId)).data.participants;
+      return currentUserAccountAllowed()
+        && firestore.exists(/databases/(default)/documents/conversations/$(conversationId))
+        && request.auth.uid in firestore.get(
+          /databases/(default)/documents/conversations/$(conversationId)
+        ).data.participants;
+    }
+
+    // Firestore snack_chats/{snackChatId}.participantIds 기반 참여자 여부 확인
+    function isSnackChatParticipant(snackChatId) {
+      // Storage Rules may consult at most two Firestore documents. Account +
+      // room membership are the authoritative checks here. Meetup visibility
+      // is verified when the user joins the room; checking the Meetup and
+      // block documents again would exceed the cross-service access limit and
+      // reject valid uploads/downloads.
+      return currentUserAccountAllowed()
+        && firestore.exists(/databases/(default)/documents/snack_chats/$(snackChatId))
+        && request.auth.uid in firestore.get(
+          /databases/(default)/documents/snack_chats/$(snackChatId)
+        ).data.participantIds;
+    }
+
+    function snackChatDocumentMimeAllowed(extension, mimeType) {
+      return (extension == 'pdf' && mimeType == 'application/pdf')
+        || (extension == 'hwp' && mimeType == 'application/x-hwp')
+        || (extension == 'hwpx' && mimeType == 'application/vnd.hancom.hwpx')
+        || (extension == 'doc' && mimeType == 'application/msword')
+        || (extension == 'docx' && mimeType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        || (extension == 'ppt' && mimeType == 'application/vnd.ms-powerpoint')
+        || (extension == 'pptx' && mimeType == 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
+        || (extension == 'xls' && mimeType == 'application/vnd.ms-excel')
+        || (extension == 'xlsx' && mimeType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        || (extension == 'txt' && mimeType == 'text/plain')
+        || (extension == 'csv' && mimeType == 'text/csv')
+        // 채팅 영상(MP4). 길이·크기·썸네일은 서버 commit/DM 규칙이 검증한다.
+        || (extension == 'mp4' && mimeType == 'video/mp4');
+    }
+
+    function canCreateSnackChatFile(retentionMode, snackChatId, messageId, fileId) {
+      let roomPath = /databases/(default)/documents/snack_chats/$(snackChatId);
+      let jobPath = /databases/(default)/documents/snack_chats/$(snackChatId)/fileUploadJobs/$(request.resource.metadata.uploadId);
+      let room = firestore.get(roomPath);
+      let job = firestore.get(jobPath);
+      let expectedPath = 'snack_chat_files/' + retentionMode + '/'
+        + snackChatId + '/' + messageId + '/' + fileId;
+      return isSignedIn()
+        && firestore.exists(roomPath)
+        && request.auth.uid in room.data.participantIds
+        && firestore.exists(jobPath)
+        && job.data.senderId == request.auth.uid
+        && job.data.status == 'pending'
+        && job.data.uploadId == request.resource.metadata.uploadId
+        && job.data.messageId == messageId
+        && job.data.chatRoomId == snackChatId
+        && job.data.fileId == fileId
+        && job.data.retentionMode == retentionMode
+        && job.data.storagePath == expectedPath
+        && request.resource.metadata.senderId == request.auth.uid
+        && request.resource.metadata.chatRoomId == snackChatId
+        && request.resource.metadata.messageId == messageId
+        && request.resource.metadata.fileId == fileId
+        && request.resource.metadata.retentionMode == retentionMode
+        && job.data.fileExtension == request.resource.metadata.fileExtension
+        && job.data.mimeType == request.resource.contentType
+        && job.data.fileSize == request.resource.size
+        && request.resource.size > 0
+        && request.resource.size <= 20 * 1024 * 1024
+        && snackChatDocumentMimeAllowed(
+          request.resource.metadata.fileExtension,
+          request.resource.contentType
+        );
+    }
+
+    function canReadSnackChatFile(retentionMode, snackChatId, messageId, fileId) {
+      let roomPath = /databases/(default)/documents/snack_chats/$(snackChatId);
+      let messagePath = /databases/(default)/documents/snack_chats/$(snackChatId)/messages/$(messageId);
+      let room = firestore.get(roomPath);
+      let message = firestore.get(messagePath);
+      let expectedPath = 'snack_chat_files/' + retentionMode + '/'
+        + snackChatId + '/' + messageId + '/' + fileId;
+      return isSignedIn()
+        && firestore.exists(roomPath)
+        && request.auth.uid in room.data.participantIds
+        && firestore.exists(messagePath)
+        && message.data.type == 'file'
+        && message.data.get('isDeleted', false) != true
+        && message.data.storagePath == expectedPath
+        && message.data.retentionMode == retentionMode
+        && (
+          (
+            retentionMode == 'permanent'
+            && !message.data.keys().hasAny(['expiresAt'])
+          )
+          || (
+            message.data.expiresAt is timestamp
+            && request.time < message.data.expiresAt
+          )
+        );
+    }
+
+    function canReadMeetup(meetupId) {
+      return currentUserAccountAllowed()
+        && meetupId is string
+        && firestore.exists(/databases/(default)/documents/meetups/$(meetupId))
+        && (
+          request.auth.uid == firestore.get(
+            /databases/(default)/documents/meetups/$(meetupId)
+          ).data.get('ownerId', firestore.get(
+            /databases/(default)/documents/meetups/$(meetupId)
+          ).data.get('userId', ''))
+          || (
+            contentBlockFree(firestore.get(
+              /databases/(default)/documents/meetups/$(meetupId)
+            ).data.get('ownerId', firestore.get(
+              /databases/(default)/documents/meetups/$(meetupId)
+            ).data.get('userId', '')))
+            && (
+              firestore.get(
+                /databases/(default)/documents/meetups/$(meetupId)
+              ).data.get('visibilityMode', firestore.get(
+                /databases/(default)/documents/meetups/$(meetupId)
+              ).data.get('visibility', '')) == 'public'
+              || request.auth.uid in firestore.get(
+                /databases/(default)/documents/meetups/$(meetupId)
+              ).data.get(
+                'audienceUserIdsFrozen', firestore.get(
+                  /databases/(default)/documents/meetups/$(meetupId)
+                ).data.get('allowedUserIds', [])
+              )
+            )
+          )
+        );
+    }
+
+    function snapshotExists(snapshotId) {
+      return firestore.exists(/databases/(default)/documents/snapshots/$(snapshotId));
+    }
+
+    // Storage Rules에서는 한 요청당 Firestore 문서를 최대 2개만 읽을 수 있다.
+    // 서버가 공개범위와 양방향 차단을 검증해 생성한 개인 feed를 이미지 접근
+    // 권한 원본으로 사용한다. 사용자 계정 문서 + feed 문서만 읽어 한도를 지킨다.
+    function canReadSnapshotImage(snapshotId) {
+      let feedPath = /databases/(default)/documents/users/$(request.auth.uid)/snapshot_feed/$(snapshotId);
+      let feed = firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)/snapshot_feed/$(snapshotId)
+      );
+      return currentUserAccountAllowed()
+        && firestore.exists(feedPath)
+        && feed.data.snapshotId == snapshotId
+        && feed.data.status == 'active'
+        && feed.data.expiresAt is timestamp
+        && request.time < feed.data.expiresAt
+        && feed.data.get('ownerId', feed.data.get('authorId', '')) is string
+        && feed.data.get('ownerId', feed.data.get('authorId', '')).size() > 0;
     }
 
     // ✅ 프로필 이미지: 유저별 폴더로 격리
@@ -16,7 +220,43 @@ service firebase.storage {
     // - 읽기는 공개(프로필/게시글/댓글 등에서 표시)
     match /profile_images/{userId}/{fileName} {
       allow read: if true;
-      allow write: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && request.auth.uid == userId
+        && (request.resource == null
+          || (request.resource.contentType.matches('image/.*')
+            && request.resource.size <= 10 * 1024 * 1024));
+    }
+
+    // 단체는 Auth 사용자가 아니므로 실제 담당자의 활성 membership을
+    // 확인한다. 로고/커버는 공개 프로필 자산이지만 쓰기는 immutable 생성과
+    // 소유 조직 단위 삭제만 허용한다.
+    match /organization_profile_images/{organizationId}/{fileName} {
+      allow read: if true;
+      allow create: if canEditOrganizationMedia(organizationId)
+        && request.resource.size > 0
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.metadata.organizationId == organizationId
+        && request.resource.metadata.uploaderUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if canEditOrganizationMedia(organizationId)
+        && resource.metadata.organizationId == organizationId;
+    }
+
+    // 학기 To-do의 참고 안내/광고 이미지. 운영자만 immutable 객체를
+    // 추가·삭제하고 로그인 가능한 사용자는 게시된 문서의 URL로 조회한다.
+    match /semester_todo_images/{semesterId}/{weekId}/{fileName} {
+      allow read: if currentUserAccountAllowed();
+      allow create: if isAdmin()
+        && request.resource.size > 0
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.semesterId == semesterId
+        && request.resource.metadata.weekId == weekId;
+      allow update: if false;
+      allow delete: if isAdmin()
+        && resource.metadata.semesterId == semesterId
+        && resource.metadata.weekId == weekId;
     }
 
     // (레거시) 사용자별 포스트 이미지 폴더
@@ -25,28 +265,259 @@ service firebase.storage {
       allow write: if isSignedIn() && request.auth.uid == userId;
     }
 
+    // 게시글 영상과 썸네일: post_videos/{uid}/{postId}/video.mp4, thumbnail.jpg
+    // 읽기는 게시글 이미지와 같이 공개(다운로드 URL). 생성은 본인 폴더에만,
+    // MP4 40MB·JPEG 2MB 한도와 ownerUid/postId metadata를 요구한다. 길이 검증과
+    // 게시글 연결은 createPostSecure가 한다. 삭제는 게시글 문서가 아직 없을 때
+    // (생성 실패 롤백)만 업로더가 할 수 있고, 게시 후에는 서버 트리거가 지운다.
+    match /post_videos/{userId}/{postId}/{fileName} {
+      allow read: if true;
+      allow create: if currentUserAccountAllowed()
+        && request.auth.uid == userId
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.postId == postId
+        && (
+          (fileName == 'video.mp4'
+            && request.resource.contentType == 'video/mp4'
+            && request.resource.size > 0
+            && request.resource.size <= 40 * 1024 * 1024)
+          || (fileName == 'thumbnail.jpg'
+            && request.resource.contentType == 'image/jpeg'
+            && request.resource.size > 0
+            && request.resource.size <= 2 * 1024 * 1024)
+        );
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && request.auth.uid == userId
+        && resource.metadata.ownerUid == request.auth.uid
+        && !firestore.exists(/databases/(default)/documents/posts/$(postId));
+    }
+
     // 게시글 이미지 (uuid 파일명)
     match /posts/{fileName} {
       allow read: if true;
-      allow write: if isSignedIn();
+      // uuid 파일명은 쓰기 소유자를 알 수 없으므로 새 이미지 생성만 허용하고
+      // 다른 사용자의 파일 덮어쓰기·삭제는 막는다. 크기·타입도 제한한다.
+      allow create: if isSignedIn()
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size <= 15 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+
+    // 키보드 GIF 댓글은 본문 문서가 생기기 전 업로드한다. 읽기는 실제
+    // 댓글/포스트 접근 권한과 삭제 상태를 확인하고, 덮어쓰기는 막는다.
+    match /post_comment_gifs/{postId}/{fileName} {
+      function postVisible() {
+        let post = firestore.get(/databases/(default)/documents/posts/$(postId));
+        return firestore.exists(/databases/(default)/documents/posts/$(postId))
+          && (request.auth.uid == post.data.get('userId', '')
+            || request.auth.uid == post.data.get('ownerId', '')
+            || post.data.get('visibilityMode', post.data.get('visibility', '')) == 'public'
+            || request.auth.uid in post.data.get('audienceUserIdsFrozen', post.data.get('allowedUserIds', [])));
+      }
+      function commentActive(commentId) {
+        let commentPath = /databases/(default)/documents/comments/$(commentId);
+        return firestore.exists(commentPath)
+          && firestore.get(commentPath).data.postId == postId
+          && firestore.get(commentPath).data.get('isDeleted', false) != true
+          && firestore.get(commentPath).data.get('gifStoragePath', '')
+            == 'post_comment_gifs/' + postId + '/' + fileName;
+      }
+      allow read: if isSignedIn() && postVisible()
+        && resource.metadata.commentId + '.gif' == fileName
+        && (resource.metadata.ownerUid == request.auth.uid
+          || commentActive(resource.metadata.commentId));
+      allow create: if currentUserAccountAllowed()
+        && postVisible()
+        && fileName.matches('^[A-Za-z0-9]{20}\\.gif$')
+        && request.resource.size >= 10
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType == 'image/gif'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.postId == postId
+        && request.resource.metadata.commentId + '.gif' == fileName;
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.postId == postId
+        && firestore.exists(/databases/(default)/documents/comments/$(resource.metadata.commentId))
+        && firestore.get(/databases/(default)/documents/comments/$(resource.metadata.commentId)).data.get('isDeleted', false) == true;
+    }
+
+    // Instagram 링크 미리보기는 일반 첨부 이미지와 분리해 postId별 한
+    // 객체로 보관한다. 포스트 문서 생성 전에 업로드되므로 경로 소유권과
+    // immutable metadata를 기준으로 쓰기를 검증한다.
+    match /post_link_previews/{userId}/{postId}/{fileName} {
+      allow read: if true;
+      allow create, update: if currentUserAccountAllowed()
+        && request.auth.uid == userId
+        && postId.matches('^[A-Za-z0-9]{20}$')
+        && fileName == 'instagram.jpg'
+        && request.resource.size > 0
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.provider == 'instagram'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.postId == postId
+        && (
+          request.resource.metadata.source == 'share_payload'
+          || request.resource.metadata.source == 'local_preview'
+        );
+      allow delete: if currentUserAccountAllowed()
+        && request.auth.uid == userId
+        && resource.metadata.provider == 'instagram'
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.postId == postId;
     }
 
     // 모임 이미지 (meetupId 기반)
     match /meetup_images/{meetupId}/{fileName} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read: if canReadMeetup(meetupId);
+      allow write: if currentUserAccountAllowed()
+        && firestore.exists(/databases/(default)/documents/meetups/$(meetupId))
+        && firestore.get(/databases/(default)/documents/meetups/$(meetupId)).data.userId == request.auth.uid
+        && (request.resource == null || request.resource.size <= 15 * 1024 * 1024);
     }
 
     // 모임 후기 이미지 (리뷰 작성 시 업로드)
     match /meetup_reviews/{fileName} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size <= 15 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+
+    // 스낵샷은 다운로드 URL을 공개하지 않고 인증 기반 getData로만 읽는다.
+    // 최종 canonical 문서가 생긴 뒤에는 클라이언트 직접 삭제도 막고
+    // Callable/예약 함수(Admin SDK)만 정리할 수 있다.
+    match /snapshots/{snapshotId}/final.jpg {
+      allow read: if canReadSnapshotImage(snapshotId);
+      allow create: if currentUserAccountAllowed()
+        && request.resource.size > 0
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snapshotId == snapshotId;
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && !snapshotExists(snapshotId)
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.snapshotId == snapshotId;
+    }
+
+    match /snapshots/{snapshotId}/final.mp4 {
+      allow read: if canReadSnapshotImage(snapshotId);
+      allow create: if currentUserAccountAllowed()
+        && request.resource.size > 0
+        && request.resource.contentType == 'video/mp4'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snapshotId == snapshotId
+        && request.resource.metadata.mediaType == 'video';
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && !snapshotExists(snapshotId)
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.snapshotId == snapshotId;
+    }
+
+    match /snapshots/{snapshotId}/comment_gifs/{fileName} {
+      allow read: if canReadSnapshotImage(snapshotId);
+      allow create: if canReadSnapshotImage(snapshotId)
+        && request.resource.size >= 10
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType == 'image/gif'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snapshotId == snapshotId
+        && request.resource.metadata.commentId is string
+        && request.resource.metadata.commentId + '.gif' == fileName;
+      allow update, delete: if false;
+    }
+
+    match /snapshots/{snapshotId}/thumbnail.jpg {
+      allow read: if canReadSnapshotImage(snapshotId);
+      allow create: if currentUserAccountAllowed()
+        && request.resource.size > 0
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snapshotId == snapshotId
+        && request.resource.metadata.mediaType == 'video-thumbnail';
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && !snapshotExists(snapshotId)
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.snapshotId == snapshotId;
     }
 
     // DM 이미지: 대화 참여자만 읽기, 업로더(경로의 userId)만 쓰기
     match /dm_images/{userId}/{conversationId}/{fileName} {
       allow read: if isSignedIn() && isConversationParticipant(conversationId);
-      allow write: if isSignedIn() && request.auth.uid == userId && isConversationParticipant(conversationId);
+      allow write: if isSignedIn() && request.auth.uid == userId && isConversationParticipant(conversationId)
+        && (request.resource == null
+          || (request.resource.contentType.matches('image/.*')
+            && request.resource.size <= 15 * 1024 * 1024));
+    }
+
+    // Immutable DM documents. The deterministic message path makes retries
+    // idempotent; metadata and type checks prevent cross-room/path spoofing.
+    match /dm_files/{userId}/{conversationId}/{messageId}/{fileName} {
+      allow read: if isConversationParticipant(conversationId);
+      allow create: if isConversationParticipant(conversationId)
+        && request.auth.uid == userId
+        && request.resource.size > 0
+        && request.resource.size <= 20 * 1024 * 1024
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.conversationId == conversationId
+        && request.resource.metadata.messageId == messageId
+        && request.resource.metadata.fileName is string
+        && request.resource.metadata.fileName.size() > 0
+        && request.resource.metadata.fileName.size() <= 240
+        && request.resource.metadata.fileExtension is string
+        && fileName == 'file.' + request.resource.metadata.fileExtension
+        && snackChatDocumentMimeAllowed(
+          request.resource.metadata.fileExtension,
+          request.resource.contentType
+        );
+      allow update: if false;
+      // A delayed/retried client must not remove an object that a committed
+      // message may already reference. Orphan cleanup is server-owned.
+      allow delete: if false;
+    }
+
+    // Snack Chat 이미지: 해당 방 참여자만 읽고, 본인 폴더에만 업로드 가능
+    match /snack_chat_images/{userId}/{snackChatId}/{fileName} {
+      allow read: if isSnackChatParticipant(snackChatId);
+      allow create: if isSnackChatParticipant(snackChatId)
+        && request.auth.uid == userId
+        && request.resource.size > 0
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snackChatId == snackChatId;
+      allow update: if false;
+      allow delete: if isSnackChatParticipant(snackChatId)
+        && request.auth.uid == userId
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.snackChatId == snackChatId;
+    }
+
+    // Snack Chat documents use opaque object ids. The upload job authorizes
+    // one immutable create; the final message authorizes participant reads.
+    match /snack_chat_files/{retentionMode}/{snackChatId}/{messageId}/{fileId} {
+      allow read: if canReadSnackChatFile(
+        retentionMode,
+        snackChatId,
+        messageId,
+        fileId
+      );
+      allow create: if canCreateSnackChatFile(
+        retentionMode,
+        snackChatId,
+        messageId,
+        fileId
+      );
+      allow update, delete: if false;
     }
 
     match /{allPaths=**} {

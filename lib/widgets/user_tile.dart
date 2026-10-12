@@ -2,30 +2,107 @@
 // 사용자 목록에서 각 사용자를 표시하는 타일 위젯
 // 프로필 이미지, 이름, 관계 상태, 액션 버튼 포함
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../utils/country_flag_helper.dart';
+import '../utils/responsive_helper.dart';
 import '../l10n/app_localizations.dart';
+import '../services/cache/app_image_cache_manager.dart';
+import 'relationship_action_button.dart';
+import '../l10n/ui_locale.dart';
 
 class UserTile extends StatelessWidget {
   final UserProfile user;
   final RelationshipStatus relationshipStatus;
   final VoidCallback? onActionPressed;
+  final VoidCallback? onRejectPressed;
   final VoidCallback? onTilePressed;
   final bool isLoading;
+  final bool minimal;
 
   const UserTile({
     super.key,
     required this.user,
     required this.relationshipStatus,
     this.onActionPressed,
+    this.onRejectPressed,
     this.onTilePressed,
     this.isLoading = false,
+    this.minimal = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (minimal) {
+      final width = MediaQuery.sizeOf(context).width;
+      final isCompact = width < 360;
+      final horizontalPadding = isCompact ? 12.0 : (width < 600 ? 16.0 : 24.0);
+      final avatarSize = isCompact ? 42.0 : 46.0;
+      // 영문처럼 긴 액션 문구도 생략되지 않도록 사용자 정보와 버튼이
+      // 균형 있게 공간을 나눈다. 좁은 화면에서는 버튼 내부 두 줄을 허용한다.
+      final actionMaxWidth = (width * 0.4).clamp(112.0, 164.0).toDouble();
+
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Material(
+                color: Colors.white,
+                child: InkWell(
+                  onTap: onTilePressed,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      horizontalPadding,
+                      12,
+                      horizontalPadding,
+                      12,
+                    ),
+                    child: MediaQuery.withClampedTextScaling(
+                      maxScaleFactor: 1.2,
+                      child: Row(
+                        children: [
+                          _buildProfileImage(size: avatarSize),
+                          SizedBox(width: isCompact ? 11 : 13),
+                          Expanded(
+                            child: _buildUserInfo(context, compact: true),
+                          ),
+                          SizedBox(width: isCompact ? 6 : 10),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: actionMaxWidth,
+                            ),
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              widthFactor: 1,
+                              child: _buildActionButton(
+                                context,
+                                compact: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Divider(
+                height: 1,
+                thickness: 1,
+                indent: horizontalPadding + avatarSize + (isCompact ? 11 : 13),
+                endIndent: horizontalPadding,
+                color: const Color(0xFFEAECF0),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       elevation: 0,
@@ -54,67 +131,100 @@ class UserTile extends StatelessWidget {
   }
 
   /// 프로필 이미지 위젯
-  Widget _buildProfileImage() {
+  Widget _buildProfileImage({double size = 48}) {
     return Container(
-      width: 48,
-      height: 48,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: Colors.grey[300],
       ),
       child: user.hasProfileImage
           ? ClipOval(
-              child: Image.network(
-                user.photoURL!,
-                width: 48,
-                height: 48,
+              child: CachedNetworkImage(
+                imageUrl: user.photoURL!,
+                cacheManager: AppImageCacheManager.instance,
+                width: size,
+                height: size,
+                memCacheWidth: (size * 3).ceil().clamp(96, 256),
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Icon(
-                  Icons.person,
-                  size: 24,
+                fadeInDuration: Duration.zero,
+                fadeOutDuration: Duration.zero,
+                placeholder: (_, __) => Icon(
+                  Icons.person_outline_rounded,
+                  size: size * 0.5,
+                  color: Colors.grey[600],
+                ),
+                errorWidget: (_, __, ___) => Icon(
+                  Icons.person_outline_rounded,
+                  size: size * 0.5,
                   color: Colors.grey[600],
                 ),
               ),
             )
           : Icon(
-              Icons.person,
-              size: 24,
+              Icons.person_outline_rounded,
+              size: size * 0.5,
               color: Colors.grey[600],
             ),
     );
   }
 
   /// 사용자 정보 위젯
-  Widget _buildUserInfo(BuildContext context) {
+  Widget _buildUserInfo(BuildContext context, {bool compact = false}) {
+    final displayName = user.isDeletedAccount
+        ? AppLocalizations.of(context)!.deletedAccount
+        : user.displayNameOrNickname;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 사용자 이름
         Text(
-          user.displayNameOrNickname,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          displayName,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: compact ? context.rf(14).clamp(13, 15).toDouble() : 16,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
+            height: isChineseUi(context) ? 1.3 : 1.2,
+          ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
 
-        const SizedBox(height: 4),
-
-        const SizedBox(height: 4),
+        SizedBox(height: compact ? 3 : 8),
 
         // 국적 정보
-        if (user.nationality != null && user.nationality!.isNotEmpty)
+        if (!user.isDeletedAccount &&
+            user.nationality != null &&
+            user.nationality!.isNotEmpty)
           Row(
             children: [
-              Icon(Icons.flag, size: 16, color: Colors.grey[700]),
+              Icon(
+                Icons.flag_outlined,
+                size: compact ? 13 : 16,
+                color: const Color(0xFF98A2B3),
+              ),
               const SizedBox(width: 4),
-              Text(
-                CountryFlagHelper.getCountryInfo(user.nationality!)?.getLocalizedName(
-                  Localizations.localeOf(context).languageCode
-                ) ?? user.nationality!,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: const Color(0xFF4B5563), // 더 진한 회색 (grey-600)
-                  fontWeight: FontWeight.w500,
+              Expanded(
+                child: Text(
+                  CountryFlagHelper.getCountryInfo(
+                        user.nationality!,
+                      )?.getLocalizedName(
+                        Localizations.localeOf(context).languageCode,
+                      ) ??
+                      user.nationality!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: compact ? 12 : 12.5,
+                    color: const Color(0xFF8B93A1),
+                    fontWeight: FontWeight.w500,
+                    height: isChineseUi(context) ? 1.3 : 1.2,
+                  ),
                 ),
               ),
             ],
@@ -124,7 +234,8 @@ class UserTile extends StatelessWidget {
   }
 
   /// 액션 버튼 위젯
-  Widget _buildActionButton(BuildContext context) {
+  Widget _buildActionButton(BuildContext context, {bool compact = false}) {
+    if (user.isDeletedAccount) return const SizedBox.shrink();
     if (isLoading) {
       return const SizedBox(
         width: 24,
@@ -133,7 +244,7 @@ class UserTile extends StatelessWidget {
       );
     }
 
-    String _labelForStatus(BuildContext context, RelationshipStatus status) {
+    String labelForStatus(BuildContext context, RelationshipStatus status) {
       final l10n = AppLocalizations.of(context);
       if (l10n == null) return '';
       switch (status) {
@@ -157,7 +268,21 @@ class UserTile extends StatelessWidget {
 
     // 차단당한 상태는 버튼 비활성화
     if (relationshipStatus == RelationshipStatus.blockedBy) {
-      final label = _labelForStatus(context, relationshipStatus);
+      final label = labelForStatus(context, relationshipStatus);
+      if (compact) {
+        return Text(
+          label.isNotEmpty ? label : 'Blocked',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: ['NotoSansKR'],
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF98A2B3),
+          ),
+        );
+      }
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -171,8 +296,54 @@ class UserTile extends StatelessWidget {
       );
     }
 
+    if (relationshipStatus == RelationshipStatus.pendingIn) {
+      final l10n = AppLocalizations.of(context);
+      final rejectButton = RelationshipActionButton(
+        label: l10n?.reject ?? 'Reject',
+        onPressed: onRejectPressed,
+        tone: RelationshipActionButtonTone.neutral,
+      );
+      final acceptButton = RelationshipActionButton(
+        label: l10n?.accept ?? 'Accept',
+        onPressed: onActionPressed,
+      );
+
+      if (!compact) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            rejectButton,
+            const SizedBox(width: 6),
+            acceptButton,
+          ],
+        );
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: rejectButton),
+          const SizedBox(width: 6),
+          Flexible(child: acceptButton),
+        ],
+      );
+    }
+
     // 관계 상태에 따른 버튼 스타일
     final buttonStyle = _getButtonStyle(relationshipStatus);
+
+    if (compact) {
+      final isPrimaryAction = relationshipStatus == RelationshipStatus.none ||
+          relationshipStatus == RelationshipStatus.pendingIn;
+      final label = labelForStatus(context, relationshipStatus);
+      return RelationshipActionButton(
+        label: label,
+        onPressed: relationshipStatus.isActionable ? onActionPressed : null,
+        tone: isPrimaryAction
+            ? RelationshipActionButtonTone.primary
+            : RelationshipActionButtonTone.neutral,
+      );
+    }
 
     return ElevatedButton(
       onPressed: relationshipStatus.isActionable ? onActionPressed : null,
@@ -185,9 +356,10 @@ class UserTile extends StatelessWidget {
         minimumSize: const Size(90, 40),
       ),
       child: Text(
-        _labelForStatus(context, relationshipStatus),
-        style: const TextStyle(
-          fontFamily: 'Pretendard',
+        labelForStatus(context, relationshipStatus),
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: ['NotoSansKR'],
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
@@ -257,12 +429,21 @@ class SimpleUserTile extends StatelessWidget {
         ),
         child: user.hasProfileImage
             ? ClipOval(
-                child: Image.network(
-                  user.photoURL!,
+                child: CachedNetworkImage(
+                  imageUrl: user.photoURL!,
+                  cacheManager: AppImageCacheManager.instance,
                   width: 40,
                   height: 40,
+                  memCacheWidth: 128,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Icon(
+                  fadeInDuration: Duration.zero,
+                  fadeOutDuration: Duration.zero,
+                  placeholder: (_, __) => Icon(
+                    Icons.person,
+                    size: 20,
+                    color: Colors.grey[600],
+                  ),
+                  errorWidget: (_, __, ___) => Icon(
                     Icons.person,
                     size: 20,
                     color: Colors.grey[600],

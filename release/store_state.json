@@ -1,0 +1,14 @@
+{
+  "android": {
+    "releaseState": "active",
+    "verifiedStoreBuild": 74,
+    "uploadCertificateSha256": "03:59:2A:89:E8:90:14:11:56:A7:AA:6D:A2:6D:0C:FD:D3:31:B1:C2:D2:EF:64:DE:EE:58:34:C8:B0:80:09:3A",
+    "playAppSigningCertificateSha256": "FA:52:50:E7:5C:5F:77:79:A4:FB:70:FE:86:AD:1F:C5:63:13:BB:7F:88:F9:3A:9C:1A:38:1C:4F:EC:56:1E:F0"
+  },
+  "ios": {
+    "releaseState": "draft",
+    "verifiedStoreBuild": 0,
+    "verifiedStoreVersion": "1.2.6",
+    "distributionCertificateSha256": "FC:8E:1A:AD:08:5D:3A:40:C7:C2:70:B0:23:4F:FA:06:8B:CB:6B:09:E3:3A:A3:D8:75:50:90:F0:27:04:D6:FF"
+  }
+}

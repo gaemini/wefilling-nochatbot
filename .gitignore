@@ -43,6 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/dist/android/*.aab
 
 # Keystore files (DO NOT COMMIT)
 *.jks
@@ -70,3 +71,21 @@ fix_*.js
 *_FIX_SUMMARY.md
 *_SETUP_COMPLETE.md
 .plan-*.md
+# Generated Remote Config snapshots/candidates can contain environment state.
+release/remoteconfig.active.json
+release/remoteconfig.candidate.json
+
+# Release binaries
+/dist/ios/*.ipa
+/dist/android/*.aab
+
+# Secrets and credentials (never commit)
+**/serviceAccountKey*.json
+**/*-firebase-adminsdk-*.json
+*.p8
+*.p12
+*.pem
+.env.local
+.env.*.local
+functions/.env.local
+functions/.secret.local

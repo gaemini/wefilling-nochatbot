@@ -1,0 +1,201 @@
+/// Priority affects dispatch order only, never eligibility or cache identity.
+enum TranslationRequestPriority {
+  visible,
+  interactive,
+  nearby,
+  background,
+  pagination
+}
+
+enum TranslationItemState {
+  queued,
+  loading,
+  completed,
+  sameLanguage,
+  failedRetryable,
+  failedFinal,
+  removed,
+}
+
+class ContentTranslationRequest {
+  const ContentTranslationRequest({
+    required this.contentType,
+    required this.contentId,
+    required this.sourceFields,
+    this.parentId,
+  });
+
+  final String contentType;
+  final String contentId;
+  final String? parentId;
+  final Map<String, String> sourceFields;
+
+  String get serverId => '$contentType:${parentId ?? ''}:$contentId';
+
+  Map<String, dynamic> toCallableMap() => <String, dynamic>{
+        'contentType': contentType,
+        'contentId': contentId,
+        if (parentId != null && parentId!.isNotEmpty) 'parentId': parentId,
+      };
+}
+
+class ContentTranslationResult {
+  const ContentTranslationResult({
+    required this.status,
+    required this.sourceHash,
+    required this.targetLanguage,
+    required this.translatedFields,
+    this.sourceLanguage = '',
+    this.modelUsed = '',
+    this.translationVersion = 0,
+    this.promptVersion = 0,
+    this.translationPolicyVersion = '',
+    this.glossaryVersion = 0,
+    this.qualityPolicyVersion = 0,
+    this.sourceIntent = '',
+    this.contextHash = '',
+    this.translatedAt,
+    this.cacheSource = '',
+    this.errorCode = '',
+    this.automaticRetryExhausted = false,
+  });
+
+  final String status;
+  final String sourceHash;
+  final String sourceLanguage;
+  final String targetLanguage;
+  final Map<String, String> translatedFields;
+  final String modelUsed;
+  final int translationVersion;
+  final int promptVersion;
+  final String translationPolicyVersion;
+  final int glossaryVersion;
+  final int qualityPolicyVersion;
+  final String sourceIntent;
+  final String contextHash;
+  final int? translatedAt;
+  final String cacheSource;
+  final String errorCode;
+  final bool automaticRetryExhausted;
+
+  bool get isReady => status == 'completed' || status == 'same_language';
+  // A mixed-language post can have the target as its dominant source language
+  // and still contain translated text. Only the explicit server/client outcome
+  // can mark it as not needing translation; language metadata cannot hide it.
+  bool get isSameLanguage => status == 'same_language';
+
+  /// The provider/service may have exhausted its immediate retry, while the
+  /// underlying error is still transient enough for one later screen-level
+  /// retry after the existing cooldown.
+  bool get isTransientFailure =>
+      !isReady &&
+      (status == 'pending' ||
+          const <String>{
+            'quality_validation_failed',
+            'missing_result',
+            'id_mismatch',
+            'invalid_source_language',
+            'coverage_incomplete',
+            'missing_translations',
+            'field_mismatch',
+            'semantic_or_structure_guard',
+            'strict_metadata_guard',
+            'UNTRANSLATED_TEMPORAL_UNIT',
+            'TEMPORAL_VALUE_MISMATCH',
+            'TEMPORAL_DAY_PERIOD_MISMATCH',
+            'translation_failed',
+            'provider_unavailable',
+            'missing_server_response',
+            'empty_translation',
+            'pending_timeout',
+            'network_error',
+            'timeout',
+            'resource-exhausted',
+            'too-many-requests',
+            'aborted',
+            'unavailable',
+            'deadline-exceeded',
+            'internal',
+            'unknown',
+          }.contains(errorCode));
+
+  bool get isRetryableFailure =>
+      !isReady &&
+      !automaticRetryExhausted &&
+      (status == 'pending' ||
+          const <String>{
+            'quality_validation_failed',
+            'translation_failed',
+            'provider_unavailable',
+            'missing_server_response',
+            'empty_translation',
+            'pending_timeout',
+            'network_error',
+            'timeout',
+            'resource-exhausted',
+            'too-many-requests',
+            'aborted',
+            'unavailable',
+            'deadline-exceeded',
+            'internal',
+            'unknown',
+          }.contains(errorCode));
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'status': status,
+        'sourceHash': sourceHash,
+        'sourceLanguage': sourceLanguage,
+        'targetLanguage': targetLanguage,
+        'translatedFields': translatedFields,
+        'modelUsed': modelUsed,
+        'translationVersion': translationVersion,
+        'promptVersion': promptVersion,
+        'translationPolicyVersion': translationPolicyVersion,
+        'glossaryVersion': glossaryVersion,
+        'qualityPolicyVersion': qualityPolicyVersion,
+        'sourceIntent': sourceIntent,
+        'contextHash': contextHash,
+        if (translatedAt != null) 'translatedAt': translatedAt,
+        'cacheSource': cacheSource,
+        if (errorCode.isNotEmpty) 'errorCode': errorCode,
+        if (automaticRetryExhausted)
+          'automaticRetryExhausted': automaticRetryExhausted,
+        'cachedAt': DateTime.now().millisecondsSinceEpoch,
+        'lastAccessAt': DateTime.now().millisecondsSinceEpoch,
+      };
+
+  factory ContentTranslationResult.fromMap(Map<dynamic, dynamic> map) {
+    final rawFields = map['translatedFields'];
+    return ContentTranslationResult(
+      status: map['status']?.toString() ?? 'failed',
+      sourceHash: map['sourceHash']?.toString() ?? '',
+      sourceLanguage: map['sourceLanguage']?.toString() ?? '',
+      targetLanguage: map['targetLanguage']?.toString() ?? '',
+      modelUsed: map['modelUsed']?.toString() ?? '',
+      translationVersion: _asInt(map['translationVersion']),
+      promptVersion: _asInt(map['promptVersion']),
+      translationPolicyVersion:
+          map['translationPolicyVersion']?.toString() ?? '',
+      glossaryVersion: _asInt(map['glossaryVersion']),
+      qualityPolicyVersion: _asInt(map['qualityPolicyVersion']),
+      sourceIntent: map['sourceIntent']?.toString() ?? '',
+      contextHash: map['contextHash']?.toString() ?? '',
+      translatedAt:
+          map['translatedAt'] == null ? null : _asInt(map['translatedAt']),
+      cacheSource: map['cacheSource']?.toString() ?? '',
+      errorCode: map['errorCode']?.toString() ?? '',
+      automaticRetryExhausted: map['automaticRetryExhausted'] == true,
+      translatedFields: rawFields is Map
+          ? rawFields.map(
+              (key, value) => MapEntry(key.toString(), value.toString()),
+            )
+          : const <String, String>{},
+    );
+  }
+
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}

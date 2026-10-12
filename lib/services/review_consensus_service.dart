@@ -32,7 +32,7 @@ class ReviewConsensusService {
   Future<T?> _executeIfEnabled<T>(Future<T?> Function() action) async {
     final isEnabled = await _featureFlag.isReviewConsensusEnabled;
     if (!isEnabled) {
-      Logger.log('리뷰 합의 기능이 비활성화됨');
+      if (Logger.isVerboseEnabled) Logger.log('리뷰 합의 기능이 비활성화됨');
       return null;
     }
     return await action();
@@ -105,7 +105,7 @@ class ReviewConsensusService {
           reviewId: docRef.id,
         );
 
-        Logger.log('리뷰 요청 생성 완료: ${docRef.id}');
+        if (Logger.isVerboseEnabled) Logger.log('리뷰 요청 생성 완료: ${docRef.id}');
         return docRef.id;
 
       } catch (e) {
@@ -185,7 +185,7 @@ class ReviewConsensusService {
           }
         });
 
-        Logger.log('리뷰 요청 응답 완료: $reviewRequestId (수락: $accept)');
+        if (Logger.isVerboseEnabled) Logger.log('리뷰 요청 응답 완료: $reviewRequestId (수락: $accept)');
         return true;
 
       } catch (e) {
@@ -334,7 +334,7 @@ class ReviewConsensusService {
           reviewId: 'consensus',
         );
 
-        Logger.log('리뷰 합의 최종화 완료: $meetupId');
+        if (Logger.isVerboseEnabled) Logger.log('리뷰 합의 최종화 완료: $meetupId');
         return true;
 
       } catch (e) {
@@ -436,7 +436,7 @@ class ReviewConsensusService {
 
         if (cleanedCount > 0) {
           await batch.commit();
-          Logger.log('만료된 리뷰 요청 정리 완료: ${cleanedCount}개');
+          if (Logger.isVerboseEnabled) Logger.log('만료된 리뷰 요청 정리 완료: ${cleanedCount}개');
         }
 
         return cleanedCount;

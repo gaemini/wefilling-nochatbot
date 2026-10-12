@@ -79,6 +79,7 @@ class FriendRequest {
   final FriendRequestStatus status;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? notificationGeneration;
 
   const FriendRequest({
     required this.id,
@@ -87,6 +88,7 @@ class FriendRequest {
     required this.status,
     required this.createdAt,
     required this.updatedAt,
+    this.notificationGeneration,
   });
 
   // Firestore 문서에서 FriendRequest 객체 생성
@@ -102,13 +104,15 @@ class FriendRequest {
 
     return FriendRequest(
       id: doc.id,
+      notificationGeneration: data['notificationGeneration'] as String?,
       fromUid: data['fromUid'] ?? '',
       toUid: data['toUid'] ?? '',
       status: FriendRequestStatusExtension.fromString(
         data['status'] ?? 'PENDING',
       ),
       createdAt: safeToDate(data['createdAt']),
-      updatedAt: safeToDate(data['updatedAt'], fallback: safeToDate(data['createdAt'])),
+      updatedAt: safeToDate(data['updatedAt'],
+          fallback: safeToDate(data['createdAt'])),
     );
   }
 
@@ -152,6 +156,7 @@ class FriendRequest {
       status: status ?? this.status,
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
+      notificationGeneration: notificationGeneration,
     );
   }
 

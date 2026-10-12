@@ -1,18 +1,28 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../models/friend_category.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../services/friend_category_service.dart';
-import '../services/notification_service.dart';
 import '../services/snack_chat_service.dart';
+import '../ui/widgets/snack_chat_participant_picker.dart';
+import '../utils/logger.dart';
+import '../utils/responsive_helper.dart';
 import 'snack_chat_screen.dart';
+import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/motion_selectable.dart';
+import '../design/tokens.dart';
 
 class CreateSnackChatScreen extends StatefulWidget {
-  const CreateSnackChatScreen({super.key});
+  final FriendCategory? initialAudienceCategory;
+
+  const CreateSnackChatScreen({
+    super.key,
+    this.initialAudienceCategory,
+  });
 
   @override
   State<CreateSnackChatScreen> createState() => _CreateSnackChatScreenState();
@@ -23,12 +33,12 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   final _friendCategoryService = FriendCategoryService();
   final _usersRepository = UsersRepository();
   final _snackChatService = SnackChatService();
-  final _notificationService = NotificationService();
 
   List<String> _selectedCategoryIds = <String>[];
   List<UserProfile> _candidateFriends = <UserProfile>[];
-  Set<String> _selectedParticipantIds = <String>{};
+  Map<String, UserProfile> _selectedParticipants = <String, UserProfile>{};
   int _activeDurationHours = 24;
+  int _stepIndex = 0;
   bool _isLoading = true;
   bool _isSubmitting = false;
 
@@ -37,7 +47,12 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   @override
   void initState() {
     super.initState();
+    _titleController.addListener(_refreshButtonState);
     _init();
+  }
+
+  void _refreshButtonState() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _init() async {
@@ -63,179 +78,45 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
     }
 
     if (!mounted) return;
+    final initialAudienceCategory = widget.initialAudienceCategory;
+    final friendIds = friends.map((friend) => friend.uid).toSet();
+    final initialParticipantIds =
+        initialAudienceCategory?.friendIds.where(friendIds.contains).toSet() ??
+            <String>{};
     setState(() {
-      _selectedCategoryIds = allCategoryIds;
+      _selectedCategoryIds = initialAudienceCategory == null
+          ? allCategoryIds
+          : <String>[initialAudienceCategory.id];
       _candidateFriends = friends;
+      _selectedParticipants = <String, UserProfile>{
+        for (final friend in friends)
+          if (initialParticipantIds.contains(friend.uid)) friend.uid: friend,
+      };
       _isLoading = false;
     });
   }
 
   @override
   void dispose() {
+    _titleController.removeListener(_refreshButtonState);
     _titleController.dispose();
     _friendCategoryService.dispose();
     super.dispose();
   }
 
-  void _toggleParticipant(String uid) {
-    final l10n = AppLocalizations.of(context)!;
-    final next = Set<String>.from(_selectedParticipantIds);
-    if (next.contains(uid)) {
-      next.remove(uid);
+  void _toggleParticipant(UserProfile profile) {
+    final next = Map<String, UserProfile>.from(_selectedParticipants);
+    if (next.containsKey(profile.uid)) {
+      next.remove(profile.uid);
     } else {
-      // 본인 포함 총 6명 -> 선택 가능한 친구는 최대 5명
-      if (next.length >= 5) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.snackChatMaxParticipants)),
-        );
-        return;
-      }
-      next.add(uid);
+      next[profile.uid] = profile;
     }
-    setState(() {
-      _selectedParticipantIds = next;
-    });
-  }
-
-  Future<void> _openInviteBottomSheet() async {
-    final l10n = AppLocalizations.of(context)!;
-    if (_candidateFriends.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.snackChatNoFriendsToInvite)),
-      );
-      return;
-    }
-
-    final result = await showModalBottomSheet<Set<String>>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        final l10n = AppLocalizations.of(context)!;
-        final tempSelection = Set<String>.from(_selectedParticipantIds);
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.72,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    margin: const EdgeInsets.only(top: 10),
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD1D5DB),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                    child: Row(
-                      children: [
-                        Text(
-                          l10n.snackChatInviteFriends,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF111827),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: _candidateFriends.length,
-                      itemBuilder: (context, index) {
-                        final friend = _candidateFriends[index];
-                        final selected = tempSelection.contains(friend.uid);
-                        return CheckboxListTile(
-                          value: selected,
-                          activeColor: AppColors.pointColor,
-                          title: Text(
-                            friend.displayNameOrNickname,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          secondary: _buildAvatar(
-                            size: 40,
-                            photoUrl: friend.photoURL,
-                            fallbackLabel: friend.displayNameOrNickname,
-                          ),
-                          onChanged: (_) {
-                            if (selected) {
-                              setModalState(
-                                  () => tempSelection.remove(friend.uid));
-                              return;
-                            }
-                            if (tempSelection.length >= 5) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(l10n.snackChatMaxParticipants),
-                                ),
-                              );
-                              return;
-                            }
-                            setModalState(() => tempSelection.add(friend.uid));
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                  SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            elevation: 0,
-                            backgroundColor: AppColors.pointColor,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
-                          onPressed: () =>
-                              Navigator.pop(context, tempSelection),
-                          child: Text(
-                            l10n.snackChatSelectionComplete(tempSelection.length),
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    if (result != null && mounted) {
-      setState(() {
-        _selectedParticipantIds = result;
-      });
-    }
+    setState(() => _selectedParticipants = next);
   }
 
   Future<void> _create() async {
+    if (_isSubmitting) return;
+
     final l10n = AppLocalizations.of(context)!;
     final title = _titleController.text.trim();
     if (title.isEmpty) {
@@ -244,7 +125,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
       );
       return;
     }
-    if (_selectedParticipantIds.isEmpty) {
+    if (_selectedParticipants.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.snackChatSelectFriend)),
       );
@@ -255,7 +136,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
     try {
       final id = await _snackChatService.createSnackChat(
         title: title,
-        participantIds: _selectedParticipantIds.toList(),
+        participantIds: _selectedParticipants.keys.toList(),
         visibleToCategoryIds: _selectedCategoryIds,
         activeDurationHours: _activeDurationHours,
       );
@@ -267,36 +148,17 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         return;
       }
 
-      // Firestore에서 실제 닉네임 조회 (Firebase Auth displayName은 앱 닉네임과 다를 수 있음)
-      String creatorName = '';
-      try {
-        if (_uid != null) {
-          final profile = await _usersRepository.getUserProfile(_uid!);
-          creatorName = profile?.nickname?.trim() ?? '';
-          if (creatorName.isEmpty) {
-            creatorName = profile?.displayNameOrNickname.trim() ?? '';
-          }
-        }
-      } catch (_) {}
-      if (creatorName.isEmpty) {
-        creatorName = FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
-      }
-
-      await _notificationService.sendSnackChatInviteNotification(
-        participantIds: <String>{
-          ..._selectedParticipantIds,
-          if (_uid != null) _uid!
-        }.toList(),
-        snackChatId: id,
-        snackChatName: title,
-        creatorId: _uid ?? '',
-        creatorName: creatorName,
-      );
-      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => SnackChatScreen(snackChatId: id)),
       );
+    } catch (error, stackTrace) {
+      Logger.error('Snack Chat 생성 실패', error, stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.snackChatCreateFailed)),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -307,522 +169,398 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    final canContinue = _selectedParticipants.isNotEmpty;
+    final canCreate = _titleController.text.trim().isNotEmpty;
+    final pageTitle =
+        _stepIndex == 0 ? l10n.snackChatInviteStepTitle : l10n.createSnackChat;
+
+    return PopScope(
+      canPop: _stepIndex == 0 && !_isSubmitting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || _isSubmitting) return;
+        if (_stepIndex == 1) setState(() => _stepIndex = 0);
+      },
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        foregroundColor: const Color(0xFF005BAC),
-        titleSpacing: 0,
-        title: Text(
-          l10n.createSnackChat,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 36 / 2,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF005BAC),
-          ),
-        ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 140),
-              children: [
-                Text(
-                  l10n.snackChatRoomTitle,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 34 / 2,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.white,
+          foregroundColor: const Color(0xFF111827),
+          toolbarHeight: _toolbarHeight,
+          automaticallyImplyLeading: false,
+          leadingWidth: 48,
+          leading: MotionPress(
+enabled: !_isSubmitting,pressedScale: .92, child: IconButton(
+            iconSize: context.ri(22).clamp(21, 24).toDouble(),
+            onPressed: _isSubmitting
+                ? null
+                : () {
+                    if (_stepIndex == 1) {
+                      setState(() => _stepIndex = 0);
+                    } else {
+                      Navigator.of(context).pop();
+                    }
+                  },
+            icon: const Icon(Icons.arrow_back_rounded),
+          )),
+          flexibleSpace: _buildCenteredTitle(pageTitle),
+          actions: [
+            if (_stepIndex == 0)
+              MotionPress(
+enabled: canContinue,pressedScale: .985, child: TextButton(
+                onPressed:
+                    canContinue ? () => setState(() => _stepIndex = 1) : null,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF344054),
+                  disabledForegroundColor: const Color(0xFFCBD5E1),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  minimumSize: const Size(0, 40),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                const SizedBox(height: 12),
-                Container(
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7F9FC),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  alignment: Alignment.center,
-                  child: TextField(
-                    controller: _titleController,
-                    maxLength: 40,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 18 / 2 * 1.8,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF111827),
-                    ),
-                    decoration: InputDecoration(
-                      hintText: l10n.snackChatRoomTitleHint,
-                      hintStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        color: Color(0xFFC7CDD7),
-                        fontWeight: FontWeight.w500,
-                      ),
-                      border: InputBorder.none,
-                      counterText: '',
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 28),
-                Text(
-                  l10n.snackChatVisibilityDuration,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 34 / 2,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  l10n.snackChatVisibilityDurationHint,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF6B7280),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Row(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: _buildDurationOption(24),
+                    Text(
+                      '${_selectedParticipants.length}',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildDurationOption(48),
+                    const SizedBox(width: 6),
+                    Text(
+                      l10n.next,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 28),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        l10n.snackChatSelectParticipants,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 34 / 2,
+              ))
+            else
+              MotionPress(
+enabled: !_isSubmitting && canCreate,pressedScale: .985, child: TextButton(
+                onPressed: _isSubmitting || !canCreate
+                    ? null
+                    : () {
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        _create();
+                      },
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF111827),
+                  disabledForegroundColor: const Color(0xFFCBD5E1),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  minimumSize: const Size(0, 40),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: _isSubmitting
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF344054),
+                        ),
+                      )
+                    : Text(
+                        l10n.confirm,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: context.rf(14).clamp(13, 15).toDouble(),
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF111827),
                         ),
                       ),
-                    ),
-                    Text(
-                      '${_selectedParticipantIds.length + 1}/6',
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0A66CC),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  l10n.snackChatParticipantLimit,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7F9FC),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildSelfSlot(),
-                        const SizedBox(width: 16),
-                        _buildInviteSlot(),
-                        ..._selectedParticipants
-                            .map(
-                              (friend) => Padding(
-                                padding: const EdgeInsets.only(left: 16),
-                                child: _buildFriendSlot(friend),
-                              ),
-                            )
-                            .toList(),
-                        ...List<Widget>.generate(
-                          (6 - (_selectedParticipantIds.length + 2))
-                              .clamp(0, 4),
-                          (_) => const Padding(
-                            padding: EdgeInsets.only(left: 16),
-                            child: _EmptyParticipantSlot(),
-                          ),
-                        )
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 22),
-                _buildGuideCard(),
-              ],
-            ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-        child: SizedBox(
-          height: 56,
-          child: ElevatedButton.icon(
-            onPressed: _isSubmitting ? null : _create,
-            style: ElevatedButton.styleFrom(
-              elevation: 0,
-              backgroundColor: AppColors.pointColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            icon: _isSubmitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.add, size: 24),
-            label: Text(
-              _isSubmitting
-                  ? AppLocalizations.of(context)!.snackChatCreating
-                  : AppLocalizations.of(context)!.snackChatCreate,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 30 / 2,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
+              )),
+          ],
         ),
+        body: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.only(bottom: 8),
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: _stepIndex == 0
+                      ? _buildInviteStep(key: const ValueKey('invite'))
+                      : _buildDetailsStep(key: const ValueKey('details')),
+                ),
         ),
       ),
     );
   }
 
-  List<UserProfile> get _selectedParticipants => _candidateFriends
-      .where((friend) => _selectedParticipantIds.contains(friend.uid))
-      .toList();
+  Widget _buildInviteStep({Key? key}) {
+    return SnackChatParticipantPicker(
+      key: key,
+      friends: _candidateFriends,
+      selectedProfiles: _selectedParticipants,
+      onToggle: _toggleParticipant,
+      maxSelectionCount: 49,
+    );
+  }
+
+  double get _toolbarHeight {
+    final base = context.rh(56, min: 54, max: 60);
+    final scaledTitle = MediaQuery.textScalerOf(context).scale(
+      context.rf(18).clamp(16, 19).toDouble(),
+    );
+    final accessible = scaledTitle * 1.2 + 24;
+    return accessible > base ? accessible.clamp(base, 96).toDouble() : base;
+  }
+
+  Widget _buildCenteredTitle(String title) {
+    final horizontalClearance =
+        MediaQuery.sizeOf(context).width < 360 ? 88.0 : 104.0;
+    return SafeArea(
+      bottom: false,
+      child: IgnorePointer(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontalClearance),
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.2,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(18).clamp(16, 19).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111827),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailsStep({Key? key}) {
+    final l10n = AppLocalizations.of(context)!;
+    final horizontalPadding = _pageHorizontalPadding(context);
+    return ListView(
+      key: key,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        context.rs(20).clamp(16, 24).toDouble(),
+        horizontalPadding,
+        MediaQuery.paddingOf(context).bottom + 24,
+      ),
+      children: [
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l10n.snackChatRoomTitle,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(2)),
+                  TextField(
+                    controller: _titleController,
+                    maxLength: 40,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) {
+                      if (!_isSubmitting &&
+                          _titleController.text.trim().isNotEmpty) {
+                        _create();
+                      }
+                    },
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      fontWeight: FontWeight.w500,
+                      height: 1.35,
+                      color: const Color(0xFF111827),
+                    ),
+                    decoration: InputDecoration(
+                      hintText: l10n.snackChatRoomTitleHint,
+                      hintStyle: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                        fontWeight: FontWeight.w400,
+                        color: const Color(0xFF98A2B3),
+                      ),
+                      counterText: '',
+                      border: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFFEAECF0)),
+                      ),
+                      enabledBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFFEAECF0)),
+                      ),
+                      focusedBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: Color(0xFF667085),
+                          width: 1.4,
+                        ),
+                      ),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 0,
+                        vertical: context.rs(12).clamp(10, 14).toDouble(),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(24).clamp(20, 28).toDouble()),
+                  Text(
+                    l10n.snackChatVisibilityDuration,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(4)),
+                  Text(
+                    l10n.snackChatVisibilityDurationHint,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
+                      fontWeight: FontWeight.w500,
+                      height: 1.35,
+                      color: const Color(0xFF667085),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(8).clamp(6, 10).toDouble()),
+                  _buildDurationSelector(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDurationSelector() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 360 || context.isCompactLayout) {
+          return Column(
+            children: [
+              _buildDurationOption(24),
+              _buildDurationOption(0),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: _buildDurationOption(24)),
+            SizedBox(width: context.rs(12).clamp(8, 14).toDouble()),
+            Expanded(child: _buildDurationOption(0)),
+          ],
+        );
+      },
+    );
+  }
 
   Widget _buildDurationOption(int hours) {
     final selected = _activeDurationHours == hours;
     final label = hours == 24
         ? AppLocalizations.of(context)!.snackChatDuration24Hours
-        : AppLocalizations.of(context)!.snackChatDuration48Hours;
-    return GestureDetector(
-      onTap: () => setState(() => _activeDurationHours = hours),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFEAF3FF) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected ? AppColors.pointColor : const Color(0xFFD1D5DB),
-            width: selected ? 1.6 : 1.0,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              selected
-                  ? Icons.radio_button_checked_rounded
-                  : Icons.radio_button_off_rounded,
-              color: selected ? AppColors.pointColor : const Color(0xFF9CA3AF),
-              size: 20,
+        : AppLocalizations.of(context)!.snackChatDurationNoEnd;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: Colors.transparent,
+        child: MotionSelectable(
+          selected: _activeDurationHours == hours,
+          pressedScale: MotionSelectable.segmentScale,
+          child: InkWell(
+          onTap: () => setState(() => _activeDurationHours = hours),
+          child: AnimatedContainer(
+            duration: MotionTokens.of(context, MotionTokens.state),
+            curve: MotionTokens.curve,
+            constraints: BoxConstraints(
+              minHeight: context.rh(48, min: 46, max: 52),
             ),
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                color:
-                    selected ? AppColors.pointColor : const Color(0xFF111827),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSelfSlot() {
-    final me = FirebaseAuth.instance.currentUser;
-    final l10n = AppLocalizations.of(context)!;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.pointColor, width: 2),
-              ),
-              child: _buildAvatar(
-                size: 60,
-                photoUrl: me?.photoURL,
-                fallbackLabel: me?.displayName ?? l10n.snackChatMe,
-              ),
-            ),
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: AppColors.pointColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: const Icon(Icons.check, size: 12, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          l10n.snackChatMe,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF0A66CC),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildInviteSlot() {
-    final l10n = AppLocalizations.of(context)!;
-    return InkWell(
-      borderRadius: BorderRadius.circular(40),
-      onTap: _openInviteBottomSheet,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 64,
-            height: 64,
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 10),
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: const Color(0xFF9DC6F3),
-                width: 2,
-                style: BorderStyle.solid,
-              ),
-              color: const Color(0xFFEFF5FD),
-            ),
-            child: const Icon(
-              Icons.person_add_alt_1_rounded,
-              color: Color(0xFF0A66CC),
-              size: 28,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            l10n.snackChatInvite,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF0A66CC),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFriendSlot(UserProfile friend) {
-    return GestureDetector(
-      onTap: () => _toggleParticipant(friend.uid),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              _buildAvatar(
-                size: 64,
-                photoUrl: friend.photoURL,
-                fallbackLabel: friend.displayNameOrNickname,
-              ),
-              Positioned(
-                right: -2,
-                top: -2,
-                child: Container(
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111827),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                  child: const Icon(Icons.close, size: 12, color: Colors.white),
+              border: Border(
+                bottom: BorderSide(
+                  color: selected
+                      ? const Color(0xFF344054)
+                      : const Color(0xFFEAECF0),
+                  width: selected ? 2 : 1,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: 70,
-            child: Text(
-              friend.displayNameOrNickname,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF374151),
-              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAvatar({
-    required double size,
-    required String? photoUrl,
-    required String fallbackLabel,
-  }) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: const BoxDecoration(
-        color: Color(0xFFE5E7EB),
-        shape: BoxShape.circle,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: (photoUrl != null && photoUrl.trim().isNotEmpty)
-          ? Image.network(
-              photoUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _avatarFallback(fallbackLabel),
-            )
-          : _avatarFallback(fallbackLabel),
-    );
-  }
-
-  Widget _avatarFallback(String label) {
-    return Center(
-      child: Text(
-        label.isEmpty ? '?' : label[0],
-        style: const TextStyle(
-          fontFamily: 'Pretendard',
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF6B7280),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGuideCard() {
-    final l10n = AppLocalizations.of(context)!;
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FCFF),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE5EEF9)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 22, 18, 20),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n.snackChatGuideTitle,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 36 / 2,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF111827),
-                      height: 1.35,
+            child: Row(
+              children: [
+                Icon(
+                  hours == 0
+                      ? Icons.all_inclusive_rounded
+                      : Icons.schedule_rounded,
+                  color: selected
+                      ? const Color(0xFF344054)
+                      : const Color(0xFF98A2B3),
+                  size: context.ri(19).clamp(18, 21).toDouble(),
+                ),
+                SizedBox(width: context.rs(8)),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      color: selected
+                          ? const Color(0xFF111827)
+                          : const Color(0xFF475467),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    l10n.snackChatGuideDesc,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                SizedBox(width: context.rs(6)),
+                Icon(
+                  selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                  size: context.ri(20).clamp(19, 22).toDouble(),
+                  color: selected
+                      ? const Color(0xFF475467)
+                      : const Color(0xFFD0D5DD),
+                ),
+              ],
             ),
-            Container(
-              width: 94,
-              height: 94,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: const Icon(
-                Icons.campaign_rounded,
-                size: 48,
-                color: Color(0xFF0A66CC),
-              ),
-            ),
-          ],
-        ),
+          ),
+        )),
       ),
     );
   }
-}
 
-class _EmptyParticipantSlot extends StatelessWidget {
-  const _EmptyParticipantSlot();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircleAvatar(
-          radius: 32,
-          backgroundColor: Color(0xFFF1F5F9),
-          child: Icon(Icons.person, color: Color(0xFFD1D5DB), size: 26),
-        ),
-        SizedBox(height: 8),
-        SizedBox(width: 60),
-      ],
-    );
+  double _pageHorizontalPadding(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width < 360) return 12;
+    if (width < 600) return 16;
+    return 24;
   }
 }

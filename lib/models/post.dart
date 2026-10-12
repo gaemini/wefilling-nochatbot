@@ -8,6 +8,39 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../providers/settings_provider.dart';
 import '../l10n/app_localizations.dart';
+import 'post_category.dart';
+import 'post_video.dart';
+import 'shared_link_preview.dart';
+
+List<String> _normalizePostCategoryKeys(
+  Iterable<Object?> values,
+  Object? legacyKey,
+) {
+  final normalized = <String>[];
+  for (final value in values) {
+    final raw = value?.toString().trim() ?? '';
+    if (!PostCategory.isSupportedKey(raw) || normalized.contains(raw)) {
+      continue;
+    }
+    normalized.add(raw);
+  }
+  if (normalized.isNotEmpty) return normalized;
+  return <String>[PostCategory.fromPersistedValue(legacyKey).key];
+}
+
+List<String> _selectPostStringList(Object? primary, Object? legacy) {
+  List<String> parse(Object? raw) {
+    if (raw is! Iterable) return const <String>[];
+    return raw
+        .map((value) => value?.toString().trim() ?? '')
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+  }
+
+  final canonical = parse(primary);
+  return canonical.isNotEmpty ? canonical : parse(legacy);
+}
 
 class PollOption {
   final String id;
@@ -43,23 +76,27 @@ class PollOption {
 
 class Post {
   final String id;
-  final String collectionPath;
   final String title;
   final String content;
   final String author;
   final String authorNationality; // 작성자 국적
   final String authorPhotoURL; // 작성자 프로필 사진 URL
   final String category; // 카테고리
+  final String categoryKey; // 안정적인 Post 카테고리 저장 key
+  final List<String> categoryKeys; // 선택한 포스트 태그 key 목록
   final DateTime createdAt;
   final String userId;
   final int commentCount;
   final int viewCount; // 조회수
+  /// "스낵챗에서 이어가기"로 연결된 방. 서버(Admin SDK)만 쓰므로 toMap에 넣지 않는다.
+  final String? snackChatId;
   final int likes; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
-  final bool schoolOnly; // Univ. 인증자 전용 나눔 글 여부
-  final bool authorHanyangVerified; // 작성자 한양메일 인증 여부
-  final String sharingLocation; // 나눔 장소/위치
+  final SharedLinkPreview? linkPreview;
+  /// 첨부 영상(최대 1개). 썸네일 URL은 imageUrls[0]에도 넣어 목록·알림
+  /// 썸네일 경로가 그대로 동작한다.
+  final PostVideo? video;
 
   // 게시글 타입 (기본: text)
   final String type; // 'text' | 'poll'
@@ -73,6 +110,14 @@ class Post {
   final bool isAnonymous; // 익명 여부
   final List<String> visibleToCategoryIds; // 공개할 카테고리 ID 목록
   final List<String> allowedUserIds; // 이 게시글을 볼 수 있는 사용자 ID 목록 (비공개용)
+  final int visibilitySchemaVersion;
+  final DateTime? visibilityLockedAt;
+  final bool requiresHanyangVerification;
+
+  String get ownerId => userId;
+  String get visibilityMode => visibility;
+  List<String> get audienceUserIdsFrozen => allowedUserIds;
+  List<String> get sourceGroupIds => visibleToCategoryIds;
 
   // 캐시된 번역 결과
   String? _translatedTitle;
@@ -80,23 +125,24 @@ class Post {
 
   Post({
     required this.id,
-    this.collectionPath = 'posts',
     required this.title,
     required this.content,
     required this.author,
     this.authorNationality = '', // 국적 정보 (기본값은 빈 문자열)
     this.authorPhotoURL = '', // 프로필 사진 URL (기본값은 빈 문자열)
-    this.category = '일반', // 카테고리 (기본값은 '일반')
+    this.category = '일반', // 레거시 필드 호환
+    String? categoryKey,
+    List<String> categoryKeys = const [],
     required this.createdAt,
     required this.userId,
     this.commentCount = 0,
     this.viewCount = 0,
+    this.snackChatId,
     this.likes = 0,
     this.likedBy = const [],
     this.imageUrls = const [], // URL 변환 제거 - 원본 URL 그대로 사용
-    this.schoolOnly = false,
-    this.authorHanyangVerified = false,
-    this.sharingLocation = '',
+    this.linkPreview,
+    this.video,
     this.type = 'text',
     this.pollOptions = const [],
     this.pollTotalVotes = 0,
@@ -104,7 +150,64 @@ class Post {
     this.isAnonymous = false, // 익명 여부 (기본값: 실명)
     this.visibleToCategoryIds = const [], // 공개할 카테고리 목록 (기본값: 빈 리스트)
     this.allowedUserIds = const [], // 허용된 사용자 ID 목록 (기본값: 빈 리스트)
-  });
+    this.visibilitySchemaVersion = 0,
+    this.visibilityLockedAt,
+    this.requiresHanyangVerification = false,
+  })  : categoryKeys = _normalizePostCategoryKeys(
+          categoryKeys,
+          (categoryKey?.trim().isNotEmpty ?? false) ? categoryKey : category,
+        ),
+        categoryKey = _normalizePostCategoryKeys(
+          categoryKeys,
+          (categoryKey?.trim().isNotEmpty ?? false) ? categoryKey : category,
+        ).first;
+
+  PostCategory get postCategory => PostCategory.fromKey(categoryKey);
+  List<PostCategory> get postCategories =>
+      categoryKeys.map(PostCategory.fromKey).toList(growable: false);
+
+  /// 현재 포스트 작성 화면은 제목과 본문을 나누지 않고 content 한 필드만
+  /// 입력받는다. 과거 데이터의 title만 남아 있는 경우까지 한 곳에서 호환한다.
+  String get displayText {
+    final normalizedContent = content.trim();
+    if (normalizedContent.isNotEmpty) return normalizedContent;
+    return title.trim();
+  }
+
+  /// 공유 링크에 공식 썸네일이 없으면 공유 payload의 첫 이미지를 카드에
+  /// 사용한다. 피드/상세 모두 같은 우선순위를 사용해 빈 카드가 생기지 않는다.
+  String get sharedLinkCardFallbackImageUrl {
+    final preview = linkPreview;
+    if (preview == null || imageUrls.isEmpty) return '';
+    if (preview.provider != 'youtube' && preview.provider != 'instagram') {
+      return '';
+    }
+    final first = imageUrls.first.trim();
+    return preview.thumbnailUrl.trim() == first ? first : '';
+  }
+
+  /// 첫 첨부 이미지를 링크 카드가 대신 표시하는 경우 본문 갤러리에서는
+  /// 중복 노출하지 않는다. 나머지 사용자가 추가한 이미지는 그대로 유지한다.
+  List<String> get standaloneImageUrls {
+    final attachedVideo = video;
+    if (attachedVideo != null) {
+      // 영상 썸네일은 영상 플레이어가 대신 보여준다.
+      final thumbnail = attachedVideo.thumbnailUrl.trim();
+      final rest = imageUrls.where((url) => url.trim() != thumbnail).toList();
+      return List<String>.unmodifiable(rest);
+    }
+    final preview = linkPreview;
+    if (preview == null || imageUrls.isEmpty) return imageUrls;
+    if (preview.provider != 'youtube' && preview.provider != 'instagram') {
+      return imageUrls;
+    }
+
+    final first = imageUrls.first.trim();
+    final thumbnail = preview.thumbnailUrl.trim();
+    final firstIsCardImage = thumbnail == first;
+    if (!firstIsCardImage) return imageUrls;
+    return List<String>.unmodifiable(imageUrls.skip(1));
+  }
 
   // 모델 디버깅을 위한 문자열 표현
   @override
@@ -135,10 +238,11 @@ class Post {
 
   // 미리보기용 내용 (최대 100자)
   String getPreviewContent() {
-    if (content.length <= 100) {
-      return content;
+    final text = displayText;
+    if (text.length <= 100) {
+      return text;
     }
-    return '${content.substring(0, 100)}...';
+    return '${text.substring(0, 100)}...';
   }
 
   // 현재 사용자가 이 게시글에 좋아요를 눌렀는지 확인
@@ -157,10 +261,10 @@ class Post {
 
   // 본문 번역 메서드
   Future<String> getTranslatedContent(SettingsProvider settings) async {
-    if (!settings.autoTranslate) return content;
+    if (!settings.autoTranslate) return displayText;
     if (_translatedContent != null) return _translatedContent!;
 
-    _translatedContent = await settings.translateText(content);
+    _translatedContent = await settings.translateText(displayText);
     return _translatedContent!;
   }
 
@@ -176,23 +280,24 @@ class Post {
   // Post 객체 복제 메서드 (필요시 데이터 업데이트에 사용)
   Post copyWith({
     String? id,
-    String? collectionPath,
     String? title,
     String? content,
     String? author,
     String? authorNationality,
     String? authorPhotoURL,
     String? category,
+    String? categoryKey,
+    List<String>? categoryKeys,
     DateTime? createdAt,
     String? userId,
     int? commentCount,
     int? viewCount,
+    String? snackChatId,
     int? likes,
     List<String>? likedBy,
     List<String>? imageUrls,
-    bool? schoolOnly,
-    bool? authorHanyangVerified,
-    String? sharingLocation,
+    SharedLinkPreview? linkPreview,
+    PostVideo? video,
     String? type,
     List<PollOption>? pollOptions,
     int? pollTotalVotes,
@@ -200,27 +305,31 @@ class Post {
     bool? isAnonymous,
     List<String>? visibleToCategoryIds,
     List<String>? allowedUserIds,
+    int? visibilitySchemaVersion,
+    DateTime? visibilityLockedAt,
+    bool? requiresHanyangVerification,
   }) {
     return Post(
       id: id ?? this.id,
-      collectionPath: collectionPath ?? this.collectionPath,
       title: title ?? this.title,
       content: content ?? this.content,
       author: author ?? this.author,
       authorNationality: authorNationality ?? this.authorNationality,
       authorPhotoURL: authorPhotoURL ?? this.authorPhotoURL,
       category: category ?? this.category,
+      categoryKey: categoryKey ?? this.categoryKey,
+      categoryKeys: categoryKeys ??
+          (categoryKey != null ? <String>[categoryKey] : this.categoryKeys),
       createdAt: createdAt ?? this.createdAt,
       userId: userId ?? this.userId,
       commentCount: commentCount ?? this.commentCount,
       viewCount: viewCount ?? this.viewCount,
+      snackChatId: snackChatId ?? this.snackChatId,
       likes: likes ?? this.likes,
       likedBy: likedBy ?? this.likedBy,
       imageUrls: imageUrls ?? this.imageUrls,
-      schoolOnly: schoolOnly ?? this.schoolOnly,
-      authorHanyangVerified:
-          authorHanyangVerified ?? this.authorHanyangVerified,
-      sharingLocation: sharingLocation ?? this.sharingLocation,
+      linkPreview: linkPreview ?? this.linkPreview,
+      video: video ?? this.video,
       type: type ?? this.type,
       pollOptions: pollOptions ?? this.pollOptions,
       pollTotalVotes: pollTotalVotes ?? this.pollTotalVotes,
@@ -228,6 +337,11 @@ class Post {
       isAnonymous: isAnonymous ?? this.isAnonymous,
       visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
       allowedUserIds: allowedUserIds ?? this.allowedUserIds,
+      visibilitySchemaVersion:
+          visibilitySchemaVersion ?? this.visibilitySchemaVersion,
+      visibilityLockedAt: visibilityLockedAt ?? this.visibilityLockedAt,
+      requiresHanyangVerification:
+          requiresHanyangVerification ?? this.requiresHanyangVerification,
     );
   }
 
@@ -235,13 +349,14 @@ class Post {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'collectionPath': collectionPath,
       'title': title,
       'content': content,
       'authorNickname': author,
       'authorNationality': authorNationality,
       'authorPhotoURL': authorPhotoURL,
       'category': category,
+      'categoryKey': categoryKey,
+      'categoryKeys': categoryKeys,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'userId': userId,
       'commentCount': commentCount,
@@ -249,9 +364,8 @@ class Post {
       'likes': likes,
       'likedBy': likedBy,
       'imageUrls': imageUrls,
-      'schoolOnly': schoolOnly,
-      'authorHanyangVerified': authorHanyangVerified,
-      'sharingLocation': sharingLocation,
+      if (linkPreview != null) 'linkPreview': linkPreview!.toMap(),
+      if (video != null) 'video': video!.toMap(),
       'type': type,
       'pollOptions': pollOptions.map((o) => o.toMap()).toList(),
       'pollTotalVotes': pollTotalVotes,
@@ -259,6 +373,14 @@ class Post {
       'isAnonymous': isAnonymous,
       'visibleToCategoryIds': visibleToCategoryIds,
       'allowedUserIds': allowedUserIds,
+      'ownerId': ownerId,
+      'visibilityMode': visibilityMode,
+      'audienceUserIdsFrozen': audienceUserIdsFrozen,
+      'sourceGroupIds': sourceGroupIds,
+      'visibilitySchemaVersion': visibilitySchemaVersion,
+      if (visibilityLockedAt != null)
+        'visibilityLockedAt': visibilityLockedAt!.millisecondsSinceEpoch,
+      'requiresHanyangVerification': requiresHanyangVerification,
     };
   }
 
@@ -274,33 +396,54 @@ class Post {
 
     return Post(
       id: id,
-      collectionPath: map['collectionPath'] ?? 'posts',
       title: map['title'] ?? '',
       content: map['content'] ?? '',
       author: map['authorNickname'] ?? '익명',
       authorNationality: map['authorNationality'] ?? '',
       authorPhotoURL: map['authorPhotoURL'] ?? '',
       category: map['category'] ?? '일반',
+      categoryKey: map['categoryKey']?.toString(),
+      categoryKeys: map['categoryKeys'] is List
+          ? List<String>.from(map['categoryKeys'])
+          : const <String>[],
       createdAt: map['createdAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),
-      userId: map['userId'] ?? '',
+      userId: map['ownerId'] ?? map['userId'] ?? '',
       commentCount: map['commentCount'] ?? 0,
       viewCount: map['viewCount'] ?? 0,
+      snackChatId: (map['snackChatId'] is String &&
+              (map['snackChatId'] as String).trim().isNotEmpty)
+          ? (map['snackChatId'] as String).trim()
+          : null,
       likes: map['likes'] ?? 0,
       likedBy: List<String>.from(map['likedBy'] ?? []),
       imageUrls: List<String>.from(map['imageUrls'] ?? []),
-      schoolOnly: map['schoolOnly'] == true,
-      authorHanyangVerified: map['authorHanyangVerified'] == true,
-      sharingLocation: (map['sharingLocation'] ?? '').toString(),
+      linkPreview: map['linkPreview'] is Map
+          ? SharedLinkPreview.fromMap(
+              Map<String, dynamic>.from(map['linkPreview'] as Map),
+            )
+          : null,
+      video: PostVideo.fromMap(map['video']),
       type: map['type'] ?? 'text',
       pollOptions: parsedPollOptions,
       pollTotalVotes: map['pollTotalVotes'] ?? 0,
-      visibility: map['visibility'] ?? 'public',
+      visibility: map['visibilityMode'] ?? map['visibility'] ?? 'public',
       isAnonymous: map['isAnonymous'] ?? false,
-      visibleToCategoryIds:
-          List<String>.from(map['visibleToCategoryIds'] ?? []),
-      allowedUserIds: List<String>.from(map['allowedUserIds'] ?? []),
+      visibleToCategoryIds: _selectPostStringList(
+        map['sourceGroupIds'],
+        map['visibleToCategoryIds'],
+      ),
+      allowedUserIds: _selectPostStringList(
+        map['audienceUserIdsFrozen'],
+        map['allowedUserIds'],
+      ),
+      visibilitySchemaVersion:
+          (map['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,
+      visibilityLockedAt: map['visibilityLockedAt'] is int
+          ? DateTime.fromMillisecondsSinceEpoch(map['visibilityLockedAt'])
+          : null,
+      requiresHanyangVerification: map['requiresHanyangVerification'] == true,
     );
   }
 }

@@ -3,17 +3,20 @@
 // 로그인 상태, 사용자 정보 제공
 // 다른 화면에서 인증 정보 접근 가능하게 함
 
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, SocketException;
 import 'dart:async';
 import 'dart:ui' show AppExitResponse, ViewFocusEvent;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart' show PredictiveBackEvent;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/fcm_service.dart';
@@ -22,17 +25,86 @@ import '../services/auth_service.dart';
 import '../services/language_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/avatar_cache_service.dart';
+import '../repositories/users_repository.dart';
 import '../config/app_config.dart';
 import '../utils/logger.dart';
+import '../utils/hanyang_verification_helper.dart' as hanyang_verification;
 import '../utils/profile_photo_policy.dart';
+import '../utils/nickname_policy.dart';
+import '../services/firebase_app_check_service.dart';
+import '../services/content_filter_service.dart';
+import '../services/content_hide_service.dart';
+
+/// Firebase Authentication 계정과 Firestore 프로필의 가입 진행 상태입니다.
+///
+/// 소셜 인증 직후에는 Auth 계정이 먼저 생기고, 한양메일 확정과 프로필 입력이
+/// 순차적으로 완료됩니다. Firestore 문서의 단순 존재 여부만으로 가입 완료를
+/// 판단하면 중단된 가입이 기존 계정으로 오인되므로 세 상태를 명시적으로 구분합니다.
+enum AccountRegistrationState {
+  missing,
+  authCreated,
+  profilePending,
+  profileCompleted,
+  complete,
+}
+
+enum HanyangVerificationStatus {
+  unknown,
+  checking,
+  verified,
+  unverified,
+  conflict,
+  unavailable,
+}
+
+/// 회원가입 화면의 언어별 이메일 인증 정책입니다.
+///
+/// 한국어 가입은 한양대학교 메일만 허용하고, 영어 가입은 도메인과 관계없이
+/// 소유권이 확인된 일반 이메일을 허용합니다. 서버에도 항상 명시적으로 전달해
+/// 두 가입 경로가 섞이지 않도록 합니다.
+enum SignupEmailVerificationPurpose {
+  hanyang('hanyang_signup'),
+  general('general_signup');
+
+  const SignupEmailVerificationPurpose(this.serverValue);
+
+  final String serverValue;
+}
+
+enum PendingEmailSignupCancellationResult {
+  cancelled,
+  alreadyCompleted,
+  unavailable,
+}
+
+enum _GoogleAuthStage {
+  initialize,
+  accountSelection,
+  token,
+  credential,
+  firebaseAuth,
+  userDocument,
+  registrationRecovery,
+  lastLogin,
+  userData,
+  completed,
+}
+
+enum _ExistingUserDocumentUpdateResult {
+  updated,
+  missing,
+  deferred,
+}
+
+@visibleForTesting
+void clearAccountScopedContentCaches() {
+  ContentFilterService.refreshCache();
+  ContentHideService.clearAll();
+}
 
 class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
-  static const String _profilePhotoPathPrefix = 'profile_images/';
   static const Duration _profileNicknameCooldown = Duration(days: 3);
   static const Duration _profileNationalityCooldown = Duration(days: 3);
-
-  String _profilePhotoPathForUid(String uid) =>
-      '$_profilePhotoPathPrefix$uid/profile.jpg';
 
   String _extractStorageDownloadToken(String url) {
     try {
@@ -66,15 +138,46 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  // 배포된 callable은 기본 region(us-central1)을 사용합니다.
+  final FirebaseFunctions _functions =
+      AppFunctions.instance;
   final AuthService _authService = AuthService();
 
   User? _user;
   bool _isLoading = true;
   Map<String, dynamic>? _userData;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _currentUserDocumentSubscription;
+  StreamSubscription<User?>? _authStateSubscription;
+  String? _observedUserId;
+  String? _activeAuthUid;
+  Future<void>? _userLoadInFlight;
+  String? _userLoadUid;
+  int _userLoadGeneration = 0;
+  Future<bool>? _hanyangRefreshInFlight;
+  final Map<String, _NicknameAvailabilityCacheEntry>
+      _nicknameAvailabilityCache = {};
+  final Map<String, Future<NicknameAvailabilityResult>>
+      _nicknameAvailabilityInFlight = {};
+  int _hanyangRequestGeneration = 0;
+  HanyangVerificationStatus _hanyangVerificationStatus =
+      HanyangVerificationStatus.unknown;
+  String _maskedHanyangEmail = '';
+  DateTime? _hanyangVerificationCheckedAt;
+  String _hanyangVerificationSource = '';
+  String? _hanyangVerificationError;
 
   // 최근 로그인 시도에서 회원가입 필요 여부를 저장 (UI 알림 용도)
   bool _signupRequired = false;
+
+  // 미완료 가입 정리는 서버가 Auth 삭제까지 확인한 뒤에만 완료로 본다.
+  // 네트워크가 끊기면 인증 세션을 유지해 다음 resume/앱 실행에서 재시도한다.
+  bool _pendingIncompleteRegistrationCleanup = false;
+  String? _pendingIncompleteRegistrationCleanupUid;
+  Future<bool>? _incompleteRegistrationCleanupInFlight;
+  bool _pendingRegistrationStateCheck = false;
+  String? _pendingRegistrationStateCheckUid;
+  bool _registrationStateCheckInFlight = false;
 
   // 로그아웃 진행 상태 추적
   String? _logoutStatus;
@@ -85,14 +188,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   String? _fcmInitializedUserId;
   final LanguageService _languageService = LanguageService();
   final FCMService _fcmService = FCMService();
+  bool _googleSignInInitialized = false;
+  bool _lastGoogleSignInWasCancelled = false;
 
   // 스트림 정리를 위한 콜백 리스트
   final List<VoidCallback> _streamCleanupCallbacks = [];
 
   AuthProvider() {
-    if (kDebugMode) {
-      debugPrint('🔐 AuthProvider 생성자 시작: ${DateTime.now()}');
-    }
+    if (Logger.isVerboseEnabled)
+      Logger.log('[HanyangVerification][AuthProvider] created '
+          'instance=${identityHashCode(this)}');
 
     // 앱 포그라운드 복귀 시 FCM 재초기화를 감지하기 위해 lifecycle observer 등록
     WidgetsBinding.instance.addObserver(this);
@@ -100,20 +205,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     // 초기화를 Future.microtask로 지연 - 크래시 방지
     Future.microtask(() async {
       try {
-        if (kDebugMode) {
-          debugPrint('🔐 AuthProvider microtask 시작: ${DateTime.now()}');
-        }
+        if (Logger.isVerboseEnabled)
+          Logger.log('🔐 AuthProvider microtask 시작: ${DateTime.now()}');
         await _initializeAuth();
-        if (kDebugMode) {
-          debugPrint('🔐 AuthProvider 초기화 완료: ${DateTime.now()}');
-        }
+        if (Logger.isVerboseEnabled)
+          Logger.log('🔐 AuthProvider 초기화 완료: ${DateTime.now()}');
       } catch (e) {
         Logger.error('AuthProvider 초기화 실패 - 앱은 계속 실행', e);
         _isLoading = false;
         notifyListeners();
-        if (kDebugMode) {
-          debugPrint('⚠️ AuthProvider 초기화 실패했지만 앱 계속 실행: ${DateTime.now()}');
-        }
       }
     });
   }
@@ -121,59 +221,189 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   // 초기화 함수 분리
   Future<void> _initializeAuth() async {
     try {
-      // Google Sign-In 7.x 초기화 (플랫폼별 분기)
-      try {
-        // iOS/macOS만 clientId 전달, Android는 google-services.json 사용
-        final clientId = AppConfig.getGoogleClientId();
-
-        await _googleSignIn.initialize(clientId: clientId);
-      } catch (e) {
-        Logger.error('Google Sign-In 초기화 실패: $e');
-      }
-
       // 먼저 현재 사용자 확인
       _user = _auth.currentUser;
 
-      // 사용자 인증 상태 변화 감지
-      _auth.authStateChanges().listen((User? user) async {
-        _user = user;
-        if (user != null) {
-          // 사용자 데이터 가져오기 - 크래시 방지
-          try {
-            await _loadUserData();
-          } catch (e) {
-            Logger.error('authStateChanges 내 _loadUserData 실패', e);
-            _userData = null;
-            _isLoading = false;
-            notifyListeners();
-          }
-        } else {
-          _userData = null;
-          _isLoading = false;
-          notifyListeners();
-        }
-      });
+      // Auth 생성 뒤 앱이 종료됐더라도 동일 uid의 진행 문서를 복구한다.
+      // 미완료 계정을 삭제하거나 새 Auth 계정을 만들지 않는다.
+      await _recoverRegistrationOnLaunch();
 
-      // 이미 로그인되어 있다면 데이터 로드
-      if (_user != null) {
-        try {
-          await _loadUserData();
-          // _loadUserData() 내부에서 이미 FCM 초기화를 호출하므로 여기서는 제거
-        } catch (e) {
-          Logger.error('초기 _loadUserData 실패', e);
-          _userData = null;
-          _isLoading = false;
-          notifyListeners();
-        }
-      } else {
-        _isLoading = false;
-        notifyListeners();
-      }
+      // 사용자 인증 상태 변화 감지
+      _authStateSubscription = _auth.authStateChanges().listen(
+            (user) => unawaited(_handleAuthStateChange(user)),
+          );
+      // authStateChanges의 최초 이벤트와 초기 로드가 겹쳐도 _loadUserData가
+      // 같은 UID의 in-flight Future를 공유하므로 실제 로드는 한 번만 수행됩니다.
+      await _handleAuthStateChange(_user);
     } catch (e) {
       Logger.error('_initializeAuth 전체 실패', e);
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> _handleAuthStateChange(User? user) async {
+    final previousUid = _activeAuthUid;
+    final nextUid = user?.uid;
+    _activeAuthUid = nextUid;
+    _user = user;
+    if (previousUid != nextUid) {
+      // These process-wide caches describe the previous account's block and
+      // report decisions. Clear them before any feed/search load for the next
+      // uid so a rapid logout/login cannot hide valid post or meetup results.
+      clearAccountScopedContentCaches();
+      _userLoadGeneration++;
+      _hanyangRequestGeneration++;
+      _hanyangRefreshInFlight = null;
+      _hanyangVerificationStatus = HanyangVerificationStatus.unknown;
+      _maskedHanyangEmail = '';
+      _hanyangVerificationCheckedAt = null;
+      _hanyangVerificationSource = '';
+      _hanyangVerificationError = null;
+      _userData = null;
+      _nicknameAvailabilityCache.clear();
+      _nicknameAvailabilityInFlight.clear();
+    }
+    if (user == null) {
+      await _stopObservingCurrentUserDocument();
+      _isLoading = false;
+      notifyListeners();
+      return;
+    }
+    _observeCurrentUserDocument(user);
+    try {
+      await _loadUserData();
+    } catch (error) {
+      if (_user?.uid != user.uid) return;
+      Logger.error('authStateChanges 내 사용자 로드 실패', error);
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _recoverRegistrationOnLaunch() async {
+    if (_registrationStateCheckInFlight) return;
+    final currentUser = _user;
+    if (currentUser == null) return;
+
+    _registrationStateCheckInFlight = true;
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 10));
+      final state = snapshot.exists
+          ? _registrationStateFromData(snapshot.data())
+          : AccountRegistrationState.missing;
+      _pendingRegistrationStateCheck = false;
+      _pendingRegistrationStateCheckUid = null;
+      if (state != AccountRegistrationState.complete) {
+        if (Logger.isVerboseEnabled)
+          Logger.log('↩️ 앱 시작 시 미완료 회원가입을 같은 uid로 재개합니다.');
+        await ensureRegistrationProgress();
+      }
+    } catch (error) {
+      // 상태를 확인하지 못했을 때도 계정을 삭제하지 않는다. 앱 진입 게이트가
+      // 미완료 상태를 차단하며 다음 resume 때 동일 uid로 다시 확인한다.
+      _pendingRegistrationStateCheck = true;
+      _pendingRegistrationStateCheckUid = currentUser.uid;
+      Logger.error(
+        '회원가입 복구 실패: provider=startup '
+        'platform=${Platform.operatingSystem} '
+        'uid=${currentUser.uid} '
+        'signupState=${_registrationStateFromData(_userData).name} '
+        'failedStep=recover '
+        'errorCode=${FirebaseAppCheckService.instance.lastErrorCode.isEmpty ? 'unknown' : FirebaseAppCheckService.instance.lastErrorCode}',
+      );
+    } finally {
+      _registrationStateCheckInFlight = false;
+    }
+  }
+
+  /// Google Sign-In 네이티브 브로커는 실제 Google 인증이 필요할 때만
+  /// 초기화합니다. 앱 시작 시 선제 초기화하면 일부 Android 16 / 최신
+  /// Google Play Services 조합에서 GoogleApiManager DEVELOPER_ERROR 로그를
+  /// 발생시키므로 FCM 및 일반 이메일 로그인 경로와 분리합니다.
+  Future<void> _ensureGoogleSignInInitialized() async {
+    if (_googleSignInInitialized) return;
+
+    final clientId = AppConfig.getGoogleClientId();
+    await _googleSignIn.initialize(clientId: clientId);
+    _googleSignInInitialized = true;
+  }
+
+  String _safeGoogleAuthLogValue(Object? value) {
+    if (value == null) return '';
+    var text = value.toString();
+    text = text.replaceAll(
+      RegExp(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', caseSensitive: false),
+      '<redacted-email>',
+    );
+    text = text.replaceAllMapped(
+      RegExp(
+        r'((?:id|access|refresh|auth)[_-]?token\s*[:=]\s*)[^,}\s]+',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}<redacted-token>',
+    );
+    text = text.replaceAll(
+      RegExp(r'\beyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+){1,2}\b'),
+      '<redacted-jwt>',
+    );
+    text = text.replaceAll(
+      RegExp(r'\b[A-Za-z0-9_-]{80,}\b'),
+      '<redacted-long-value>',
+    );
+    return text.length <= 600 ? text : '${text.substring(0, 600)}…';
+  }
+
+  String _googleAuthAppCheckContext() {
+    final service = FirebaseAppCheckService.instance;
+    return 'appCheckState=${service.readiness.name} '
+        'appCheckProvider=${service.providerName} '
+        'appCheckError=${service.lastErrorCode.isEmpty ? 'none' : service.lastErrorCode}';
+  }
+
+  void _logGoogleAuthStage(String event, {String details = ''}) {
+    if (!kDebugMode || !Logger.verboseLoggingEnabled) return;
+    final suffix = details.isEmpty ? '' : ' $details';
+    final message = '[GOOGLE_AUTH][$event] '
+        'platform=${Platform.operatingSystem} '
+        '${_googleAuthAppCheckContext()}$suffix';
+    if (Logger.isVerboseEnabled) Logger.log(message);
+  }
+
+  void _logGoogleAuthFailure({
+    required _GoogleAuthStage stage,
+    required Object error,
+    required StackTrace stackTrace,
+    required String type,
+    required String code,
+    String? message,
+    Object? details,
+  }) {
+    final safeMessage = _safeGoogleAuthLogValue(message ?? error.runtimeType);
+    final safeDetails = _safeGoogleAuthLogValue(details);
+    final diagnostic = '[GOOGLE_AUTH][FAIL] '
+        'stage=${stage.name} type=$type code=$code '
+        'message=$safeMessage '
+        'details=${safeDetails.isEmpty ? 'none' : safeDetails} '
+        '${_googleAuthAppCheckContext()}';
+
+    if (kDebugMode) {
+      debugPrint(diagnostic);
+      debugPrint('[GOOGLE_AUTH][STACK] $stackTrace');
+      return;
+    }
+
+    // 원본 예외에는 이메일 등 SDK 내부 값이 들어갈 수 있으므로 Crashlytics에는
+    // 정제한 진단 정보와 원본 stack trace만 전송한다.
+    Logger.error(
+      diagnostic,
+      StateError('google_auth_failed:$code'),
+      stackTrace,
+    );
   }
 
   // 사용자 정보
@@ -185,55 +415,226 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   // 로그인 여부
   bool get isLoggedIn => _user != null;
 
-  // 닉네임 설정 여부 (빈 문자열 제외)
+  /// Server-created organization operators are real Auth users but are not
+  /// public personal profiles and must never enter personal onboarding.
+  bool get isOrganizationOnlyAccount =>
+      _userData?['accountUsage'] == 'organization_only' &&
+      _userData?['provisioningSource'] == 'platform_admin_invite';
+
+  /// 사용자가 계정 선택 창을 닫은 경우와 실제 인증 오류를 UI에서 구분합니다.
+  bool get lastGoogleSignInWasCancelled => _lastGoogleSignInWasCancelled;
+
+  // 닉네임 설정 여부
   bool get hasNickname =>
-      _userData != null &&
-      _userData!.containsKey('nickname') &&
-      _userData!['nickname'] != null &&
-      (_userData!['nickname'] as String).trim().isNotEmpty;
+      (_userData?['nickname'] ?? '').toString().trim().isNotEmpty;
 
-  // 국적 설정 여부 (빈 문자열 제외)
-  bool get hasNationality =>
-      _userData != null &&
-      _userData!.containsKey('nationality') &&
-      _userData!['nationality'] != null &&
-      (_userData!['nationality'] as String).trim().isNotEmpty;
-
-  // 가입 완료 여부 (signupCompleted: true 필드 기준)
-  // 레거시 사용자(signupCompleted 필드 없음)는 닉네임+국적으로 판단
-  bool get isSignupCompleted {
-    if (_userData == null) return false;
-    if (_userData!.containsKey('signupCompleted')) {
-      return _userData!['signupCompleted'] == true;
-    }
-    // 레거시: 필드가 없으면 닉네임+국적으로 판단 (기존 사용자 하위 호환)
-    return hasNickname && hasNationality;
-  }
-
-  // 프로필 완성 여부 (닉네임 + 국적 + 가입 완료 플래그)
-  bool get isProfileComplete =>
-      hasNickname && hasNationality && isSignupCompleted;
-
-  // 한양메일 인증 여부 (레거시 사용자 전용)
-  // ⚠️ Deprecated: 신규 사용자는 이 필드가 없을 수 있음
+  // 로그인/가입이 완료된 계정인지 판정하는 계정 이메일 인증 상태.
+  // 한양대학교 소속 인증과는 별개다.
   bool get isEmailVerified =>
       _userData != null &&
       _userData!.containsKey('emailVerified') &&
       _userData!['emailVerified'] == true;
 
-  // 한양 인증 사용자 여부 판단.
-  //
-  // 규칙:
-  // 1) `hanyangVerified == true`이면 true.
-  // 2) 레거시 호환: `hanyangEmail`이 @hanyang.ac.kr 도메인이면 true.
-  // 3) 위 조건에 모두 해당하지 않으면 false.
-  bool get isHanyangUser {
-    final data = _userData;
-    if (data == null) return false;
-    if (data['hanyangVerified'] == true) return true;
-    final email = (data['hanyangEmail'] as String?) ?? '';
-    return email.endsWith('@hanyang.ac.kr');
+  HanyangVerificationStatus get hanyangVerificationStatus =>
+      _hanyangVerificationStatus;
+  String get maskedHanyangEmail => _maskedHanyangEmail;
+  DateTime? get hanyangVerificationCheckedAt => _hanyangVerificationCheckedAt;
+  String get hanyangVerificationSource => _hanyangVerificationSource;
+  String? get hanyangVerificationError => _hanyangVerificationError;
+
+  /// 화면과 접근 제어는 users 문서의 서버 관리 boolean을 단일 기준으로 쓴다.
+  bool get isHanyangEmailVerified =>
+      hanyang_verification.isHanyangEmailVerified(_userData);
+
+  /// Callable/Admin SDK가 학교 인증 필드를 갱신해도 앱의 오래된 메모리
+  /// 상태가 남지 않도록 현재 users/{uid} 문서를 계속 동기화합니다.
+  void _observeCurrentUserDocument(User user) {
+    if (_observedUserId == user.uid &&
+        _currentUserDocumentSubscription != null) {
+      return;
+    }
+    unawaited(_currentUserDocumentSubscription?.cancel());
+    _observedUserId = user.uid;
+    _currentUserDocumentSubscription = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (_user?.uid != user.uid) return;
+      if (!snapshot.exists) {
+        _userData = null;
+        notifyListeners();
+        return;
+      }
+
+      final incoming = snapshot.data();
+      if (Logger.isVerboseEnabled)
+        Logger.log('[HanyangVerification][AuthProvider] snapshot '
+            'instance=${identityHashCode(this)} '
+            'uid=${user.uid.substring(0, user.uid.length < 8 ? user.uid.length : 8)} '
+            'source=${snapshot.metadata.isFromCache ? 'cache' : 'server'} '
+            'projection=${incoming?['hanyangEmailVerified']}');
+      // 캐시의 오래된 미인증 값이 방금 서버에서 확인한 인증 상태를 잠시
+      // 되돌리지 않게 한다. 실제 서버 스냅샷은 항상 반영한다.
+      if (snapshot.metadata.isFromCache &&
+          isHanyangEmailVerified &&
+          !hanyang_verification.isHanyangEmailVerified(incoming)) {
+        return;
+      }
+      _userData = incoming;
+      if (!snapshot.metadata.isFromCache &&
+          _hanyangVerificationStatus != HanyangVerificationStatus.checking) {
+        _hanyangVerificationStatus =
+            hanyang_verification.isHanyangEmailVerified(incoming)
+                ? HanyangVerificationStatus.verified
+                : HanyangVerificationStatus.unverified;
+      }
+      notifyListeners();
+    }, onError: (Object error) {
+      Logger.error('현재 사용자 문서 실시간 동기화 오류', error);
+    });
   }
+
+  Future<void> _stopObservingCurrentUserDocument() async {
+    final subscription = _currentUserDocumentSubscription;
+    _currentUserDocumentSubscription = null;
+    _observedUserId = null;
+    await subscription?.cancel();
+  }
+
+  /// 학교 인증을 판단해야 하는 화면에서 캐시가 아닌 서버 문서를 기준으로
+  /// 즉시 재확인합니다. 실패 시에는 현재 상태를 유지해 오프라인에서도
+  /// 인증 사용자를 임의로 미인증 처리하지 않습니다.
+  Future<bool> refreshHanyangVerificationStatus() async {
+    final currentUser = _user;
+    if (currentUser == null) return false;
+    final existing = _hanyangRefreshInFlight;
+    if (existing != null) return existing;
+
+    final uid = currentUser.uid;
+    final generation = ++_hanyangRequestGeneration;
+    final previousStatus = _hanyangVerificationStatus;
+    _hanyangVerificationStatus = HanyangVerificationStatus.checking;
+    _hanyangVerificationError = null;
+    notifyListeners();
+
+    late final Future<bool> request;
+    request = (() async {
+      String failureCode(Object error) {
+        if (error is FirebaseFunctionsException) return error.code;
+        if (error is FirebaseException) return error.code;
+        if (error is TimeoutException) return 'timeout';
+        if (error is SocketException) return 'socket';
+        return error.runtimeType.toString();
+      }
+
+      HttpsCallableResult<dynamic> response;
+      try {
+        response = await _functions
+            .httpsCallable('reconcileMyHanyangVerificationStatus')
+            .call()
+            .timeout(const Duration(seconds: 15));
+      } catch (error, stackTrace) {
+        if (_user?.uid != uid || generation != _hanyangRequestGeneration) {
+          return false;
+        }
+        final code = failureCode(error);
+        _hanyangVerificationError = 'function:$code';
+        _hanyangVerificationStatus = switch (previousStatus) {
+          HanyangVerificationStatus.verified =>
+            HanyangVerificationStatus.verified,
+          HanyangVerificationStatus.unverified =>
+            HanyangVerificationStatus.unverified,
+          HanyangVerificationStatus.conflict =>
+            HanyangVerificationStatus.conflict,
+          _ => HanyangVerificationStatus.unavailable,
+        };
+        Logger.error(
+          '[HanyangVerification][AuthProvider] refresh failed '
+          '(stage=function, code=$code, generation=$generation)',
+          error,
+          stackTrace,
+        );
+        notifyListeners();
+        return isHanyangEmailVerified;
+      }
+
+      if (_user?.uid != uid || generation != _hanyangRequestGeneration) {
+        return false;
+      }
+      final raw = response.data;
+      final data =
+          raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+      final statusName = (data['status'] ?? '').toString();
+      _hanyangVerificationStatus = switch (statusName) {
+        'verified' => HanyangVerificationStatus.verified,
+        'unverified' => HanyangVerificationStatus.unverified,
+        'conflict' => HanyangVerificationStatus.conflict,
+        _ => HanyangVerificationStatus.unavailable,
+      };
+      _maskedHanyangEmail = (data['maskedHanyangEmail'] ?? '').toString();
+      _hanyangVerificationSource = (data['source'] ?? '').toString();
+      final checkedAtMillis = data['checkedAtMillis'];
+      _hanyangVerificationCheckedAt = checkedAtMillis is num
+          ? DateTime.fromMillisecondsSinceEpoch(checkedAtMillis.toInt())
+          : DateTime.now();
+      final schemaVersion = data['schemaVersion'];
+      if (schemaVersion != 3) {
+        Logger.error('[HanyangVerification][AuthProvider] schema mismatch '
+            'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
+            'server=$schemaVersion client=3');
+      }
+      notifyListeners();
+
+      try {
+        final snapshot = await _firestore
+            .collection('users')
+            .doc(uid)
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 10));
+        if (_user?.uid == uid &&
+            generation == _hanyangRequestGeneration &&
+            snapshot.exists) {
+          _userData = snapshot.data();
+          _observeCurrentUserDocument(currentUser);
+        }
+      } catch (error, stackTrace) {
+        if (_user?.uid != uid || generation != _hanyangRequestGeneration) {
+          return false;
+        }
+        final code = failureCode(error);
+        _hanyangVerificationError = 'user_document:$code';
+        Logger.error(
+          '[HanyangVerification][AuthProvider] refresh follow-up failed '
+          '(stage=user-document, code=$code, generation=$generation)',
+          error,
+          stackTrace,
+        );
+        notifyListeners();
+      }
+
+      if (Logger.isVerboseEnabled) {
+        Logger.log('[HanyangVerification][AuthProvider] '
+            'instance=${identityHashCode(this)} uid=${uid.substring(0, uid.length < 8 ? uid.length : 8)} '
+            'generation=$generation status=$statusName '
+            'source=$_hanyangVerificationSource repaired=${data['repaired'] == true}');
+      }
+      return isHanyangEmailVerified;
+    })()
+        .whenComplete(() {
+      if (identical(_hanyangRefreshInFlight, request)) {
+        _hanyangRefreshInFlight = null;
+      }
+    });
+    _hanyangRefreshInFlight = request;
+    return request;
+  }
+
+  bool get isRegistrationComplete =>
+      _registrationStateFromData(_userData) ==
+      AccountRegistrationState.complete;
+  AccountRegistrationState get registrationState =>
+      _registrationStateFromData(_userData);
 
   // 사용자 데이터 (닉네임, 국적 등)
   Map<String, dynamic>? get userData => _userData;
@@ -248,9 +649,152 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     return wasRequired;
   }
 
+  AccountRegistrationState _registrationStateFromData(
+    Map<String, dynamic>? data,
+  ) {
+    if (data == null) return AccountRegistrationState.missing;
+
+    final emailVerified = data['emailVerified'] == true;
+    final nickname = (data['nickname'] ?? '').toString().trim();
+    final status = (data['registrationStatus'] ?? '').toString();
+    final signupState = (data['signupState'] ?? '').toString();
+    // 배포 전부터 실제 가입을 끝낸 기존 사용자는 상태 필드가 없을 수 있다.
+    // 명시적인 pending은 차단하되, 완성된 레거시 프로필은 한 번만 호환한다.
+    final completedOrLegacy = status == 'complete' ||
+        (status.isEmpty && emailVerified && nickname.isNotEmpty);
+    if (completedOrLegacy && emailVerified && nickname.isNotEmpty) {
+      return AccountRegistrationState.complete;
+    }
+    if (signupState == 'profileCompleted') {
+      return AccountRegistrationState.profileCompleted;
+    }
+    if (signupState == 'authCreated') {
+      return AccountRegistrationState.authCreated;
+    }
+    return AccountRegistrationState.profilePending;
+  }
+
+  bool _isTransientSignupError(Object error) {
+    if (error is TimeoutException || error is SocketException) return true;
+    if (error is FirebaseFunctionsException) {
+      return const {
+        'aborted',
+        'deadline-exceeded',
+        'unavailable',
+      }.contains(error.code);
+    }
+    return false;
+  }
+
+  Future<T> _runSignupRequest<T>(Future<T> Function() action) async {
+    Object? lastError;
+    StackTrace? lastStack;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        await FirebaseAppCheckService.instance.ensureReady();
+        return await action();
+      } catch (error, stack) {
+        lastError = error;
+        lastStack = stack;
+        if (!_isTransientSignupError(error) || attempt == 2) rethrow;
+        await Future<void>.delayed(
+          Duration(milliseconds: 450 * (1 << attempt)),
+        );
+      }
+    }
+    Error.throwWithStackTrace(lastError!, lastStack!);
+  }
+
+  /// Creates or resumes the authenticated user's server-owned signup state.
+  Future<AccountRegistrationState> ensureRegistrationProgress({
+    String? signupLanguage,
+    String verifiedEmail = '',
+    String verificationToken = '',
+  }) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return AccountRegistrationState.missing;
+    try {
+      await _runSignupRequest(() => _functions
+              .httpsCallable('ensureRegistrationProgress')
+              .call(<String, dynamic>{
+            if (signupLanguage?.trim().isNotEmpty == true)
+              'signupLanguage': signupLanguage,
+            if (signupLanguage?.trim().isNotEmpty == true)
+              'signupLanguageExplicit': true,
+            if (verifiedEmail.isNotEmpty) 'verifiedEmail': verifiedEmail,
+            if (verificationToken.isNotEmpty)
+              'verificationToken': verificationToken,
+          }).timeout(const Duration(seconds: 15)));
+      _user = currentUser;
+      await _loadUserData();
+      return _registrationStateFromData(_userData);
+    } catch (error) {
+      await _recordSignupFailure('ensure_progress', error);
+      rethrow;
+    }
+  }
+
+  Future<bool> finalizePendingRegistration({
+    required Map<String, dynamic> profile,
+  }) async {
+    if (_auth.currentUser == null) return false;
+    try {
+      _isLoading = true;
+      notifyListeners();
+      await _runSignupRequest(() => _functions
+          .httpsCallable('finalizePendingRegistration')
+          .call(<String, dynamic>{'profile': profile}).timeout(
+              const Duration(seconds: 20)));
+      await _loadUserData();
+      final completed = isRegistrationComplete;
+      return completed;
+    } catch (error) {
+      await _recordSignupFailure('profile_finalize', error);
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// 현재 Firebase Auth 사용자의 실제 가입 상태를 서버 문서 기준으로 확인합니다.
+  /// 회원가입 화면과 로그인 화면이 반드시 같은 판정 기준을 사용하도록 공개합니다.
+  Future<AccountRegistrationState> getCurrentAccountRegistrationState() async {
+    final currentUser = _user;
+    if (currentUser == null) return AccountRegistrationState.missing;
+
+    final snapshot = await _firestore
+        .collection('users')
+        .doc(currentUser.uid)
+        .get(const GetOptions(source: Source.serverAndCache));
+    return snapshot.exists
+        ? _registrationStateFromData(snapshot.data())
+        : AccountRegistrationState.missing;
+  }
+
   // 사용자 데이터 로드 (재시도 로직 포함)
-  Future<void> _loadUserData() async {
-    if (_user == null) return;
+  Future<void> _loadUserData() {
+    final currentUser = _user;
+    if (currentUser == null) return Future<void>.value();
+    if (_userLoadInFlight != null && _userLoadUid == currentUser.uid) {
+      return _userLoadInFlight!;
+    }
+    final generation = ++_userLoadGeneration;
+    final request = _loadUserDataOnce(currentUser.uid, generation);
+    _userLoadUid = currentUser.uid;
+    _userLoadInFlight = request;
+    return request.whenComplete(() {
+      if (identical(_userLoadInFlight, request)) {
+        _userLoadInFlight = null;
+        _userLoadUid = null;
+      }
+    });
+  }
+
+  Future<void> _loadUserDataOnce(String uid, int generation) async {
+    final currentUser = _user;
+    if (currentUser == null || currentUser.uid != uid) return;
+    _observeCurrentUserDocument(currentUser);
 
     int retryCount = 0;
     const maxRetries = 2; // 3 → 2로 감소
@@ -258,7 +802,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
     while (retryCount < maxRetries) {
       try {
-        final docRef = _firestore.collection('users').doc(_user!.uid);
+        final docRef = _firestore.collection('users').doc(uid);
         final doc = await docRef
             .get(
           const GetOptions(source: Source.serverAndCache),
@@ -266,44 +810,46 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             .timeout(
           const Duration(seconds: 15), // 30초 → 15초로 감소
           onTimeout: () {
-            Logger.log('⏱️ 사용자 데이터 로드 타임아웃');
+            if (Logger.isVerboseEnabled) Logger.log('⏱️ 사용자 데이터 로드 타임아웃');
             throw TimeoutException('사용자 데이터 로드 타임아웃');
           },
         );
 
+        if (_user?.uid != uid || generation != _userLoadGeneration) return;
         if (doc.exists) {
           _userData = doc.data();
 
           // ✅ 가입 경로(구글/애플/이메일)와 무관하게 users/{uid} 스키마가 동일하도록 보정
           // - 서버 함수/레거시 코드로 "부분 필드만 있는 문서"가 남아있는 경우를 수습
           // - 크래시 방지: 스키마 보정 실패해도 앱은 계속 실행
-          try {
-            await _ensureUserDocSchema(docRef: docRef, existingData: _userData);
+          if (_registrationStateFromData(_userData) ==
+              AccountRegistrationState.complete) {
+            try {
+              await _ensureUserDocSchema(
+                docRef: docRef,
+                existingData: _userData,
+              );
 
-            // ✅ 스키마 보정 후 문서 다시 읽기 (보정된 필드 반영)
-            if (kDebugMode) {
-              debugPrint('🔄 스키마 보정 완료 - 문서 재로드');
-            }
-            final updatedDoc = await docRef
-                .get(
-              const GetOptions(source: Source.serverAndCache),
-            )
-                .timeout(
-              const Duration(seconds: 5), // 10초 → 5초로 감소
-              onTimeout: () {
-                Logger.log('⏱️ 스키마 보정 후 재로드 타임아웃');
-                throw TimeoutException('재로드 타임아웃');
-              },
-            );
-            if (updatedDoc.exists) {
-              _userData = updatedDoc.data();
-              if (kDebugMode) {
-                debugPrint('✅ 스키마 보정 후 문서 재로드 완료');
+              if (Logger.isVerboseEnabled) Logger.log('🔄 스키마 보정 완료 - 문서 재로드');
+              final updatedDoc = await docRef
+                  .get(
+                const GetOptions(source: Source.serverAndCache),
+              )
+                  .timeout(
+                const Duration(seconds: 5),
+                onTimeout: () {
+                  if (Logger.isVerboseEnabled)
+                    Logger.log('⏱️ 스키마 보정 후 재로드 타임아웃');
+                  throw TimeoutException('재로드 타임아웃');
+                },
+              );
+              if (updatedDoc.exists) {
+                _userData = updatedDoc.data();
+                if (Logger.isVerboseEnabled) Logger.log('✅ 스키마 보정 후 문서 재로드 완료');
               }
+            } catch (e) {
+              Logger.error('⚠️ users 문서 스키마 보정 실패(무시): $e');
             }
-          } catch (e) {
-            Logger.error('⚠️ users 문서 스키마 보정 실패(무시): $e');
-            // 스키마 보정 실패해도 기존 데이터로 계속 진행
           }
           break; // 성공시 루프 종료
         } else {
@@ -316,13 +862,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         Logger.error('사용자 데이터 로드 오류 (시도 $retryCount/$maxRetries): $e');
 
         if (retryCount >= maxRetries) {
-          Logger.log('최대 재시도 횟수 도달. 캐시에서 데이터 로드 시도');
+          if (Logger.isVerboseEnabled)
+            Logger.log('최대 재시도 횟수 도달. 캐시에서 데이터 로드 시도');
           try {
             // 마지막으로 캐시에서만 시도
             final cachedDoc = await _firestore
                 .collection('users')
-                .doc(_user!.uid)
+                .doc(uid)
                 .get(const GetOptions(source: Source.cache));
+            if (_user?.uid != uid || generation != _userLoadGeneration) return;
             _userData = cachedDoc.exists ? cachedDoc.data() : null;
           } catch (cacheError) {
             Logger.error('캐시에서도 데이터 로드 실패: $cacheError');
@@ -339,36 +887,67 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     _isLoading = false;
     notifyListeners();
 
-    // FCM 초기화 (백그라운드로 이동 - 회원가입 플로우를 막지 않음)
-    Logger.log('🔍 [FCM 진단] _loadUserData 완료 후 FCM 초기화 시작');
-    Logger.log('  - _user: ${_user?.uid}');
-    Logger.log('  - _userData exists: ${_userData != null}');
-    Logger.log('  - emailVerified: ${_userData?['emailVerified']}');
-    unawaited(_initializeFCMIfNeeded());
+    if (isRegistrationComplete) {
+      // 최종 가입 완료 사용자만 알림 토큰과 사용자 부가 데이터를 등록한다.
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] 가입 완료 사용자 FCM 초기화 시작');
+      unawaited(_initializeFCMIfNeeded());
+      unawaited(refreshHanyangVerificationStatus());
+    }
   }
 
   // 구글 로그인
-  // forSignup: true이면 신규 사용자도 Auth를 유지하여 finalizeEnglishSocialSignup 진행 가능
-  Future<bool> signInWithGoogle({bool forSignup = false}) async {
+  // skipEmailVerifiedCheck: 한양메일 인증 완료 후 회원가입 시 true로 설정
+  Future<bool> signInWithGoogle({
+    bool skipEmailVerifiedCheck = false,
+    bool organizationInviteMode = false,
+  }) async {
+    var stage = _GoogleAuthStage.initialize;
+    _lastGoogleSignInWasCancelled = false;
     try {
+      // 이전 로그인 실패 상태가 다음 시도에 잘못 재사용되지 않도록 매번 초기화합니다.
+      _signupRequired = false;
       _isLoading = true;
       notifyListeners();
 
+      _logGoogleAuthStage(
+        'START',
+        details:
+            'clientIdSource=${Platform.isAndroid ? 'google-services' : 'firebase-options'}',
+      );
+      await _ensureGoogleSignInInitialized();
+      _logGoogleAuthStage('INITIALIZED');
+
       // Google Sign-In 7.x API 사용 (authenticate 메서드 사용)
+      stage = _GoogleAuthStage.accountSelection;
       final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
+      _logGoogleAuthStage('ACCOUNT_SELECTED');
 
       // 구글 인증 정보 가져오기
+      stage = _GoogleAuthStage.token;
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
+      _logGoogleAuthStage(
+        'TOKEN_RECEIVED',
+        details: 'idTokenPresent=${googleAuth.idToken?.isNotEmpty == true}',
+      );
 
       // Firebase 인증용 크레덴셜 생성 (idToken만 사용)
+      stage = _GoogleAuthStage.credential;
       final OAuthCredential credential = GoogleAuthProvider.credential(
         idToken: googleAuth.idToken,
       );
+      _logGoogleAuthStage('FIREBASE_CREDENTIAL_CREATED');
 
       // Firebase 로그인
+      stage = _GoogleAuthStage.firebaseAuth;
       final UserCredential userCredential = await _auth.signInWithCredential(
         credential,
+      );
+      _logGoogleAuthStage(
+        'FIREBASE_SIGN_IN_SUCCESS',
+        details:
+            'isNewUser=${userCredential.additionalUserInfo?.isNewUser ?? false}',
       );
 
       // 사용자 정보 업데이트
@@ -377,58 +956,51 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       // 사용자 정보 Firebase 확인 (자동 생성 없이)
       if (_user != null) {
         // Firestore에서 사용자 문서 존재 여부 확인
+        stage = _GoogleAuthStage.userDocument;
         final docSnapshot =
             await _firestore.collection('users').doc(_user!.uid).get();
 
-        if (!docSnapshot.exists) {
-          if (forSignup) {
-            // 가입 흐름: 신규 사용자이므로 Auth를 유지하고 true 반환
-            // finalizeEnglishSocialSignup이 이후에 Firestore 문서를 생성함
-            Logger.log('✅ 신규 사용자 Google Auth 완료 (가입 흐름)');
+        final userData = docSnapshot.data();
+        final registrationState = docSnapshot.exists
+            ? _registrationStateFromData(userData)
+            : AccountRegistrationState.missing;
+        _logGoogleAuthStage(
+          'USER_DOCUMENT_READ',
+          details:
+              'exists=${docSnapshot.exists} signupState=${registrationState.name}',
+        );
+        if (registrationState != AccountRegistrationState.complete) {
+          // A valid organization invitation owns this onboarding path. Do not
+          // create a partial personal profile or invoke the Hanyang signup
+          // recovery flow; the server will create/link only the membership.
+          if (organizationInviteMode) {
+            _signupRequired = false;
             _isLoading = false;
             notifyListeners();
             return true;
           }
-
-          // 로그인 흐름: 신규 사용자이면 거부
-          Logger.log('❌ 신규 사용자: 회원가입이 필요합니다.');
+          stage = _GoogleAuthStage.registrationRecovery;
+          await ensureRegistrationProgress();
+          _logGoogleAuthStage('REGISTRATION_RECOVERY_READY');
           _signupRequired = true;
-
-          try {
-            await _user?.delete();
-            Logger.log('🧹 신규 사용자 Google Auth 레코드 삭제 완료');
-          } catch (e) {
-            Logger.error('⚠️ Google Auth 레코드 삭제 실패(계속 진행): $e');
-          }
-
-          await _auth.signOut();
-          _user = null;
-          _userData = null;
           _isLoading = false;
           notifyListeners();
-
-          return false; // 로그인 거부
-        }
-
-        if (forSignup) {
-          // 가입 흐름인데 이미 Firestore 문서가 있으면 기존 계정
-          Logger.log('⚠️ 이미 가입된 계정입니다 (가입 흐름에서 기존 문서 발견)');
-          _isLoading = false;
-          notifyListeners();
-          return true; // 가입 화면에서 _blockIfExistingAccount가 처리
+          return true;
         }
 
         // 기존 사용자 정보 업데이트 (lastLogin)
-        final docExists = await _updateExistingUserDocument();
+        stage = _GoogleAuthStage.lastLogin;
+        final documentUpdate = await _updateExistingUserDocument();
 
         // 🔥 문서가 없으면 탈퇴한 계정으로 간주
-        if (!docExists) {
+        if (documentUpdate == _ExistingUserDocumentUpdateResult.missing) {
           Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
 
           // 회원가입 필요 플래그 설정
           _signupRequired = true;
 
-          // Firebase 로그아웃
+          // Firebase 로그아웃 (이 기기 토큰이 미완료 계정에 남지 않도록 먼저 해제)
+          await _releaseDeviceTokenBeforeSignOut();
           await _auth.signOut();
           _user = null;
           _userData = null;
@@ -438,34 +1010,115 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           return false; // 로그인 거부
         }
 
+        stage = _GoogleAuthStage.userData;
         await _loadUserData();
 
         // FCM 초기화 (백그라운드로 이동 - 로그인 플로우를 막지 않음)
-        unawaited(_initializeFCMIfNeeded());
+        if (isRegistrationComplete) unawaited(_initializeFCMIfNeeded());
       }
 
+      stage = _GoogleAuthStage.completed;
+      _logGoogleAuthStage('COMPLETED');
       return _user != null;
-    } on Exception catch (e) {
-      // Google Sign-In 관련 예외 처리
-      final errorMessage = e.toString();
-      if (errorMessage.contains('canceled') ||
-          errorMessage.contains('cancelled')) {
-        Logger.log('사용자가 Google 로그인을 취소했습니다: $e');
-        // 취소는 오류가 아니므로 조용히 처리
-      } else if (errorMessage.contains('network') ||
-          errorMessage.contains('Network') ||
-          errorMessage.contains('connection') ||
-          errorMessage.contains('Connection')) {
-        Logger.error('네트워크 연결 오류: $e');
-        // 네트워크 오류 시 재시도 가능하도록 상태 초기화
+    } on GoogleSignInException catch (error, stackTrace) {
+      if (error.code == GoogleSignInExceptionCode.canceled) {
+        _lastGoogleSignInWasCancelled = true;
+        final description = _safeGoogleAuthLogValue(error.description);
+        final details = _safeGoogleAuthLogValue(error.details);
+        _logGoogleAuthStage(
+          'CANCELLED',
+          details: 'stage=${stage.name} code=${error.code.name} '
+              'description=${description.isEmpty ? 'none' : description} '
+              'details=${details.isEmpty ? 'none' : details}',
+        );
       } else {
-        Logger.error('구글 로그인 오류: $e');
+        _logGoogleAuthFailure(
+          stage: stage,
+          error: error,
+          stackTrace: stackTrace,
+          type: 'GoogleSignInException',
+          code: error.code.name,
+          message: error.description,
+          details: error.details,
+        );
       }
       _isLoading = false;
       notifyListeners();
       return false;
-    } catch (e) {
-      Logger.error('구글 로그인 예상치 못한 오류: $e');
+    } on FirebaseAuthException catch (error, stackTrace) {
+      _logGoogleAuthFailure(
+        stage: stage,
+        error: error,
+        stackTrace: stackTrace,
+        type: 'FirebaseAuthException',
+        code: error.code,
+        message: error.message,
+      );
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } on AppCheckUnavailableException catch (error, stackTrace) {
+      _logGoogleAuthFailure(
+        stage: stage,
+        error: error,
+        stackTrace: stackTrace,
+        type: 'AppCheckUnavailableException',
+        code: FirebaseAppCheckService.instance.lastErrorCode.isEmpty
+            ? 'app-check-unavailable'
+            : FirebaseAppCheckService.instance.lastErrorCode,
+        message: 'Firebase App Check is unavailable',
+      );
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } on FirebaseException catch (error, stackTrace) {
+      final isAppCheck = error.plugin.toLowerCase().contains('app_check');
+      _logGoogleAuthFailure(
+        stage: stage,
+        error: error,
+        stackTrace: stackTrace,
+        type: isAppCheck ? 'FirebaseAppCheckException' : 'FirebaseException',
+        code: error.code,
+        message: error.message,
+        details: 'plugin=${error.plugin}',
+      );
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } on PlatformException catch (error, stackTrace) {
+      _logGoogleAuthFailure(
+        stage: stage,
+        error: error,
+        stackTrace: stackTrace,
+        type: 'PlatformException',
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      );
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } on Exception catch (error, stackTrace) {
+      _logGoogleAuthFailure(
+        stage: stage,
+        error: error,
+        stackTrace: stackTrace,
+        type: error.runtimeType.toString(),
+        code: 'exception',
+        message: error.toString(),
+      );
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (error, stackTrace) {
+      _logGoogleAuthFailure(
+        stage: stage,
+        error: error,
+        stackTrace: stackTrace,
+        type: error.runtimeType.toString(),
+        code: 'unknown',
+        message: error.toString(),
+      );
       _isLoading = false;
       notifyListeners();
       return false;
@@ -473,17 +1126,26 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   // Apple 로그인
-  // forSignup: true이면 신규 사용자도 Auth를 유지하여 finalizeEnglishSocialSignup 진행 가능
-  Future<bool> signInWithApple({bool forSignup = false}) async {
+  // skipEmailVerifiedCheck: 한양메일 인증 완료 후 회원가입 시 true로 설정
+  Future<bool> signInWithApple({
+    bool skipEmailVerifiedCheck = false,
+    bool organizationInviteMode = false,
+  }) async {
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🍎 Apple Sign In 시작');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      // 취소/재시도 뒤에도 이전 가입 필요 플래그가 남지 않게 합니다.
+      _signupRequired = false;
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('🍎 Apple Sign In 시작');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // 플랫폼 체크
       if (!Platform.isIOS && !Platform.isMacOS) {
-        Logger.log('❌ Apple Sign In은 iOS/macOS에서만 사용 가능합니다');
-        Logger.log('   현재 플랫폼: ${Platform.operatingSystem}');
+        if (Logger.isVerboseEnabled)
+          Logger.log('❌ Apple Sign In은 iOS/macOS에서만 사용 가능합니다');
+        if (Logger.isVerboseEnabled)
+          Logger.log('   현재 플랫폼: ${Platform.operatingSystem}');
         _isLoading = false;
         notifyListeners();
         return false;
@@ -493,19 +1155,22 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       notifyListeners();
 
       // Apple Sign-In 직접 호출 (Google과 일관성 유지)
-      Logger.log('🍎 AppleAuthProvider 생성 중...');
+      if (Logger.isVerboseEnabled) Logger.log('🍎 AppleAuthProvider 생성 중...');
       final appleProvider = AppleAuthProvider();
       appleProvider.addScope('email');
       appleProvider.addScope('name');
-      Logger.log('🍎 AppleAuthProvider 생성 완료 (scopes: email, name)');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🍎 AppleAuthProvider 생성 완료 (scopes: email, name)');
 
-      Logger.log('🍎 Firebase Auth signInWithProvider 호출 중...');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🍎 Firebase Auth signInWithProvider 호출 중...');
       final userCredential = await _auth.signInWithProvider(appleProvider);
 
-      Logger.log('🍎 Apple Sign In 성공!');
-      Logger.log('   User ID: ${userCredential.user?.uid}');
-      Logger.log('   Email: ${userCredential.user?.email ?? "비공개"}');
-      Logger.log('   Nickname(users 문서 기준): 로그인 후 Firestore users 문서에서 확인');
+      if (Logger.isVerboseEnabled) Logger.log('🍎 Apple Sign In 성공!');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   User ID: ${userCredential.user?.uid}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   Nickname(users 문서 기준): 로그인 후 Firestore users 문서에서 확인');
 
       // 사용자 정보 업데이트
       _user = userCredential.user;
@@ -516,67 +1181,63 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         final docSnapshot =
             await _firestore.collection('users').doc(_user!.uid).get();
 
-        if (!docSnapshot.exists) {
-          if (forSignup) {
-            // 가입 흐름: 신규 사용자이므로 Auth를 유지하고 true 반환
-            Logger.log('✅ 신규 사용자 Apple Auth 완료 (가입 흐름)');
+        final userData = docSnapshot.data();
+        final registrationState = docSnapshot.exists
+            ? _registrationStateFromData(userData)
+            : AccountRegistrationState.missing;
+        if (registrationState != AccountRegistrationState.complete) {
+          if (organizationInviteMode) {
+            _signupRequired = false;
             _isLoading = false;
             notifyListeners();
             return true;
           }
-
-          // 로그인 흐름: 신규 사용자이면 거부
-          Logger.log('❌ 신규 사용자: 회원가입이 필요합니다.');
+          await ensureRegistrationProgress();
           _signupRequired = true;
+          _isLoading = false;
+          notifyListeners();
+          return true;
+        }
 
-          try {
-            await _user?.delete();
-            Logger.log('🧹 신규 사용자 Apple Auth 레코드 삭제 완료');
-          } catch (e) {
-            Logger.error('⚠️ Apple Auth 레코드 삭제 실패(계속 진행): $e');
-          }
-
+        // 기존 사용자 정보 업데이트 (lastLogin)
+        final documentUpdate = await _updateExistingUserDocument();
+        if (documentUpdate == _ExistingUserDocumentUpdateResult.missing) {
+          Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
+          await _releaseDeviceTokenBeforeSignOut();
           await _auth.signOut();
           _user = null;
           _userData = null;
           _isLoading = false;
           notifyListeners();
-
-          return false; // 로그인 거부
+          return false;
         }
-
-        if (forSignup) {
-          // 가입 흐름인데 이미 Firestore 문서가 있으면 기존 계정
-          Logger.log('⚠️ 이미 가입된 계정입니다 (가입 흐름에서 기존 문서 발견)');
-          _isLoading = false;
-          notifyListeners();
-          return true; // 가입 화면에서 _blockIfExistingAccount가 처리
-        }
-
-        // 기존 사용자 정보 업데이트 (lastLogin)
-        await _updateExistingUserDocument();
         await _loadUserData();
 
         // FCM 초기화 (백그라운드로 이동 - 로그인 플로우를 막지 않음)
-        unawaited(_initializeFCMIfNeeded());
+        if (isRegistrationComplete) unawaited(_initializeFCMIfNeeded());
       }
 
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return _user != null;
     } on FirebaseAuthException catch (e) {
       // Firebase Auth 관련 예외 처리 (구체적)
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('🍎 Apple Sign In 실패 (FirebaseAuthException)');
       Logger.error('   에러 코드: ${e.code}');
       Logger.error('   에러 메시지: ${e.message}');
-      Logger.log('   상세 정보: ${e.toString()}');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('   상세 정보: ${e.toString()}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       if (e.code == 'unknown') {
-        Logger.log('💡 해결 방법:');
-        Logger.log('   1. Xcode에서 "Sign in with Apple" Capability 추가 확인');
-        Logger.log('   2. 시뮬레이터의 경우 설정에서 Apple ID 로그인 확인');
-        Logger.log('   3. 실제 iOS 기기에서 테스트 권장');
+        if (Logger.isVerboseEnabled) Logger.log('💡 해결 방법:');
+        if (Logger.isVerboseEnabled)
+          Logger.log('   1. Xcode에서 "Sign in with Apple" Capability 추가 확인');
+        if (Logger.isVerboseEnabled)
+          Logger.log('   2. 시뮬레이터의 경우 설정에서 Apple ID 로그인 확인');
+        if (Logger.isVerboseEnabled) Logger.log('   3. 실제 iOS 기기에서 테스트 권장');
       }
 
       _isLoading = false;
@@ -584,12 +1245,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       return false;
     } on Exception catch (e) {
       // 기타 예외 처리
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('🍎 Apple Sign In 실패 (Exception)');
       final errorMessage = e.toString();
       if (errorMessage.contains('canceled') ||
           errorMessage.contains('cancelled')) {
-        Logger.log('   사용자가 Apple 로그인을 취소했습니다');
+        if (Logger.isVerboseEnabled) Logger.log('   사용자가 Apple 로그인을 취소했습니다');
       } else if (errorMessage.contains('network') ||
           errorMessage.contains('Network') ||
           errorMessage.contains('connection') ||
@@ -598,16 +1260,19 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       } else {
         Logger.error('   에러: $e');
       }
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       _isLoading = false;
       notifyListeners();
       return false;
     } catch (e) {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('🍎 Apple Sign In 실패 (알 수 없는 에러)');
       Logger.error('   에러 타입: ${e.runtimeType}');
       Logger.error('   에러 내용: $e');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -619,103 +1284,62 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     required String email,
     required String password,
     required String hanyangEmail,
+    String verificationToken = '',
+    String signupLanguage = 'ko',
   }) async {
     try {
       _isLoading = true;
       notifyListeners();
 
-      Logger.log('📧 이메일 회원가입 시작: $email');
+      if (Logger.isVerboseEnabled) Logger.log('📧 이메일 회원가입 시작');
 
-      // AuthService를 통해 Firebase Auth 계정 생성
-      final userCredential =
-          await _authService.signUpWithEmail(email, password);
-
-      if (userCredential == null || userCredential.user == null) {
-        Logger.error('이메일 회원가입 실패: userCredential이 null입니다');
-        _isLoading = false;
-        notifyListeners();
+      // A retry after response loss must reuse the already-created Auth uid.
+      final current = _auth.currentUser;
+      if (current != null &&
+          (current.email ?? '').trim().toLowerCase() ==
+              email.trim().toLowerCase()) {
+        _user = current;
+      } else {
+        try {
+          final userCredential =
+              await _authService.signUpWithEmail(email, password);
+          _user = userCredential?.user;
+        } on FirebaseAuthException catch (error) {
+          if (error.code != 'email-already-in-use') rethrow;
+          final credential = await _auth.signInWithEmailAndPassword(
+            email: email.trim(),
+            password: password,
+          );
+          _user = credential.user;
+        }
+      }
+      if (_user == null) {
+        Logger.error('이메일 회원가입 실패: Auth 사용자를 확인할 수 없습니다.');
         return false;
       }
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ Firebase Auth 계정 생성 완료: ${_user!.uid}');
 
-      _user = userCredential.user;
-      Logger.log('✅ Firebase Auth 계정 생성 완료: ${_user!.uid}');
+      await ensureRegistrationProgress(
+        signupLanguage: signupLanguage,
+        verifiedEmail: verificationToken.isEmpty ? '' : hanyangEmail,
+        verificationToken: verificationToken,
+      );
 
-      bool hanyangClaimFinalized = false;
-
-      // ✅ 한양메일 유니크 점유(email_claims) 확정
-      // - Google/Apple 플로우는 completeEmailVerification에서 처리하지만,
-      //   이메일/비밀번호 회원가입 플로우는 여기서 반드시 처리해야 "메일 1개=계정 1개"가 보장됨
-      try {
-        // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
-        final callable =
-            _functions.httpsCallable('finalizeHanyangEmailVerification');
-        await callable.call({
-          'email': hanyangEmail.trim(),
-        }).timeout(
-          const Duration(seconds: 15),
-          onTimeout: () {
-            Logger.log('⏱️ 한양메일 인증 확정 타임아웃 (15초)');
-            throw TimeoutException('한양메일 인증 시간 초과');
-          },
-        );
-        hanyangClaimFinalized = true;
-        Logger.log('✅ 한양메일 claim 점유 완료: $hanyangEmail');
-      } on FirebaseFunctionsException catch (e) {
-        Logger.error('❌ 한양메일 claim 점유 실패: ${e.code} - ${e.message}');
-
-        // 이미 사용 중인 한양메일이면 방금 만든 Auth 계정을 롤백
-        try {
-          await _user?.delete();
-        } catch (rollbackError) {
-          Logger.error('⚠️ Auth 롤백(계정 삭제) 실패: $rollbackError');
-        }
-        try {
-          await _auth.signOut();
-        } catch (_) {}
-
-        _user = null;
-        _userData = null;
-        _isLoading = false;
-        notifyListeners();
-        rethrow; // UI에서 already-exists 등 구체 처리
-      }
-
-      // Firestore에 사용자 문서 생성 (한양메일 정보 포함)
-      // - finalizeHanyangEmailVerification가 먼저 users/{uid}를 merge로 만들 수 있으므로 merge로 저장
-      // - 이 단계가 일시적으로 실패하더라도 "가입 자체"는 이미 완료된 상태일 수 있음
-      //   (finalize 함수가 users/{uid} + email_claims를 생성/업데이트)
-      try {
-        await _upsertUserDocWithFullSchema(
-          user: _user!,
-          hanyangEmail: hanyangEmail, // ✅ 한양메일 인증 사용자
-          // 이메일/비밀번호 가입은 닉네임 설정 전이므로 빈값으로 통일
-          nickname: '',
-          nationality: '',
-          // ✅ 정책: 외부(Auth 제공) 사진은 저장/표시하지 않는다. (버킷 업로드만 허용)
-          photoURL: '',
-        );
-        Logger.log('✅ Firestore 사용자 문서 생성/보정 완료');
-      } catch (e) {
-        // 🔥 핵심: 여기서 false를 반환하면, 사용자는 "가입 실패"로 인지하고 재시도하게 되며
-        // 이미 생성된 Firebase Auth 계정 때문에 email-already-in-use로 이어질 수 있다.
-        // 따라서 best-effort로 처리하고 다음 단계로 진행한다.
-        Logger.error('⚠️ Firestore 사용자 문서 생성/보정 실패(가입은 계속 진행): $e');
-      }
-
-      // 최종적으로 사용자 데이터 로드 (실패해도 Auth는 생성된 상태)
-      try {
-        await _loadUserData();
-      } catch (e) {
-        Logger.error('⚠️ 가입 후 사용자 데이터 로드 실패(무시): $e');
-      }
-      return hanyangClaimFinalized;
+      // 이 단계에서는 Firebase Auth 인증만 준비한다. users 문서와 한양메일
+      // 점유는 마지막 프로필 제출이 성공할 때 서버에서 함께 확정한다.
+      _isLoading = false;
+      notifyListeners();
+      return true;
     } on FirebaseAuthException catch (e) {
-      Logger.error('이메일 회원가입 오류 (FirebaseAuthException): ${e.code}', e);
+      await _recordSignupFailure('auth_create', e);
+      Logger.error('이메일 회원가입 오류 코드: ${e.code}');
       _isLoading = false;
       notifyListeners();
       rethrow; // UI에서 구체적으로 처리
     } catch (e) {
-      Logger.error('이메일 회원가입 오류: $e');
+      await _recordSignupFailure('auth_create', e);
+      Logger.error('이메일 회원가입 처리 실패');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -726,12 +1350,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   Future<bool> signInWithEmail({
     required String email,
     required String password,
+    bool organizationInviteMode = false,
   }) async {
     try {
+      _signupRequired = false;
       _isLoading = true;
       notifyListeners();
 
-      Logger.log('📧 이메일 로그인 시작: $email');
+      if (Logger.isVerboseEnabled) Logger.log('📧 이메일 로그인 시작');
 
       // AuthService를 통해 Firebase Auth 로그인
       final userCredential =
@@ -745,27 +1371,36 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }
 
       _user = userCredential.user;
-      Logger.log('✅ Firebase Auth 로그인 완료: ${_user!.uid}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ Firebase Auth 로그인 완료: ${_user!.uid}');
 
       // Firestore에서 사용자 문서 확인
       final docSnapshot =
           await _firestore.collection('users').doc(_user!.uid).get();
 
-      if (!docSnapshot.exists) {
-        Logger.error('❌ 사용자 문서가 존재하지 않습니다. 탈퇴한 계정일 수 있습니다.');
-        await _auth.signOut();
-        _user = null;
-        _userData = null;
+      final registrationState = docSnapshot.exists
+          ? _registrationStateFromData(docSnapshot.data())
+          : AccountRegistrationState.missing;
+      if (registrationState != AccountRegistrationState.complete) {
+        if (organizationInviteMode) {
+          _signupRequired = false;
+          _isLoading = false;
+          notifyListeners();
+          return true;
+        }
+        await ensureRegistrationProgress();
+        _signupRequired = true;
         _isLoading = false;
         notifyListeners();
-        return false;
+        return true;
       }
 
       // 기존 사용자 정보 업데이트
-      final docExists = await _updateExistingUserDocument();
+      final documentUpdate = await _updateExistingUserDocument();
 
-      if (!docExists) {
+      if (documentUpdate == _ExistingUserDocumentUpdateResult.missing) {
         Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
+        await _releaseDeviceTokenBeforeSignOut();
         await _auth.signOut();
         _user = null;
         _userData = null;
@@ -777,7 +1412,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await _loadUserData();
 
       // FCM 초기화 (백그라운드로 이동 - 로그인 플로우를 막지 않음)
-      unawaited(_initializeFCMIfNeeded());
+      if (isRegistrationComplete) unawaited(_initializeFCMIfNeeded());
 
       return _user != null;
     } on FirebaseAuthException catch (e) {
@@ -794,8 +1429,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   // 기존 사용자 문서 업데이트 (lastLogin 동기화)
-  Future<bool> _updateExistingUserDocument() async {
-    if (_user == null) return false;
+  Future<_ExistingUserDocumentUpdateResult>
+      _updateExistingUserDocument() async {
+    if (_user == null) return _ExistingUserDocumentUpdateResult.missing;
 
     try {
       final docRef = _firestore.collection('users').doc(_user!.uid);
@@ -832,15 +1468,20 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           Logger.error('⚠️ Firebase Auth 프로필 동기화 실패(무시): $e');
         }
 
-        return true; // 문서 존재함
+        return _ExistingUserDocumentUpdateResult.updated;
       } else {
         // 🔥 문서가 없음 - 탈퇴한 계정
         Logger.error('⚠️ 사용자 문서가 존재하지 않습니다. 탈퇴한 계정일 수 있습니다.');
-        return false; // 문서 없음
+        return _ExistingUserDocumentUpdateResult.missing;
       }
     } catch (e) {
       Logger.error('사용자 문서 업데이트 오류: $e');
-      return false;
+      // The caller has just confirmed a completed user document. A transient
+      // write/read error is not proof of account deletion and must not sign
+      // Google/password users out while Apple users remain signed in.
+      // Firestore rules still reject protected access if the account was
+      // actually removed, suspended, or disabled.
+      return _ExistingUserDocumentUpdateResult.deferred;
     }
   }
 
@@ -852,13 +1493,10 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = true;
       notifyListeners();
 
-      await _firestore.collection('users').doc(_user!.uid).update({
-        'nickname': nickname,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      await saveUniqueNickname(nickname);
 
       await _loadUserData();
-      return true;
+      return await refreshHanyangVerificationStatus();
     } catch (e) {
       Logger.error('닉네임 업데이트 오류: $e');
       return false;
@@ -868,6 +1506,203 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     }
   }
 
+  /// Exact one-document nickname claim check. This is used only by nickname
+  /// input screens and intentionally has no Firestore listener or disk cache.
+  Future<NicknameAvailabilityResult> checkNicknameAvailability(
+    String nickname,
+  ) async {
+    final localValidationWatch = Stopwatch()..start();
+    final input = nickname;
+    final identity = NicknamePolicy.identityOrNull(input);
+    localValidationWatch.stop();
+    if (Logger.isVerboseEnabled) {
+      Logger.log(
+        'nickname availability: '
+        'localValidationMs=${localValidationWatch.elapsedMilliseconds}',
+      );
+    }
+    if (identity == null) {
+      throw ArgumentError.value(null, 'nickname', 'invalid nickname');
+    }
+    final localKey = '${_auth.currentUser?.uid ?? 'anonymous'}|'
+        '${NicknamePolicy.version}|${identity.nicknameKey}';
+    final cached = _nicknameAvailabilityCache[localKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.checkedAt) <
+            const Duration(seconds: 20)) {
+      if (Logger.isVerboseEnabled) {
+        Logger.log('nickname availability: cacheHit=true');
+      }
+      return cached.result;
+    }
+
+    // Availability is UX guidance only. Final ownership is always decided by
+    // the sign-up/profile Firestore transaction, so a short-lived result may
+    // be reused here. Identical requests share the same Future.
+    final inFlight = _nicknameAvailabilityInFlight[localKey];
+    if (inFlight != null) return inFlight;
+
+    late final Future<NicknameAvailabilityResult> request;
+    request = _requestNicknameAvailability(
+      input: input,
+      cacheKey: localKey,
+    ).whenComplete(() {
+      if (identical(_nicknameAvailabilityInFlight[localKey], request)) {
+        _nicknameAvailabilityInFlight.remove(localKey);
+      }
+    });
+    _nicknameAvailabilityInFlight[localKey] = request;
+    return request;
+  }
+
+  String _nicknameAvailabilityRequestKey(String input) =>
+      NicknamePolicy.canonicalKey(input);
+
+  Future<NicknameAvailabilityResult> _requestNicknameAvailability({
+    required String input,
+    required String cacheKey,
+  }) async {
+    final totalWatch = Stopwatch()..start();
+    var stage = 'app_check';
+    try {
+      final appCheckWatch = Stopwatch()..start();
+      await FirebaseAppCheckService.instance.ensureReady();
+      appCheckWatch.stop();
+      stage = 'callable';
+      await _logNicknameCheckAuthState();
+      final callableWatch = Stopwatch()..start();
+      final response = await _functions
+          .httpsCallable('checkNicknameAvailability')
+          .call(<String, dynamic>{'nickname': input}).timeout(
+              // Allow the server's 15s deadline plus transport/cold-start time.
+              const Duration(seconds: 25));
+      callableWatch.stop();
+      stage = 'response';
+      final raw = response.data;
+      final data =
+          raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+      final returnedIdentity = data['nickname'] is String
+          ? NicknamePolicy.identityOrNull(data['nickname'] as String)
+          : null;
+      if (data['available'] is! bool ||
+          returnedIdentity == null ||
+          returnedIdentity.nicknameKey != _nicknameAvailabilityRequestKey(input) ||
+          data['nicknameKey'] != returnedIdentity.nicknameKey) {
+        throw const FormatException('Invalid nickname availability response');
+      }
+      final result = NicknameAvailabilityResult(
+        available: data['available'] == true,
+        nickname: returnedIdentity.nickname,
+        nicknameKey: returnedIdentity.nicknameKey,
+      );
+      _nicknameAvailabilityCache[cacheKey] = _NicknameAvailabilityCacheEntry(
+        result: result,
+        checkedAt: DateTime.now(),
+      );
+      if (!result.available) if (Logger.isVerboseEnabled)
+        Logger.warning('nickname taken');
+      if (Logger.isVerboseEnabled) {
+        Logger.log(
+          'nickname availability: cacheHit=false, '
+          'appCheckReadyMs=${appCheckWatch.elapsedMilliseconds}, '
+          'callableStartMs=${callableWatch.elapsedMilliseconds}, '
+          'totalAvailabilityMs=${totalWatch.elapsedMilliseconds}',
+        );
+      }
+      return result;
+    } catch (error, stackTrace) {
+      final appCheckFailed = error is AppCheckUnavailableException;
+      final failure = NicknameAvailabilityException.from(
+        error,
+        appCheckFailed: appCheckFailed,
+      );
+      // No nickname, UID, token or raw server details in production diagnostics.
+      final appCheck = FirebaseAppCheckService.instance;
+      Logger.error(
+        '${failure.logMessage}: stage=$stage '
+        'code=${error is FirebaseFunctionsException ? error.code : failure.kind.name} '
+        'provider=${appCheck.providerName} readiness=${appCheck.readiness.name} '
+        'appCheckCode=${appCheck.lastErrorCode}',
+        failure,
+        stackTrace,
+      );
+      throw failure;
+    }
+  }
+
+  Future<void> _logNicknameCheckAuthState() async {
+    if (!kDebugMode) return;
+    final currentUser = _auth.currentUser;
+    var idTokenAvailable = false;
+    if (currentUser != null) {
+      try {
+        final token = await currentUser.getIdToken(false);
+        idTokenAvailable = token?.isNotEmpty == true;
+      } catch (_) {
+        idTokenAvailable = false;
+      }
+    }
+    if (Logger.isVerboseEnabled)
+      Logger.log(
+        'nickname check auth state: '
+        'authenticated=${currentUser != null}, '
+        'idTokenAvailable=$idTokenAvailable, '
+        'providerCount=${currentUser?.providerData.length ?? 0}',
+      );
+  }
+
+  /// Final server-authoritative nickname save used by profile flows.
+  /// Availability checks are UX-only; this callable owns the claim in a
+  /// Firestore transaction before the local profile cache is changed.
+  Future<NicknameAvailabilityResult> saveUniqueNickname(
+    String nickname,
+  ) async {
+    await FirebaseAppCheckService.instance.ensureReady();
+    final response = await _functions
+        .httpsCallable('updateMyNicknameSecure')
+        .call(<String, dynamic>{'nickname': nickname}).timeout(
+            const Duration(seconds: 15));
+    final raw = response.data;
+    final data =
+        raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    if (data['success'] != true) {
+      throw StateError('닉네임을 저장하지 못했습니다.');
+    }
+    final result = NicknameAvailabilityResult(
+      available: true,
+      nickname: (data['nickname'] ?? nickname).toString(),
+      nicknameKey: (data['nicknameKey'] ?? '').toString(),
+    );
+    _userData = <String, dynamic>{
+      ...?_userData,
+      'nickname': result.nickname,
+      'nicknameKey': result.nicknameKey,
+    };
+    _nicknameAvailabilityCache.clear();
+    final uid = _user?.uid;
+    if (uid != null) {
+      try {
+        final latest = _userData ?? const <String, dynamic>{};
+        await UserInfoCacheService().updateCurrentUserProfile(
+          uid: uid,
+          nickname: result.nickname,
+          photoURL: (latest['photoURL'] ?? '').toString(),
+          photoVersion: latest['photoVersion'] is num
+              ? (latest['photoVersion'] as num).toInt()
+              : 0,
+          nationality: (latest['nationality'] ?? '').toString(),
+        );
+      } catch (_) {
+        // The server transaction has already committed. A local cache write
+        // failure must not retry the nickname transaction or report a false
+        // save failure; the user document listener will reconcile it later.
+        if (Logger.isVerboseEnabled)
+          Logger.warning('nickname profile cache update failed');
+      }
+    }
+    return result;
+  }
+
   // 닉네임 및 국적 설정 (재시도 로직 포함)
   Future<ProfileUpdateResult> updateUserProfile({
     required String nickname,
@@ -875,6 +1710,18 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     String? photoURL,
     String? photoPath,
     String? bio, // 한 줄 소개 추가
+    List<String>? interests,
+    List<String>? preferredActivities,
+    String? conversationStarter,
+    String? friendshipPrompt,
+    String? department,
+    String? grade,
+    bool? showDepartment,
+    bool? showGrade,
+    int? profileCompletion,
+    String? studentType,
+    bool? todoOnboardingCompleted,
+    String? languageCode,
   }) async {
     if (_user == null) return const ProfileUpdateResult.failure();
 
@@ -886,16 +1733,20 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = true;
       notifyListeners();
 
-      Logger.log(
-          "Auth Provider - 프로필 업데이트: 닉네임=$nickname, 국적=$nationality, photoURL=${photoURL != null ? '변경됨' : '없음'}");
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+          'Auth Provider - 프로필 업데이트: '
+          'nicknameRequested=${nickname.trim().isNotEmpty}, '
+          'nationalityRequested=${nationality.trim().isNotEmpty}, '
+          "photoURL=${photoURL != null ? '변경됨' : '없음'}",
+        );
 
-      // 기존 닉네임 및 사진 확인 (로깅용)
-      final oldNickname = _userData?['nickname'];
+      // 기존 사진 확인 (로깅용)
       final oldPhotoURL = _userData?['photoURL'];
 
-      Logger.log("기존 프로필 정보:");
-      Logger.log("  - 기존 닉네임: '$oldNickname'");
-      Logger.log("  - 기존 photoURL: '${oldPhotoURL ?? '없음'}'");
+      if (Logger.isVerboseEnabled) Logger.log('기존 프로필 정보 확인 완료');
+      if (Logger.isVerboseEnabled)
+        Logger.log("  - 기존 photoURL: '${oldPhotoURL ?? '없음'}'");
 
       while (retryCount < maxRetries) {
         try {
@@ -919,6 +1770,10 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
                   .trim();
           final requestedNickname = nickname.trim();
           final requestedNationality = nationality.trim();
+          final nicknameKeyChanged = _nicknameAvailabilityRequestKey(
+                requestedNickname,
+              ) !=
+              _nicknameAvailabilityRequestKey(currentNickname);
 
           final lastNicknameChangedAt = _timestampToDateTime(
               docData?['nicknameUpdatedAt'] ?? _userData?['nicknameUpdatedAt']);
@@ -935,7 +1790,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           bool nicknameAllowed = true;
           bool nationalityAllowed = true;
 
-          if (nicknameChanged && lastNicknameChangedAt != null) {
+          if (nicknameKeyChanged && lastNicknameChangedAt != null) {
             final rem = _remainingDaysForCooldown(
               now: now,
               lastChangedAt: lastNicknameChangedAt,
@@ -973,7 +1828,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           // ✅ 정책: 우리 Storage 버킷(profile_images/)에 없는 URL은 사용하지 않는다.
           if (newPhotoUrlStr.isNotEmpty &&
               !ProfilePhotoPolicy.isAllowedProfilePhotoUrl(newPhotoUrlStr)) {
-            Logger.log('🚫 허용되지 않은 photoURL 차단 → 기본 이미지로 처리');
+            if (Logger.isVerboseEnabled)
+              Logger.log('🚫 허용되지 않은 photoURL 차단 → 기본 이미지로 처리');
             newPhotoUrlStr = '';
           }
 
@@ -985,15 +1841,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
           // Firestore users 컬렉션 업데이트 데이터 준비
           final updateData = {
-            'nickname': nicknameToWrite,
             'nationality': nationalityToWrite,
             'updatedAt': FieldValue.serverTimestamp(),
-            // 닉네임+국적 설정 완료 → 가입 완전히 완료 상태로 전환
-            'signupCompleted': true,
           };
-          if (nicknameChanged && nicknameAllowed) {
-            updateData['nicknameUpdatedAt'] = FieldValue.serverTimestamp();
-          }
+          // 가입 완료 여부는 마지막 회원가입 단계의 서버 함수만 확정한다.
+          // 일반 프로필 편집에서 이 값을 만들거나 바꾸면 중단 계정이 정상
+          // 회원으로 승격될 수 있으므로 registration 필드는 절대 쓰지 않는다.
           if (nationalityChanged && nationalityAllowed) {
             updateData['nationalityUpdatedAt'] = FieldValue.serverTimestamp();
           }
@@ -1001,6 +1854,46 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           if (bio != null) {
             updateData['bio'] = bio;
           }
+          if (interests != null) {
+            updateData['interests'] = interests.take(5).toList();
+          }
+          if (preferredActivities != null) {
+            updateData['preferredActivities'] =
+                preferredActivities.take(5).toList();
+          }
+          if (conversationStarter != null) {
+            updateData['conversationStarter'] = conversationStarter.trim();
+          }
+          if (friendshipPrompt != null) {
+            updateData['friendshipPrompt'] = friendshipPrompt.trim();
+          }
+          if (department != null) {
+            updateData['department'] = department.trim();
+          }
+          if (grade != null) {
+            updateData['grade'] = grade.trim();
+          }
+          if (showDepartment != null) {
+            updateData['showDepartment'] = showDepartment;
+          }
+          if (showGrade != null) {
+            updateData['showGrade'] = showGrade;
+          }
+          if (profileCompletion != null) {
+            updateData['profileCompletion'] = profileCompletion.clamp(0, 100);
+          }
+          if (studentType != null &&
+              (studentType == 'exchange' || studentType == 'korean')) {
+            updateData['studentType'] = studentType;
+          }
+          if (todoOnboardingCompleted != null) {
+            updateData['todoOnboardingCompleted'] = todoOnboardingCompleted;
+          }
+          if (languageCode != null &&
+              (languageCode == 'ko' || languageCode == 'en')) {
+            updateData['languageCode'] = languageCode;
+          }
+          updateData['profileUpdatedAt'] = FieldValue.serverTimestamp();
 
           // photoURL이 제공된 경우 추가
           if (photoURL != null) {
@@ -1015,49 +1908,23 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             updateData['photoUpdatedAt'] = FieldValue.serverTimestamp();
           }
 
-          Logger.log("📝 Firestore 업데이트 시작...");
+          if (Logger.isVerboseEnabled) Logger.log("📝 Firestore 업데이트 시작...");
 
-          // 🔥 문서가 없으면 생성, 있으면 업데이트
+          // users/{uid} 생성은 마지막 회원가입 서버 함수의 전용 책임이다.
+          // 프로필 편집이 누락 문서를 대신 생성하면 가입을 중단한 Auth가
+          // 정상 회원으로 분류될 수 있으므로 명시적으로 실패시킨다.
           if (!docSnapshot.exists) {
-            Logger.log("⚠️ 사용자 문서가 없습니다. 새로 생성합니다...");
-            // 문서 생성 (✅ 모든 가입 경로에서 동일한 스키마)
-            // ✅ hanyangEmail은 기존 데이터에서 가져오되, 없으면 null
-            final existingHanyangEmail =
-                (_userData?['hanyangEmail'] as String?)?.trim();
-            final full = _buildFullUserDoc(
-              user: _user!,
-              hanyangEmail: existingHanyangEmail, // ✅ Optional
-              nickname: nicknameToWrite,
-              nationality: nationalityToWrite,
-              photoURL: newPhotoUrlStr,
-              bio: bio ?? '',
-            );
-            full['photoPath'] = (photoPath ?? '').toString();
-            full['photoAccessToken'] =
-                _extractStorageDownloadToken(newPhotoUrlStr);
-            full['photoVersion'] =
-                photoChanged ? nextPhotoVersion : currentPhotoVersion;
-            if (photoChanged) {
-              full['photoUpdatedAt'] = FieldValue.serverTimestamp();
-            } else {
-              full['photoUpdatedAt'] = null;
-            }
-            // 정책 타임스탬프 (초기 설정도 변경으로 간주)
-            full['nicknameUpdatedAt'] = (nicknameToWrite.trim().isNotEmpty)
-                ? FieldValue.serverTimestamp()
-                : null;
-            full['nationalityUpdatedAt'] =
-                (nationalityToWrite.trim().isNotEmpty)
-                    ? FieldValue.serverTimestamp()
-                    : null;
-            // 닉네임+국적 직접 설정 = 가입 완료
-            full['signupCompleted'] = true;
-            await docRef.set(full);
-            Logger.log("✅ 사용자 문서 생성 완료");
+            throw StateError('가입 완료 사용자 문서가 없어 프로필을 저장할 수 없습니다.');
           } else {
+            // A duplicate nickname must fail before any unrelated profile
+            // field is written. Memory/Hive are also updated only after this
+            // server transaction succeeds.
+            if (nicknameChanged && nicknameAllowed) {
+              await saveUniqueNickname(nicknameToWrite);
+            }
             // 기존 문서 업데이트
             await docRef.update(updateData);
-            Logger.log("✅ Firestore 업데이트 완료 (nickname)");
+            if (Logger.isVerboseEnabled) Logger.log("✅ Firestore 프로필 업데이트 완료");
           }
 
           // photoURL이 제공된 경우 Firebase Auth도 업데이트
@@ -1069,8 +1936,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
               await _user!.updatePhotoURL(authPhotoURL);
               await _user!.reload();
               _user = _auth.currentUser;
-              Logger.log(
-                  "✅ Firebase Auth photoURL 업데이트 완료 (${authPhotoURL == null ? '기본 이미지' : '새 이미지'})");
+              if (Logger.isVerboseEnabled)
+                Logger.log(
+                    "✅ Firebase Auth photoURL 업데이트 완료 (${authPhotoURL == null ? '기본 이미지' : '새 이미지'})");
             } catch (authError) {
               Logger.error('⚠️ Firebase Auth photoURL 업데이트 오류: $authError');
               // Auth 업데이트 실패해도 계속 진행
@@ -1112,7 +1980,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             final newUrl = finalPhotoURL;
             if (oldUrl.isNotEmpty && oldUrl != newUrl) {
               await CachedNetworkImage.evictFromCache(oldUrl);
-              Logger.log('🧹 프로필 이미지 캐시 제거 완료');
+              if (Logger.isVerboseEnabled) Logger.log('🧹 프로필 이미지 캐시 제거 완료');
             }
           } catch (e) {
             Logger.error('⚠️ 프로필 이미지 캐시 제거 실패(무시): $e');
@@ -1120,21 +1988,23 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
           // - 우리 앱의 유저정보 메모리 캐시도 무효화 (Firestore 스트림이 최신으로 재채움)
           try {
-            UserInfoCacheService().invalidateUser(_user!.uid);
+            UsersRepository().invalidateCache(_user!.uid);
           } catch (e) {
-            Logger.error('⚠️ UserInfoCache invalidate 실패(무시): $e');
+            Logger.error('⚠️ 프로필 캐시 invalidate 실패(무시): $e');
           }
 
           await _loadUserData();
-
-          // ✅ DM conversations의 participantNames/displayTitle 동기화 (fire-and-forget)
-          // - 닉네임 또는 사진이 실제로 변경된 경우에만 배치 업데이트 실행
-          // - 실패해도 프로필 업데이트 결과에 영향 없음
-          if (nicknameChanged && nicknameAllowed || photoChanged) {
-            unawaited(
-                _updateAllConversationsForUser(nicknameToWrite, finalPhotoURL));
-          }
-
+          final latest = _userData ?? const <String, dynamic>{};
+          await UserInfoCacheService().updateCurrentUserProfile(
+            uid: _user!.uid,
+            nickname: (latest['nickname'] ?? nicknameToWrite).toString(),
+            photoURL: (latest['photoURL'] ?? finalPhotoURL).toString(),
+            photoVersion: latest['photoVersion'] is num
+                ? (latest['photoVersion'] as num).toInt()
+                : nextPhotoVersion,
+            nationality:
+                (latest['nationality'] ?? nationalityToWrite).toString(),
+          );
           return ProfileUpdateResult.success(
             nicknameApplied: nicknameApplied,
             nationalityApplied: nationalityApplied,
@@ -1142,6 +2012,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             nationalityDaysRemaining: nationalityDaysRemaining,
           );
         } catch (e) {
+          if (e is FirebaseFunctionsException &&
+              (e.code == 'already-exists' ||
+                  e.code == 'invalid-argument' ||
+                  e.code == 'failed-precondition' ||
+                  e.code == 'unavailable')) {
+            rethrow;
+          }
           retryCount++;
           Logger.error('프로필 업데이트 오류 (시도 $retryCount/$maxRetries): $e');
 
@@ -1157,6 +2034,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       return const ProfileUpdateResult.failure();
     } catch (e) {
       Logger.error('프로필 업데이트 최종 실패: $e');
+      if (e is FirebaseFunctionsException) rethrow;
       return const ProfileUpdateResult.failure();
     } finally {
       _isLoading = false;
@@ -1167,7 +2045,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   // 공개 메서드: 수동으로 모든 콘텐츠 업데이트
   Future<bool> manuallyUpdateAllContent() async {
     if (_user == null) {
-      Logger.log('❌ manuallyUpdateAllContent: 사용자가 null입니다');
+      if (Logger.isVerboseEnabled)
+        Logger.log('❌ manuallyUpdateAllContent: 사용자가 null입니다');
       return false;
     }
 
@@ -1176,10 +2055,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       final photoURL = _userData?['photoURL'];
       final nationality = _userData?['nationality'] ?? '';
 
-      Logger.log('🔧 수동 콘텐츠 업데이트 시작');
-      Logger.log('   - 현재 닉네임: $nickname');
-      Logger.log('   - 현재 photoURL: ${photoURL ?? '없음'}');
-      Logger.log('   - 현재 nationality: $nationality');
+      if (Logger.isVerboseEnabled) Logger.log('🔧 수동 콘텐츠 업데이트 시작');
+      if (Logger.isVerboseEnabled) Logger.log('   - 현재 닉네임: $nickname');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   - 현재 photoURL: ${photoURL ?? '없음'}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   - 현재 nationality: $nationality');
 
       await _updateAllUserContent(nickname, photoURL, nationality);
       return true;
@@ -1192,7 +2073,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   // 프로필 이미지를 기본 이미지로 초기화
   Future<bool> resetProfilePhotoToDefault() async {
     if (_user == null) {
-      Logger.log('❌ resetProfilePhotoToDefault: 사용자가 null입니다');
+      if (Logger.isVerboseEnabled)
+        Logger.log('❌ resetProfilePhotoToDefault: 사용자가 null입니다');
       return false;
     }
 
@@ -1200,28 +2082,32 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = true;
       notifyListeners();
 
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      Logger.log("🗑️ 프로필 이미지를 기본 이미지로 초기화");
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled) Logger.log("🗑️ 프로필 이미지를 기본 이미지로 초기화");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
       final oldPhotoURL = _userData?['photoURL'];
-      Logger.log("기존 photoURL: ${oldPhotoURL ?? '없음'}");
+      if (Logger.isVerboseEnabled)
+        Logger.log("기존 photoURL: ${oldPhotoURL ?? '없음'}");
 
       // 1. Firebase Storage에서 기존 프로필 이미지 삭제 (버킷/폴더 강제)
       // - 레거시(uuid 파일)도 정리하기 위해 profile_images/{uid}/ 아래를 전부 삭제(best-effort)
       try {
         final uid = _user!.uid;
-        final storage = FirebaseStorage.instanceFor(
-          bucket: 'gs://${ProfilePhotoPolicy.bucket}',
-        );
-        final dirRef = storage.ref().child('profile_images/$uid');
-        final list = await dirRef.listAll();
-        for (final item in list.items) {
-          try {
-            await item.delete();
-          } catch (_) {}
+        // 프로필 사진은 레거시 버킷 또는 현재 업로드 버킷에 있을 수 있다.
+        for (final storage in AppStorage.allKnown) {
+          final dirRef = storage.ref().child('profile_images/$uid');
+          final list = await dirRef.listAll();
+          for (final item in list.items) {
+            try {
+              await item.delete();
+            } catch (_) {}
+          }
         }
-        Logger.log("✅ Storage 프로필 이미지 정리 완료 (profile_images/$uid/*)");
+        if (Logger.isVerboseEnabled)
+          Logger.log("✅ Storage 프로필 이미지 정리 완료 (profile_images/$uid/*)");
       } catch (e) {
         Logger.error("⚠️ Storage 프로필 이미지 정리 실패(무시): $e");
       }
@@ -1233,14 +2119,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         'photoAccessToken': '',
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      Logger.log("✅ Firestore photoURL을 빈 문자열로 업데이트 완료");
+      if (Logger.isVerboseEnabled)
+        Logger.log("✅ Firestore photoURL을 빈 문자열로 업데이트 완료");
 
       // 3. Firebase Auth photoURL을 null로 업데이트
       try {
         await _user!.updatePhotoURL(null);
         await _user!.reload();
         _user = _auth.currentUser;
-        Logger.log("✅ Firebase Auth photoURL을 null로 업데이트 완료");
+        if (Logger.isVerboseEnabled)
+          Logger.log("✅ Firebase Auth photoURL을 null로 업데이트 완료");
       } catch (authError) {
         Logger.error('⚠️ Firebase Auth photoURL 업데이트 오류: $authError');
         // Auth 업데이트 실패해도 계속 진행
@@ -1255,9 +2143,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = false;
       notifyListeners();
 
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      Logger.log("✅ 프로필 이미지 초기화 완료!");
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled) Logger.log("✅ 프로필 이미지 초기화 완료!");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
       return true;
     } catch (e) {
@@ -1272,14 +2162,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   Future<void> _updateAllUserContent(
       String newNickname, String? newPhotoURL, String newNationality) async {
     if (_user == null) {
-      Logger.log('❌ _updateAllUserContent: 사용자가 null입니다');
+      if (Logger.isVerboseEnabled)
+        Logger.log('❌ _updateAllUserContent: 사용자가 null입니다');
       return;
     }
 
     try {
       final userId = _user!.uid;
-      Logger.log(
-          '🔄 콘텐츠 업데이트 시작: userId=$userId, nickname=$newNickname, photoURL=${newPhotoURL != null ? '있음' : '없음'}, nationality=$newNationality');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '🔄 콘텐츠 업데이트 시작: userId=$userId, nickname=$newNickname, photoURL=${newPhotoURL != null ? '있음' : '없음'}, nationality=$newNationality');
 
       // Firestore의 배치는 최대 500개 작업만 가능
       // 따라서 큰 데이터셋의 경우 여러 배치로 나눠서 처리
@@ -1289,14 +2181,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       const maxOperationsPerBatch = 500;
 
       // 1. 게시글 업데이트
-      Logger.log("📝 게시글 작성자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("📝 게시글 작성자 정보 업데이트 시작...");
       QuerySnapshot postsQuery;
       try {
         postsQuery = await _firestore
             .collection('posts')
             .where('userId', isEqualTo: userId)
             .get();
-        Logger.log("   → 찾은 게시글: ${postsQuery.docs.length}개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 게시글: ${postsQuery.docs.length}개");
       } catch (e) {
         Logger.error("❌ 게시글 조회 실패: $e");
         throw e;
@@ -1307,7 +2200,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           batches.add(_firestore.batch());
           currentBatchIndex++;
           operationCount = 0;
-          Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+          if (Logger.isVerboseEnabled)
+            Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
         }
 
         final updateData = <String, dynamic>{
@@ -1320,17 +2214,19 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         batches[currentBatchIndex].update(doc.reference, updateData);
         operationCount++;
       }
-      Logger.log("✅ 게시글 ${postsQuery.docs.length}개 배치에 추가 완료");
+      if (Logger.isVerboseEnabled)
+        Logger.log("✅ 게시글 ${postsQuery.docs.length}개 배치에 추가 완료");
 
       // 2. 모임글 업데이트
-      Logger.log("🎉 모임 주최자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("🎉 모임 주최자 정보 업데이트 시작...");
       QuerySnapshot meetupsQuery;
       try {
         meetupsQuery = await _firestore
             .collection('meetups')
             .where('userId', isEqualTo: userId)
             .get();
-        Logger.log("   → 찾은 모임: ${meetupsQuery.docs.length}개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 모임: ${meetupsQuery.docs.length}개");
       } catch (e) {
         Logger.error("❌ 모임 조회 실패: $e");
         throw e;
@@ -1341,7 +2237,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           batches.add(_firestore.batch());
           currentBatchIndex++;
           operationCount = 0;
-          Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+          if (Logger.isVerboseEnabled)
+            Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
         }
 
         final updateData = <String, dynamic>{
@@ -1354,10 +2251,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         batches[currentBatchIndex].update(doc.reference, updateData);
         operationCount++;
       }
-      Logger.log("✅ 모임 ${meetupsQuery.docs.length}개 배치에 추가 완료");
+      if (Logger.isVerboseEnabled)
+        Logger.log("✅ 모임 ${meetupsQuery.docs.length}개 배치에 추가 완료");
 
       // 3. 댓글 업데이트 (게시글의 댓글)
-      Logger.log("💬 게시글 댓글 작성자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("💬 게시글 댓글 작성자 정보 업데이트 시작...");
       int postCommentsCount = 0;
       try {
         // 각 게시글의 댓글을 개별적으로 조회
@@ -1374,7 +2272,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
               batches.add(_firestore.batch());
               currentBatchIndex++;
               operationCount = 0;
-              Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+              if (Logger.isVerboseEnabled)
+                Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
             }
 
             final updateData = <String, dynamic>{
@@ -1387,14 +2286,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             postCommentsCount++;
           }
         }
-        Logger.log("   → 찾은 게시글 댓글: $postCommentsCount개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 게시글 댓글: $postCommentsCount개");
       } catch (e) {
         Logger.error("❌ 게시글 댓글 조회 실패: $e");
-        Logger.log("   스택 트레이스: ${StackTrace.current}");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
 
       // 4. 댓글 업데이트 (모임의 댓글)
-      Logger.log("💬 모임 댓글 작성자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("💬 모임 댓글 작성자 정보 업데이트 시작...");
       int meetupCommentsCount = 0;
       try {
         // 각 모임의 댓글을 개별적으로 조회
@@ -1411,7 +2312,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
               batches.add(_firestore.batch());
               currentBatchIndex++;
               operationCount = 0;
-              Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+              if (Logger.isVerboseEnabled)
+                Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
             }
 
             final updateData = <String, dynamic>{
@@ -1424,28 +2326,32 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             meetupCommentsCount++;
           }
         }
-        Logger.log("   → 찾은 모임 댓글: $meetupCommentsCount개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 모임 댓글: $meetupCommentsCount개");
       } catch (e) {
         Logger.error("❌ 모임 댓글 조회 실패: $e");
-        Logger.log("   스택 트레이스: ${StackTrace.current}");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
 
       // 5. 최상위 comments 컬렉션 업데이트
-      Logger.log("💬 최상위 댓글 작성자 정보 업데이트 시작...");
+      if (Logger.isVerboseEnabled) Logger.log("💬 최상위 댓글 작성자 정보 업데이트 시작...");
       int topLevelCommentsCount = 0;
       try {
         final topLevelCommentsQuery = await _firestore
             .collection('comments')
             .where('userId', isEqualTo: userId)
             .get();
-        Logger.log("   → 찾은 최상위 댓글: ${topLevelCommentsQuery.docs.length}개");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   → 찾은 최상위 댓글: ${topLevelCommentsQuery.docs.length}개");
 
         for (var commentDoc in topLevelCommentsQuery.docs) {
           if (operationCount >= maxOperationsPerBatch) {
             batches.add(_firestore.batch());
             currentBatchIndex++;
             operationCount = 0;
-            Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+            if (Logger.isVerboseEnabled)
+              Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
           }
 
           final updateData = <String, dynamic>{
@@ -1457,20 +2363,25 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           operationCount++;
           topLevelCommentsCount++;
         }
-        Logger.log("✅ 최상위 댓글 ${topLevelCommentsCount}개 배치에 추가 완료");
+        if (Logger.isVerboseEnabled)
+          Logger.log("✅ 최상위 댓글 ${topLevelCommentsCount}개 배치에 추가 완료");
       } catch (e) {
         Logger.error("❌ 최상위 댓글 조회 실패: $e");
-        Logger.log("   스택 트레이스: ${StackTrace.current}");
+        if (Logger.isVerboseEnabled)
+          Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
 
       final totalCommentsCount =
           postCommentsCount + meetupCommentsCount + topLevelCommentsCount;
-      Logger.log("✅ 총 댓글 ${totalCommentsCount}개 배치에 추가 완료");
+      if (Logger.isVerboseEnabled)
+        Logger.log("✅ 총 댓글 ${totalCommentsCount}개 배치에 추가 완료");
 
       // 모든 배치 커밋
-      Logger.log("💾 총 ${batches.length}개의 배치 커밋 시작...");
-      Logger.log(
-          "   총 작업 수: ${postsQuery.docs.length + meetupsQuery.docs.length + totalCommentsCount}");
+      if (Logger.isVerboseEnabled)
+        Logger.log("💾 총 ${batches.length}개의 배치 커밋 시작...");
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            "   총 작업 수: ${postsQuery.docs.length + meetupsQuery.docs.length + totalCommentsCount}");
       int successCount = 0;
       int failCount = 0;
       List<String> failedBatches = [];
@@ -1479,38 +2390,39 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         try {
           await batches[i].commit();
           successCount++;
-          Logger.log("   ✅ 배치 ${i + 1}/${batches.length} 커밋 완료");
+          if (Logger.isVerboseEnabled)
+            Logger.log("   ✅ 배치 ${i + 1}/${batches.length} 커밋 완료");
         } catch (e, stackTrace) {
           failCount++;
           failedBatches.add('배치 ${i + 1}');
           Logger.error(
               "   ❌ 배치 ${i + 1}/${batches.length} 커밋 실패", e, stackTrace);
-
-          // Crashlytics에 에러 기록
-          await FirebaseCrashlytics.instance.recordError(
-            e,
-            stackTrace,
-            reason:
-                'Profile update batch commit failed (batch ${i + 1}/${batches.length})',
-            fatal: false,
-          );
         }
       }
 
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      Logger.log("🎉 콘텐츠 업데이트 완료!");
-      Logger.log("   - 닉네임: '$newNickname'");
-      Logger.log(
-          "   - 프로필 사진: ${newPhotoURL != null ? '업데이트됨' : '기본 이미지로 설정됨'}");
-      Logger.log("   - 국가: '$newNationality'");
-      Logger.log("   - 업데이트 대상:");
-      Logger.log("      게시글: ${postsQuery.docs.length}개");
-      Logger.log("      모임: ${meetupsQuery.docs.length}개");
-      Logger.log("      게시글 댓글: $postCommentsCount개");
-      Logger.log("      모임 댓글: $meetupCommentsCount개");
-      Logger.log("      최상위 댓글: $topLevelCommentsCount개");
-      Logger.log("      총 댓글: $totalCommentsCount개");
-      Logger.log("   - 성공한 배치: $successCount/${batches.length}");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled) Logger.log("🎉 콘텐츠 업데이트 완료!");
+      if (Logger.isVerboseEnabled) Logger.log("   - 닉네임: '$newNickname'");
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            "   - 프로필 사진: ${newPhotoURL != null ? '업데이트됨' : '기본 이미지로 설정됨'}");
+      if (Logger.isVerboseEnabled) Logger.log("   - 국가: '$newNationality'");
+      if (Logger.isVerboseEnabled) Logger.log("   - 업데이트 대상:");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      게시글: ${postsQuery.docs.length}개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      모임: ${meetupsQuery.docs.length}개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      게시글 댓글: $postCommentsCount개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      모임 댓글: $meetupCommentsCount개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      최상위 댓글: $topLevelCommentsCount개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("      총 댓글: $totalCommentsCount개");
+      if (Logger.isVerboseEnabled)
+        Logger.log("   - 성공한 배치: $successCount/${batches.length}");
       if (failCount > 0) {
         Logger.error("   ⚠️  실패한 배치: $failCount/${batches.length}");
         Logger.error("   실패한 배치 목록: ${failedBatches.join(", ")}");
@@ -1518,13 +2430,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         // 실패가 있으면 예외 발생
         throw Exception('일부 데이터 업데이트 실패: ${failedBatches.join(", ")}');
       }
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     } catch (e, stackTrace) {
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       Logger.error("❌ 콘텐츠 작성자 정보 업데이트 오류!");
       Logger.error("   에러: $e");
-      Logger.log("   스택 트레이스: $stackTrace");
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (Logger.isVerboseEnabled) Logger.log("   스택 트레이스: $stackTrace");
+      if (Logger.isVerboseEnabled)
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       // 오류가 발생해도 프로필 업데이트는 성공으로 처리
       // (사용자 경험을 위해)
     }
@@ -1536,11 +2451,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     if (_user == null) return;
 
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🔄 대화방 participantNames 업데이트 시작');
-      Logger.log('  - 사용자: ${_user!.uid}');
-      Logger.log('  - 새 닉네임: $nickname');
-      Logger.log('  - 새 photoURL: ${photoURL ?? "없음"}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔄 대화방 participantNames 업데이트 시작');
+      if (Logger.isVerboseEnabled) Logger.log('  - 사용자: ${_user!.uid}');
+      if (Logger.isVerboseEnabled) Logger.log('  - 새 닉네임: $nickname');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - 새 photoURL: ${photoURL ?? "없음"}');
 
       // 내가 참여한 모든 대화방 조회
       final conversations = await _firestore
@@ -1548,11 +2466,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           .where('participants', arrayContains: _user!.uid)
           .get();
 
-      Logger.log('  - 대상 대화방: ${conversations.docs.length}개');
+      if (Logger.isVerboseEnabled)
+        Logger.log('  - 대상 대화방: ${conversations.docs.length}개');
 
       if (conversations.docs.isEmpty) {
-        Logger.log('  - 업데이트할 대화방 없음');
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        if (Logger.isVerboseEnabled) Logger.log('  - 업데이트할 대화방 없음');
+        if (Logger.isVerboseEnabled)
+          Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return;
       }
 
@@ -1609,13 +2529,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
         if (ops > 0) {
           await batch.commit();
-          Logger.log(
-              '  - 청크 커밋: ${end.clamp(0, docs.length)}/${docs.length} (누적 업데이트 $updated개)');
+          if (Logger.isVerboseEnabled)
+            Logger.log(
+                '  - 청크 커밋: ${end.clamp(0, docs.length)}/${docs.length} (누적 업데이트 $updated개)');
         }
       }
 
-      Logger.log('✅ 대화방 업데이트 완료: $updated개');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 대화방 업데이트 완료: $updated개');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (e) {
       Logger.error('❌ 대화방 업데이트 실패: $e');
       // 실패해도 프로필 업데이트는 완료된 상태이므로 계속 진행
@@ -1634,7 +2556,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       // Firestore 사용자 데이터 다시 로드
       await _loadUserData();
 
-      Logger.log('사용자 정보 새로고침 완료');
+      if (Logger.isVerboseEnabled) Logger.log('사용자 정보 새로고침 완료');
     } catch (e) {
       Logger.error('사용자 정보 새로고침 오류: $e');
     }
@@ -1652,7 +2574,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
   // 모든 스트림 정리
   void _cleanupAllStreams() {
-    Logger.log('모든 스트림 정리 시작 (${_streamCleanupCallbacks.length}개)...');
+    if (Logger.isVerboseEnabled)
+      Logger.log('모든 스트림 정리 시작 (${_streamCleanupCallbacks.length}개)...');
     for (final cleanup in _streamCleanupCallbacks) {
       try {
         cleanup();
@@ -1661,18 +2584,24 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       }
     }
     _streamCleanupCallbacks.clear();
-    Logger.log('모든 스트림 정리 완료');
+    if (Logger.isVerboseEnabled) Logger.log('모든 스트림 정리 완료');
   }
 
   // 이메일 인증번호 전송
-  Future<Map<String, dynamic>> sendEmailVerificationCode(String email,
-      {Locale? locale}) async {
+  Future<Map<String, dynamic>> sendEmailVerificationCode(
+    String email, {
+    Locale? locale,
+    SignupEmailVerificationPurpose purpose =
+        SignupEmailVerificationPurpose.hanyang,
+  }) async {
     try {
       _isLoading = true;
       notifyListeners();
 
-      // hanyang.ac.kr 도메인 검증
-      if (!email.endsWith('@hanyang.ac.kr')) {
+      // 한국어 가입은 기존 한양메일 정책을 유지하고, 영어 이메일 가입만
+      // 서버의 일반 이메일 인증 용도를 명시해서 허용한다.
+      if (purpose == SignupEmailVerificationPurpose.hanyang &&
+          !email.toLowerCase().endsWith('@hanyang.ac.kr')) {
         throw Exception('한양대학교 이메일 주소만 사용할 수 있습니다.');
       }
 
@@ -1680,13 +2609,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       final callable = _functions.httpsCallable('sendEmailVerificationCode');
       final result = await callable.call({
         'email': email,
+        'purpose': purpose.serverValue,
         if (locale != null)
           'locale':
               '${locale.languageCode}${locale.countryCode != null ? '-${locale.countryCode}' : ''}',
       }).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
-          Logger.log('⏱️ 이메일 인증번호 전송 타임아웃 (15초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 이메일 인증번호 전송 타임아웃 (15초)');
           throw TimeoutException('이메일 인증번호 전송 시간 초과');
         },
       );
@@ -1694,6 +2624,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       return {
         'success': result.data['success'] == true,
         'message': result.data['message'] ?? '',
+        'cancellationToken':
+            (result.data['cancellationToken'] ?? '').toString(),
       };
     } on FirebaseFunctionsException catch (e) {
       // 서버가 already-exists(이미 사용중) 에러를 반환한 경우
@@ -1702,6 +2634,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _isLoading = false;
       notifyListeners();
       rethrow; // UI에서 구체적으로 처리하도록 다시 던짐
+    } on TimeoutException {
+      rethrow;
     } catch (e) {
       Logger.error('이메일 인증번호 전송 오류: $e');
       _isLoading = false;
@@ -1709,6 +2643,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       return {
         'success': false,
         'message': '인증번호 전송 실패: $e',
+        'cancellationToken': '',
       };
     } finally {
       _isLoading = false;
@@ -1716,8 +2651,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     }
   }
 
-  // 이메일 인증번호 검증
-  Future<bool> verifyEmailCode(String email, String code) async {
+  // 한양메일 인증번호 검증. 마지막 가입 단계에서 소비할 일회성 토큰을
+  // 반환하며, 이 시점에는 사용자/메일 점유 정보를 만들지 않는다.
+  Future<String?> verifyHanyangSignupEmailCode(
+    String email,
+    String code,
+  ) async {
     try {
       _isLoading = true;
       notifyListeners();
@@ -1727,22 +2666,234 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       final result = await callable.call({
         'email': email,
         'code': code,
+        'purpose': SignupEmailVerificationPurpose.hanyang.serverValue,
       }).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
-          Logger.log('⏱️ 이메일 인증번호 검증 타임아웃 (15초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 이메일 인증번호 검증 타임아웃 (15초)');
           throw TimeoutException('이메일 인증번호 검증 시간 초과');
         },
       );
 
-      return result.data['success'] == true;
-    } on FirebaseFunctionsException catch (e) {
+      if (result.data['success'] != true) return null;
+      final token = (result.data['verificationToken'] ?? '').toString().trim();
+      return token.isEmpty ? null : token;
+    } on FirebaseFunctionsException {
       // 서버가 already-exists(이미 사용중) 등을 반환한 경우 상위에서 구체 처리
       _isLoading = false;
       notifyListeners();
       rethrow;
+    } on TimeoutException {
+      rethrow;
     } catch (e) {
       Logger.error('이메일 인증번호 검증 오류: $e');
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// 구버전 호출부 호환용. 새 회원가입 흐름에서는 토큰 반환 메서드를 사용한다.
+  Future<bool> verifyEmailCode(String email, String code) async =>
+      (await verifyHanyangSignupEmailCode(email, code)) != null;
+
+  /// 일반 이메일 가입용 4자리 코드를 검증하고, 계정 생성에 한 번만 사용할 수
+  /// 있는 짧은 수명의 토큰을 반환한다.
+  Future<String?> verifyGeneralSignupEmailCode(
+    String email,
+    String code,
+  ) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      final callable = _functions.httpsCallable('verifyEmailCode');
+      final result = await callable.call({
+        'email': email,
+        'code': code,
+        'purpose': 'general_signup',
+      }).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException('이메일 인증번호 검증 시간 초과'),
+      );
+
+      if (result.data['success'] != true) return null;
+      final token = (result.data['verificationToken'] ?? '').toString().trim();
+      return token.isEmpty ? null : token;
+    } on FirebaseFunctionsException {
+      rethrow;
+    } on TimeoutException {
+      rethrow;
+    } catch (e) {
+      Logger.error('일반 이메일 인증번호 검증 오류: $e');
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _recordSignupFailure(String failedStep, Object error) async {
+    final providerData = _auth.currentUser?.providerData ?? const <UserInfo>[];
+    final provider =
+        providerData.isEmpty ? 'unknown' : providerData.first.providerId;
+    final errorCode = error is FirebaseFunctionsException
+        ? error.code
+        : error is FirebaseAuthException
+            ? error.code
+            : error is TimeoutException
+                ? 'timeout'
+                : error is AppCheckUnavailableException
+                    ? 'app-check-unavailable'
+                    : 'unknown';
+    final state = _registrationStateFromData(_userData).name;
+    try {
+      await FirebaseCrashlytics.instance
+          .setCustomKey('signup_provider', provider);
+      await FirebaseCrashlytics.instance
+          .setCustomKey('signup_platform', Platform.operatingSystem);
+      await FirebaseCrashlytics.instance
+          .setCustomKey('signup_uid', _auth.currentUser?.uid ?? 'none');
+      await FirebaseCrashlytics.instance.setCustomKey('signup_state', state);
+      await FirebaseCrashlytics.instance
+          .setCustomKey('signup_failed_step', failedStep);
+      await FirebaseCrashlytics.instance
+          .setCustomKey('signup_error_code', errorCode);
+      await FirebaseCrashlytics.instance.log('signup_failure');
+    } catch (_) {}
+  }
+
+  Future<bool> _recoverCurrentCompletedRegistration() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return false;
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(Duration(milliseconds: 450 * attempt));
+      }
+      try {
+        final snapshot = await _firestore
+            .collection('users')
+            .doc(currentUser.uid)
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 5));
+        if (!snapshot.exists ||
+            _registrationStateFromData(snapshot.data()) !=
+                AccountRegistrationState.complete) {
+          continue;
+        }
+        _user = _auth.currentUser;
+        await _loadUserData();
+        if (isRegistrationComplete) {
+          return true;
+        }
+      } catch (error) {
+        Logger.error('회원가입 완료 상태 재확인 실패: $error');
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _recoverCompletedGeneralEmailSignup(
+    String email,
+    String password,
+  ) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(Duration(milliseconds: 500 * attempt));
+      }
+      try {
+        final credential = await _auth.signInWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        );
+        _user = credential.user;
+        if (_user != null && await _recoverCurrentCompletedRegistration()) {
+          return true;
+        }
+      } on FirebaseAuthException catch (error) {
+        // 서버 요청이 아직 완료 중이면 Auth 레코드가 다음 짧은 재확인에서
+        // 나타날 수 있다. 잘못된 비밀번호 등 확정 오류는 바로 종료한다.
+        if (error.code != 'user-not-found' &&
+            error.code != 'invalid-credential' &&
+            error.code != 'wrong-password') {
+          Logger.error('이메일 가입 응답 유실 복구 실패: $error');
+          return false;
+        }
+      } catch (error) {
+        Logger.error('이메일 가입 응답 유실 복구 실패: $error');
+      }
+    }
+    return false;
+  }
+
+  /// 서버가 검증 토큰을 소비하면서 계정을 생성/복구한 뒤 발급한 custom token으로
+  /// 로그인한다. 클라이언트에서 Auth 계정을 먼저 만들지 않아 중간 이탈 계정이
+  /// 회원가입과 로그인을 동시에 막는 상태를 만들지 않는다.
+  Future<bool> signUpWithVerifiedGeneralEmail({
+    required String email,
+    required String password,
+    required String verificationToken,
+    String signupLanguage = 'en',
+    required Map<String, dynamic> profile,
+  }) async {
+    try {
+      _signupRequired = false;
+      _isLoading = true;
+      notifyListeners();
+
+      final callable = _functions.httpsCallable('createGeneralEmailSignup');
+      final result = await _runSignupRequest(() => callable.call({
+            'email': email.trim(),
+            'password': password,
+            'verificationToken': verificationToken,
+            'signupLanguage': signupLanguage,
+            'profile': profile,
+          }).timeout(
+            const Duration(seconds: 20),
+            onTimeout: () => throw TimeoutException('이메일 회원가입 시간 초과'),
+          ));
+
+      final customToken = (result.data['customToken'] ?? '').toString().trim();
+      if (result.data['success'] != true) return false;
+
+      final credential = customToken.isNotEmpty
+          ? await _auth.signInWithCustomToken(customToken)
+          : await _auth.signInWithEmailAndPassword(
+              email: email.trim(),
+              password: password,
+            );
+      _user = credential.user;
+      if (_user == null) return false;
+      await _loadUserData();
+      final completed = isRegistrationComplete;
+      return completed;
+    } on FirebaseFunctionsException catch (error) {
+      await _recordSignupFailure('general_email_finalize', error);
+      // 서버가 가입을 완료했지만 응답이 유실된 경우 동일 이메일/비밀번호로
+      // 완료 문서를 확인한다. 인증 토큰이 이미 소비된 재시도도 이 경로로 복구한다.
+      if (error.code == 'internal' ||
+          error.code == 'not-found' ||
+          error.code == 'failed-precondition') {
+        if (await _recoverCompletedGeneralEmailSignup(email, password)) {
+          return true;
+        }
+      }
+      rethrow;
+    } on TimeoutException {
+      await _recordSignupFailure(
+        'general_email_finalize',
+        TimeoutException('timeout'),
+      );
+      if (await _recoverCompletedGeneralEmailSignup(email, password)) {
+        return true;
+      }
+      rethrow;
+    } on FirebaseAuthException {
+      rethrow;
+    } catch (e) {
+      Logger.error('일반 이메일 회원가입 오류: $e');
       return false;
     } finally {
       _isLoading = false;
@@ -1751,111 +2902,266 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   // 한양메일 인증 최종 확정(서버 Callable)
-  Future<bool> completeEmailVerification(String hanyangEmail) async {
+  Future<bool> completeEmailVerification(
+    String hanyangEmail, {
+    required String verificationToken,
+    required Map<String, dynamic> profile,
+  }) async {
     if (_user == null) return false;
 
     try {
       _isLoading = true;
       notifyListeners();
 
+      await FirebaseAppCheckService.instance.ensureReady();
       // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable =
           _functions.httpsCallable('finalizeHanyangEmailVerification');
-      await callable.call({'email': hanyangEmail}).timeout(
+      await callable.call({
+        'email': hanyangEmail,
+        'verificationToken': verificationToken,
+        'profile': profile,
+      }).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
-          Logger.log('⏱️ 한양메일 인증 완료 처리 타임아웃 (15초)');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⏱️ 한양메일 인증 완료 처리 타임아웃 (15초)');
           throw TimeoutException('한양메일 인증 완료 처리 시간 초과');
         },
       );
 
-      // 클라이언트 측에서도 hanyangVerified=true를 명시 merge.
-      // (Cloud Function이 이미 기록했더라도 멱등적이므로 안전)
-      try {
-        await _firestore.collection('users').doc(_user!.uid).set(
-          {
-            'hanyangEmail': hanyangEmail,
-            'emailVerified': true,
-            'hanyangVerified': true,
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
-      } catch (e) {
-        Logger.error('⚠️ hanyangVerified merge 실패(무시): $e');
-      }
-
       await _loadUserData();
-      return true;
+      final completed =
+          isRegistrationComplete && await refreshHanyangVerificationStatus();
+      return completed;
     } on FirebaseFunctionsException catch (e) {
       Logger.error('completeEmailVerification 함수 오류: ${e.code} ${e.message}');
       _isLoading = false;
       notifyListeners();
+      rethrow;
+    } on TimeoutException {
+      if (await _recoverCurrentCompletedRegistration()) return true;
       rethrow;
     } catch (e) {
       Logger.error('한양메일 인증 완료 처리 오류: $e');
       _isLoading = false;
       notifyListeners();
       return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
-  // 영어 소셜 회원가입 승인(서버 Callable)
-  Future<bool> finalizeEnglishSocialSignup(
-      {String signupLanguage = 'en'}) async {
+  /// 가입 완료 후 프로필에서 한양대학교 이메일 소속 인증을 추가합니다.
+  /// 일반 로그인 이메일 인증 상태는 변경하지 않고 학교 인증 필드만 갱신합니다.
+  Future<bool> completeHanyangProfileVerification({
+    required String hanyangEmail,
+    required String verificationToken,
+  }) async {
     if (_user == null) return false;
 
     try {
       _isLoading = true;
       notifyListeners();
 
+      final callable =
+          _functions.httpsCallable('completeHanyangProfileVerification');
+      await callable.call({
+        'email': hanyangEmail,
+        'verificationToken': verificationToken,
+      }).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException(
+          '한양메일 학교 인증 완료 처리 시간 초과',
+        ),
+      );
+
+      await _loadUserData();
+      return await refreshHanyangVerificationStatus();
+    } on FirebaseFunctionsException catch (e) {
+      Logger.error(
+        'completeHanyangProfileVerification 오류: ${e.code} ${e.message}',
+      );
+      // 다른 기기나 과거 세션에서 이미 인증이 끝났지만 로컬 메모리만
+      // 미인증이었던 경우, 서버의 현재 users 문서를 다시 받아 성공으로
+      // 처리한다. 실제 미인증 사용자는 false가 유지되어 예외를 받는다.
+      if (e.code == 'failed-precondition' &&
+          await refreshHanyangVerificationStatus()) {
+        return true;
+      }
+      rethrow;
+    } catch (e) {
+      Logger.error('프로필 한양메일 인증 완료 처리 오류: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // 영어 소셜 회원가입 승인(서버 Callable)
+  Future<bool> finalizeEnglishSocialSignup({
+    String signupLanguage = 'en',
+    required Map<String, dynamic> profile,
+  }) async {
+    if (_user == null) return false;
+
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      await FirebaseAppCheckService.instance.ensureReady();
       // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('finalizeEnglishSocialSignup');
       await callable.call({
         'signupLanguage': signupLanguage,
+        'profile': profile,
       }).timeout(
         const Duration(seconds: 15),
         onTimeout: () {
-          Logger.log('⏱️ 영어 소셜 회원가입 승인 타임아웃 (15초)');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⏱️ 영어 소셜 회원가입 승인 타임아웃 (15초)');
           throw TimeoutException('영어 소셜 회원가입 승인 시간 초과');
         },
       );
 
       await _loadUserData();
-      return true;
+      final completed = isRegistrationComplete;
+      return completed;
     } on FirebaseFunctionsException catch (e) {
       Logger.error('finalizeEnglishSocialSignup 함수 오류: ${e.code} ${e.message}');
       _isLoading = false;
       notifyListeners();
+      rethrow;
+    } on TimeoutException {
+      if (await _recoverCurrentCompletedRegistration()) return true;
       rethrow;
     } catch (e) {
       Logger.error('영어 소셜 회원가입 승인 처리 오류: $e');
       _isLoading = false;
       notifyListeners();
       return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// 사용자가 가입 흐름을 명시적으로 중단했을 때 완료되지 않은 Auth 레코드와
+  /// 임시 사용자/메일 점유 데이터를 서버에서 정리한다.
+  Future<bool> discardIncompleteRegistration() {
+    final existing = _incompleteRegistrationCleanupInFlight;
+    if (existing != null) return existing;
+    final request = _discardIncompleteRegistrationOnce();
+    _incompleteRegistrationCleanupInFlight = request;
+    return request.whenComplete(() {
+      if (identical(_incompleteRegistrationCleanupInFlight, request)) {
+        _incompleteRegistrationCleanupInFlight = null;
+      }
+    });
+  }
+
+  Future<bool> _discardIncompleteRegistrationOnce() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      _pendingIncompleteRegistrationCleanup = false;
+      _pendingIncompleteRegistrationCleanupUid = null;
+      return true;
+    }
+    _pendingIncompleteRegistrationCleanup = true;
+    _pendingIncompleteRegistrationCleanupUid = currentUser.uid;
+    try {
+      final result = await _functions
+          .httpsCallable('discardIncompleteRegistration')
+          .call()
+          .timeout(const Duration(seconds: 15));
+      if (result.data is! Map || result.data['success'] != true) {
+        return false;
+      }
+
+      // 서버에서 users/점유/Auth 정리가 끝난 뒤에만 로컬 세션을 비운다.
+      await _releaseDeviceTokenBeforeSignOut();
+      try {
+        await _auth.signOut();
+      } catch (_) {}
+      _pendingIncompleteRegistrationCleanup = false;
+      _pendingIncompleteRegistrationCleanupUid = null;
+      _user = null;
+      _userData = null;
+      _activeAuthUid = null;
+      _userLoadGeneration++;
+      _hanyangRequestGeneration++;
+      _hanyangRefreshInFlight = null;
+      _hanyangVerificationStatus = HanyangVerificationStatus.unknown;
+      _maskedHanyangEmail = '';
+      _hanyangVerificationCheckedAt = null;
+      _hanyangVerificationSource = '';
+      _hanyangVerificationError = null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } on FirebaseFunctionsException catch (error) {
+      Logger.error('미완료 회원가입 서버 정리 실패: $error');
+      if (error.code == 'failed-precondition') {
+        // 완료 계정 보호 응답이면 자동 정리를 다시 시도하지 않는다.
+        _pendingIncompleteRegistrationCleanup = false;
+        _pendingIncompleteRegistrationCleanupUid = null;
+        rethrow;
+      }
+      return false;
+    } catch (error) {
+      Logger.error('미완료 회원가입 서버 정리 실패: $error');
+      return false;
+    }
+  }
+
+  Future<PendingEmailSignupCancellationResult> cancelPendingEmailSignup({
+    required String email,
+    required String verificationToken,
+  }) async {
+    if (email.trim().isEmpty || verificationToken.trim().isEmpty) {
+      return PendingEmailSignupCancellationResult.cancelled;
+    }
+    try {
+      final result =
+          await _functions.httpsCallable('cancelPendingEmailSignup').call({
+        'email': email.trim(),
+        'verificationToken': verificationToken.trim(),
+      }).timeout(const Duration(seconds: 10));
+      if (result.data['alreadyCompleted'] == true) {
+        return PendingEmailSignupCancellationResult.alreadyCompleted;
+      }
+      return PendingEmailSignupCancellationResult.cancelled;
+    } catch (error) {
+      Logger.error('임시 이메일 인증 정리 실패(만료 정리로 대체): $error');
+      return PendingEmailSignupCancellationResult.unavailable;
     }
   }
 
   // FCM 초기화 (자동 로그인/앱 재시작 시 토큰 등록 보장)
   Future<void> _initializeFCMIfNeeded() async {
-    Logger.log('🔍 [FCM 진단] _initializeFCMIfNeeded 진입');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] _initializeFCMIfNeeded 진입');
 
     if (_user == null || _userData == null) {
-      Logger.log('🔍 [FCM 진단] 초기화 스킵: user 또는 userData null');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] 초기화 스킵: user 또는 userData null');
       return;
     }
 
     final uid = _user!.uid;
-    Logger.log('🔍 [FCM 진단] uid: $uid');
+    if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] uid: $uid');
 
     if (_fcmInitializing) {
-      Logger.log('ℹ️ FCM 초기화 진행 중 - 중복 진입 스킵');
+      if (Logger.isVerboseEnabled) Logger.log('ℹ️ FCM 초기화 진행 중 - 중복 진입 스킵');
       return;
     }
 
     // 세션 내 동일 사용자 재초기화 차단
     if (_fcmInitialized && _fcmInitializedUserId == uid) {
-      Logger.log('🔍 [FCM 진단] 초기화 스킵: 이미 초기화됨 (uid: $uid)');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] 초기화 스킵: 이미 초기화됨 (uid: $uid)');
       return;
     }
 
@@ -1864,10 +3170,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     // - FCM 토큰 등록은 로그인 상태(_user != null)만으로 충분하며 emailVerified에 의존하지 않음
     // - emailVerified 미완료 사용자에게 push를 보내도 앱 내에서 기능 제한은 별도로 처리함
     final emailVerified = _userData!['emailVerified'] == true;
-    Logger.log('🔍 [FCM 진단] emailVerified: $emailVerified (FCM 초기화에는 영향 없음)');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] emailVerified: $emailVerified (FCM 초기화에는 영향 없음)');
 
     _fcmInitializing = true;
-    Logger.log('🔍 [FCM 진단] FCM 초기화 시작 (uid: $uid)...');
+    if (Logger.isVerboseEnabled)
+      Logger.log('🔍 [FCM 진단] FCM 초기화 시작 (uid: $uid)...');
 
     try {
       // locale 상태를 먼저 확정
@@ -1875,23 +3183,24 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
       // iOS는 지연 시간 감소 (2초 → 1초)
       if (!kIsWeb && Platform.isIOS) {
-        Logger.log('🔍 [FCM 진단] iOS 1초 대기 시작');
+        if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] iOS 1초 대기 시작');
         await Future.delayed(const Duration(seconds: 1)); // 2초 → 1초로 감소
-        Logger.log('🔍 [FCM 진단] iOS 1초 대기 완료');
+        if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단] iOS 1초 대기 완료');
       }
 
-      if (kDebugMode) {
-        debugPrint('📱 FCM 초기화 시작: uid=$uid');
-      }
+      if (Logger.isVerboseEnabled) Logger.log('📱 FCM 초기화 시작: uid=$uid');
 
-      Logger.log('🔍 [FCM 진단] _fcmService.initialize() 호출 직전');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] _fcmService.initialize() 호출 직전');
       await _fcmService.initialize(uid);
-      Logger.log('🔍 [FCM 진단] _fcmService.initialize() 완료');
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] _fcmService.initialize() 완료');
 
       _fcmInitialized = true;
       _fcmInitializedUserId = uid;
-      Logger.log(
-          '✅ [FCM 진단] FCM 초기화 완료 - uid=$uid, emailVerified=$emailVerified');
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+            '✅ [FCM 진단] FCM 초기화 완료 - uid=$uid, emailVerified=$emailVerified');
     } catch (e) {
       // 실패 시 _fcmInitialized를 false로 유지 → 다음 _initializeFCMIfNeeded() 호출 시 재시도 가능
       _fcmInitialized = false;
@@ -1899,56 +3208,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       Logger.error('⚠️ [FCM 진단] FCM 초기화 실패 - 다음 호출 시 재시도 가능: $e');
     } finally {
       _fcmInitializing = false;
-      Logger.log('🔍 [FCM 진단] _fcmInitializing = false');
-    }
-  }
-
-  // 가입 중 취소: Firestore 미완성 문서 + Firebase Auth 레코드 완전 삭제 후 로그아웃
-  // NicknameSetupScreen에서 "로그아웃" 버튼을 누를 때 호출
-  Future<void> cancelSignup() async {
-    try {
-      final uid = _user?.uid;
-      if (uid != null) {
-        // signupCompleted: false인 미완성 문서 삭제
-        try {
-          final docRef = _firestore.collection('users').doc(uid);
-          final snap = await docRef.get();
-          if (snap.exists && snap.data()?['signupCompleted'] != true) {
-            await docRef.delete();
-            Logger.log('🗑️ 미완성 가입 Firestore 문서 삭제 완료: $uid');
-          }
-        } catch (e) {
-          Logger.error('⚠️ Firestore 문서 삭제 실패(계속 진행): $e');
-        }
-
-        // Firebase Auth 레코드도 삭제 (동일 계정으로 재가입 가능하게)
-        try {
-          await _user?.delete();
-          Logger.log('🗑️ 미완성 가입 Firebase Auth 레코드 삭제 완료: $uid');
-        } catch (e) {
-          Logger.error('⚠️ Auth 레코드 삭제 실패(계속 진행): $e');
-        }
-      }
-    } finally {
-      // 반드시 로그아웃 처리
-      try {
-        await _googleSignIn.signOut();
-      } catch (_) {}
-      try {
-        await _auth.signOut();
-      } catch (_) {}
-      _user = null;
-      _userData = null;
-      _signupRequired = false;
-      _isLoading = false;
-      notifyListeners();
+      if (Logger.isVerboseEnabled)
+        Logger.log('🔍 [FCM 진단] _fcmInitializing = false');
     }
   }
 
   // 로그아웃
   Future<void> signOut() async {
     try {
-      Logger.log('로그아웃 시작...');
+      if (Logger.isVerboseEnabled) Logger.log('로그아웃 시작...');
 
       // 로딩 상태 설정
       _isLoading = true;
@@ -1959,14 +3227,16 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         await Future.any([
           _performSignOut(),
           Future.delayed(const Duration(seconds: 10)).then((_) {
-            Logger.log('! 로그아웃 타임아웃 (10초) - 강제 로그아웃 진행');
+            if (Logger.isVerboseEnabled)
+              Logger.log('! 로그아웃 타임아웃 (10초) - 강제 로그아웃 진행');
             throw TimeoutException('로그아웃 타임아웃', const Duration(seconds: 10));
           }),
         ]);
-        Logger.log('✅ 로그아웃 완료');
+        if (Logger.isVerboseEnabled) Logger.log('✅ 로그아웃 완료');
       } catch (e) {
         if (e is TimeoutException) {
-          Logger.log('⚠️ 로그아웃 타임아웃 발생 - 로컬 로그아웃 진행');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⚠️ 로그아웃 타임아웃 발생 - 로컬 로그아웃 진행');
         } else {
           Logger.error('⚠️ 로그아웃 중 오류 발생: $e - 로컬 로그아웃 진행');
         }
@@ -1982,56 +3252,81 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _fcmInitialized = false; // FCM 플래그 리셋
       _fcmInitializing = false;
       _fcmInitializedUserId = null;
-      Logger.log('✅ 로그아웃 상태 초기화 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 로그아웃 상태 초기화 완료');
       notifyListeners();
+    }
+  }
+
+  /// Best-effort FCM token release for sign-out paths that do not go through
+  /// [_performSignOut] (deleted or unfinished accounts). Without it the device
+  /// token stays registered to the abandoned account and the next account on
+  /// this device can keep receiving its pushes in the background.
+  Future<void> _releaseDeviceTokenBeforeSignOut() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await _fcmService.reset();
+    } catch (_) {}
+    try {
+      await _fcmService.deleteFCMToken(uid).timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {},
+      );
+    } catch (e) {
+      Logger.error('⚠️ FCM 토큰 해제 실패 (계속 진행): $e');
     }
   }
 
   // 실제 로그아웃 작업 수행
   Future<void> _performSignOut() async {
-    Logger.log('🔄 로그아웃 작업 시작');
+    if (Logger.isVerboseEnabled) Logger.log('🔄 로그아웃 작업 시작');
 
     // 앱 아이콘 배지는 로그아웃 즉시 0으로 내려 이전 계정 흔적이 남지 않게 한다.
     await BadgeService.clearBadgeOnSignOut();
 
-    // FCM 토큰 삭제 및 상태 초기화 (3초 타임아웃) - UI 메시지 표시 안 함
-    if (_user != null) {
-      try {
-        await _fcmService.deleteFCMToken(_user!.uid).timeout(
-          const Duration(seconds: 3),
-          onTimeout: () {
-            Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (3초) - 계속 진행');
-          },
-        );
-        Logger.log('✅ FCM 토큰 삭제 완료');
-      } catch (e) {
-        Logger.error('⚠️ FCM 토큰 삭제 실패 (계속 진행): $e');
-      }
-    }
-    // FCM 싱글톤 상태 초기화 (다음 로그인 시 재초기화 허용)
+    // 토큰 해제 네트워크 작업을 기다리는 동안 이전 계정의 푸시 callback이
+    // 배지/딥링크를 다시 적용하지 않도록 리스너와 세션부터 무효화한다.
     try {
       await _fcmService.reset();
     } catch (e) {
       Logger.error('⚠️ FCM 리셋 실패 (계속 진행): $e');
     }
 
+    // 현재 기기 FCM 토큰만 삭제 (3초 타임아웃) - UI 메시지 표시 안 함
+    if (_user != null) {
+      try {
+        await _fcmService.deleteFCMToken(_user!.uid).timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {
+            if (Logger.isVerboseEnabled)
+              Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (3초) - 계속 진행');
+          },
+        );
+        if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 삭제 완료');
+      } catch (e) {
+        Logger.error('⚠️ FCM 토큰 삭제 실패 (계속 진행): $e');
+      }
+    }
+
     // 먼저 모든 스트림 정리 - UI 메시지 표시 안 함
     try {
       _cleanupAllStreams();
-      Logger.log('✅ 스트림 정리 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 스트림 정리 완료');
     } catch (e) {
       Logger.error('⚠️ 스트림 정리 실패 (계속 진행): $e');
     }
 
     // Google Sign-In에서 로그아웃 (3초 타임아웃) - UI 메시지 표시 안 함
     try {
+      await _ensureGoogleSignInInitialized();
       await _googleSignIn.signOut().timeout(
         const Duration(seconds: 3),
         onTimeout: () {
-          Logger.log('⚠️ Google Sign-In 로그아웃 타임아웃 (3초) - 계속 진행');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⚠️ Google Sign-In 로그아웃 타임아웃 (3초) - 계속 진행');
         },
       );
-      Logger.log('✅ Google Sign-In 로그아웃 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ Google Sign-In 로그아웃 완료');
     } catch (e) {
       Logger.error('⚠️ Google Sign-In 로그아웃 오류 (계속 진행): $e');
     }
@@ -2041,97 +3336,21 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await _auth.signOut().timeout(
         const Duration(seconds: 3),
         onTimeout: () {
-          Logger.log('⚠️ Firebase Auth 로그아웃 타임아웃 (3초) - 계속 진행');
+          if (Logger.isVerboseEnabled)
+            Logger.log('⚠️ Firebase Auth 로그아웃 타임아웃 (3초) - 계속 진행');
         },
       );
-      Logger.log('✅ Firebase Auth 로그아웃 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ Firebase Auth 로그아웃 완료');
     } catch (e) {
       Logger.error('⚠️ Firebase Auth 로그아웃 오류 (계속 진행): $e');
     }
 
-    Logger.log('🔄 로그아웃 작업 완료');
+    if (Logger.isVerboseEnabled) Logger.log('🔄 로그아웃 작업 완료');
   }
 
   // ---------------------------------------------------------------------------
   // users/{uid} 스키마 일관성 보장 (가입 경로 무관)
   // ---------------------------------------------------------------------------
-
-  /// 신규 생성 시 항상 동일한 users 문서 스키마를 만든다.
-  /// (이미 문서가 있으면 누락 필드만 채우고, 핵심 필드는 최신 값으로 정합성 유지)
-  ///
-  /// ✅ hanyangEmail 파라미터: 한양메일 인증자만 전달 (null이면 일반 사용자)
-  Future<void> _upsertUserDocWithFullSchema({
-    required User user,
-    String? hanyangEmail, // ✅ Optional
-    String nickname = '',
-    String nationality = '',
-    String photoURL = '',
-    String bio = '',
-  }) async {
-    final docRef = _firestore.collection('users').doc(user.uid);
-    await _firestore.runTransaction((tx) async {
-      final snap = await tx.get(docRef);
-      if (!snap.exists) {
-        tx.set(
-            docRef,
-            _buildFullUserDoc(
-              user: user,
-              hanyangEmail: hanyangEmail,
-              nickname: nickname,
-              nationality: nationality,
-              photoURL: photoURL,
-              bio: bio,
-            ));
-        return;
-      }
-
-      final data =
-          (snap.data() as Map<String, dynamic>?) ?? <String, dynamic>{};
-      final updates = _computeMissingUserSchemaFields(
-        existingData: data,
-        user: user,
-      );
-
-      // 가입 확정에서 반드시 맞춰야 하는 핵심 필드들
-      updates['uid'] = user.uid;
-      updates['email'] = user.email ?? '';
-
-      // ✅ 한양메일 인증자만 해당 필드 업데이트
-      if (hanyangEmail != null && hanyangEmail.isNotEmpty) {
-        updates['hanyangEmail'] = hanyangEmail;
-        updates['emailVerified'] = true;
-        updates['hanyangVerified'] = true;
-      } else if (!data.containsKey('hanyangVerified')) {
-        // 신규 일반 가입자에게만 기본값 false를 명시적으로 기록.
-        // 이미 필드가 있는 기존 사용자는 건드리지 않는다.
-        updates['hanyangVerified'] = false;
-      }
-
-      updates['updatedAt'] = FieldValue.serverTimestamp();
-      updates['lastLogin'] = FieldValue.serverTimestamp();
-
-      // nickname 단일 소스
-      if (nickname.isNotEmpty) {
-        updates['nickname'] = nickname;
-      }
-      if (nationality.isNotEmpty) {
-        updates['nationality'] = nationality;
-      }
-      if (photoURL.isNotEmpty) {
-        updates['photoURL'] = photoURL;
-      } else if (!data.containsKey('photoURL') ||
-          (data['photoURL']?.toString() ?? '').isEmpty) {
-        updates['photoURL'] = '';
-      }
-      if (bio.isNotEmpty) {
-        updates['bio'] = bio;
-      } else if (!data.containsKey('bio')) {
-        updates['bio'] = '';
-      }
-
-      tx.set(docRef, updates, SetOptions(merge: true));
-    });
-  }
 
   /// users 문서가 존재할 때, 누락된 기본 필드를 채워서 "모든 사용자 문서의 필드 구성이 동일"하게 만든다.
   Future<void> _ensureUserDocSchema({
@@ -2150,7 +3369,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       await docRef.set(updates, SetOptions(merge: true)).timeout(
         const Duration(seconds: 5), // 10초 → 5초로 감소
         onTimeout: () {
-          Logger.log('⏱️ 스키마 보정 타임아웃');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 스키마 보정 타임아웃');
           throw TimeoutException('스키마 보정 타임아웃');
         },
       );
@@ -2162,10 +3381,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   /// 누락 필드 계산: "키 자체가 없거나 null"이면 기본값을 넣는다.
-  ///
-  /// ✅ 한양메일 필드(hanyangEmail, emailVerified)는 기본값 설정 안 함
-  /// - 기존 사용자: 필드 유지
-  /// - 신규 사용자: 필드 없음 (의도적)
   Map<String, dynamic> _computeMissingUserSchemaFields({
     required Map<String, dynamic> existingData,
     required User user,
@@ -2179,7 +3394,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     // 식별/기본
     if (missing('uid')) updates['uid'] = user.uid;
     if (missing('email')) updates['email'] = authEmail;
-    // ✅ hanyangEmail, emailVerified는 기본값 설정 안 함
+    // 계정/학교 인증 필드는 서버 Callable만 기록한다. 로그인 이메일을
+    // hanyangEmail에 복사하면 일반 가입자도 학교 인증자로 보일 수 있다.
+    // registrationStatus/registrationCompletedAt은 최종 가입 서버 함수만 쓴다.
 
     // 표시 이름: nickname 단일 소스
     if (missing('nickname')) updates['nickname'] = '';
@@ -2195,17 +3412,27 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     if (missing('photoVersion')) updates['photoVersion'] = 0;
     if (missing('photoUpdatedAt')) updates['photoUpdatedAt'] = null;
     if (missing('bio')) updates['bio'] = '';
+    if (missing('interests')) updates['interests'] = <String>[];
+    if (missing('preferredActivities')) {
+      updates['preferredActivities'] = <String>[];
+    }
+    if (missing('conversationStarter')) updates['conversationStarter'] = '';
+    if (missing('friendshipPrompt')) updates['friendshipPrompt'] = '';
+    if (missing('department')) updates['department'] = '';
+    if (missing('grade')) updates['grade'] = '';
+    if (missing('showDepartment')) updates['showDepartment'] = false;
+    if (missing('showGrade')) updates['showGrade'] = false;
+    if (missing('profileCompletion')) updates['profileCompletion'] = 0;
+    if (missing('profileUpdatedAt')) updates['profileUpdatedAt'] = null;
     if (missing('nationality')) updates['nationality'] = '';
-    if (missing('nicknameUpdatedAt')) updates['nicknameUpdatedAt'] = null;
     if (missing('nationalityUpdatedAt')) updates['nationalityUpdatedAt'] = null;
 
     // 카운터들
-    if (missing('friendsCount')) updates['friendsCount'] = 0;
+    // friendsCount는 친구 관계와 같은 서버 트랜잭션 및 일회성 관리
+    // 마이그레이션에서만 유지한다. 누락 값을 클라이언트가 0으로 덮지 않는다.
     if (missing('incomingCount')) updates['incomingCount'] = 0;
     if (missing('outgoingCount')) updates['outgoingCount'] = 0;
-    if (missing('dmUnreadTotal')) updates['dmUnreadTotal'] = 0;
-    if (missing('notificationUnreadTotal'))
-      updates['notificationUnreadTotal'] = 0;
+    // 미읽음 카운터는 Cloud Functions만 생성/수정한다.
 
     // FCM
     if (missing('fcmToken')) updates['fcmToken'] = '';
@@ -2236,65 +3463,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     return updates;
   }
 
-  /// 신규 문서 생성용: 항상 동일한 키 셋을 가진 전체 문서 생성.
-  ///
-  /// ✅ 한양메일 필드는 optional:
-  /// - hanyangEmail == null → 필드 생성 안 함 (일반 가입자)
-  /// - hanyangEmail != null → 필드 생성 (한양대 학생)
-  Map<String, dynamic> _buildFullUserDoc({
-    required User user,
-    String? hanyangEmail, // ✅ Optional로 변경
-    String nickname = '',
-    String nationality = '',
-    String photoURL = '',
-    String bio = '',
-  }) {
-    final doc = <String, dynamic>{
-      'uid': user.uid,
-      'email': user.email ?? '',
-      // ✅ hanyangEmail, emailVerified는 한양대생만 가짐
-      'nickname': nickname,
-      'nationality': nationality,
-      'nicknameUpdatedAt': null,
-      'nationalityUpdatedAt': null,
-      'photoURL': photoURL,
-      'photoPath': photoURL.isNotEmpty ? _profilePhotoPathForUid(user.uid) : '',
-      'photoAccessToken':
-          photoURL.isNotEmpty ? _extractStorageDownloadToken(photoURL) : '',
-      'photoVersion': 0,
-      'photoUpdatedAt': null,
-      'bio': bio,
-      'friendsCount': 0,
-      'incomingCount': 0,
-      'outgoingCount': 0,
-      'dmUnreadTotal': 0,
-      'notificationUnreadTotal': 0,
-      'fcmToken': '',
-      'fcmTokens': <String>[],
-      'fcmTokenUpdatedAt': null,
-      'mutedSnackChatIds': <String>[],
-      'preferredLanguage': 'ko',
-      'preferredLanguageUpdatedAt': null,
-      'termsAccepted': true,
-      'termsAcceptedAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'lastLogin': FieldValue.serverTimestamp(),
-    };
-
-    // ✅ 한양메일 인증 사용자만 해당 필드 추가
-    if (hanyangEmail != null && hanyangEmail.isNotEmpty) {
-      doc['hanyangEmail'] = hanyangEmail;
-      doc['emailVerified'] = true;
-      doc['hanyangVerified'] = true;
-    } else {
-      // 신규 일반 가입자: 레거시 사용자와 구분하기 위해 false를 명시적으로 기록.
-      doc['hanyangVerified'] = false;
-    }
-
-    return doc;
-  }
-
   // ---------------------------------------------------------------------------
   // WidgetsBindingObserver: 앱 포그라운드 복귀 시 FCM 재초기화 보장
   // ---------------------------------------------------------------------------
@@ -2302,11 +3470,26 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      final resumedUid = _auth.currentUser?.uid;
+      if (_pendingRegistrationStateCheck &&
+          resumedUid != null &&
+          resumedUid == _pendingRegistrationStateCheckUid) {
+        if (Logger.isVerboseEnabled)
+          Logger.log('↩️ 앱 resume 감지 - 회원가입 진행 상태를 다시 확인합니다.');
+        unawaited(_recoverRegistrationOnLaunch());
+      }
+      if (_user != null && isRegistrationComplete) {
+        unawaited(refreshHanyangVerificationStatus());
+      }
       // 앱이 포그라운드로 복귀할 때 FCM이 초기화되지 않았으면 재시도한다.
       // - 앱 시작 시 APNs/네트워크 미준비로 token sync가 실패한 경우를 복구한다.
       // - _fcmInitialized가 false이면 _initializeFCMIfNeeded가 재진입을 허용한다.
-      if (!_fcmInitialized && _user != null && _userData != null) {
-        Logger.log('📲 [FCM] 앱 resume 감지 - FCM 미초기화 상태, 재시도');
+      if (!_fcmInitialized &&
+          _user != null &&
+          _userData != null &&
+          isRegistrationComplete) {
+        if (Logger.isVerboseEnabled)
+          Logger.log('📲 [FCM] 앱 resume 감지 - FCM 미초기화 상태, 재시도');
         unawaited(_initializeFCMIfNeeded());
       }
     }
@@ -2353,6 +3536,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_authStateSubscription?.cancel());
+    _authStateSubscription = null;
+    unawaited(_currentUserDocumentSubscription?.cancel());
+    _currentUserDocumentSubscription = null;
+    _observedUserId = null;
     super.dispose();
   }
 }
@@ -2393,4 +3581,142 @@ class ProfileUpdateResult {
         );
 
   bool get hasRestrictedFields => !nicknameApplied || !nationalityApplied;
+}
+
+class NicknameAvailabilityResult {
+  const NicknameAvailabilityResult({
+    required this.available,
+    required this.nickname,
+    required this.nicknameKey,
+  });
+
+  final bool available;
+  final String nickname;
+  final String nicknameKey;
+}
+
+enum NicknameAvailabilityFailureKind {
+  network,
+  timeout,
+  appCheck,
+  unauthenticated,
+  permissionDenied,
+  invalidData,
+  precondition,
+  function,
+}
+
+class NicknameAvailabilityException implements Exception {
+  const NicknameAvailabilityException(this.kind);
+
+  factory NicknameAvailabilityException.from(
+    Object error, {
+    bool appCheckFailed = false,
+  }) {
+    if (error is FormatException) {
+      return const NicknameAvailabilityException(
+        NicknameAvailabilityFailureKind.invalidData,
+      );
+    }
+    if (error is TimeoutException) {
+      return const NicknameAvailabilityException(
+        NicknameAvailabilityFailureKind.timeout,
+      );
+    }
+    if (error is SocketException) {
+      return const NicknameAvailabilityException(
+        NicknameAvailabilityFailureKind.network,
+      );
+    }
+    if (error is FirebaseFunctionsException) {
+      final diagnostic =
+          '${error.message ?? ''} ${error.details ?? ''}'.toLowerCase();
+      if (diagnostic.contains('app check') ||
+          diagnostic.contains('app-check') ||
+          diagnostic.contains('attestation') ||
+          diagnostic.contains('placeholder token')) {
+        return const NicknameAvailabilityException(
+          NicknameAvailabilityFailureKind.appCheck,
+        );
+      }
+      if (error.code == 'deadline-exceeded') {
+        return const NicknameAvailabilityException(
+          NicknameAvailabilityFailureKind.timeout,
+        );
+      }
+      if (error.code == 'unavailable') {
+        return const NicknameAvailabilityException(
+          NicknameAvailabilityFailureKind.network,
+        );
+      }
+      if (error.code == 'unauthenticated') {
+        if (appCheckFailed) {
+          return const NicknameAvailabilityException(
+            NicknameAvailabilityFailureKind.appCheck,
+          );
+        }
+        return const NicknameAvailabilityException(
+          NicknameAvailabilityFailureKind.unauthenticated,
+        );
+      }
+      if (error.code == 'permission-denied') {
+        return const NicknameAvailabilityException(
+          NicknameAvailabilityFailureKind.permissionDenied,
+        );
+      }
+      if (error.code == 'failed-precondition') {
+        return const NicknameAvailabilityException(
+          NicknameAvailabilityFailureKind.precondition,
+        );
+      }
+      if (error.code == 'not-found') {
+        return const NicknameAvailabilityException(
+          NicknameAvailabilityFailureKind.function,
+        );
+      }
+    }
+    if (appCheckFailed) {
+      return const NicknameAvailabilityException(
+        NicknameAvailabilityFailureKind.appCheck,
+      );
+    }
+    return const NicknameAvailabilityException(
+      NicknameAvailabilityFailureKind.function,
+    );
+  }
+
+  final NicknameAvailabilityFailureKind kind;
+
+  bool get isNetwork => kind == NicknameAvailabilityFailureKind.network;
+
+  String get logMessage => switch (kind) {
+        NicknameAvailabilityFailureKind.network =>
+          'nickname check network error',
+        NicknameAvailabilityFailureKind.timeout => 'nickname check timeout',
+        NicknameAvailabilityFailureKind.appCheck =>
+          'nickname check app-check error',
+        NicknameAvailabilityFailureKind.unauthenticated =>
+          'nickname check unauthenticated',
+        NicknameAvailabilityFailureKind.permissionDenied =>
+          'nickname check permission denied',
+        NicknameAvailabilityFailureKind.invalidData =>
+          'nickname check invalid response',
+        NicknameAvailabilityFailureKind.precondition =>
+          'nickname check failed precondition',
+        NicknameAvailabilityFailureKind.function =>
+          'nickname check function error',
+      };
+
+  @override
+  String toString() => logMessage;
+}
+
+class _NicknameAvailabilityCacheEntry {
+  const _NicknameAvailabilityCacheEntry({
+    required this.result,
+    required this.checkedAt,
+  });
+
+  final NicknameAvailabilityResult result;
+  final DateTime checkedAt;
 }

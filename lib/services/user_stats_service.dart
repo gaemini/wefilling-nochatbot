@@ -4,15 +4,72 @@
 // 사용자별 콘텐츠 필터링 및 조회
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
 import '../models/meetup_participant.dart';
 import '../utils/logger.dart';
+import 'joined_meetup_access_service.dart';
+
+class UserProfileStats {
+  const UserProfileStats({
+    required this.friendCount,
+    required this.joinedMeetupCount,
+    required this.writtenPostCount,
+    required this.fetchedAt,
+  });
+
+  final int friendCount;
+  final int joinedMeetupCount;
+  final int writtenPostCount;
+  final DateTime fetchedAt;
+
+  factory UserProfileStats.fromMap(Map<String, dynamic> map) {
+    int count(String key) => (map[key] as num?)?.toInt() ?? 0;
+    final fetchedAtMillis = (map['fetchedAtMillis'] as num?)?.toInt();
+    return UserProfileStats(
+      friendCount: count('friendCount'),
+      joinedMeetupCount: count('joinedMeetupCount'),
+      writtenPostCount: count('writtenPostCount'),
+      fetchedAt: fetchedAtMillis == null
+          ? DateTime.now()
+          : DateTime.fromMillisecondsSinceEpoch(fetchedAtMillis),
+    );
+  }
+}
 
 class UserStatsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final JoinedMeetupAccessService _joinedMeetupAccess =
+      JoinedMeetupAccessService.instance;
+
+  /// 친구 프로필 헤더에 표시할 세 통계를 캐시가 아닌 서버 aggregate로 조회한다.
+  Future<UserProfileStats> getLatestProfileStatsForUser(String userId) async {
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) {
+      throw ArgumentError.value(userId, 'userId');
+    }
+    final response = await AppFunctions.instance
+        .httpsCallable('getUserProfileStats')
+        .call(<String, dynamic>{'userId': normalizedUserId}).timeout(
+            const Duration(seconds: 15));
+    final raw = response.data;
+    if (raw is! Map) {
+      throw const FormatException('Invalid profile stats response.');
+    }
+    return UserProfileStats.fromMap(Map<String, dynamic>.from(raw));
+  }
+
+  /// 마이페이지의 친구 수를 친구 목록과 동일한 서버 판정으로 확인한다.
+  /// 단순 friendship 문서 수는 탈퇴/비활성 프로필과 레거시 중복 관계를
+  /// 포함할 수 있으므로 프로필 통계 callable의 정제된 값을 사용한다.
+  Future<int> getLatestFriendCountForUser(String userId) async {
+    final stats = await getLatestProfileStatsForUser(userId);
+    return stats.friendCount;
+  }
 
   // 사용자가 주최한 모임 수 (후기 작성 완료된 모임만)
   Stream<int> getHostedMeetupCount() {
@@ -64,7 +121,14 @@ class UserStatsService {
         .where('userId', isEqualTo: user.uid)
         .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
-        .map((snapshot) => snapshot.docs.length);
+        .asyncMap((snapshot) async {
+      final ids = snapshot.docs
+          .map((doc) => (doc.data()['meetupId'] ?? '').toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final readableIds = await _joinedMeetupAccess.resolveReadableIds(ids);
+      return readableIds.length;
+    });
   }
 
   // 사용자가 주최한 모임 목록
@@ -79,27 +143,10 @@ class UserStatsService {
         .where('userId', isEqualTo: user.uid)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        final meetupDate = data['date'] != null
-            ? (data['date'] as Timestamp).toDate()
-            : DateTime.now();
-
-        return Meetup(
-          id: doc.id,
-          title: data['title'] ?? '',
-          description: data['description'] ?? '',
-          location: data['location'] ?? '',
-          time: data['time'] ?? '',
-          maxParticipants: data['maxParticipants'] ?? 0,
-          currentParticipants: data['currentParticipants'] ?? 0,
-          host: data['hostNickname'] ?? '',
-          imageUrl: data['imageUrl'] ?? '',
-          date: meetupDate,
-          userId: data['userId'], // 모임 주최자 ID 추가
-          hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-        );
-      }).toList();
+      return snapshot.docs
+          .map((doc) => Meetup.fromJson({...doc.data(), 'id': doc.id}))
+          .where((meetup) => meetup.isPublishedAt())
+          .toList();
     });
   }
 
@@ -110,50 +157,41 @@ class UserStatsService {
       return Stream.value([]);
     }
 
+    // 현재 참여 기능은 meetups.participants 배열을 갱신하지 않고
+    // meetup_participants 문서를 단일 기준으로 사용한다.
     return _firestore
-        .collection('meetups')
-        .where('participants', arrayContains: user.uid)
+        .collection('meetup_participants')
+        .where('userId', isEqualTo: user.uid)
+        .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
-        .map((snapshot) {
-      try {
-        // 사용자가 주최하지 않은 모임만 필터링
-        final filteredDocs = snapshot.docs.where((doc) {
-          final data = doc.data();
-          // 'userId' 필드가 존재하고, 현재 사용자 ID와 다른 경우
-          return data['userId'] != user.uid;
-        }).toList();
-
-        // 필터링된 결과가 없을 경우 빈 배열 반환
-        if (filteredDocs.isEmpty) {
-          return <Meetup>[];
+        .asyncMap((snapshot) async {
+      final meetupIds = snapshot.docs
+          .map((doc) => (doc.data()['meetupId'] ?? '').toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final readableIds = await _joinedMeetupAccess.resolveReadableIds(
+        meetupIds,
+      );
+      final meetups = await Future.wait(readableIds.map((meetupId) async {
+        try {
+          final meetupDoc =
+              await _firestore.collection('meetups').doc(meetupId).get();
+          final data = meetupDoc.data();
+          if (!meetupDoc.exists || data == null) return null;
+          final meetup = Meetup.fromJson({...data, 'id': meetupDoc.id});
+          if (meetup.userId == user.uid || !meetup.isPublishedAt()) return null;
+          return meetup;
+        } catch (error) {
+          // 공개 대상이 동시에 변경되는 짧은 race에서는 다음 구독 때 서버
+          // 검증을 다시 받도록 캐시만 무효화하고 현재 항목을 제외한다.
+          _joinedMeetupAccess.invalidate();
+          if (Logger.isVerboseEnabled) {
+            Logger.warning('변경 중인 참여 모임 문서 제외($meetupId): $error');
+          }
+          return null;
         }
-
-        return filteredDocs.map((doc) {
-          final data = doc.data();
-          final meetupDate = data['date'] != null
-              ? (data['date'] as Timestamp).toDate()
-              : DateTime.now();
-
-          return Meetup(
-            id: doc.id,
-            title: data['title'] ?? '',
-            description: data['description'] ?? '',
-            location: data['location'] ?? '',
-            time: data['time'] ?? '',
-            maxParticipants: data['maxParticipants'] ?? 0,
-            currentParticipants: data['currentParticipants'] ?? 0,
-            host: data['hostNickname'] ?? '',
-            hostPhotoURL: data['hostPhotoURL'] ?? '', // 주최자 프로필 사진 추가
-            imageUrl: data['imageUrl'] ?? '',
-            date: meetupDate,
-            userId: data['userId'], // 모임 주최자 ID 추가
-            hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-          );
-        }).toList();
-      } catch (e) {
-        Logger.error('참여 모임 처리 오류: $e');
-        return <Meetup>[];
-      }
+      }));
+      return meetups.whereType<Meetup>().toList(growable: false);
     });
   }
 
@@ -169,24 +207,6 @@ class UserStatsService {
         .where('userId', isEqualTo: user.uid)
         .snapshots()
         .map((snapshot) => snapshot.docs.length);
-  }
-
-  // 사용자가 작성한 나눔글 수
-  Stream<int> getUserSharingPostCount() {
-    final user = _auth.currentUser;
-    if (user == null) {
-      return Stream.value(0);
-    }
-    return getUserSharingPostCountForUser(user.uid);
-  }
-
-  // 사용자가 작성한 나눔글 목록
-  Stream<List<Post>> getUserSharingPosts() {
-    final user = _auth.currentUser;
-    if (user == null) {
-      return Stream.value([]);
-    }
-    return getUserSharingPostsForUser(user.uid);
   }
 
   // 사용자가 작성한 게시글 목록
@@ -211,6 +231,10 @@ class UserStatsService {
           author: data['authorNickname'] ?? '',
           authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
           category: data['category'] ?? '일반', // 카테고리 추가
+          categoryKey: data['categoryKey']?.toString(),
+          categoryKeys: data['categoryKeys'] is List
+              ? List<String>.from(data['categoryKeys'])
+              : const <String>[],
           createdAt: data['createdAt'] != null
               ? (data['createdAt'] as Timestamp).toDate()
               : DateTime.now(),
@@ -268,6 +292,10 @@ class UserStatsService {
           author: data['authorNickname'] ?? '',
           authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
           category: data['category'] ?? '일반', // 카테고리 추가
+          categoryKey: data['categoryKey']?.toString(),
+          categoryKeys: data['categoryKeys'] is List
+              ? List<String>.from(data['categoryKeys'])
+              : const <String>[],
           createdAt: data['createdAt'] != null
               ? (data['createdAt'] as Timestamp).toDate()
               : DateTime.now(),
@@ -335,80 +363,6 @@ class UserStatsService {
         .where('userId', isEqualTo: userId)
         .snapshots()
         .map((snapshot) => snapshot.docs.length);
-  }
-
-  // 특정 사용자가 작성한 나눔글 수
-  Stream<int> getUserSharingPostCountForUser(String userId) {
-    return _firestore
-        .collection('sharing_posts')
-        .where('userId', isEqualTo: userId)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.length);
-  }
-
-  // 특정 사용자가 작성한 나눔글 목록
-  Stream<List<Post>> getUserSharingPostsForUser(String userId) {
-    return _firestore
-        .collection('sharing_posts')
-        .where('userId', isEqualTo: userId)
-        .snapshots()
-        .map((snapshot) {
-      final posts = snapshot.docs.map((doc) {
-        final data = doc.data();
-        return _postFromFirestoreData(
-          id: doc.id,
-          collectionPath: 'sharing_posts',
-          data: data,
-        );
-      }).toList();
-
-      // Firestore composite index 없이 동작하도록 정렬은 클라이언트에서 처리합니다.
-      posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return posts;
-    });
-  }
-
-  Post _postFromFirestoreData({
-    required String id,
-    required String collectionPath,
-    required Map<String, dynamic> data,
-  }) {
-    final rawCreatedAt = data['createdAt'];
-    DateTime createdAt;
-    if (rawCreatedAt is Timestamp) {
-      createdAt = rawCreatedAt.toDate();
-    } else if (rawCreatedAt is int) {
-      createdAt = DateTime.fromMillisecondsSinceEpoch(rawCreatedAt);
-    } else {
-      createdAt = DateTime.now();
-    }
-
-    return Post(
-      id: id,
-      collectionPath: collectionPath,
-      title: (data['title'] ?? '').toString(),
-      content: (data['content'] ?? '').toString(),
-      author: (data['authorNickname'] ?? '').toString(),
-      authorNationality: (data['authorNationality'] ?? '').toString(),
-      authorPhotoURL: (data['authorPhotoURL'] ?? '').toString(),
-      category: (data['category'] ?? '일반').toString(),
-      createdAt: createdAt,
-      userId: (data['userId'] ?? '').toString(),
-      likes: (data['likes'] as num? ?? 0).toInt(),
-      likedBy: List<String>.from(data['likedBy'] ?? const []),
-      commentCount: (data['commentCount'] as num? ?? 0).toInt(),
-      viewCount: (data['viewCount'] as num? ?? 0).toInt(),
-      imageUrls: List<String>.from(data['imageUrls'] ?? const []),
-      schoolOnly: data['schoolOnly'] == true,
-      authorHanyangVerified: data['authorHanyangVerified'] == true,
-      sharingLocation: (data['sharingLocation'] ?? '').toString(),
-      type: (data['type'] ?? 'text').toString(),
-      visibility: (data['visibility'] ?? 'public').toString(),
-      isAnonymous: data['isAnonymous'] == true,
-      visibleToCategoryIds:
-          List<String>.from(data['visibleToCategoryIds'] ?? const []),
-      allowedUserIds: List<String>.from(data['allowedUserIds'] ?? const []),
-    );
   }
 
   // 특정 사용자의 친구 수

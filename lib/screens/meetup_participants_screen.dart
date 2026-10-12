@@ -7,6 +7,8 @@ import '../models/meetup_participant.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import 'friend_profile_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class MeetupParticipantsScreen extends StatefulWidget {
   final Meetup meetup;
@@ -17,18 +19,19 @@ class MeetupParticipantsScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<MeetupParticipantsScreen> createState() => _MeetupParticipantsScreenState();
+  State<MeetupParticipantsScreen> createState() =>
+      _MeetupParticipantsScreenState();
 }
 
 class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
     with SingleTickerProviderStateMixin {
   final MeetupService _meetupService = MeetupService();
   late TabController _tabController;
-  
+
   List<MeetupParticipant> _pendingParticipants = [];
   List<MeetupParticipant> _approvedParticipants = [];
   List<MeetupParticipant> _rejectedParticipants = [];
-  
+
   bool _isLoading = true;
 
   @override
@@ -51,15 +54,15 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
 
     try {
       final pending = await _meetupService.getMeetupParticipantsByStatus(
-        widget.meetup.id, 
+        widget.meetup.id,
         ParticipantStatus.pending,
       );
       final approved = await _meetupService.getMeetupParticipantsByStatus(
-        widget.meetup.id, 
+        widget.meetup.id,
         ParticipantStatus.approved,
       );
       final rejected = await _meetupService.getMeetupParticipantsByStatus(
-        widget.meetup.id, 
+        widget.meetup.id,
         ParticipantStatus.rejected,
       );
 
@@ -78,9 +81,9 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
         final l10n = AppLocalizations.of(context)!;
         AppSnackBar.show(
           context,
-          message: isKo
+          message: (isChineseUi(context) ? '${l10n.error}：参与者加载失败：${e}' : isKo
               ? '참여자 목록을 불러오는데 실패했습니다: $e'
-              : '${l10n.error}: Failed to load participants: $e',
+              : '${l10n.error}: Failed to load participants: $e'),
           type: AppSnackBarType.error,
         );
       }
@@ -95,7 +98,9 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              Localizations.localeOf(context).languageCode == 'ko' ? '참여자 관리' : 'Participants',
+              (isChineseUi(context) ? '参与者' : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '참여자 관리'
+                  : 'Participants'),
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
             Text(
@@ -116,10 +121,13 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(Localizations.localeOf(context).languageCode == 'ko' ? '대기중' : 'Pending'),
+                  Text((isChineseUi(context) ? '待审核' : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '대기중'
+                      : 'Pending')),
                   const SizedBox(width: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.orange,
                       borderRadius: BorderRadius.circular(10),
@@ -140,10 +148,13 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(Localizations.localeOf(context).languageCode == 'ko' ? '승인됨' : 'Approved'),
+                  Text((isChineseUi(context) ? '已通过' : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '승인됨'
+                      : 'Approved')),
                   const SizedBox(width: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.green,
                       borderRadius: BorderRadius.circular(10),
@@ -164,10 +175,13 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(Localizations.localeOf(context).languageCode == 'ko' ? '거절됨' : 'Rejected'),
+                  Text((isChineseUi(context) ? '已拒绝' : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '거절됨'
+                      : 'Rejected')),
                   const SizedBox(width: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.red,
                       borderRadius: BorderRadius.circular(10),
@@ -192,15 +206,19 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
           : TabBarView(
               controller: _tabController,
               children: [
-                _buildParticipantList(_pendingParticipants, ParticipantStatus.pending),
-                _buildParticipantList(_approvedParticipants, ParticipantStatus.approved),
-                _buildParticipantList(_rejectedParticipants, ParticipantStatus.rejected),
+                _buildParticipantList(
+                    _pendingParticipants, ParticipantStatus.pending),
+                _buildParticipantList(
+                    _approvedParticipants, ParticipantStatus.approved),
+                _buildParticipantList(
+                    _rejectedParticipants, ParticipantStatus.rejected),
               ],
             ),
     );
   }
 
-  Widget _buildParticipantList(List<MeetupParticipant> participants, String status) {
+  Widget _buildParticipantList(
+      List<MeetupParticipant> participants, String status) {
     if (participants.isEmpty) {
       return Center(
         child: Column(
@@ -248,77 +266,92 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 사용자 정보
-            Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.grey[300],
-                  ),
-                  child: participant.userProfileImage != null
-                      ? ClipOval(
-                          child: Image.network(
-                            participant.userProfileImage!,
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(
-                              Icons.person,
-                              size: 24,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        )
-                      : Icon(
-                          Icons.person,
-                          size: 24,
-                          color: Colors.grey[600],
-                        ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: participant.hasViewableProfile
+                    ? () => _openParticipantProfile(participant)
+                    : null,
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
                     children: [
-                      Text(
-                        participant.userName,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.grey[300],
+                        ),
+                        child: participant.userProfileImage != null
+                            ? ClipOval(
+                                child: Image.network(
+                                  participant.userProfileImage!,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    Icons.person,
+                                    size: 24,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              )
+                            : Icon(
+                                Icons.person,
+                                size: 24,
+                                color: Colors.grey[600],
+                              ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              participant.userName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              participant.userEmail,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Text(
-                        participant.userEmail,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: participant.getStatusColor().withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          participant.getStatusTextLocalized(
+                              Localizations.localeOf(context).languageCode),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: participant.getStatusColor(),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: participant.getStatusColor().withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    participant.getStatusTextLocalized(Localizations.localeOf(context).languageCode),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: participant.getStatusColor(),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
 
             // 참여 신청 메시지
-            if (participant.message != null && participant.message!.isNotEmpty) ...[
+            if (participant.message != null &&
+                participant.message!.isNotEmpty) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -331,7 +364,8 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.message_outlined, size: 16, color: Colors.grey[600]),
+                        Icon(Icons.message_outlined,
+                            size: 16, color: Colors.grey[600]),
                         const SizedBox(width: 4),
                         Text(
                           '신청 메시지',
@@ -409,6 +443,21 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+
+  void _openParticipantProfile(MeetupParticipant participant) {
+    if (!participant.hasViewableProfile) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => FriendProfileScreen(
+          userId: participant.userId.trim(),
+          nickname: participant.userName,
+          photoURL: participant.userProfileImage,
+          email: participant.userEmail,
+          allowNonFriendsPreview: true,
         ),
       ),
     );
@@ -524,9 +573,3 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
     }
   }
 }
-
-
-
-
-
-

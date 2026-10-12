@@ -26,6 +26,8 @@ class FirestoreCollections {
   static const String blocks = 'blocks';
   static const String relationships = 'relationships';
   static const String friendCategories = 'friend_categories';
+  /// 비친구의 첫 응답 요청. 일반 DM(conversations)과 분리된다.
+  static const String firstResponseRequests = 'first_response_requests';
 
   // Reviews
   static const String meetupReviews = 'meetup_reviews';

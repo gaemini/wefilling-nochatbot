@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import '../../constants/app_constants.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 2024-2025 트렌드 애니메이션 버튼
 /// 
@@ -249,10 +250,10 @@ class _AnimatedButtonState extends State<AnimatedButton>
                         ],
                         Text(
                           widget.text,
-                          style: AppTheme.labelLarge.copyWith(
+                          style: uiTextStyle(context, AppTheme.labelLarge.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
-                          ),
+                          )),
                         ),
                         if (widget.icon != null && widget.iconPosition == 'right') ...[
                           const SizedBox(width: 8),
@@ -414,10 +415,10 @@ class _AnimatedOutlinedButtonState extends State<AnimatedOutlinedButton>
                         ],
                         Text(
                           widget.text,
-                          style: AppTheme.labelLarge.copyWith(
+                          style: uiTextStyle(context, AppTheme.labelLarge.copyWith(
                             color: widget.enabled ? color : Colors.grey,
                             fontWeight: FontWeight.w600,
-                          ),
+                          )),
                         ),
                       ],
                     ),

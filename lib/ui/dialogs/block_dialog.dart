@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import '../../services/report_service.dart';
 import '../../l10n/app_localizations.dart';
+import '../../l10n/ui_locale.dart';
 
 // 사용자 차단 확인 다이얼로그
 class BlockUserDialog extends StatefulWidget {
@@ -37,7 +38,7 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: const Color(0xFFEF4444).withOpacity(0.1),
+              color: const Color(0xFFEF4444).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
@@ -49,8 +50,9 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
           const SizedBox(width: 12),
           Text(
             AppLocalizations.of(context)!.blockUserTitle,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -64,8 +66,9 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
         children: [
           Text(
             AppLocalizations.of(context)!.blockUserMessage(widget.userName),
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               fontWeight: FontWeight.w500,
               color: Color(0xFF374151),
@@ -85,12 +88,14 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.info_outline, size: 16, color: Colors.amber[800]),
+                    Icon(Icons.info_outline,
+                        size: 16, color: Colors.amber[800]),
                     const SizedBox(width: 8),
                     Text(
                       AppLocalizations.of(context)!.blockUserWarningTitle,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF92400E),
@@ -104,8 +109,9 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                   '• ${AppLocalizations.of(context)!.blockUserWarning2}\n'
                   '• ${AppLocalizations.of(context)!.blockUserWarning3}\n'
                   '• ${AppLocalizations.of(context)!.blockUserWarning4}',
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF78350F),
@@ -133,8 +139,9 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                 ),
                 child: Text(
                   AppLocalizations.of(context)!.cancel,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF6B7280),
@@ -156,19 +163,21 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                   ),
                   disabledBackgroundColor: const Color(0xFFE5E7EB),
                 ),
-                child: isBlocking 
+                child: isBlocking
                     ? const SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : Text(
                         AppLocalizations.of(context)!.blockUserButton,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
@@ -184,6 +193,11 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
   Future<void> _blockUser() async {
     final l10n = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final messenger = ScaffoldMessenger.of(context);
+    final blockedUserId = widget.userId;
+    final blockedUserName = widget.userName;
+    final unblockLabel = l10n.unblockUserButton;
+    final unblockedMessage = l10n.userUnblocked;
 
     setState(() {
       isBlocking = true;
@@ -196,30 +210,41 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
         if (mounted) {
           Navigator.pop(context, {
             'success': true,
-            'blockedUserId': widget.userId,
+            'blockedUserId': blockedUserId,
           });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
+
+          messenger.showSnackBar(
             SnackBar(
               content: Row(
                 children: [
-                  Icon(Icons.check_circle, color: Colors.white),
-                  SizedBox(width: 8),
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      isKo
-                          ? '${widget.userName}님을 차단했습니다.'
-                          : 'Blocked ${widget.userName}.',
+                      (isChineseUi(context) ? '已拉黑${blockedUserName}。' : isKo
+                          ? '$blockedUserName님을 차단했습니다.'
+                          : 'Blocked $blockedUserName.'),
                     ),
                   ),
                 ],
               ),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
+              duration: const Duration(seconds: 3),
               action: SnackBarAction(
-                label: l10n.unblockUserButton,
+                label: unblockLabel,
                 textColor: Colors.white,
-                onPressed: () => _undoBlock(),
+                onPressed: () async {
+                  final success =
+                      await ReportService.unblockUser(blockedUserId);
+                  if (success) {
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text(unblockedMessage),
+                        backgroundColor: Colors.blue,
+                      ),
+                    );
+                  }
+                },
               ),
             ),
           );
@@ -248,21 +273,6 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
         setState(() {
           isBlocking = false;
         });
-      }
-    }
-  }
-
-  Future<void> _undoBlock() async {
-    final l10n = AppLocalizations.of(context)!;
-    final success = await ReportService.unblockUser(widget.userId);
-    if (success) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.userUnblocked),
-            backgroundColor: Colors.blue,
-          ),
-        );
       }
     }
   }
@@ -300,7 +310,7 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withOpacity(0.1),
+              color: const Color(0xFF10B981).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
@@ -312,8 +322,9 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
           const SizedBox(width: 12),
           Text(
             AppLocalizations.of(context)!.unblockUserTitle,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -323,8 +334,9 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
       ),
       content: Text(
         AppLocalizations.of(context)!.unblockUserMessage(widget.userName),
-        style: const TextStyle(
-          fontFamily: 'Pretendard',
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 15,
           fontWeight: FontWeight.w500,
           color: Color(0xFF374151),
@@ -347,8 +359,9 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
                 ),
                 child: Text(
                   AppLocalizations.of(context)!.cancel,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF6B7280),
@@ -370,19 +383,21 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
                   ),
                   disabledBackgroundColor: const Color(0xFFE5E7EB),
                 ),
-                child: isUnblocking 
+                child: isUnblocking
                     ? const SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : Text(
                         AppLocalizations.of(context)!.unblockUserButton,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),
@@ -398,6 +413,8 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
   Future<void> _unblockUser() async {
     final l10n = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final messenger = ScaffoldMessenger.of(context);
+    final userName = widget.userName;
 
     setState(() {
       isUnblocking = true;
@@ -409,12 +426,10 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
       if (success) {
         if (mounted) {
           Navigator.pop(context, true); // 성공 시 true 반환
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             SnackBar(
               content: Text(
-                isKo
-                    ? '${widget.userName}님의 차단을 해제했습니다.'
-                    : 'Unblocked ${widget.userName}.',
+                (isChineseUi(context) ? '已取消拉黑${userName}。' : isKo ? '$userName님의 차단을 해제했습니다.' : 'Unblocked $userName.'),
               ),
               backgroundColor: Colors.green,
             ),
@@ -478,9 +493,3 @@ Future<bool?> showUnblockUserDialog(
     ),
   );
 }
-
-
-
-
-
-

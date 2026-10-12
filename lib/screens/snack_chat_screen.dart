@@ -1,177 +1,3797 @@
 import 'dart:async';
+import 'dart:collection';
+
+import '../utils/chat_work_queue.dart';
+import '../services/chat_outbox_store.dart';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
+import 'package:flutter/services.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart';
 
-import '../constants/app_constants.dart';
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
+import '../models/content_translation.dart';
+import '../config/snack_chat_file_policy.dart';
+import '../config/app_backend.dart';
+import '../l10n/app_localizations.dart';
+import '../repositories/users_repository.dart';
 import '../services/cache/app_image_cache_manager.dart';
+import '../services/badge_service.dart';
+import '../services/fcm_service.dart';
+import '../services/notification_service.dart';
+import '../services/navigation_service.dart';
 import '../services/snack_chat_active_conversation.dart';
+import '../services/snack_chat_document_import_service.dart';
+import '../services/snack_chat_local_cache_service.dart';
+import '../services/snack_chat_file_transfer_service.dart';
 import '../services/snack_chat_service.dart';
-import '../utils/logger.dart';
+import 'snack_chat_discovery_screen.dart';
 import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import '../ui/widgets/snack_chat_message_extras.dart';
+import '../ui/widgets/chat_reaction_widgets.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/chat_reply_reveal.dart';
+import '../ui/widgets/snack_chat_chrome.dart';
+import '../ui/widgets/snack_chat_outgoing_entrance.dart';
+import '../ui/widgets/retryable_chat_network_image.dart';
+import '../ui/widgets/user_avatar.dart';
+import '../services/content_translation_service.dart';
+import '../ui/dialogs/block_dialog.dart';
+import '../ui/dialogs/report_dialog.dart';
+import '../ui/dialogs/snack_chat_poll_dialog.dart';
+import '../ui/sheets/snack_chat_attachment_sheet.dart';
+import '../ui/widgets/chat_video_tile.dart';
+import '../ui/widgets/video_preparing_dialog.dart';
+import '../services/media/video_prepare_service.dart';
+import '../services/media/video_upload_policy.dart';
+import 'video_playback_screen.dart';
+import '../ui/sheets/snack_chat_file_confirmation_sheet.dart';
+import '../ui/sheets/snack_chat_image_confirmation_sheet.dart';
+import '../ui/sheets/snack_chat_people_sheet.dart';
+import '../ui/sheets/translation_language_sheet.dart';
+import '../utils/responsive_helper.dart';
+import '../utils/logger.dart';
+import '../utils/chat_timing.dart';
+import '../utils/snack_chat_message_grouping.dart';
+import '../utils/snack_chat_translation_policy.dart';
+import '../utils/snack_chat_mentions.dart';
+import '../utils/snack_chat_read_policy.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import '../ui/widgets/snack_chat_mention_picker.dart';
+import 'friend_categories_screen.dart';
 import 'main_screen.dart';
 import 'snack_chat_info_screen.dart';
+import '../ui/widgets/pinned_post_card.dart';
+import '../ui/widgets/snack_chat_translation_split_button.dart';
+import '../ui/widgets/snack_chat_translated_text.dart';
+import '../l10n/translation_source_language.dart';
+import '../l10n/ui_locale.dart';
+
+@visibleForTesting
+bool isSnackChatMessageMeaningfullyVisible({
+  required double itemTop,
+  required double itemHeight,
+  required double viewportTop,
+  required double viewportBottom,
+}) {
+  if (itemHeight <= 0 || viewportBottom <= viewportTop) return false;
+  final itemBottom = itemTop + itemHeight;
+  final visibleHeight = (itemBottom.clamp(viewportTop, viewportBottom) -
+          itemTop.clamp(viewportTop, viewportBottom))
+      .abs();
+  final requiredVisibleHeight = (itemHeight * .2).clamp(8.0, 24.0).toDouble();
+  return visibleHeight >= requiredVisibleHeight;
+}
+
+@visibleForTesting
+int snackChatSecureTextBatchPrefixLength(
+  Iterable<bool> supported, {
+  int maximum = 5,
+}) {
+  if (maximum <= 0) return 0;
+  var count = 0;
+  for (final isSupported in supported) {
+    if (!isSupported || count >= maximum) break;
+    count++;
+  }
+  return count;
+}
+
+@visibleForTesting
+bool shouldParkSnackChatOutbound({
+  required bool sessionValid,
+  required bool resolved,
+  required bool acknowledged,
+}) =>
+    sessionValid && !resolved && !acknowledged;
 
 class SnackChatScreen extends StatefulWidget {
   final String snackChatId;
   final bool fromPush;
+  final SnackChat? initialRoom;
+  final SnackChatEntryContext? initialEntryContext;
 
   const SnackChatScreen({
     super.key,
     required this.snackChatId,
     this.fromPush = false,
+    this.initialRoom,
+    this.initialEntryContext,
   });
 
   @override
   State<SnackChatScreen> createState() => _SnackChatScreenState();
 }
 
-class _SnackChatScreenState extends State<SnackChatScreen> {
+class _ReadReceiptData {
+  const _ReadReceiptData({required this.read, required this.unread});
+
+  final List<String> read;
+  final List<String> unread;
+
+  int get total => read.length + unread.length;
+}
+
+enum _MessageActionType {
+  reaction,
+  reply,
+  retranslate,
+  retry,
+  removeFailed,
+  report,
+  block,
+}
+
+class _MessageAction {
+  const _MessageAction(this.type, {this.emoji});
+
+  final _MessageActionType type;
+  final String? emoji;
+}
+
+class _ScrollAnchor {
+  const _ScrollAnchor({required this.messageId, required this.globalDy});
+
+  final String messageId;
+  final double globalDy;
+}
+
+class _SnackTranslationOutcome {
+  const _SnackTranslationOutcome({
+    required this.message,
+    required this.requestKey,
+    required this.result,
+  });
+
+  final SnackChatMessage message;
+  final String requestKey;
+  final ContentTranslationResult? result;
+}
+
+enum _SnackTranslationPriority { live, visible, adjacent }
+
+class _SnackTranslationCandidate {
+  const _SnackTranslationCandidate({
+    required this.message,
+    required this.priority,
+    required this.distanceFromViewportCenter,
+  });
+
+  final SnackChatMessage message;
+  final _SnackTranslationPriority priority;
+  final double distanceFromViewportCenter;
+}
+
+class _SnackChatOutboundTask {
+  _SnackChatOutboundTask({
+    required this.roomId,
+    required this.messageId,
+    required this.isValid,
+    required this.send,
+    required this.sendSecureBatch,
+    required this.secureTextRequest,
+    required this.holdUncertain,
+    required this.resolve,
+  });
+
+  final String roomId;
+  final String messageId;
+  final bool Function() isValid;
+  final Future<bool> Function() send;
+  final Future<List<SnackChatTextSendResult>> Function(
+      List<SnackChatTextSendRequest> requests) sendSecureBatch;
+  final SnackChatTextSendRequest? secureTextRequest;
+  final bool holdUncertain;
+  final Future<bool> Function(bool reportedSuccess) resolve;
+  bool forceSingle = false;
+  final Stopwatch waiting = Stopwatch()..start();
+  final Completer<bool?> completion = Completer<bool?>();
+}
+
+class _SnackChatOutboundLane {
+  final Queue<_SnackChatOutboundTask> pending = Queue<_SnackChatOutboundTask>();
+  bool draining = false;
+  _SnackChatOutboundTask? activeTask;
+  String? sendingMessageId;
+  String? unresolvedMessageId;
+  String? acknowledgedMessageId;
+  Future<bool?>? recovery;
+  bool releaseAfterRecovery = false;
+}
+
+class _SnackChatScreenState extends State<SnackChatScreen>
+    with WidgetsBindingObserver, RouteAware {
+  static const Color _chatBackground = SnackChatBackdrop.backgroundColor;
+  // 스낵챗 v3: 위필링 디자인 시스템 값(SnackChatPalette)만 쓴다.
+  static const Color _outgoingBubble = SnackChatPalette.pointStrong;
+  static const Color _incomingBubble = SnackChatPalette.fillSubtle;
+  static const Color _incomingText = SnackChatPalette.ink;
+  static const Color _secondaryText = SnackChatPalette.inkSecondary;
+  static const Color _tertiaryText = SnackChatPalette.inkTertiary;
+  static const Color _readCountText = SnackChatPalette.pointStrong;
+  // v3 입력줄: 흰 바 + #EEEEEE 입력창, 전송은 활성 #2C6BC0 / 비활성 #EEEEEE.
+  static const Color _composerBackground = SnackChatPalette.fillSubtle;
+  static const Color _composerAction = SnackChatPalette.pointStrong;
+  static const Color _composerActionDisabled = SnackChatPalette.fillSubtle;
+  static const Duration _peopleLookupDeadline = Duration(seconds: 8);
+  static const int _translationPrimaryBatchSize = 5;
+  static const int _translationOverflowBatchSize = 2;
+  static const int _maxConcurrentTranslationBatches = 2;
+  static const int _maxTranslationRequestsInFlight = 7;
+  static const int _maxLiveMessageWindow = 200;
+  static const int _translationAdjacentPrefetchLimit = 2;
+  static const Duration _translationMicroBatchWindow =
+      Duration(milliseconds: 70);
+  static const double _senderAvatarSize = 28;
+  static const double _senderAvatarGap = 8;
+
   final SnackChatService _snackChatService = SnackChatService();
+  final UsersRepository _usersRepository = UsersRepository();
   final StorageService _storageService = StorageService();
   final UserInfoCacheService _userInfoCache = UserInfoCacheService();
-  final TextEditingController _messageController = TextEditingController();
+  final SnackChatLocalCacheService _localCache = SnackChatLocalCacheService();
+  final SnackChatDocumentImportService _documentImporter =
+      SnackChatDocumentImportService.instance;
+  final SnackChatFileTransferService _fileTransfer =
+      SnackChatFileTransferService.instance;
+  final ContentTranslationService _translationService =
+      ContentTranslationService.instance;
+  final SnackChatMentionController _messageController =
+      SnackChatMentionController();
+  final FocusNode _messageFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
+  String? _targetLanguageCode;
 
-  bool _isSending = false;
   bool _isUploadingImage = false;
-  Timer? _autoMarkReadDebounce;
-  bool _autoMarkReadInFlight = false;
+  static final _imageUploadQueue = ChatWorkQueue();
+  static final _recoveryCheckQueue = ChatWorkQueue();
+  static const _sendRecoveryV2 =
+      bool.fromEnvironment('SNACK_CHAT_SEND_RECOVERY_V2', defaultValue: true);
+  static const _secureTextBatchEnabled = bool.fromEnvironment(
+    'SNACK_CHAT_SECURE_TEXT_BATCH',
+    defaultValue: false,
+  );
+  bool _followingLatest = false;
+  bool _isCreatingPoll = false;
+  bool _isAttachmentFlowOpen = false;
+  bool _isLeavingRoom = false;
+  bool _roomAccessTerminated = false;
+  bool _roomWasLeft = false;
+  bool _roomAccessTerminationScheduled = false;
+  bool _roomAvailabilityCheckInFlight = false;
+  Timer? _roomRetryTimer;
+  int _roomRetryAttempt = 0;
+  bool _pushBackNavigationInFlight = false;
+  bool _exitReadFlushStarted = false;
+  bool _activeReadSyncInFlight = false;
+  bool _readSyncScanScheduled = false;
+  bool _immediateReadSyncRequested = false;
+  Stopwatch? _readRequestIntervalWatch;
+  static const Duration _activeReadRequestInterval =
+      Duration(milliseconds: 1500);
+  // Direct read fast path (SNACK_CHAT_DIRECT_READ): the highest sequence the
+  // Rules-validated member write accepted, and the coalesced reconcile timer
+  // that lets the callable settle room.unreadCount afterwards.
+  int _directReadAcceptedSequence = 0;
+  Timer? _readReconcileTimer;
+  // Phase 0 measurement (ChatTiming only): entry → first painted history.
+  final Stopwatch _entryWatch = Stopwatch()..start();
+  bool _entryFirstPaintRecorded = false;
+  int _pendingReadSequence = 0;
+  int _confirmedReadSequence = 0;
+  int _highestConfirmedReadSequence = 0;
+  int _readSyncGeneration = 0;
   final Map<String, String> _senderNameCache = {};
-  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+  final Map<String, Future<String>> _senderNameFutures = {};
+  final Set<String> _senderProfileRefreshStarted = <String>{};
+  final Map<String, ValueNotifier<DMUserInfo?>> _senderProfileNotifiers = {};
+  final Set<String> _senderProfileLookupsStarted = <String>{};
+  int _senderProfileGeneration = 0;
+  final Map<String, GlobalKey> _messageKeys = {};
+  final GlobalKey _messageViewportKey =
+      GlobalKey(debugLabel: 'snack-chat-message-viewport');
+  final String? _screenOwnerUid = FirebaseAuth.instance.currentUser?.uid;
+  bool _accountInvalidated = false;
+  StreamSubscription<User?>? _accountSubscription;
+  String? get _uid => !_accountInvalidated &&
+          FirebaseAuth.instance.currentUser?.uid == _screenOwnerUid
+      ? _screenOwnerUid
+      : null;
+  late Stream<SnackChat?> _roomStream;
+  Future<void>? _membershipReady;
+  AppLifecycleState _appLifecycleState = AppLifecycleState.detached;
+  SnackChatMessage? _replyingTo;
+  String? _replyingToSenderName;
+  Object? _messageStreamError;
+  Object? _loadMoreError;
+  final Map<String, String> _myReactions = <String, String>{};
+  final _reactionMotionEvents = ChatReactionMotionEvents();
+  final Map<String, Set<String>> _myVotes = <String, Set<String>>{};
+  final Map<String, String?> _confirmedReactions = <String, String?>{};
+  final Map<String, Set<String>> _confirmedVotes = <String, Set<String>>{};
+  final Map<String, String?> _pendingReactionTargets = <String, String?>{};
+  final Map<String, Set<String>> _pendingVoteTargets = <String, Set<String>>{};
+  final Set<String> _reactionMutationsInFlight = <String>{};
+  final Set<String> _voteMutationsInFlight = <String>{};
+  final Set<String> _retryingMessageIds = <String>{};
+  // Messages whose last send was rejected outright (Rules/validation). They
+  // stay visible as failed but are excluded from automatic outbox recovery:
+  // retrying the same payload cannot succeed, and looping would hammer the
+  // room while every participant is chatting. A manual retry clears the flag.
+  final Set<String> _definitivelyRejectedIds = <String>{};
+  final Set<String> _sendingTextMessageIds = <String>{};
+  static final Map<String, _SnackChatOutboundLane> _outboundLanes =
+      <String, _SnackChatOutboundLane>{};
+  final Set<String> _outboundEntranceMessageIds = <String>{};
+  final Map<String, Timer> _outboundEntranceExpiryTimers = <String, Timer>{};
+  final Set<String> _removingFailedMessageIds = <String>{};
+  final Set<String> _blockedUserIds = <String>{};
 
   // ─── 페이지네이션 상태 ───────────────────────────────────────────
   StreamSubscription<List<SnackChatMessage>>? _msgSub;
-  StreamSubscription<DocumentSnapshot>? _roomSub;
+  StreamSubscription<List<SnackChatMember>>? _memberSub;
+  StreamSubscription<List<SnackChatReaction>>? _reactionSub;
+  StreamSubscription<List<SnackChatVote>>? _voteSub;
+  StreamSubscription<Set<String>>? _blockSub;
+  StreamSubscription<SnackChatFileTransferEvent>? _fileTransferSub;
+  Timer? _messageRetryTimer;
+  Timer? _messageWindowExpansionTimer;
+  Timer? _fileExpiryTimer;
+  int _messageRetryAttempt = 0;
+  Timer? _auxiliaryRetryTimer;
+  int _auxiliaryRetryAttempt = 0;
+  int _auxiliarySubscriptionGeneration = 0;
+  int _messageSubscriptionGeneration = 0;
   final List<SnackChatMessage> _messages = [];
   final Set<String> _messageIds = {};
-  DateTime? _oldestMessageTime;
+  final Map<String, SnackChatMessage> _lastLiveServerMessages =
+      <String, SnackChatMessage>{};
+  final Set<String> _attemptedSequenceGaps = <String>{};
+  Future<void>? _sequenceGapRecovery;
+  int _sequenceGapRecoveryGeneration = 0;
+  Timer? _sequenceGapRetryTimer;
+  int _sequenceGapRetryAttempt = 0;
+  int? _liveWindowMinimumSequence;
+  final Map<String, SnackChatMember> _members = <String, SnackChatMember>{};
+  String _verifiedParticipantSignature = '';
+  int? _verifiedParticipantCount;
+  int _participantVerificationGeneration = 0;
+  SnackChatMessage? _oldestMessage;
   bool _hasMore = true;
   bool _isLoadingMore = false;
-  bool _isInitialLoading = true;
+  bool _isInitialLoading = true; // 초기 로딩 상태 추가
+  SnackChat? _lastRoom;
+  Timer? _draftSaveDebounce;
+  Timer? _messageCacheDebounce;
+  Timer? _outboxRetryTimer;
+  int _outboxRetryAttempt = 0;
+  bool _restoringDraft = false;
+  bool _draftTouched = false;
+  bool _isNearLatest = true;
+  bool _hasReceivedFirstLiveBatch = false;
+  bool _messageWindowExpansionPending = false;
+  int _newMessageCount = 0;
+  int _cacheHydrationGeneration = 0;
+  String? _cachedRoomWriteToken;
+  DateTime? _lastOptimisticCreatedAt;
+  int _entryBootstrapGeneration = 0;
+  String? _firstUnreadMessageId;
+  int? _firstUnreadSequence;
+  bool _entryUnreadHapticPlayed = false;
+  int _entryLatestSequence = 0;
+  bool _entryContextResolved = false;
+  bool _entryPositionSettled = false;
+  bool _entryReadSyncAllowed = false;
+  bool _entryPositionInFlight = false;
+  bool _membershipPreparationPending = true;
+  Timer? _entryRetryTimer;
+  int _entryRetryAttempt = 0;
 
-  // build()마다 새 stream을 생성하면 매 setState마다 Firestore 리스너가
-  // 등록/해제를 반복해 SDK 내부 상태가 불안정해진다.
-  // initState에서 한 번만 생성하고 재사용한다.
-  late final Stream<SnackChat?> _roomStream;
-  Timer? _initialLoadingTimeoutTimer;
+  // Only the messages currently laid out in this room are translated. Results
+  // live here for an immediate rebuild while the shared service remains the
+  // source of truth for memory/Hive/server cache reuse.
+  final Map<String, ContentTranslationResult> _messageTranslations =
+      <String, ContentTranslationResult>{};
+  final Map<String, String> _translationSourceSignatures = <String, String>{};
+  final Set<String> _translationRequestsInFlight = <String>{};
+  final Map<String, int> _translationFailures = <String, int>{};
+  final Map<String, DateTime> _translationRetryAfter = <String, DateTime>{};
+  final Map<String, _SnackTranslationOutcome> _deferredTranslationOutcomes =
+      <String, _SnackTranslationOutcome>{};
+  final Set<String> _translationCacheLookupsInFlight = <String>{};
+  final Map<String, _SnackTranslationCandidate>
+      _translationMicroBatchCandidates = <String, _SnackTranslationCandidate>{};
+  final Map<String, DateTime> _liveTranslationPriorityUntil =
+      <String, DateTime>{};
+  Timer? _translationMicroBatchTimer;
+  Timer? _translationRetryTimer;
+  bool _translationScanScheduled = false;
+  int _translationBatchesInFlight = 0;
+  bool _translationModeReady = false;
+  bool _translationLanguageSheetOpen = false;
+  // Per-message: one bubble's long retry must not disable retry on others.
+  final Set<String> _manualTranslationRetryKeys = <String>{};
+  bool _isUserScrolling = false;
+  bool _translationRestoreScheduled = false;
+  int _translationRestoreGeneration = 0;
+  _ScrollAnchor? _pendingTranslationAnchor;
+  bool _pendingTranslationKeepAtLatest = false;
+  int _translationStateGeneration = 0;
+  bool _initialLocalHydrationStarted = false;
+  late int _translationLanguageRevision;
+  late bool _translationShowsOriginal;
+  late bool _translationProviderRetryExhausted;
+  late bool _translationProviderRetryAvailable;
+
+  String get _translationScope => 'snack-room:${widget.snackChatId}';
+  bool get _canStartTranslationBatch =>
+      _translationBatchesInFlight < _maxConcurrentTranslationBatches &&
+      _translationRequestsInFlight.length < _maxTranslationRequestsInFlight;
 
   @override
   void initState() {
     super.initState();
+    _accountSubscription =
+        FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user?.uid == _screenOwnerUid) return;
+      _accountInvalidated = true;
+      if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+        SnackChatActiveConversation.setActive(null);
+      }
+      final oldOwner = _screenOwnerUid;
+      if (oldOwner != null) {
+        final emptyLanes = <String>[];
+        for (final entry in _outboundLanes.entries) {
+          if (!entry.key.startsWith('$oldOwner::')) continue;
+          final lane = entry.value;
+          while (lane.pending.isNotEmpty) {
+            final task = lane.pending.removeFirst();
+            if (!task.completion.isCompleted) task.completion.complete(null);
+          }
+          lane.unresolvedMessageId = null;
+          lane.acknowledgedMessageId = null;
+          if (!lane.draining &&
+              lane.activeTask == null &&
+              lane.recovery == null) emptyLanes.add(entry.key);
+        }
+        for (final key in emptyLanes) {
+          _outboundLanes.remove(key);
+        }
+      }
+      _cacheHydrationGeneration++;
+      _readSyncGeneration++;
+      _immediateReadSyncRequested = false;
+      _draftSaveDebounce?.cancel();
+      _messageCacheDebounce?.cancel();
+      _outboxRetryTimer?.cancel();
+      unawaited(_msgSub?.cancel());
+    });
+    WidgetsBinding.instance.addObserver(this);
+    _translationLanguageRevision = _translationService.languageRevision;
+    _translationShowsOriginal =
+        _translationService.showsOriginal(_translationScope);
+    _translationProviderRetryExhausted =
+        _translationService.hasExhaustedRetryForScope(_translationScope);
+    _translationProviderRetryAvailable =
+        _translationService.canRetryScope(_translationScope);
+    _translationService.addListener(_handleTranslationServiceChange);
+    unawaited(_prepareTranslationMode());
+    _appLifecycleState =
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.detached;
+    if (_appLifecycleState == AppLifecycleState.resumed) {
+      SnackChatActiveConversation.setActive(widget.snackChatId);
+    }
+    _lastRoom = widget.initialRoom;
+    _seedEntryContext(widget.initialEntryContext);
+    if (widget.initialEntryContext?.canAdvanceReadCursor == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scheduleActiveReadSync();
+      });
+    }
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
-    SnackChatActiveConversation.setActive(widget.snackChatId);
     _scrollController.addListener(_onScroll);
-    _scheduleMarkAsRead();
+    _messageController.addListener(_onDraftChanged);
+    // Attach the bounded listener immediately. Entry/membership preparation
+    // runs alongside it and must never gate the first visible message batch.
     _subscribeToMessages();
-    _subscribeToRoom();
+    unawaited(_prepareEntryAndSubscribe());
+    _subscribeToAuxiliaryState();
+    _subscribeToFileTransfers();
+    unawaited(_restoreFileTransfers());
+  }
 
-    // 방어 코드: stream이 영원히 첫 이벤트를 내보내지 않는 경우
-    // (네트워크 단절, Firestore 재연결 지연 등) 로딩 상태 해제
-    _initialLoadingTimeoutTimer = Timer(const Duration(seconds: 12), () {
-      if (mounted && _isInitialLoading) {
-        setState(() => _isInitialLoading = false);
-        Logger.warning('⚠️ [SnackChat] 초기 로딩 타임아웃 → 강제 해제');
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) NavigationService.routeObserver.subscribe(this, route);
+    if (_initialLocalHydrationStarted) return;
+    _initialLocalHydrationStarted = true;
+
+    // didChangeDependencies runs in the same first-frame lifecycle as
+    // initState, but inherited locale access is safe here. Live Firestore
+    // subscription has already started in initState, so cache hydration never
+    // delays the first remote message batch.
+    unawaited(
+      _hydrateLocalState(
+        uiLanguageCode: Localizations.localeOf(context).languageCode,
+      ),
+    );
+  }
+
+  @override
+  void didPushNext() {
+    if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      SnackChatActiveConversation.setActive(null);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    if (!mounted || _appLifecycleState != AppLifecycleState.resumed ||
+        _isLeavingRoom || _roomWasLeft || _roomAccessTerminated) return;
+    SnackChatActiveConversation.setActive(widget.snackChatId);
+    _scheduleActiveReadSync();
+  }
+
+  void _resetTranslationStateForRoom() {
+    _translationStateGeneration++;
+    _translationMicroBatchTimer?.cancel();
+    _translationMicroBatchTimer = null;
+    _translationRetryTimer?.cancel();
+    _translationRetryTimer = null;
+    _translationScanScheduled = false;
+    _translationBatchesInFlight = 0;
+    _translationModeReady = false;
+    _manualTranslationRetryKeys.clear();
+    _isUserScrolling = false;
+    _cancelPendingTranslationRestore();
+    _messageTranslations.clear();
+    _translationSourceSignatures.clear();
+    _translationRequestsInFlight.clear();
+    _translationCacheLookupsInFlight.clear();
+    _translationMicroBatchCandidates.clear();
+    _liveTranslationPriorityUntil.clear();
+    _deferredTranslationOutcomes.clear();
+    _translationFailures.clear();
+    _translationRetryAfter.clear();
+    _translationLanguageRevision = _translationService.languageRevision;
+    _translationShowsOriginal =
+        _translationService.showsOriginal(_translationScope);
+    _translationProviderRetryExhausted =
+        _translationService.hasExhaustedRetryForScope(_translationScope);
+    _translationProviderRetryAvailable =
+        _translationService.canRetryScope(_translationScope);
+  }
+
+  Future<void> _prepareTranslationMode() async {
+    final roomId = widget.snackChatId;
+    final generation = _translationStateGeneration;
+    await _translationService.loadSnackRoomMode(roomId);
+    if (!mounted ||
+        generation != _translationStateGeneration ||
+        roomId != widget.snackChatId) {
+      return;
+    }
+    setState(() {
+      _translationModeReady = true;
+      _translationShowsOriginal =
+          _translationService.showsOriginal(_translationScope);
+    });
+    if (!_translationShowsOriginal) _scheduleVisibleTranslations();
+    unawaited(_refreshTargetLanguageLabel());
+  }
+
+  void _handleTranslationServiceChange() {
+    if (!mounted) return;
+    final revision = _translationService.languageRevision;
+    final showingOriginal =
+        _translationService.showsOriginal(_translationScope);
+    final languageChanged = revision != _translationLanguageRevision;
+    final modeChanged = showingOriginal != _translationShowsOriginal;
+    final retryExhausted =
+        _translationService.hasExhaustedRetryForScope(_translationScope);
+    final retryAvailable = _translationService.canRetryScope(_translationScope);
+    final retryPresentationChanged =
+        retryExhausted != _translationProviderRetryExhausted ||
+            retryAvailable != _translationProviderRetryAvailable;
+    if (!languageChanged && !modeChanged) {
+      // 다른 화면과 메시지의 캐시 적중도 서비스 알림을 발생시킨다. 재시도
+      // 표시가 실제로 달라질 때만 전체 채팅 화면을 다시 빌드한다.
+      if (!retryPresentationChanged) return;
+      setState(() {
+        _translationProviderRetryExhausted = retryExhausted;
+        _translationProviderRetryAvailable = retryAvailable;
+      });
+      return;
+    }
+
+    _cancelPendingTranslationRestore();
+    final canRestoreScroll = !_isUserScrolling;
+    final keepAtLatest = canRestoreScroll && _isNearLatest;
+    final anchor =
+        canRestoreScroll && !keepAtLatest ? _captureScrollAnchor() : null;
+    setState(() {
+      _translationLanguageRevision = revision;
+      _translationShowsOriginal = showingOriginal;
+      _translationProviderRetryExhausted = retryExhausted;
+      _translationProviderRetryAvailable = retryAvailable;
+      if (languageChanged) {
+        _translationStateGeneration++;
+        _translationMicroBatchTimer?.cancel();
+        _translationMicroBatchTimer = null;
+        _translationBatchesInFlight = 0;
+        _translationModeReady = false;
+        _manualTranslationRetryKeys.clear();
+        _messageTranslations.clear();
+        _translationSourceSignatures.clear();
+        _translationRequestsInFlight.clear();
+        _translationCacheLookupsInFlight.clear();
+        _translationMicroBatchCandidates.clear();
+        _liveTranslationPriorityUntil.clear();
+        _deferredTranslationOutcomes.clear();
+        _translationFailures.clear();
+        _translationRetryAfter.clear();
+        _translationRetryTimer?.cancel();
+        _translationRetryTimer = null;
+      } else if (showingOriginal) {
+        // Keep completed cache entries, but do not let a queued miss start a
+        // server request after the room has switched back to original mode.
+        _translationMicroBatchTimer?.cancel();
+        _translationMicroBatchTimer = null;
+        _translationMicroBatchCandidates.clear();
+        _liveTranslationPriorityUntil.clear();
+      }
+    });
+    if (canRestoreScroll) {
+      _restoreAfterTranslationChange(
+        anchor,
+        keepAtLatest: keepAtLatest,
+      );
+    }
+    if (languageChanged) {
+      unawaited(_prepareTranslationMode());
+    } else if (_translationModeReady && !showingOriginal) {
+      _scheduleVisibleTranslations();
+    }
+  }
+
+  bool _canTranslateMessage(SnackChatMessage message) {
+    final currentUid = _uid?.trim() ?? '';
+    final senderId = message.senderId.trim();
+    // Do not guess ownership before immutable IDs are available. No failure or
+    // skip state is recorded here, so the next bounded visible scan can
+    // evaluate the bubble normally once authentication/message data settles.
+    if (currentUid.isEmpty || senderId.isEmpty) return false;
+    if (isOwnSnackChatMessage(
+          senderId: senderId,
+          currentUserId: currentUid,
+        ) ||
+        message.isDeleted ||
+        message.isPending ||
+        message.hasFailed ||
+        message.type == SnackChatMessageType.system ||
+        message.type == SnackChatMessageType.file ||
+        message.id.isEmpty) {
+      return false;
+    }
+    return _translationSourceFields(message)
+        .values
+        .any(hasTranslatableSnackChatText);
+  }
+
+  Map<String, String> _translationSourceFields(SnackChatMessage message) {
+    final poll =
+        message.type == SnackChatMessageType.poll ? message.poll : null;
+    if (poll == null) {
+      return message.text.trim().isEmpty
+          ? const <String, String>{}
+          : <String, String>{'text': message.text};
+    }
+
+    // The server hashes `text` for every poll (empty question included); an
+    // omitted key made the hashes differ and every retry end in
+    // stale_translation_result.
+    final fields = <String, String>{'text': poll.question};
+    for (var index = 0; index < poll.options.length; index++) {
+      final optionText = poll.options[index].text;
+      if (optionText.trim().isNotEmpty) {
+        fields['pollOption$index'] = optionText;
+      }
+    }
+    return fields;
+  }
+
+  String _translationSourceSignature(SnackChatMessage message) {
+    final fields = _translationSourceFields(message);
+    final keys = fields.keys.toList(growable: false)..sort();
+    return keys.map((key) {
+      final value = fields[key]!;
+      return '${key.length}:$key${value.length}:$value';
+    }).join('|');
+  }
+
+  String _translationRequestKey(SnackChatMessage message) =>
+      '${message.id}\u0000${_translationSourceSignature(message)}';
+
+  ContentTranslationRequest _translationRequestForMessage(
+    SnackChatMessage message, {
+    String? roomId,
+  }) =>
+      ContentTranslationRequest(
+        contentType: 'snack_chat_message',
+        contentId: message.id,
+        parentId: roomId ?? widget.snackChatId,
+        sourceFields: _translationSourceFields(message),
+      );
+
+  bool _isCompleteTranslationForMessage(
+    SnackChatMessage message,
+    ContentTranslationResult? result,
+  ) {
+    if (result?.isReady != true) return false;
+    final sourceFields = _translationSourceFields(message);
+    if (sourceFields.isEmpty) return false;
+    for (final entry in sourceFields.entries) {
+      if (entry.value.trim().isNotEmpty &&
+          (result!.translatedFields[entry.key] ?? '').trim().isEmpty) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  ContentTranslationResult? _currentTranslationForMessage(
+    SnackChatMessage message,
+  ) {
+    // 과거 버전에서 저장된 캐시가 있더라도 내 메시지와 번역 제외 콘텐츠에는
+    // 적용하지 않는다. 이는 현재 화면의 auth uid 기준 정책일 뿐이므로 다른
+    // 참여자는 자신의 목표 언어로 이 메시지를 번역할 수 있다.
+    if (!_canTranslateMessage(message)) return null;
+    final signature = _translationSourceSignature(message);
+    if (_translationSourceSignatures[message.id] == signature) {
+      final localResult = _messageTranslations[message.id];
+      if (_isCompleteTranslationForMessage(message, localResult)) {
+        return localResult;
+      }
+    }
+
+    // 같은 앱 세션에서 이미 조회한 결과는 방 재진입 시 첫 프레임부터 바로
+    // 사용한다. 화면별 Map을 다시 채우기 위한 비동기 요청을 기다리지 않는다.
+    final sharedResult = _translationService.latestResultFor(
+      _translationRequestForMessage(message),
+    );
+    return _isCompleteTranslationForMessage(message, sharedResult)
+        ? sharedResult
+        : null;
+  }
+
+  bool _hasCurrentTranslation(SnackChatMessage message) {
+    return _currentTranslationForMessage(message) != null;
+  }
+
+  void _scheduleVisibleTranslations() {
+    if (!mounted ||
+        !_translationModeReady ||
+        _translationShowsOriginal ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        _isLeavingRoom ||
+        _roomAccessTerminated) {
+      return;
+    }
+    _scheduleTranslationScanAfterLayout();
+  }
+
+  void _scheduleTranslationScanAfterLayout() {
+    if (_translationScanScheduled) return;
+    _translationScanScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _translationScanScheduled = false;
+      if (!mounted ||
+          !_translationModeReady ||
+          _translationShowsOriginal ||
+          _appLifecycleState != AppLifecycleState.resumed ||
+          _isLeavingRoom ||
+          _roomAccessTerminated) {
+        return;
+      }
+      // A frame callback is enough to coalesce repeated scroll/rebuild events.
+      // Do not wait for ScrollEnd: cache lookup starts while the newly visible
+      // bubble is still moving through the viewport.
+      unawaited(_primeVisibleTranslationCandidates());
+    });
+  }
+
+  void _scheduleVisibleTranslationScanFromScroll() {
+    if (!_translationModeReady || _translationShowsOriginal) return;
+    _scheduleTranslationScanAfterLayout();
+  }
+
+  bool _isTranslationWorkPending(String requestKey) =>
+      _translationRequestsInFlight.contains(requestKey) ||
+      _translationCacheLookupsInFlight.contains(requestKey) ||
+      _translationMicroBatchCandidates.containsKey(requestKey) ||
+      _deferredTranslationOutcomes.containsKey(requestKey);
+
+  List<_SnackTranslationCandidate> _translationCandidatesNearViewport({
+    required int limit,
+    bool includeQueued = false,
+  }) {
+    if (limit <= 0) return const <_SnackTranslationCandidate>[];
+    final viewportRenderObject =
+        _messageViewportKey.currentContext?.findRenderObject();
+    final viewportBox =
+        viewportRenderObject is RenderBox && viewportRenderObject.attached
+            ? viewportRenderObject
+            : null;
+    final viewportTop = viewportBox?.localToGlobal(Offset.zero).dy ?? 0;
+    final viewportBottom = viewportBox == null
+        ? MediaQuery.sizeOf(context).height
+        : viewportTop + viewportBox.size.height;
+    final viewportHeight = (viewportBottom - viewportTop).abs();
+    final adjacentExtent = viewportHeight * 0.22;
+    final viewportCenter = (viewportTop + viewportBottom) / 2;
+    final now = DateTime.now();
+    _liveTranslationPriorityUntil.removeWhere(
+      (_, expiresAt) => !expiresAt.isAfter(now),
+    );
+    final candidates = <_SnackTranslationCandidate>[];
+
+    for (final message in _messages) {
+      if (!_canTranslateMessage(message) || _hasCurrentTranslation(message)) {
+        continue;
+      }
+      final requestKey = _translationRequestKey(message);
+      if (_translationRequestsInFlight.contains(requestKey) ||
+          _translationCacheLookupsInFlight.contains(requestKey) ||
+          _deferredTranslationOutcomes.containsKey(requestKey) ||
+          (!includeQueued &&
+              _translationMicroBatchCandidates.containsKey(requestKey))) {
+        continue;
+      }
+      final failureCount = _translationFailures[requestKey] ?? 0;
+      if (failureCount >= 3) continue;
+      final retryAfter = _translationRetryAfter[requestKey];
+      if (retryAfter != null && retryAfter.isAfter(now)) continue;
+      // An exhausted/non-retryable failure has no retry deadline. Keep it for
+      // the explicit retry button instead of automatically spending again.
+      if (failureCount >= 2 && retryAfter == null) continue;
+
+      final renderObject =
+          _messageKeys[message.id]?.currentContext?.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.attached) continue;
+      final top = renderObject.localToGlobal(Offset.zero).dy;
+      final bottom = top + renderObject.size.height;
+      final isVisible = bottom > viewportTop && top < viewportBottom;
+      final isAdjacent = bottom > viewportTop - adjacentExtent &&
+          top < viewportBottom + adjacentExtent;
+      if (!isAdjacent) continue;
+      final isLivePriority =
+          _liveTranslationPriorityUntil[message.id]?.isAfter(now) == true;
+      candidates.add(
+        _SnackTranslationCandidate(
+          message: message,
+          priority: isLivePriority
+              ? _SnackTranslationPriority.live
+              : isVisible
+                  ? _SnackTranslationPriority.visible
+                  : _SnackTranslationPriority.adjacent,
+          distanceFromViewportCenter:
+              (((top + bottom) / 2) - viewportCenter).abs(),
+        ),
+      );
+    }
+
+    candidates.sort((a, b) {
+      final byPriority = a.priority.index.compareTo(b.priority.index);
+      if (byPriority != 0) return byPriority;
+      return a.distanceFromViewportCenter.compareTo(
+        b.distanceFromViewportCenter,
+      );
+    });
+    final selected = <_SnackTranslationCandidate>[];
+    var adjacentCount = 0;
+    for (final candidate in candidates) {
+      if (candidate.priority == _SnackTranslationPriority.adjacent &&
+          adjacentCount >= _translationAdjacentPrefetchLimit) {
+        continue;
+      }
+      selected.add(candidate);
+      if (candidate.priority == _SnackTranslationPriority.adjacent) {
+        adjacentCount++;
+      }
+      if (selected.length == limit) break;
+    }
+    return selected;
+  }
+
+  int get _nextAdaptiveTranslationBatchSize {
+    if (!_canStartTranslationBatch) return 0;
+    final remainingCapacity =
+        _maxTranslationRequestsInFlight - _translationRequestsInFlight.length;
+    if (remainingCapacity <= 0) return 0;
+    final preferred = _translationBatchesInFlight == 0
+        ? _translationPrimaryBatchSize
+        : _translationOverflowBatchSize;
+    return preferred.clamp(1, remainingCapacity).toInt();
+  }
+
+  Future<void> _primeVisibleTranslationCandidates() async {
+    if (!_translationModeReady ||
+        _translationShowsOriginal ||
+        _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    // Local cache probes are cheap and must not wait behind an active network
+    // batch. Network capacity is enforced later at micro-batch flush time.
+    final availableCapacity = _maxTranslationRequestsInFlight -
+        _translationCacheLookupsInFlight.length;
+    if (availableCapacity <= 0) return;
+    final candidates = _translationCandidatesNearViewport(
+      limit: availableCapacity,
+    );
+    if (candidates.isEmpty) return;
+
+    final generation = _translationStateGeneration;
+    final languageRevision = _translationLanguageRevision;
+    final roomId = widget.snackChatId;
+    final uiLanguageCode = Localizations.localeOf(context).languageCode;
+    final keys = <String>{
+      for (final candidate in candidates)
+        _translationRequestKey(candidate.message),
+    };
+    setState(() => _translationCacheLookupsInFlight.addAll(keys));
+
+    Map<String, ContentTranslationResult> cached;
+    try {
+      // This method reads memory and the account-scoped Hive box only. It
+      // never queues a Cloud Function, so local hits are not delayed by the
+      // API micro-batch window below.
+      cached = await _translationService.cachedResultsFor(
+        <ContentTranslationRequest>[
+          for (final candidate in candidates)
+            _translationRequestForMessage(
+              candidate.message,
+              roomId: roomId,
+            ),
+        ],
+        uiLanguageCode: uiLanguageCode,
+      );
+    } catch (_) {
+      cached = const <String, ContentTranslationResult>{};
+    }
+    if (!mounted ||
+        generation != _translationStateGeneration ||
+        languageRevision != _translationLanguageRevision ||
+        roomId != widget.snackChatId) {
+      return;
+    }
+    if (_appLifecycleState != AppLifecycleState.resumed ||
+        _isLeavingRoom ||
+        _roomAccessTerminated) {
+      setState(() => _translationCacheLookupsInFlight.removeAll(keys));
+      return;
+    }
+
+    ContentTranslationResult? firstTranslatedResult;
+    setState(() {
+      for (final candidate in candidates) {
+        final message = candidate.message;
+        final requestKey = _translationRequestKey(message);
+        _translationCacheLookupsInFlight.remove(requestKey);
+
+        SnackChatMessage? currentMessage;
+        for (final current in _messages) {
+          if (current.id == message.id) {
+            currentMessage = current;
+            break;
+          }
+        }
+        if (currentMessage == null ||
+            !_canTranslateMessage(currentMessage) ||
+            _translationRequestKey(currentMessage) != requestKey) {
+          continue;
+        }
+        final request = _translationRequestForMessage(
+          currentMessage,
+          roomId: roomId,
+        );
+        final result = cached[request.serverId];
+        if (_isCompleteTranslationForMessage(currentMessage, result)) {
+          if (_isUserScrolling) {
+            _deferredTranslationOutcomes[requestKey] = _SnackTranslationOutcome(
+              message: currentMessage,
+              requestKey: requestKey,
+              result: result,
+            );
+          } else {
+            _messageTranslations[currentMessage.id] = result!;
+            _translationSourceSignatures[currentMessage.id] =
+                _translationSourceSignature(currentMessage);
+            _translationFailures.remove(requestKey);
+            _translationRetryAfter.remove(requestKey);
+            _liveTranslationPriorityUntil.remove(currentMessage.id);
+            if (!result.isSameLanguage) firstTranslatedResult ??= result;
+          }
+          continue;
+        }
+        if (!_translationShowsOriginal &&
+            !_translationRequestsInFlight.contains(requestKey) &&
+            !_deferredTranslationOutcomes.containsKey(requestKey)) {
+          _translationMicroBatchCandidates[requestKey] =
+              _SnackTranslationCandidate(
+            message: currentMessage,
+            priority: candidate.priority,
+            distanceFromViewportCenter: candidate.distanceFromViewportCenter,
+          );
+        }
+      }
+    });
+    _registerCachedTranslationScope(firstTranslatedResult);
+    _scheduleTranslationMicroBatch();
+  }
+
+  void _scheduleTranslationMicroBatch() {
+    if (_translationMicroBatchCandidates.isEmpty ||
+        _translationMicroBatchTimer != null) {
+      return;
+    }
+    _translationMicroBatchTimer = Timer(_translationMicroBatchWindow, () {
+      _translationMicroBatchTimer = null;
+      unawaited(_flushTranslationMicroBatch());
+    });
+  }
+
+  Future<void> _flushTranslationMicroBatch() async {
+    if (!mounted ||
+        !_translationModeReady ||
+        _translationShowsOriginal ||
+        !_canStartTranslationBatch ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        _isLeavingRoom ||
+        _roomAccessTerminated) {
+      if (mounted && (_translationShowsOriginal || _isLeavingRoom)) {
+        setState(() => _translationMicroBatchCandidates.clear());
+      }
+      return;
+    }
+    final batchSize = _nextAdaptiveTranslationBatchSize;
+    if (batchSize <= 0) {
+      _scheduleTranslationMicroBatch();
+      return;
+    }
+
+    // Re-evaluate geometry after the short window. Messages that only flashed
+    // through the viewport during a fast fling never reach the server/API.
+    final current = _translationCandidatesNearViewport(
+      limit: _translationMicroBatchCandidates.length +
+          _translationAdjacentPrefetchLimit,
+      includeQueued: true,
+    );
+    final currentByKey = <String, _SnackTranslationCandidate>{
+      for (final candidate in current)
+        _translationRequestKey(candidate.message): candidate,
+    };
+    final selected = <_SnackTranslationCandidate>[];
+    for (final entry in _translationMicroBatchCandidates.entries) {
+      final currentCandidate = currentByKey[entry.key];
+      if (currentCandidate == null) continue;
+      selected.add(
+        _SnackTranslationCandidate(
+          message: currentCandidate.message,
+          priority: entry.value.priority.index < currentCandidate.priority.index
+              ? entry.value.priority
+              : currentCandidate.priority,
+          distanceFromViewportCenter:
+              currentCandidate.distanceFromViewportCenter,
+        ),
+      );
+    }
+    selected.sort((a, b) {
+      final byPriority = a.priority.index.compareTo(b.priority.index);
+      if (byPriority != 0) return byPriority;
+      return a.distanceFromViewportCenter.compareTo(
+        b.distanceFromViewportCenter,
+      );
+    });
+    _translationMicroBatchCandidates.clear();
+    final messages = selected
+        .take(batchSize)
+        .map((candidate) => candidate.message)
+        .toList(growable: false);
+    if (messages.isEmpty) {
+      if (mounted) setState(() {});
+      return;
+    }
+    final manualRetry = messages.any(
+      (message) =>
+          (_translationFailures[_translationRequestKey(message)] ?? 0) >= 2,
+    );
+    await _translateMessageBatch(messages, manualRetry: manualRetry);
+  }
+
+  Future<void> _translateMessageBatch(
+    List<SnackChatMessage> candidates, {
+    bool manualRetry = false,
+    bool userInitiatedRetry = false,
+    bool forceRefresh = false,
+  }) async {
+    if (candidates.isEmpty ||
+        (!userInitiatedRetry && !_canStartTranslationBatch) ||
+        !_translationModeReady ||
+        _translationShowsOriginal ||
+        _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+
+    // 화면의 일반 자동 번역은 기존 동시 처리 한도를 지킨다. 사용자가 실패한
+    // 항목을 직접 누른 경우에는 단 한 건만 화면 한도를 우회해 공유 서비스의
+    // 제한된 큐에 넣는다. 따라서 다른 배치가 가득 차 있어도 탭이 유실되지
+    // 않으며, 실제 네트워크 동시성/비용 제한은 ContentTranslationService가
+    // 계속 보장한다.
+    final availableCapacity = userInitiatedRetry
+        ? 1
+        : _maxTranslationRequestsInFlight - _translationRequestsInFlight.length;
+    if (availableCapacity <= 0) return;
+    final boundedCandidates = candidates
+        .where(
+          (message) => !_translationRequestsInFlight.contains(
+            _translationRequestKey(message),
+          ),
+        )
+        .take(availableCapacity)
+        .toList(growable: false);
+    if (boundedCandidates.isEmpty) return;
+
+    final generation = _translationStateGeneration;
+    final languageRevision = _translationLanguageRevision;
+    final roomId = widget.snackChatId;
+    final uiLanguageCode = Localizations.localeOf(context).languageCode;
+    final translationStopwatch = Stopwatch()..start();
+    final translationStartedAt = DateTime.now().millisecondsSinceEpoch;
+    if (ChatTiming.enabled) {
+      for (final message in boundedCandidates) {
+        ChatTiming.record(
+          '[SnackChatTiming] stage=translationStartedAt '
+          'at=$translationStartedAt roomId=$roomId messageId=${message.id} '
+          'sequence=${message.sequence ?? 0}',
+        );
+      }
+    }
+    for (final message in boundedCandidates) {
+      _translationRequestsInFlight.add(_translationRequestKey(message));
+    }
+    setState(() => _translationBatchesInFlight++);
+
+    final readyOutcomes = <String, _SnackTranslationOutcome>{};
+    Timer? earlyCommitTimer;
+
+    void commitReadyOutcomesEarly() {
+      earlyCommitTimer = null;
+      if (!mounted ||
+          generation != _translationStateGeneration ||
+          languageRevision != _translationLanguageRevision ||
+          roomId != widget.snackChatId ||
+          readyOutcomes.isEmpty) {
+        return;
+      }
+      final outcomes = readyOutcomes.values.toList(growable: false);
+      readyOutcomes.clear();
+      if (_isUserScrolling || _appLifecycleState != AppLifecycleState.resumed) {
+        setState(() {
+          for (final outcome in outcomes) {
+            _translationRequestsInFlight.remove(outcome.requestKey);
+            _deferredTranslationOutcomes[outcome.requestKey] = outcome;
+          }
+        });
+        return;
+      }
+      // Hive/메모리 캐시 적중 결과는 느린 네트워크 miss를 기다리지 않고 한
+      // 프레임 단위로 묶어 먼저 표시한다. 네트워크 결과는 기존처럼 배치로
+      // 도착하므로 말풍선 높이 변화도 과도하게 잘게 나뉘지 않는다.
+      _commitTranslationOutcomes(
+        outcomes,
+        completesBatch: false,
+        scheduleNextBatch: false,
+      );
+    }
+
+    final outcomeFutures = boundedCandidates.map((message) {
+      final future = _loadVisibleMessageTranslation(
+        message,
+        roomId: roomId,
+        uiLanguageCode: uiLanguageCode,
+        manualRetry: manualRetry,
+        userInitiatedRetry: userInitiatedRetry,
+        forceRefresh: forceRefresh,
+      );
+      unawaited(future.then((outcome) {
+        if (!mounted || generation != _translationStateGeneration) return;
+        readyOutcomes[outcome.requestKey] = outcome;
+        earlyCommitTimer ??= Timer(
+          const Duration(milliseconds: 24),
+          commitReadyOutcomesEarly,
+        );
+      }));
+      return future;
+    }).toList(growable: false);
+
+    await Future.wait<_SnackTranslationOutcome>(outcomeFutures);
+    if (ChatTiming.enabled) {
+      final completedAt = DateTime.now().millisecondsSinceEpoch;
+      for (final message in boundedCandidates) {
+        ChatTiming.record(
+          '[SnackChatTiming] stage=translationCompletedAt '
+          'at=$completedAt roomId=$roomId messageId=${message.id} '
+          'sequence=${message.sequence ?? 0} '
+          'durationMs=${translationStopwatch.elapsedMilliseconds}',
+        );
+      }
+    }
+    earlyCommitTimer?.cancel();
+    earlyCommitTimer = null;
+    if (!mounted ||
+        generation != _translationStateGeneration ||
+        languageRevision != _translationLanguageRevision ||
+        roomId != widget.snackChatId) {
+      return;
+    }
+
+    final remainingOutcomes = readyOutcomes.values.toList(growable: false);
+    readyOutcomes.clear();
+    if (_isUserScrolling || _appLifecycleState != AppLifecycleState.resumed) {
+      // Do not change bubble heights during a drag/fling. Cache completed
+      // outcomes and publish them together after scrolling becomes idle.
+      setState(() {
+        for (final outcome in remainingOutcomes) {
+          _translationRequestsInFlight.remove(outcome.requestKey);
+          _deferredTranslationOutcomes[outcome.requestKey] = outcome;
+        }
+        if (_translationBatchesInFlight > 0) _translationBatchesInFlight--;
+      });
+      _scheduleTranslationMicroBatch();
+      return;
+    }
+
+    if (remainingOutcomes.isEmpty) {
+      _finishTranslationBatch();
+    } else {
+      _commitTranslationOutcomes(remainingOutcomes, completesBatch: true);
+    }
+  }
+
+  void _commitTranslationOutcomes(
+    List<_SnackTranslationOutcome> outcomes, {
+    required bool completesBatch,
+    bool scheduleNextBatch = true,
+  }) {
+    if (!mounted || outcomes.isEmpty) return;
+
+    // Capture exactly once immediately before the batch changes layout.
+    // Concurrent completions share the post-frame restore below.
+    final canRestoreScroll = !_isUserScrolling && !_translationShowsOriginal;
+    final keepAtLatest = canRestoreScroll && _isNearLatest;
+    final anchor =
+        canRestoreScroll && !keepAtLatest ? _captureScrollAnchor() : null;
+    var hasRetryableFailure = false;
+    final successfulResults = <ContentTranslationResult>[];
+    setState(() {
+      for (final outcome in outcomes) {
+        _translationRequestsInFlight.remove(outcome.requestKey);
+
+        // 요청 후 메시지가 수정·삭제되거나 계정/발신자 판정이 달라졌다면 늦게
+        // 도착한 결과가 현재 말풍선을 덮어쓰지 않게 최신 목록을 다시 검증한다.
+        SnackChatMessage? currentMessage;
+        for (final message in _messages) {
+          if (message.id == outcome.message.id) {
+            currentMessage = message;
+            break;
+          }
+        }
+        if (currentMessage == null ||
+            !_canTranslateMessage(currentMessage) ||
+            _translationRequestKey(currentMessage) != outcome.requestKey) {
+          _translationFailures.remove(outcome.requestKey);
+          _translationRetryAfter.remove(outcome.requestKey);
+          continue;
+        }
+
+        final result = outcome.result;
+        if (result != null &&
+            _isCompleteTranslationForMessage(currentMessage, result)) {
+          _messageTranslations[currentMessage.id] = result;
+          _translationSourceSignatures[currentMessage.id] =
+              _translationSourceSignature(currentMessage);
+          _translationFailures.remove(outcome.requestKey);
+          _translationRetryAfter.remove(outcome.requestKey);
+          _liveTranslationPriorityUntil.remove(currentMessage.id);
+          if (!result.isSameLanguage) successfulResults.add(result);
+        } else {
+          final previousFailureCount =
+              _translationFailures[outcome.requestKey] ?? 0;
+          var failureCount = previousFailureCount + 1;
+          if (result?.automaticRetryExhausted == true && failureCount < 2) {
+            failureCount = 2;
+          }
+          _translationFailures[outcome.requestKey] = failureCount;
+          // The shared service has already used its short immediate retry when
+          // automaticRetryExhausted is set. A transient provider/validation
+          // error still gets this screen's one existing delayed retry instead
+          // of becoming permanently untranslated after the first batch.
+          final retryable = result == null || result.isTransientFailure;
+          if (retryable && failureCount <= 2) {
+            hasRetryableFailure = true;
+            _translationRetryAfter[outcome.requestKey] = DateTime.now().add(
+              failureCount >= 2
+                  ? const Duration(seconds: 15)
+                  : const Duration(seconds: 2),
+            );
+          } else {
+            _translationRetryAfter.remove(outcome.requestKey);
+          }
+        }
+      }
+      if (completesBatch && _translationBatchesInFlight > 0) {
+        _translationBatchesInFlight--;
+      }
+    });
+
+    if (canRestoreScroll) {
+      _restoreAfterTranslationChange(
+        anchor,
+        keepAtLatest: keepAtLatest,
+      );
+    }
+    for (final result in successfulResults) {
+      _translationService.registerTranslatableScope(
+        _translationScope,
+        sourceLanguage: result.sourceLanguage,
+      );
+    }
+    if (hasRetryableFailure) _scheduleTranslationRetry();
+    if (completesBatch) _scheduleTranslationMicroBatch();
+    if (scheduleNextBatch && !_translationShowsOriginal) {
+      _scheduleVisibleTranslations();
+    }
+  }
+
+  void _finishTranslationBatch() {
+    if (!mounted) return;
+    setState(() {
+      if (_translationBatchesInFlight > 0) _translationBatchesInFlight--;
+    });
+    _scheduleTranslationMicroBatch();
+    if (!_translationShowsOriginal) _scheduleVisibleTranslations();
+  }
+
+  void _commitDeferredTranslationOutcomes() {
+    if (!mounted || _isUserScrolling || _deferredTranslationOutcomes.isEmpty) {
+      return;
+    }
+    final outcomes = _deferredTranslationOutcomes.values.toList(
+      growable: false,
+    );
+    _deferredTranslationOutcomes.clear();
+    _commitTranslationOutcomes(outcomes, completesBatch: false);
+  }
+
+  void _translateNewLiveMessages(Iterable<SnackChatMessage> messages) {
+    if (!_translationModeReady ||
+        _translationShowsOriginal ||
+        _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    final priorityUntil = DateTime.now().add(const Duration(seconds: 1));
+    var hasCandidate = false;
+    for (final message in messages) {
+      if (!_canTranslateMessage(message) || _hasCurrentTranslation(message)) {
+        continue;
+      }
+      final requestKey = _translationRequestKey(message);
+      if (_isTranslationWorkPending(requestKey)) continue;
+      _liveTranslationPriorityUntil[message.id] = priorityUntil;
+      hasCandidate = true;
+    }
+    if (!hasCandidate) return;
+
+    // The stream callback has just inserted the bubble. Inspect geometry on
+    // the immediately following frame instead of waiting for a scroll event.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_primeVisibleTranslationCandidates());
+    });
+  }
+
+  Future<_SnackTranslationOutcome> _loadVisibleMessageTranslation(
+    SnackChatMessage message, {
+    required String roomId,
+    required String uiLanguageCode,
+    required bool manualRetry,
+    bool userInitiatedRetry = false,
+    bool forceRefresh = false,
+  }) async {
+    final requestKey = _translationRequestKey(message);
+    ContentTranslationResult? result;
+    try {
+      result = await _translationService.request(
+        _translationRequestForMessage(message, roomId: roomId),
+        uiLanguageCode: uiLanguageCode,
+        scope: _translationScope,
+        manualRetry: manualRetry,
+        userInitiatedRetry: userInitiatedRetry,
+        forceRefresh: forceRefresh,
+      );
+    } catch (_) {
+      result = null;
+    }
+    return _SnackTranslationOutcome(
+      message: message,
+      requestKey: requestKey,
+      result: result,
+    );
+  }
+
+  void _scheduleTranslationRetry() {
+    if (_translationRetryTimer != null || _translationRetryAfter.isEmpty) {
+      return;
+    }
+    final now = DateTime.now();
+    final nextRetry = _translationRetryAfter.values.reduce(
+      (a, b) => a.isBefore(b) ? a : b,
+    );
+    final delay =
+        nextRetry.isAfter(now) ? nextRetry.difference(now) : Duration.zero;
+    _translationRetryTimer = Timer(delay, () {
+      _translationRetryTimer = null;
+      if (mounted && !_translationShowsOriginal) {
+        _scheduleVisibleTranslations();
       }
     });
   }
 
-  /// DM의 _scheduleAutoMarkAsRead와 동일한 패턴 (250ms debounce)
-  void _scheduleMarkAsRead() {
-    if (!mounted) return;
-    if (_autoMarkReadInFlight) return;
-    _autoMarkReadDebounce?.cancel();
-    _autoMarkReadDebounce = Timer(const Duration(milliseconds: 250), () async {
-      if (!mounted) return;
-      if (_autoMarkReadInFlight) return;
-      _autoMarkReadInFlight = true;
-      try {
-        await _snackChatService.markAsRead(widget.snackChatId);
-      } catch (_) {
-        // best-effort
-      } finally {
-        _autoMarkReadInFlight = false;
+  void _restoreAfterTranslationChange(
+    _ScrollAnchor? anchor, {
+    required bool keepAtLatest,
+  }) {
+    if (_isUserScrolling || (!keepAtLatest && anchor == null)) return;
+    if (keepAtLatest) {
+      _pendingTranslationKeepAtLatest = true;
+      _pendingTranslationAnchor = null;
+    } else if (!_pendingTranslationKeepAtLatest) {
+      _pendingTranslationAnchor ??= anchor;
+    }
+    if (_translationRestoreScheduled) return;
+    _translationRestoreScheduled = true;
+    final generation = _translationRestoreGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          generation != _translationRestoreGeneration ||
+          _isUserScrolling) {
+        return;
+      }
+      final restoreLatest = _pendingTranslationKeepAtLatest;
+      final restoreAnchor = _pendingTranslationAnchor;
+      _translationRestoreScheduled = false;
+      _pendingTranslationKeepAtLatest = false;
+      _pendingTranslationAnchor = null;
+      if (restoreLatest) {
+        if (_isNearLatest) _scrollToLatest(animated: false);
+      } else {
+        _applyScrollAnchorNow(restoreAnchor);
       }
     });
+  }
+
+  void _cancelPendingTranslationRestore() {
+    _translationRestoreGeneration++;
+    _translationRestoreScheduled = false;
+    _pendingTranslationKeepAtLatest = false;
+    _pendingTranslationAnchor = null;
+  }
+
+  Future<void> _toggleSnackTranslation() async {
+    if (!_translationModeReady) return;
+    await _translationService.toggleSnackRoom(widget.snackChatId);
+  }
+
+  Future<void> _openSnackTranslationLanguageSettings() async {
+    if (_translationLanguageSheetOpen) return;
+    _translationLanguageSheetOpen = true;
+    try {
+      await showTranslationLanguageSheet(
+        context,
+        forSnackChat: true,
+      );
+    } finally {
+      _translationLanguageSheetOpen = false;
+    }
+  }
+
+  /// User-initiated retry. Every explicit tap regenerates on the server
+  /// ([forceRefresh] default true): a cached failure or an earlier result for
+  /// the same text must not be served back as "the retry".
+  Future<void> _retryFailedTranslation(
+    SnackChatMessage message, {
+    bool forceRefresh = true,
+  }) async {
+    if (!_translationModeReady ||
+        _translationShowsOriginal ||
+        !_canTranslateMessage(message) ||
+        (!forceRefresh && _hasCurrentTranslation(message))) {
+      return;
+    }
+    final requestKey = _translationRequestKey(message);
+    // Stale local bookkeeping (a queued micro-batch slot or a deferred
+    // outcome that never got committed) must not veto the tap. Only a request
+    // that is really on the wire counts as pending.
+    _translationMicroBatchCandidates.remove(requestKey);
+    _deferredTranslationOutcomes.remove(requestKey);
+    final networkPending = _translationRequestsInFlight.contains(requestKey) ||
+        _translationCacheLookupsInFlight.contains(requestKey);
+    if (!canStartUserSnackTranslationRetry(
+      retryInFlight: _manualTranslationRetryKeys.contains(requestKey),
+      messageWorkPending: networkPending,
+      lifecycleResumed: _appLifecycleState == AppLifecycleState.resumed,
+      isLeavingRoom: _isLeavingRoom,
+      roomAccessTerminated: _roomAccessTerminated,
+    )) {
+      return;
+    }
+    if (!forceRefresh && (_translationFailures[requestKey] ?? 0) < 2) {
+      return;
+    }
+    setState(() {
+      _manualTranslationRetryKeys.add(requestKey);
+      // 이 메시지에 남아 있던 로컬 실패/대기 상태를 제거해 로딩 표시와
+      // 표준 자동 재시도 파이프라인이 새 요청 결과를 기준으로 다시 시작한다.
+      _translationFailures.remove(requestKey);
+      _translationRetryAfter.remove(requestKey);
+    });
+    try {
+      // 사용자가 누를 때마다 실패한 메시지 하나만 재시도한다. 기존 배치 크기나
+      // 전체 대화 스캔을 재사용하지 않아 불필요한 번역 비용을 만들지 않는다.
+      await _translateMessageBatch(
+        <SnackChatMessage>[message],
+        manualRetry: true,
+        userInitiatedRetry: true,
+        forceRefresh: forceRefresh,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _manualTranslationRetryKeys.remove(requestKey));
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SnackChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snackChatId == widget.snackChatId) return;
+    _resetTranslationStateForRoom();
+    unawaited(_prepareTranslationMode());
+    unawaited(
+      _localCache.saveDraft(oldWidget.snackChatId, _messageController.text),
+    );
+    if (_messages.isNotEmpty) {
+      unawaited(
+        _localCache.upsertMessages(oldWidget.snackChatId, List.of(_messages)),
+      );
+    }
+    if (SnackChatActiveConversation.isActive(oldWidget.snackChatId)) {
+      SnackChatActiveConversation.setActive(null);
+    }
+    final oldReadBoundary = _latestConfirmedSequence();
+    if (oldReadBoundary > _confirmedReadSequence &&
+        _entryReadSyncAllowed &&
+        _entryContextResolved) {
+      unawaited(
+        _flushReadBoundary(
+          roomId: oldWidget.snackChatId,
+          throughSequence: oldReadBoundary,
+        ).then<void>(
+          (_) {},
+          onError: (Object error, StackTrace _) {
+            Logger.error('Snack Chat 이전 방 읽음 동기화 실패', error);
+          },
+        ),
+      );
+    }
+    _messageSubscriptionGeneration++;
+    _auxiliarySubscriptionGeneration++;
+    unawaited(_msgSub?.cancel() ?? Future<void>.value());
+    unawaited(_memberSub?.cancel() ?? Future<void>.value());
+    unawaited(_reactionSub?.cancel() ?? Future<void>.value());
+    unawaited(_voteSub?.cancel() ?? Future<void>.value());
+    unawaited(_fileTransferSub?.cancel() ?? Future<void>.value());
+    _msgSub = null;
+    _fileTransferSub = null;
+    _memberSub = null;
+    _reactionSub = null;
+    _voteSub = null;
+    _draftSaveDebounce?.cancel();
+    _messageCacheDebounce?.cancel();
+    _outboxRetryTimer?.cancel();
+    _messageRetryTimer?.cancel();
+    _messageWindowExpansionTimer?.cancel();
+    _fileExpiryTimer?.cancel();
+    _roomRetryTimer?.cancel();
+    _entryRetryTimer?.cancel();
+    for (final timer in _outboundEntranceExpiryTimers.values) {
+      timer.cancel();
+    }
+    _outboundEntranceExpiryTimers.clear();
+    _outboundEntranceMessageIds.clear();
+    _restoringDraft = true;
+    _messageController.clear();
+    _restoringDraft = false;
+    _draftTouched = false;
+    _messages.clear();
+    _messageIds.clear();
+    _lastLiveServerMessages.clear();
+    _attemptedSequenceGaps.clear();
+    _sequenceGapRecovery = null;
+    _sequenceGapRecoveryGeneration++;
+    _sequenceGapRetryTimer?.cancel();
+    _sequenceGapRetryTimer = null;
+    _sequenceGapRetryAttempt = 0;
+    _liveWindowMinimumSequence = null;
+    _messageKeys.clear();
+    _members.clear();
+    _senderNameCache.clear();
+    _senderNameFutures.clear();
+    _senderProfileRefreshStarted.clear();
+    _senderProfileGeneration++;
+    _senderProfileLookupsStarted.clear();
+    final staleProfileNotifiers = _senderProfileNotifiers.values.toList();
+    _senderProfileNotifiers.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final notifier in staleProfileNotifiers) {
+        notifier.dispose();
+      }
+    });
+    _myReactions.clear();
+    _reactionMotionEvents.clear();
+    _myVotes.clear();
+    _confirmedReactions.clear();
+    _confirmedVotes.clear();
+    _pendingReactionTargets.clear();
+    _pendingVoteTargets.clear();
+    _retryingMessageIds.clear();
+    _definitivelyRejectedIds.clear();
+    _removingFailedMessageIds.clear();
+    _clearReplyState();
+    _oldestMessage = null;
+    _messageWindowExpansionPending = false;
+    _lastRoom = null;
+    _membershipReady = null;
+    _messageStreamError = null;
+    _messageRetryAttempt = 0;
+    _roomRetryAttempt = 0;
+    _loadMoreError = null;
+    _isInitialLoading = true;
+    _hasMore = true;
+    _isLoadingMore = false;
+    _isUploadingImage = false;
+    _isCreatingPoll = false;
+    _isAttachmentFlowOpen = false;
+    _roomAccessTerminated = false;
+    _roomWasLeft = false;
+    _roomAccessTerminationScheduled = false;
+    _roomAvailabilityCheckInFlight = false;
+    _pushBackNavigationInFlight = false;
+    _exitReadFlushStarted = false;
+    _activeReadSyncInFlight = false;
+    _readSyncScanScheduled = false;
+    _immediateReadSyncRequested = false;
+    _readRequestIntervalWatch = null;
+    _pendingReadSequence = 0;
+    _confirmedReadSequence = 0;
+    _highestConfirmedReadSequence = 0;
+    _directReadAcceptedSequence = 0;
+    _readReconcileTimer?.cancel();
+    _readReconcileTimer = null;
+    _readSyncGeneration++;
+    _isNearLatest = true;
+    _outboxRetryAttempt = 0;
+    _newMessageCount = 0;
+    _hasReceivedFirstLiveBatch = false;
+    _cachedRoomWriteToken = null;
+    _lastOptimisticCreatedAt = null;
+    _entryBootstrapGeneration++;
+    _firstUnreadMessageId = null;
+    _firstUnreadSequence = null;
+    _entryUnreadHapticPlayed = false;
+    _entryContextResolved = false;
+    _entryPositionSettled = false;
+    _entryReadSyncAllowed = false;
+    _entryPositionInFlight = false;
+    _membershipPreparationPending = true;
+    _entryRetryTimer = null;
+    _entryRetryAttempt = 0;
+    _lastRoom = widget.initialRoom;
+    _seedEntryContext(widget.initialEntryContext);
+    _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
+    if (_appLifecycleState == AppLifecycleState.resumed) {
+      SnackChatActiveConversation.setActive(widget.snackChatId);
+    }
+    unawaited(
+      _hydrateLocalState(
+        uiLanguageCode: Localizations.localeOf(context).languageCode,
+      ),
+    );
+    _subscribeToMessages();
+    unawaited(_prepareEntryAndSubscribe());
+    _subscribeToAuxiliaryState();
+    _subscribeToFileTransfers();
+    unawaited(_restoreFileTransfers());
+  }
+
+  void _subscribeToFileTransfers() {
+    unawaited(_fileTransferSub?.cancel() ?? Future<void>.value());
+    final roomId = widget.snackChatId;
+    _fileTransferSub = _fileTransfer.watchRoom(roomId).listen((event) {
+      if (!mounted || roomId != widget.snackChatId) return;
+      setState(() {
+        final index = _messages.indexWhere(
+          (message) => message.id == event.message.id,
+        );
+        if (event.removed) {
+          if (index >= 0) _messages.removeAt(index);
+          _messageIds.remove(event.message.id);
+          _messageKeys.remove(event.message.id);
+        } else if (index >= 0) {
+          final current = _messages[index];
+          if (!(current.sendStatus == MessageSendStatus.sent &&
+              event.message.sendStatus != MessageSendStatus.sent)) {
+            _messages[index] =
+                event.message.sendStatus == MessageSendStatus.sent
+                    ? event.message
+                    : event.message.copyWith(
+                        sequence: current.sequence,
+                        recipientIds: current.recipientIds,
+                        deliveryRecipientIds: current.deliveryRecipientIds,
+                        readBy: current.readBy,
+                      );
+          }
+        } else {
+          _insertLocalMessage(event.message);
+        }
+        _sortMessages();
+      });
+      _scheduleMessageCacheWrite();
+      _scheduleFileExpiryRefresh();
+      if (_isNearLatest) _scrollToLatest(animated: true);
+    });
+  }
+
+  Future<void> _restoreFileTransfers() async {
+    final roomId = widget.snackChatId;
+    final restored = await _fileTransfer.restoreRoom(roomId);
+    if (!mounted || roomId != widget.snackChatId || restored.isEmpty) return;
+    setState(() {
+      for (final pending in restored) {
+        final index =
+            _messages.indexWhere((message) => message.id == pending.id);
+        if (index < 0) {
+          _insertLocalMessage(pending);
+        } else if (_messages[index].sendStatus != MessageSendStatus.sent) {
+          _messages[index] = pending;
+        }
+      }
+      _sortMessages();
+      _isInitialLoading = false;
+    });
+    _scheduleMessageCacheWrite();
+    _scheduleFileExpiryRefresh();
+    if (_appLifecycleState == AppLifecycleState.resumed) {
+      unawaited(_fileTransfer.retryRoom(roomId));
+    }
+  }
+
+  void _scheduleFileExpiryRefresh() {
+    _fileExpiryTimer?.cancel();
+    _fileExpiryTimer = null;
+    final now = DateTime.now();
+    DateTime? nearest;
+    for (final message in _messages) {
+      final deadline = message.expiresAt;
+      if (message.type != SnackChatMessageType.file ||
+          deadline == null ||
+          !deadline.isAfter(now)) {
+        continue;
+      }
+      if (nearest == null || deadline.isBefore(nearest)) nearest = deadline;
+    }
+    if (nearest == null) return;
+    _fileExpiryTimer =
+        Timer(nearest.difference(now) + const Duration(milliseconds: 120), () {
+      _fileExpiryTimer = null;
+      if (!mounted) return;
+      setState(() {});
+      unawaited(_fileTransfer.purgeExpiredCache());
+      _scheduleFileExpiryRefresh();
+    });
+  }
+
+  Future<void> _hydrateLocalState({required String uiLanguageCode}) async {
+    final roomId = widget.snackChatId;
+    final ownerUid = _uid;
+    final generation = ++_cacheHydrationGeneration;
+    if (ownerUid == null) return;
+    final messagesFuture = _localCache.getMessages(roomId);
+    final roomFuture = _localCache.getRoom(roomId);
+    final draftFuture = _localCache.getDraft(roomId);
+    final entryFuture = _localCache.getEntryState(roomId);
+    final cachedMessages = await messagesFuture;
+    if (!mounted ||
+        generation != _cacheHydrationGeneration ||
+        roomId != widget.snackChatId ||
+        ownerUid != _uid) {
+      return;
+    }
+
+    // 메모리/Hive에 있던 메시지는 다른 로컬 상태와 번역 캐시를 기다리지
+    // 않고 먼저 그린다. 번역과 프로필 복원은 아래에서 독립적으로 진행해
+    // 캐시가 있는 방의 첫 화면을 막지 않는다.
+    setState(() {
+      for (final cached in cachedMessages) {
+        if (_messageIds.add(cached.id)) {
+          _messages.add(
+            cached.isPending
+                ? cached.copyWith(
+                    sendStatus: MessageSendStatus.uncertain,
+                    errorMessage: '전송 상태를 확인하고 있습니다.',
+                  )
+                : cached,
+          );
+        }
+      }
+      if (_messages.isNotEmpty) {
+        _sortMessages();
+        _updateOldestMessageCursor(cachedMessages);
+        _isInitialLoading = false;
+        _markEntryFirstPaint('cache');
+      }
+    });
+    if (_entryContextResolved &&
+        !_entryPositionSettled &&
+        _firstUnreadMessageId != null) {
+      _scheduleEntryAnchorPosition(generation: _entryBootstrapGeneration);
+    } else {
+      _scheduleActiveReadSync();
+    }
+    unawaited(
+      _hydrateCachedTranslations(
+        roomId: roomId,
+        ownerUid: ownerUid,
+        generation: generation,
+        messages: cachedMessages,
+        uiLanguageCode: uiLanguageCode,
+      ),
+    );
+    _scheduleSenderProfileHydration(cachedMessages);
+    _scheduleOutboxRecovery();
+    _scheduleSequenceGapRecovery();
+
+    final cachedRoom = await roomFuture;
+    final draft = await draftFuture;
+    final cachedEntry = await entryFuture;
+    if (!mounted ||
+        generation != _cacheHydrationGeneration ||
+        roomId != widget.snackChatId ||
+        ownerUid != _uid) {
+      return;
+    }
+    setState(() {
+      _lastRoom ??= cachedRoom;
+      final boundaryRoom = _lastRoom ?? cachedRoom;
+      if (!_entryContextResolved &&
+          boundaryRoom != null &&
+          cachedEntry != null &&
+          DateTime.now().difference(cachedEntry.updatedAt) <=
+              const Duration(minutes: 2) &&
+          cachedEntry.roomLastSequence == boundaryRoom.lastMessageSequence &&
+          cachedEntry.roomUnreadCount ==
+              boundaryRoom.getMyUnreadCount(ownerUid)) {
+        _seedEntryContext(
+          SnackChatEntryContext(
+            lastReadSequence: cachedEntry.lastReadSequence,
+            roomLastSequence: cachedEntry.roomLastSequence,
+            roomUnreadCount: cachedEntry.roomUnreadCount,
+            canAdvanceReadCursor: cachedEntry.canAdvanceReadCursor,
+            firstUnreadMessageId: cachedEntry.firstUnreadMessageId,
+            firstUnreadSequence: cachedEntry.firstUnreadSequence,
+          ),
+        );
+      }
+      if (_messages.isEmpty &&
+          cachedRoom != null &&
+          cachedRoom.lastMessageId.isEmpty &&
+          cachedRoom.lastMessage.isEmpty) {
+        _isInitialLoading = false;
+        _markEntryFirstPaint('firstPage');
+      }
+      if (!_draftTouched &&
+          _messageController.text.isEmpty &&
+          draft.isNotEmpty) {
+        _restoringDraft = true;
+        _messageController.value = TextEditingValue(
+          text: draft,
+          selection: TextSelection.collapsed(offset: draft.length),
+        );
+        _restoringDraft = false;
+      }
+    });
+    if (_entryContextResolved &&
+        !_entryPositionSettled &&
+        _firstUnreadMessageId != null) {
+      _scheduleEntryAnchorPosition(generation: _entryBootstrapGeneration);
+    } else {
+      _scheduleActiveReadSync();
+    }
+  }
+
+  Future<void> _hydrateCachedTranslations({
+    required String roomId,
+    required String ownerUid,
+    required int generation,
+    required List<SnackChatMessage> messages,
+    required String uiLanguageCode,
+  }) async {
+    Map<String, ContentTranslationResult> cachedTranslations;
+    try {
+      cachedTranslations = await _cachedTranslationsForMessages(
+        roomId: roomId,
+        messages: messages,
+        uiLanguageCode: uiLanguageCode,
+      );
+    } catch (error) {
+      if (Logger.isVerboseEnabled) {
+        Logger.warning('Snack Chat 저장 번역 복원 실패(원문 유지): $error');
+      }
+      return;
+    }
+    if (!mounted ||
+        generation != _cacheHydrationGeneration ||
+        roomId != widget.snackChatId ||
+        ownerUid != _uid ||
+        cachedTranslations.isEmpty) {
+      return;
+    }
+
+    final keepAtLatest = _isNearLatest;
+    final anchor = keepAtLatest ? null : _captureScrollAnchor();
+    ContentTranslationResult? firstTranslatedResult;
+    setState(() {
+      firstTranslatedResult = _applyCachedMessageTranslations(
+        roomId: roomId,
+        messages: messages,
+        cached: cachedTranslations,
+      );
+    });
+    _registerCachedTranslationScope(firstTranslatedResult);
+    if (keepAtLatest) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && roomId == widget.snackChatId && _isNearLatest) {
+          _scrollToLatest(animated: false);
+        }
+      });
+    } else {
+      _restoreScrollAnchor(anchor);
+    }
+  }
+
+  Future<Map<String, ContentTranslationResult>> _cachedTranslationsForMessages({
+    required String roomId,
+    required List<SnackChatMessage> messages,
+    required String uiLanguageCode,
+  }) async {
+    final requests = <ContentTranslationRequest>[
+      for (final message in messages)
+        if (_canTranslateMessage(message))
+          _translationRequestForMessage(message, roomId: roomId),
+    ];
+    if (requests.isEmpty) {
+      return const <String, ContentTranslationResult>{};
+    }
+
+    return _translationService.cachedResultsFor(
+      requests,
+      uiLanguageCode: uiLanguageCode,
+    );
+  }
+
+  ContentTranslationResult? _applyCachedMessageTranslations({
+    required String roomId,
+    required List<SnackChatMessage> messages,
+    required Map<String, ContentTranslationResult> cached,
+  }) {
+    ContentTranslationResult? firstTranslatedResult;
+    for (final message in messages) {
+      if (!_canTranslateMessage(message)) continue;
+      final result = cached[
+          _translationRequestForMessage(message, roomId: roomId).serverId];
+      if (!_isCompleteTranslationForMessage(message, result)) continue;
+      _messageTranslations[message.id] = result!;
+      _translationSourceSignatures[message.id] =
+          _translationSourceSignature(message);
+      if (!result.isSameLanguage) firstTranslatedResult ??= result;
+    }
+    return firstTranslatedResult;
+  }
+
+  void _registerCachedTranslationScope(
+    ContentTranslationResult? translatedResult,
+  ) {
+    if (translatedResult == null) return;
+    _translationService.registerTranslatableScope(
+      _translationScope,
+      sourceLanguage: translatedResult.sourceLanguage,
+    );
+  }
+
+  void _scheduleSenderProfileHydration(
+    Iterable<SnackChatMessage> messages,
+  ) {
+    final ownerUid = _uid;
+    if (ownerUid == null) return;
+    final missingIds = messages
+        .where((message) =>
+            message.type != SnackChatMessageType.system &&
+            !_isAnonymousSnackChatMessage(message))
+        .map((message) => message.senderId.trim())
+        .where((id) =>
+            id.isNotEmpty &&
+            id != ownerUid &&
+            _senderProfileLookupsStarted.add(id))
+        .toList(growable: false);
+    if (missingIds.isEmpty) return;
+    // This batch owns the one refresh for these senders. The existing name
+    // resolver must not start a second server request for the same profile.
+    _senderProfileRefreshStarted.addAll(missingIds);
+
+    final hydration = _hydrateSenderProfiles(
+      roomId: widget.snackChatId,
+      ownerUid: ownerUid,
+      generation: _senderProfileGeneration,
+      senderIds: missingIds,
+    );
+    unawaited(hydration.catchError((Object error, StackTrace stackTrace) {
+      Logger.error('Snack Chat 발신자 프로필 복원 실패', error, stackTrace);
+    }));
+  }
+
+  Future<void> _hydrateSenderProfiles({
+    required String roomId,
+    required String ownerUid,
+    required int generation,
+    required List<String> senderIds,
+  }) async {
+    final cachedProfiles = await _userInfoCache.hydrateUsers(senderIds);
+    if (!_isCurrentSenderProfileRequest(
+      roomId: roomId,
+      ownerUid: ownerUid,
+      generation: generation,
+    )) {
+      return;
+    }
+    _publishSenderProfiles(cachedProfiles);
+
+    // A fresh shared-memory entry is reused without another Firestore read.
+    // Persisted entries are painted immediately, then refreshed once because
+    // their saved timestamp may belong to an earlier app session.
+    final persistedIds = <String>[];
+    final reusableOrMissingIds = <String>[];
+    for (final senderId in senderIds) {
+      if (cachedProfiles[senderId]?.isFromCache == true) {
+        persistedIds.add(senderId);
+      } else {
+        reusableOrMissingIds.add(senderId);
+      }
+    }
+    final profileBatches = await Future.wait(<Future<Map<String, DMUserInfo?>>>[
+      if (reusableOrMissingIds.isNotEmpty)
+        _userInfoCache.getUserInfoBatch(reusableOrMissingIds),
+      if (persistedIds.isNotEmpty)
+        _userInfoCache.getUserInfoBatch(persistedIds, forceRefresh: true),
+    ]);
+    final freshProfiles = <String, DMUserInfo?>{};
+    for (final batch in profileBatches) {
+      freshProfiles.addAll(batch);
+    }
+    if (!_isCurrentSenderProfileRequest(
+      roomId: roomId,
+      ownerUid: ownerUid,
+      generation: generation,
+    )) {
+      return;
+    }
+    _publishSenderProfiles(freshProfiles);
+  }
+
+  bool _isCurrentSenderProfileRequest({
+    required String roomId,
+    required String ownerUid,
+    required int generation,
+  }) =>
+      mounted &&
+      !_isLeavingRoom &&
+      generation == _senderProfileGeneration &&
+      roomId == widget.snackChatId &&
+      ownerUid == _uid;
+
+  void _publishSenderProfiles(Map<String, DMUserInfo?> profiles) {
+    for (final entry in profiles.entries) {
+      final profile = entry.value;
+      final nickname = profile?.nickname.trim() ?? '';
+      if (nickname.isNotEmpty && !_looksLikeInternalIdentifier(nickname)) {
+        _senderNameCache[entry.key] = nickname;
+      }
+      final notifier = _senderProfileNotifiers.putIfAbsent(
+        entry.key,
+        () => ValueNotifier<DMUserInfo?>(
+          _userInfoCache.getCachedUserInfo(entry.key),
+        ),
+      );
+      if (!_sameSenderProfile(notifier.value, profile)) {
+        notifier.value = profile;
+      }
+    }
+  }
+
+  bool _sameSenderProfile(DMUserInfo? first, DMUserInfo? second) {
+    if (identical(first, second)) return true;
+    if (first == null || second == null) return false;
+    return first.uid == second.uid &&
+        first.photoURL == second.photoURL &&
+        first.photoVersion == second.photoVersion &&
+        first.isDeletedAccount == second.isDeletedAccount;
+  }
+
+  ValueNotifier<DMUserInfo?> _senderProfileNotifier(String senderId) =>
+      _senderProfileNotifiers.putIfAbsent(
+        senderId,
+        () => ValueNotifier<DMUserInfo?>(
+          _userInfoCache.getCachedUserInfo(senderId),
+        ),
+      );
+
+  void _seedEntryContext(SnackChatEntryContext? entry) {
+    if (entry == null) return;
+    _entryContextResolved = true;
+    _entryReadSyncAllowed = entry.canAdvanceReadCursor;
+    if (entry.lastReadSequence > _confirmedReadSequence) {
+      _confirmedReadSequence = entry.lastReadSequence;
+    }
+    if (entry.roomLastSequence > _pendingReadSequence) {
+      _pendingReadSequence = entry.roomLastSequence;
+    }
+    if (entry.roomLastSequence > _highestConfirmedReadSequence) {
+      _highestConfirmedReadSequence = entry.roomLastSequence;
+    }
+    _firstUnreadMessageId = entry.firstUnreadMessageId;
+    _firstUnreadSequence = entry.firstUnreadSequence;
+    _entryLatestSequence = entry.roomLastSequence;
+    _isNearLatest = !entry.hasUnreadAnchor;
+    _entryPositionSettled = !entry.hasUnreadAnchor;
+  }
+
+  void _onDraftChanged() {
+    if (_restoringDraft || _isLeavingRoom || _uid == null) return;
+    _draftTouched = true;
+    _draftSaveDebounce?.cancel();
+    final roomId = widget.snackChatId;
+    final owner = _uid;
+    final value = _messageController.text;
+    _draftSaveDebounce = Timer(const Duration(milliseconds: 280), () {
+      if (!_isLeavingRoom &&
+          owner != null &&
+          _uid == owner &&
+          roomId == widget.snackChatId) {
+        unawaited(_localCache.saveDraft(roomId, value));
+      }
+    });
+  }
+
+  void _scheduleMessageCacheWrite() {
+    _messageCacheDebounce?.cancel();
+    final owner = _uid;
+    final roomId = widget.snackChatId;
+    // A longer window during bursts means fewer full-list encodes per second.
+    _messageCacheDebounce = Timer(
+        SnackChatLocalCacheService.cacheOffloadEnabled
+            ? const Duration(milliseconds: 400)
+            : const Duration(milliseconds: 180), () {
+      if (!_isLeavingRoom &&
+          owner != null &&
+          _uid == owner &&
+          roomId == widget.snackChatId) {
+        unawaited(_localCache.upsertMessages(roomId, List.of(_messages)));
+      }
+    });
+  }
+
+  void _cacheRoomIfChanged(SnackChat room) {
+    if (_uid == null) return;
+    final token = '${room.id}:${room.updatedAt.millisecondsSinceEpoch}:'
+        '${room.title}:${room.participantCount}:${room.lastMessageId}';
+    if (_cachedRoomWriteToken == token) return;
+    _cachedRoomWriteToken = token;
+    unawaited(_localCache.saveRoom(widget.snackChatId, room));
+  }
+
+  void _verifyParticipantCount(SnackChat room) {
+    final participantIds = room.participantIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false)
+      ..sort();
+    final signature = participantIds.join('|');
+    if (_verifiedParticipantSignature == signature) return;
+
+    _verifiedParticipantSignature = signature;
+    _verifiedParticipantCount = null;
+    final generation = ++_participantVerificationGeneration;
+    unawaited(() async {
+      final profiles =
+          await _usersRepository.getFreshUserProfilesBatch(participantIds);
+      if (!mounted ||
+          generation != _participantVerificationGeneration ||
+          signature != _verifiedParticipantSignature) {
+        return;
+      }
+      // 현재 사용자 자신이 포함된 방이면 정상 응답이 0명일
+      // 수 없다. 0명은 네트워크/권한 실패로 보고 방 문서 값을 유지한다.
+      if (participantIds.isNotEmpty && profiles.isEmpty) return;
+      final activeIds = profiles.map((profile) => profile.uid).toSet();
+      final activeCount = participantIds.where(activeIds.contains).length;
+      if (_verifiedParticipantCount == activeCount) return;
+      setState(() => _verifiedParticipantCount = activeCount);
+    }());
+  }
+
+  DateTime _nextOptimisticCreatedAt() {
+    final now = DateTime.now();
+    final previous = _lastOptimisticCreatedAt;
+    final next = previous != null && !now.isAfter(previous)
+        ? previous.add(const Duration(microseconds: 1))
+        : now;
+    _lastOptimisticCreatedAt = next;
+    return next;
+  }
+
+  void _retryRoomStream() {
+    if (!mounted || _isLeavingRoom || _roomAccessTerminated) return;
+    _roomRetryTimer?.cancel();
+    _roomRetryTimer = null;
+    setState(() {
+      _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
+    });
+  }
+
+  void _scheduleRoomRetry() {
+    if (_roomRetryTimer != null || _isLeavingRoom || _roomAccessTerminated) {
+      return;
+    }
+    _roomRetryAttempt = (_roomRetryAttempt + 1).clamp(1, 5).toInt();
+    final seconds = (1 << _roomRetryAttempt).clamp(2, 30).toInt();
+    _roomRetryTimer = Timer(Duration(seconds: seconds), () {
+      _roomRetryTimer = null;
+      _retryRoomStream();
+    });
+  }
+
+  Future<void> _ensureMyMembershipReady({bool force = false}) {
+    final existing = _membershipReady;
+    if (!force && existing != null) return existing;
+    final operation = _snackChatService.ensureMyMembership(widget.snackChatId);
+    _membershipReady = operation;
+    unawaited(operation.catchError((Object _) {
+      if (identical(_membershipReady, operation)) _membershipReady = null;
+    }));
+    return operation;
+  }
+
+  Future<void> _prepareEntryAndSubscribe() async {
+    final roomId = widget.snackChatId;
+    final generation = ++_entryBootstrapGeneration;
+    var membershipPrepared = false;
+    SnackChatEntryContext? resolvedEntry;
+    try {
+      SnackChatEntryContext entry;
+      if (SnackChatService.fastEntryEnabled) {
+        // Entry context first: the new server repairs a missing member doc
+        // inside getSnackChatEntryContext, so the serial membership callable
+        // is skipped. Only failed-precondition (older server, or a member doc
+        // it could not repair) runs the explicit repair and retries once.
+        try {
+          entry = await _snackChatService.getEntryContext(roomId);
+        } on FirebaseFunctionsException catch (error) {
+          if (error.code != 'failed-precondition') rethrow;
+          await _ensureMyMembershipReady(force: true);
+          entry = await _snackChatService.getEntryContext(roomId);
+        }
+      } else {
+        await _ensureMyMembershipReady();
+        membershipPrepared = true;
+        _membershipPreparationPending = false;
+        if (_messageStreamError != null) _subscribeToMessages();
+        entry = await _snackChatService.getEntryContext(roomId);
+      }
+      membershipPrepared = true;
+      _membershipPreparationPending = false;
+      if (_messageStreamError != null) _subscribeToMessages();
+      if (!mounted ||
+          generation != _entryBootstrapGeneration ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+      resolvedEntry = entry;
+      if (ChatTiming.enabled) {
+        ChatTiming.record(
+          '[SnackChatTiming] stage=entryContextResolved roomId=$roomId '
+          'durationMs=${_entryWatch.elapsedMilliseconds} '
+          'fastEntry=${SnackChatService.fastEntryEnabled}',
+        );
+      }
+      if (entry.canAdvanceReadCursor && !_accountInvalidated) {
+        unawaited(NotificationService().markRelatedNotificationsAsRead(
+          types: const {'snack_chat_invite'},
+          targets: {'snackChatId': widget.snackChatId},
+        ));
+      }
+
+      // Reading and unread-anchor positioning are independent. As soon as the
+      // server entry boundary is known, queue exactly that confirmed boundary;
+      // an anchor fetch or scroll failure must not leave the room unread.
+      setState(() {
+        _entryContextResolved = true;
+        _entryReadSyncAllowed = entry.canAdvanceReadCursor;
+        if (entry.lastReadSequence > _confirmedReadSequence) {
+          _confirmedReadSequence = entry.lastReadSequence;
+        }
+        if (entry.roomLastSequence > _pendingReadSequence) {
+          _pendingReadSequence = entry.roomLastSequence;
+        }
+        if (entry.roomLastSequence > _highestConfirmedReadSequence) {
+          _highestConfirmedReadSequence = entry.roomLastSequence;
+        }
+        _firstUnreadMessageId = entry.firstUnreadMessageId;
+        _firstUnreadSequence = entry.firstUnreadSequence;
+        _entryLatestSequence = entry.roomLastSequence;
+        _isNearLatest = !entry.hasUnreadAnchor;
+        _entryPositionSettled = !entry.hasUnreadAnchor;
+      });
+      if (_entryReadSyncAllowed) _scheduleActiveReadSync(immediate: true);
+
+      List<SnackChatMessage> anchorWindow = const <SnackChatMessage>[];
+      if (entry.hasUnreadAnchor) {
+        final alreadyLoaded = _messageIds.contains(entry.firstUnreadMessageId);
+        if (!alreadyLoaded) {
+          final cached = await _localCache.getMessages(roomId, limit: 400);
+          final anchorSequence = entry.firstUnreadSequence!;
+          if (cached.any(
+            (message) => message.id == entry.firstUnreadMessageId,
+          )) {
+            anchorWindow = cached.where((message) {
+              final sequence = message.sequence;
+              return message.id == entry.firstUnreadMessageId ||
+                  (sequence != null &&
+                      sequence >= anchorSequence - 10 &&
+                      sequence <= anchorSequence + 20);
+            }).toList(growable: false);
+          } else {
+            anchorWindow = await _snackChatService
+                .fetchMessageWindowAroundSequence(
+                  roomId,
+                  messageId: entry.firstUnreadMessageId!,
+                  sequence: anchorSequence,
+                )
+                .timeout(const Duration(seconds: 14));
+          }
+        }
+        if (!anchorWindow.any(
+              (message) => message.id == entry.firstUnreadMessageId,
+            ) &&
+            !_messageIds.contains(entry.firstUnreadMessageId)) {
+          throw StateError('The unread Snack Chat anchor is unavailable.');
+        }
+      }
+      if (!mounted ||
+          generation != _entryBootstrapGeneration ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+
+      setState(() {
+        _entryRetryTimer?.cancel();
+        _entryRetryTimer = null;
+        _entryRetryAttempt = 0;
+        for (final message in anchorWindow) {
+          if (_messageIds.add(message.id)) _messages.add(message);
+        }
+        if (_messages.isNotEmpty) {
+          _sortMessages();
+          _updateOldestMessageCursor(anchorWindow);
+          _isInitialLoading = false;
+        }
+        _isNearLatest = !entry.hasUnreadAnchor;
+        _entryPositionSettled = !entry.hasUnreadAnchor;
+      });
+      _scheduleSenderProfileHydration(anchorWindow);
+      if (entry.hasUnreadAnchor) {
+        _scheduleEntryAnchorPosition(generation: generation);
+      }
+    } catch (error, stackTrace) {
+      _membershipPreparationPending = false;
+      Logger.error(
+        'Snack Chat 첫 안 읽은 메시지 경계 조회 실패',
+        error,
+        stackTrace,
+      );
+      if (!mounted ||
+          generation != _entryBootstrapGeneration ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+      if (!membershipPrepared && _isTerminalRoomError(_messageStreamError)) {
+        _scheduleRoomAccessTermination();
+      }
+      if (resolvedEntry != null) {
+        // Only anchor preparation failed. Keep the frozen unread divider and
+        // the already queued server boundary, and stop fighting user scroll.
+        setState(() {
+          _entryPositionInFlight = false;
+          _entryPositionSettled = true;
+        });
+        _scheduleActiveReadSync();
+      } else {
+        // No authoritative entry context was obtained. Do not guess a cursor
+        // from cached/local messages; retry only on the existing entry path.
+        setState(() {
+          _entryContextResolved = true;
+          _entryPositionSettled = true;
+          _entryReadSyncAllowed = false;
+          _firstUnreadMessageId = null;
+          _firstUnreadSequence = null;
+          _entryLatestSequence = 0;
+          _isNearLatest = true;
+        });
+      }
+      if (_entryRetryAttempt < 3 && _entryRetryTimer == null) {
+        _entryRetryAttempt++;
+        final retryGeneration = generation;
+        _entryRetryTimer = Timer(
+          Duration(seconds: 1 << _entryRetryAttempt),
+          () {
+            _entryRetryTimer = null;
+            if (mounted &&
+                retryGeneration == _entryBootstrapGeneration &&
+                roomId == widget.snackChatId) {
+              unawaited(_prepareEntryAndSubscribe());
+            }
+          },
+        );
+      }
+    }
+  }
+
+  void _scheduleEntryAnchorPosition({
+    required int generation,
+    int attempt = 0,
+  }) {
+    if (!mounted ||
+        generation != _entryBootstrapGeneration ||
+        _entryPositionSettled) {
+      return;
+    }
+    _entryPositionInFlight = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted ||
+          generation != _entryBootstrapGeneration ||
+          _entryPositionSettled ||
+          _isUserScrolling) {
+        return;
+      }
+      final anchorId = _firstUnreadMessageId;
+      final anchorContext =
+          anchorId == null ? null : _messageKeys[anchorId]?.currentContext;
+      if (anchorContext != null) {
+        final viewportHeight = _messageViewportKey.currentContext?.size?.height ??
+            MediaQuery.sizeOf(context).height;
+        final controlInset = context.rs(48).clamp(44, 52).toDouble() + 8;
+        await Scrollable.ensureVisible(
+          anchorContext,
+          // Keep the first unread bubble just below the floating list control.
+          // reverse:true uses 1.0 for the visual top of the viewport.
+          alignment: (1 - controlInset / viewportHeight).clamp(.7, .92),
+          duration:
+              attempt == 0 ? Duration.zero : const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+        );
+        if (!mounted || generation != _entryBootstrapGeneration) return;
+        setState(() {
+          _entryPositionInFlight = false;
+          _entryPositionSettled = true;
+          _isNearLatest = _scrollController.hasClients &&
+              _scrollController.position.pixels <= 72;
+        });
+        _hapticOnFirstUnreadIfVisible(anchorId!);
+        _scheduleActiveReadSync();
+        return;
+      }
+
+      if (_scrollController.hasClients && !_isUserScrolling) {
+        final position = _scrollController.position;
+        final anchorIndex = anchorId == null
+            ? -1
+            : _messages.indexWhere((message) => message.id == anchorId);
+        final estimatedTarget = anchorIndex < 0 || _messages.length <= 1
+            ? position.maxScrollExtent
+            : position.maxScrollExtent *
+                (anchorIndex / (_messages.length - 1)).clamp(0.0, 1.0);
+        if ((estimatedTarget - position.pixels).abs() > .5) {
+          position.jumpTo(estimatedTarget);
+        }
+      }
+      if (attempt < 6) {
+        _scheduleEntryAnchorPosition(
+          generation: generation,
+          attempt: attempt + 1,
+        );
+        return;
+      }
+
+      // The context was valid but its widget could not be laid out. Stop the
+      // automatic positioning without changing the independently queued read.
+      setState(() {
+        _entryPositionInFlight = false;
+        _entryPositionSettled = true;
+      });
+    });
+  }
+
+  void _hapticOnFirstUnreadIfVisible(String messageId) {
+    if (_entryUnreadHapticPlayed || !mounted || _uid == null ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        _isUserScrolling || _firstUnreadMessageId != messageId) {
+      return;
+    }
+    final messageBox =
+        _messageKeys[messageId]?.currentContext?.findRenderObject();
+    final viewportBox = _messageViewportKey.currentContext?.findRenderObject();
+    if (messageBox is! RenderBox || viewportBox is! RenderBox ||
+        !messageBox.hasSize || !viewportBox.hasSize) {
+      return;
+    }
+    final top = messageBox.localToGlobal(Offset.zero).dy;
+    final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
+    if (top + messageBox.size.height <= viewportTop ||
+        top >= viewportTop + viewportBox.size.height) {
+      return;
+    }
+    _entryUnreadHapticPlayed = true;
+    unawaited(HapticFeedback.mediumImpact());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appLifecycleState = state;
+    if (state == AppLifecycleState.resumed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final anchorId = _firstUnreadMessageId;
+        if (mounted && _entryPositionSettled && anchorId != null) {
+          _hapticOnFirstUnreadIfVisible(anchorId);
+        }
+      });
+      if (!_accountInvalidated && ModalRoute.of(context)?.isCurrent == true) {
+        SnackChatActiveConversation.setActive(widget.snackChatId);
+      }
+      if (_isUserScrolling) {
+        _isUserScrolling = false;
+        _cancelPendingTranslationRestore();
+      }
+      // 백그라운드 전환 이후 도착한 메시지는 다음 화면 종료 시점에
+      // 별도의 읽음 경계로 반영할 수 있도록 종료 플러시를 다시 연다.
+      _exitReadFlushStarted = false;
+      if (_messageStreamError != null && _messageRetryTimer == null) {
+        _subscribeToMessages();
+      }
+      if (_outboxRetryAttempt >= 5) _outboxRetryAttempt = 0;
+      _scheduleOutboxRecovery();
+      unawaited(_fileTransfer.retryRoom(widget.snackChatId));
+      unawaited(_fileTransfer.purgeExpiredCache());
+      _scheduleActiveReadSync(immediate: true);
+      if (_messageWindowExpansionPending) {
+        _scheduleMessageWindowExpansion();
+      }
+      _translationFailures.clear();
+      _translationRetryAfter.clear();
+      _translationRetryTimer?.cancel();
+      _translationRetryTimer = null;
+      if (_translationModeReady && !_translationShowsOriginal) {
+        if (_deferredTranslationOutcomes.isNotEmpty) {
+          _commitDeferredTranslationOutcomes();
+        } else {
+          _scheduleVisibleTranslations();
+        }
+      }
+      if (mounted) setState(() {});
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      if (_isUserScrolling) {
+        _isUserScrolling = false;
+        _cancelPendingTranslationRestore();
+      }
+      _translationMicroBatchTimer?.cancel();
+      _translationMicroBatchTimer = null;
+      _translationMicroBatchCandidates.clear();
+      _liveTranslationPriorityUntil.clear();
+      _startBackgroundReadFlush();
+      if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+        SnackChatActiveConversation.setActive(null);
+      }
+      unawaited(
+        _localCache.saveDraft(widget.snackChatId, _messageController.text),
+      );
+      if (_messages.isNotEmpty) {
+        unawaited(
+          _localCache.upsertMessages(widget.snackChatId, List.of(_messages)),
+        );
+      }
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!_isNearLatest) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _isNearLatest) {
+        _scrollToLatest(animated: false);
+        _scheduleActiveReadSync();
+      }
+    });
+  }
+
+  /// Phase 0 measurement: entry → first frame with history on screen.
+  void _markEntryFirstPaint(String source) {
+    if (_entryFirstPaintRecorded || !ChatTiming.enabled) return;
+    _entryFirstPaintRecorded = true;
+    final roomId = widget.snackChatId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ChatTiming.record(
+        '[SnackChatTiming] stage=roomEntryFirstPaint roomId=$roomId '
+        'source=$source durationMs=${_entryWatch.elapsedMilliseconds}',
+      );
+    });
+  }
+
+  int _latestConfirmedSequence() {
+    var latest = _highestConfirmedReadSequence;
+    final roomSequence = _lastRoom?.lastMessageSequence ?? 0;
+    if (roomSequence > latest) latest = roomSequence;
+    if (_entryLatestSequence > latest) latest = _entryLatestSequence;
+    for (final message in _messages) {
+      final sequence = message.sequence;
+      if (sequence != null &&
+          message.sendStatus == MessageSendStatus.sent &&
+          sequence > latest) {
+        latest = sequence;
+      }
+    }
+    return latest;
+  }
+
+  Future<SnackChatReadResult> _flushReadBoundary({
+    required String roomId,
+    required int throughSequence,
+  }) async {
+    Object? lastError;
+    final owner = _uid;
+    if (owner == null) throw StateError('Snack Chat read session changed');
+    final notificationSession = FCMService().notificationSession;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (!FCMService().isNotificationSession(owner, notificationSession)) {
+          throw StateError('Snack Chat read session changed');
+        }
+        final readWatch = Stopwatch()..start();
+        final readResult = await _snackChatService
+            .markAsRead(roomId, throughSequence: throughSequence)
+            .timeout(const Duration(seconds: 16));
+        if (ChatTiming.enabled) {
+          ChatTiming.record(
+            '[SnackChatTiming] stage=readCallDuration roomId=$roomId '
+            'path=callable durationMs=${readWatch.elapsedMilliseconds} '
+            'through=$throughSequence',
+          );
+        }
+        if (FCMService().isNotificationSession(owner, notificationSession)) {
+          _scheduleReadPostProcessing(roomId, readResult);
+        }
+        return readResult;
+      } catch (error) {
+        lastError = error;
+        if (_isTerminalRoomError(error)) break;
+        if (attempt == 0) {
+          await Future<void>.delayed(_activeReadRequestInterval);
+        }
+      }
+    }
+    throw lastError ?? StateError('Snack Chat 읽음 동기화 실패');
+  }
+
+  void _scheduleReadPostProcessing(
+    String roomId,
+    SnackChatReadResult result,
+  ) {
+    final owner = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (owner.isEmpty) return;
+    // Always recount: the server counter may already have been lowered by
+    // another device (clearedCount 0) while this icon still shows the old
+    // number from the last push.
+    unawaited(
+      BadgeService.refreshNow(fresh: true).catchError((Object error) {
+        Logger.error('Snack Chat 읽음 배지 갱신 실패', error);
+      }),
+    );
+    if (result.readThroughSequence > 0) {
+      unawaited(
+        FCMService()
+            .cancelSnackChatNotification(
+          roomId,
+          throughSequence: result.readThroughSequence,
+          expectedOwner: owner,
+        )
+            .catchError((Object error) {
+          Logger.error('Snack Chat 읽음 알림 정리 실패', error);
+        }),
+      );
+    }
+  }
+
+  /// 현재 화면과 활성 lifecycle에서 확보한 서버 확정 sequence를 합친다.
+  /// 프레임 단위로 목표를 합치고, 활성 화면의 요청 간격만 제한한다.
+  void _scheduleActiveReadSync({bool immediate = false}) {
+    if (!mounted ||
+        _uid == null ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        !_entryContextResolved ||
+        !_entryReadSyncAllowed ||
+        _isLeavingRoom ||
+        _roomWasLeft ||
+        _roomAccessTerminated ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        !SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      return;
+    }
+    if (immediate) _immediateReadSyncRequested = true;
+    if (_readSyncScanScheduled) return;
+    _readSyncScanScheduled = true;
+    final generation = _readSyncGeneration;
+    final roomId = widget.snackChatId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          generation != _readSyncGeneration ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+      _readSyncScanScheduled = false;
+      _scanConfirmedReadBoundary();
+    });
+  }
+
+  void _scanConfirmedReadBoundary() {
+    if (!mounted ||
+        _uid == null ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        !_entryContextResolved ||
+        !_entryReadSyncAllowed ||
+        _isLeavingRoom ||
+        _roomWasLeft ||
+        _roomAccessTerminated ||
+        _appLifecycleState != AppLifecycleState.resumed ||
+        !SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      return;
+    }
+    final latest = _latestConfirmedSequence();
+    _reconcileRoomNotifications(latest);
+    if (latest <= _confirmedReadSequence) return;
+    if (latest > _highestConfirmedReadSequence) {
+      _highestConfirmedReadSequence = latest;
+    }
+    if (latest > _pendingReadSequence) _pendingReadSequence = latest;
+    if (_activeReadSyncInFlight) return;
+
+    final roomId = widget.snackChatId;
+    final generation = _readSyncGeneration;
+    _activeReadSyncInFlight = true;
+    unawaited(_drainActiveReadSync(roomId, generation));
+  }
+
+  int _notificationReconcileSequence = 0;
+
+  /// The newest server-committed message is on screen (this runs only while
+  /// the room is current, resumed and active), so every OS card for this
+  /// room is covered: remove them and recount the badge from the server.
+  /// Independent of the read callable, which may be skipped (already read on
+  /// another device) or fail transiently.
+  void _reconcileRoomNotifications(int latestVisibleSequence) {
+    if (latestVisibleSequence <= 0 ||
+        latestVisibleSequence <= _notificationReconcileSequence) {
+      return;
+    }
+    _notificationReconcileSequence = latestVisibleSequence;
+    final owner = _uid;
+    final roomId = widget.snackChatId;
+    if (owner == null) return;
+    unawaited(FCMService()
+        .cancelSnackChatNotification(
+          roomId,
+          throughSequence: latestVisibleSequence,
+          coversLatestVisible: true,
+          expectedOwner: owner,
+        )
+        .catchError((Object error) {
+      Logger.error('Snack Chat 화면 기준 알림 정리 실패', error);
+    }));
+    unawaited(BadgeService.refreshNow(fresh: true).catchError((Object error) {
+      Logger.error('Snack Chat 화면 기준 배지 갱신 실패', error);
+    }));
+  }
+
+  Future<void> _drainActiveReadSync(String roomId, int generation) async {
+    var retryDeferred = false;
+    try {
+      while (mounted &&
+          generation == _readSyncGeneration &&
+          roomId == widget.snackChatId &&
+          ModalRoute.of(context)?.isCurrent == true &&
+          SnackChatActiveConversation.isActive(roomId) &&
+          _appLifecycleState == AppLifecycleState.resumed &&
+          _pendingReadSequence > _confirmedReadSequence) {
+        final useDirectRead = SnackChatService.directReadEnabled &&
+            SnackChatReadPolicy.canDirectWrite(
+              myMember: _uid == null ? null : _members[_uid],
+              entryContextResolved: _entryContextResolved,
+              canAdvanceReadCursor: _entryReadSyncAllowed,
+            );
+        final intervalWatch = _readRequestIntervalWatch;
+        if (!useDirectRead &&
+            !_immediateReadSyncRequested &&
+            intervalWatch != null) {
+          final remaining = _activeReadRequestInterval - intervalWatch.elapsed;
+          if (remaining > Duration.zero) {
+            await Future<void>.delayed(remaining);
+            // The target may have grown while waiting. Recheck all screen and
+            // session guards before issuing the single merged request.
+            continue;
+          }
+        }
+        final target = _pendingReadSequence;
+        _immediateReadSyncRequested = false;
+        if (useDirectRead) {
+          // One Rules-validated write; no callable, no cold start. Other
+          // participants' receipt counts update from their members listener.
+          int? accepted;
+          final directWatch = Stopwatch()..start();
+          try {
+            accepted = await _snackChatService.advanceReadCursorDirect(
+              roomId,
+              throughSequence: target,
+            );
+            if (ChatTiming.enabled) {
+              ChatTiming.record(
+                '[SnackChatTiming] stage=readCallDuration roomId=$roomId '
+                'path=direct accepted=${accepted != null} '
+                'durationMs=${directWatch.elapsedMilliseconds} through=$target',
+              );
+            }
+          } catch (error) {
+            retryDeferred = true;
+            Logger.error('Snack Chat 직접 읽음 커서 쓰기 실패', error);
+            return;
+          }
+          if (generation != _readSyncGeneration) return;
+          if (accepted != null) {
+            if (accepted > _confirmedReadSequence) {
+              _confirmedReadSequence = accepted;
+            }
+            if (accepted > _directReadAcceptedSequence) {
+              _directReadAcceptedSequence = accepted;
+            }
+            // Rules accepted the boundary against the room's canonical
+            // sequence, so OS cards through it can be removed now.
+            _scheduleReadPostProcessing(
+              roomId,
+              SnackChatReadResult(
+                clearedCount: 0,
+                unreadCount: 0,
+                readThroughSequence: accepted,
+              ),
+            );
+            _scheduleReadReconcile(roomId);
+            continue;
+          }
+          // Rejected (legacy member doc or another device ahead): the callable
+          // path below remains the authoritative fallback.
+        }
+        _readRequestIntervalWatch ??= Stopwatch();
+        _readRequestIntervalWatch!
+          ..reset()
+          ..start();
+        try {
+          final result = await _flushReadBoundary(
+            roomId: roomId,
+            throughSequence: target,
+          );
+          if (generation != _readSyncGeneration) return;
+          if (result.readThroughSequence > _confirmedReadSequence) {
+            _confirmedReadSequence = result.readThroughSequence;
+          } else if (target > _confirmedReadSequence) {
+            // A no-progress response is not a timer-driven reason to poll the
+            // same boundary forever. A later stream event or resume retries.
+            retryDeferred = true;
+            return;
+          }
+        } catch (error) {
+          retryDeferred = true;
+          Logger.error('Snack Chat 실시간 읽음 동기화 실패', error);
+          // 다음 stream event 또는 resume에서 다시 시도하되, 네트워크가
+          // 끊긴 동안 즉시 재귀 호출이 반복되지는 않게 한다.
+          return;
+        }
+      }
+    } finally {
+      if (generation == _readSyncGeneration) {
+        _activeReadSyncInFlight = false;
+        if (!retryDeferred &&
+            _pendingReadSequence > _confirmedReadSequence &&
+            _appLifecycleState == AppLifecycleState.resumed) {
+          _scheduleActiveReadSync();
+        }
+      }
+    }
+  }
+
+  /// After direct cursor writes, run the read callable once (coalesced) so the
+  /// server reconciles room.unreadCount and the durable badge. The receipt is
+  /// already visible to others, so this is off the user-visible path.
+  void _scheduleReadReconcile(String roomId) {
+    _readReconcileTimer?.cancel();
+    final generation = _readSyncGeneration;
+    _readReconcileTimer = Timer(SnackChatReadPolicy.reconcileDelay, () {
+      _readReconcileTimer = null;
+      if (!mounted ||
+          generation != _readSyncGeneration ||
+          roomId != widget.snackChatId ||
+          _uid == null ||
+          _exitReadFlushStarted) {
+        return;
+      }
+      final through = _directReadAcceptedSequence;
+      if (through <= 0) return;
+      unawaited(
+        _flushReadBoundary(roomId: roomId, throughSequence: through).then<void>(
+          (_) {},
+          onError: (Object error, StackTrace _) {
+            Logger.error('Snack Chat 읽음 정합화 실패', error);
+          },
+        ),
+      );
+    });
+  }
+
+  void _startBackgroundReadFlush() {
+    _readReconcileTimer?.cancel();
+    _readReconcileTimer = null;
+    if (!_entryContextResolved ||
+        _uid == null ||
+        !_entryReadSyncAllowed ||
+        _roomWasLeft ||
+        _roomAccessTerminated ||
+        _exitReadFlushStarted) {
+      return;
+    }
+    _exitReadFlushStarted = true;
+    _immediateReadSyncRequested = false;
+    final roomId = widget.snackChatId;
+    final throughSequence = _latestConfirmedSequence();
+    if (throughSequence > _highestConfirmedReadSequence) {
+      _highestConfirmedReadSequence = throughSequence;
+    }
+    if (throughSequence <= 0) return;
+    if (throughSequence > _pendingReadSequence) {
+      _pendingReadSequence = throughSequence;
+    }
+
+    unawaited(
+      _flushReadBoundary(
+        roomId: roomId,
+        throughSequence: throughSequence,
+      ).then<void>(
+        (_) {},
+        onError: (Object error, StackTrace _) {
+          Logger.error('Snack Chat 화면 종료 읽음 동기화 실패', error);
+        },
+      ),
+    );
   }
 
   void _subscribeToMessages() {
-    _msgSub = _snackChatService.watchMessages(widget.snackChatId).listen(
+    if (_roomAccessTerminated || _isLeavingRoom) return;
+    _messageWindowExpansionPending = false;
+    _messageWindowExpansionTimer?.cancel();
+    _messageWindowExpansionTimer = null;
+    _messageRetryTimer?.cancel();
+    _fileExpiryTimer?.cancel();
+    _messageRetryTimer = null;
+    final generation = ++_messageSubscriptionGeneration;
+    final previous = _msgSub;
+    _msgSub = null;
+    if (previous != null) unawaited(previous.cancel());
+    final liveWindowOldest = _oldestMessage;
+    _msgSub = _snackChatService
+        .watchMessages(
+      widget.snackChatId,
+      throughMessage: liveWindowOldest,
+    )
+        .listen(
       (incoming) {
-        if (!mounted) return;
-        _scheduleMarkAsRead();
-        setState(() {
-          // 초기 로딩 완료
-          _isInitialLoading = false;
-
-          for (final m in incoming) {
-            if (!_messageIds.contains(m.id)) {
-              _messageIds.add(m.id);
-              _messages.add(m);
-            }
+        if (!mounted ||
+            _isLeavingRoom ||
+            generation != _messageSubscriptionGeneration) {
+          return;
+        }
+        var addedRemoteMessages = 0;
+        var addedMessages = 0;
+        var anyMessageChanged = false;
+        final wasNearLatest = _isNearLatest;
+        final hadLiveBatch = _hasReceivedFirstLiveBatch;
+        final liveTranslationCandidates = <SnackChatMessage>[];
+        final changedIncoming = <SnackChatMessage>[];
+        final incomingIds = <String>{};
+        int? incomingMinimumSequence;
+        for (final serverMessage in incoming) {
+          incomingIds.add(serverMessage.id);
+          final sequence = serverMessage.sequence;
+          if (sequence != null &&
+              sequence > 0 &&
+              (incomingMinimumSequence == null ||
+                  sequence < incomingMinimumSequence)) {
+            incomingMinimumSequence = sequence;
           }
-          _messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          if (_messages.isNotEmpty) {
-            _oldestMessageTime = _messages.last.createdAt;
+          final previous = _lastLiveServerMessages[serverMessage.id];
+          _lastLiveServerMessages[serverMessage.id] = serverMessage;
+          if (!identical(previous, serverMessage)) {
+            changedIncoming.add(serverMessage);
           }
-        });
-      },
-      onError: (e) {
-        // 메시지 스트림 오류 시 _isInitialLoading 을 반드시 해제
-        // 해제하지 않으면 화면이 무한 로딩 상태에 고정됨
-        Logger.error('메시지 스트림 오류: $e');
-        if (mounted) {
+        }
+        _lastLiveServerMessages.removeWhere(
+          (messageId, _) => !incomingIds.contains(messageId),
+        );
+        _liveWindowMinimumSequence = incomingMinimumSequence;
+        final receiverSnapshotAt = DateTime.now();
+        final receiverRenderStopwatch = Stopwatch()..start();
+        final receiverTraceMessages = hadLiveBatch
+            ? changedIncoming
+                .where(
+                  (message) =>
+                      message.senderId != _uid &&
+                      !_messageIds.contains(message.id),
+                )
+                .toList(growable: false)
+            : const <SnackChatMessage>[];
+        if (ChatTiming.enabled) {
+          for (final message in receiverTraceMessages) {
+            final serverAgeMs = receiverSnapshotAt
+                .difference(message.createdAt)
+                .inMilliseconds
+                .clamp(0, 1 << 31);
+            ChatTiming.record(
+              '[SnackChatTiming] stage=receiverSnapshotReceivedAt '
+              'at=${receiverSnapshotAt.millisecondsSinceEpoch} '
+              'roomId=${widget.snackChatId} messageId=${message.id} '
+              'sequence=${message.sequence ?? 0} uncalibratedServerAgeMs=$serverAgeMs',
+            );
+          }
+        }
+        final needsUiUpdate = changedIncoming.isNotEmpty ||
+            _isInitialLoading ||
+            _messageStreamError != null ||
+            _messageRetryAttempt != 0 ||
+            !hadLiveBatch;
+        if (needsUiUpdate) {
           setState(() {
             _isInitialLoading = false;
+            _markEntryFirstPaint('live');
+            _messageStreamError = null;
+            _messageRetryAttempt = 0;
+            // UI는 sequence 우선으로 정렬하지만 Firestore 페이지 커서는
+            // createdAt + documentId 순서다. 두 순서를 섞지 않고 실제 쿼리
+            // 기준의 가장 오래된 문서만 커서로 유지한다.
+            _updateOldestMessageCursor(changedIncoming);
+            final messageIndexes = <String, int>{
+              for (var index = 0; index < _messages.length; index++)
+                _messages[index].id: index,
+            };
+            var orderChanged = false;
+            for (final serverMessage in changedIncoming) {
+              final index = messageIndexes[serverMessage.id];
+              if (index == null) {
+                _messageIds.add(serverMessage.id);
+                messageIndexes[serverMessage.id] = _messages.length;
+                _messages.add(serverMessage);
+                anyMessageChanged = true;
+                addedMessages++;
+                orderChanged = true;
+                if (hadLiveBatch && wasNearLatest) {
+                  liveTranslationCandidates.add(serverMessage);
+                }
+                if (hadLiveBatch && serverMessage.senderId != _uid) {
+                  addedRemoteMessages++;
+                }
+              } else {
+                final local = _messages[index];
+                if (local.sequence != serverMessage.sequence ||
+                    local.createdAt != serverMessage.createdAt ||
+                    local.hasConfirmedServerTimestamp !=
+                        serverMessage.hasConfirmedServerTimestamp) {
+                  orderChanged = true;
+                }
+                if (hadLiveBatch &&
+                    wasNearLatest &&
+                    (local.text != serverMessage.text ||
+                        (local.sendStatus != MessageSendStatus.sent &&
+                            serverMessage.sendStatus ==
+                                MessageSendStatus.sent))) {
+                  liveTranslationCandidates.add(serverMessage);
+                }
+                final keepOptimisticReaction =
+                    _reactionMutationsInFlight.contains(serverMessage.id) ||
+                        _pendingReactionTargets.containsKey(serverMessage.id);
+                final keepOptimisticPoll =
+                    _voteMutationsInFlight.contains(serverMessage.id) ||
+                        _pendingVoteTargets.containsKey(serverMessage.id);
+                final hasLocalOverlay = keepOptimisticReaction ||
+                    keepOptimisticPoll ||
+                    local.localImagePath != null ||
+                    local.localFilePath != null ||
+                    local.fileTransferStatus != null ||
+                    local.transferProgress != null ||
+                    local.errorMessage != null;
+                final next = hasLocalOverlay
+                    ? serverMessage.copyWith(
+                        localImagePath: local.localImagePath,
+                        localFilePath: local.localFilePath,
+                        fileTransferStatus:
+                            serverMessage.type == SnackChatMessageType.file
+                                ? SnackChatFileTransferStatus.ready
+                                : local.fileTransferStatus,
+                        transferProgress:
+                            serverMessage.type == SnackChatMessageType.file
+                                ? 1
+                                : local.transferProgress,
+                        clearTransferProgress:
+                            serverMessage.type == SnackChatMessageType.image,
+                        reactionCounts: keepOptimisticReaction
+                            ? local.reactionCounts
+                            : serverMessage.reactionCounts,
+                        poll: keepOptimisticPoll
+                            ? local.poll
+                            : serverMessage.poll,
+                        clearErrorMessage: true,
+                      )
+                    : serverMessage;
+                if (!identical(local, next)) {
+                  _messages[index] = next;
+                  anyMessageChanged = true;
+                }
+              }
+            }
+            if (orderChanged) _sortMessages();
+            _hasReceivedFirstLiveBatch = true;
+            if (addedRemoteMessages > 0 && !wasNearLatest) {
+              _newMessageCount += addedRemoteMessages;
+            }
+          });
+        }
+        if (ChatTiming.enabled && receiverTraceMessages.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || generation != _messageSubscriptionGeneration) {
+              return;
+            }
+            final renderedAt = DateTime.now().millisecondsSinceEpoch;
+            for (final message in receiverTraceMessages) {
+              ChatTiming.record(
+                '[SnackChatTiming] stage=receiverBubbleRenderedAt '
+                'at=$renderedAt roomId=${widget.snackChatId} '
+                'messageId=${message.id} sequence=${message.sequence ?? 0} '
+                'durationMs=${receiverRenderStopwatch.elapsedMilliseconds}',
+              );
+            }
+          });
+        }
+        if (changedIncoming.isNotEmpty) {
+          final owner = _uid;
+          for (final message in changedIncoming) {
+            if (message.senderId == owner && message.isServerCommitted) {
+              _releaseHeldOutbound(owner, widget.snackChatId, message.id);
+            }
+          }
+          _scheduleSenderProfileHydration(changedIncoming);
+        }
+        _translateNewLiveMessages(liveTranslationCandidates);
+        if (anyMessageChanged) {
+          _scheduleMessageCacheWrite();
+          _scheduleFileExpiryRefresh();
+          _scheduleOutboxRecovery();
+        }
+        if (addedMessages > 0 || !hadLiveBatch) _scheduleActiveReadSync();
+        _scheduleSequenceGapRecovery();
+        if (_entryPositionSettled &&
+            wasNearLatest &&
+            (addedMessages > 0 || !hadLiveBatch)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _isNearLatest) _scrollToLatest(animated: true);
+          });
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!mounted ||
+            _isLeavingRoom ||
+            generation != _messageSubscriptionGeneration) {
+          return;
+        }
+        setState(() {
+          _isInitialLoading = false;
+          _messageStreamError = error;
+        });
+        if (_isTerminalRoomError(error) && !_membershipPreparationPending) {
+          _scheduleRoomAccessTermination();
+        } else if (_messageRetryTimer == null) {
+          _messageRetryAttempt = (_messageRetryAttempt + 1).clamp(1, 5).toInt();
+          final seconds = (1 << _messageRetryAttempt).clamp(2, 30).toInt();
+          _messageRetryTimer = Timer(Duration(seconds: seconds), () {
+            _messageRetryTimer = null;
+            if (mounted && !_isLeavingRoom && !_roomAccessTerminated) {
+              _subscribeToMessages();
+            }
           });
         }
       },
     );
   }
 
-  /// 방 문서 실시간 감시: CF의 increment를 감지하면 즉시 다시 markAsRead 실행
-  void _subscribeToRoom() {
-    final uid = _uid;
-    if (uid == null) return;
-    _roomSub = FirebaseFirestore.instance
-        .collection('snack_chats')
-        .doc(widget.snackChatId)
-        .snapshots()
-        .listen((snap) {
-      if (!mounted) return;
-      final data = snap.data();
-      if (data == null) return;
-      final unreadMap = data['unreadCount'] as Map<String, dynamic>? ?? {};
-      final myUnread = unreadMap[uid];
-      final v =
-          myUnread is int ? myUnread : (myUnread is num ? myUnread.toInt() : 0);
+  void _subscribeToAuxiliaryState() {
+    if (_roomAccessTerminated || _isLeavingRoom) return;
+    final generation = ++_auxiliarySubscriptionGeneration;
+    _auxiliaryRetryTimer?.cancel();
+    _auxiliaryRetryTimer = null;
+    final previousSubscriptions = <StreamSubscription<dynamic>?>[
+      _memberSub,
+      _reactionSub,
+      _voteSub,
+      _blockSub,
+    ];
+    _memberSub = null;
+    _reactionSub = null;
+    _voteSub = null;
+    _blockSub = null;
+    for (final subscription in previousSubscriptions) {
+      if (subscription != null) unawaited(subscription.cancel());
+    }
 
-      // 🔍 디버깅: unreadCount 값 로깅
-      print('🔔 [SnackChat] Room 문서 업데이트 감지:');
-      print('  - snackChatId: ${widget.snackChatId}');
-      print('  - myUnread: $v');
-      print('  - lastMessage: ${data['lastMessage']}');
-      print('  - lastMessageSenderId: ${data['lastMessageSenderId']}');
+    final readyStreams = <String>{};
+    void markReady(String name) {
+      readyStreams.add(name);
+      if (readyStreams.length == 4) _auxiliaryRetryAttempt = 0;
+    }
 
-      if (v > 0) {
-        print('  ⚠️ unreadCount > 0 감지, markAsRead 예약');
-        _scheduleMarkAsRead();
+    void handleError(Object error, StackTrace _) {
+      if (!mounted ||
+          _isLeavingRoom ||
+          _roomAccessTerminated ||
+          generation != _auxiliarySubscriptionGeneration ||
+          _auxiliaryRetryTimer != null) {
+        return;
       }
+      if (_isTerminalRoomError(error)) {
+        _scheduleRoomAccessTermination();
+        return;
+      }
+      _auxiliaryRetryAttempt = (_auxiliaryRetryAttempt + 1).clamp(1, 5).toInt();
+      final retrySeconds = (1 << _auxiliaryRetryAttempt).clamp(2, 30).toInt();
+      _auxiliaryRetryTimer = Timer(Duration(seconds: retrySeconds), () {
+        _auxiliaryRetryTimer = null;
+        if (mounted &&
+            !_isLeavingRoom &&
+            !_roomAccessTerminated &&
+            generation == _auxiliarySubscriptionGeneration) {
+          _subscribeToAuxiliaryState();
+        }
+      });
+    }
+
+    _memberSub = _snackChatService.watchMembers(widget.snackChatId).listen(
+      (members) {
+        if (!mounted || generation != _auxiliarySubscriptionGeneration) {
+          return;
+        }
+        final nextMembers = <String, SnackChatMember>{};
+        for (final member in members) {
+          final previous = _members[member.userId];
+          nextMembers[member.userId] = previous != null &&
+                  previous.lastReadSequence > member.lastReadSequence
+              ? SnackChatMember(
+                  userId: member.userId,
+                  status: member.status,
+                  lastReadSequence: previous.lastReadSequence,
+                  lastReadAt: previous.lastReadAt ?? member.lastReadAt,
+                  periods: member.periods,
+                  unreadReconciledThroughSequence:
+                      member.unreadReconciledThroughSequence ??
+                          previous.unreadReconciledThroughSequence,
+                )
+              : member;
+        }
+        markReady('members');
+        final currentUserId = _uid;
+        if (ChatTiming.enabled) {
+          for (final member in nextMembers.values) {
+            final previous = _members[member.userId];
+            if (member.userId != currentUserId &&
+                previous != null &&
+                member.lastReadSequence > previous.lastReadSequence) {
+              ChatTiming.record(
+                '[SnackChatTiming] stage=memberReadObserved '
+                'roomId=${widget.snackChatId} '
+                'at=${DateTime.now().millisecondsSinceEpoch} '
+                'sequence=${member.lastReadSequence}',
+              );
+            }
+          }
+        }
+        final mine = currentUserId == null ? null : nextMembers[currentUserId];
+        setState(() {
+          _members
+            ..clear()
+            ..addAll(nextMembers);
+        });
+        if (mine == null) {
+          unawaited(_ensureMyMembershipReady().catchError((_) {}));
+        } else if (mine.status != 'active') {
+          unawaited(
+            _ensureMyMembershipReady(force: true).catchError((_) {}),
+          );
+        }
+      },
+      onError: handleError,
+    );
+    _reactionSub =
+        _snackChatService.watchMyReactions(widget.snackChatId).listen(
+      (reactions) {
+        if (!mounted || generation != _auxiliarySubscriptionGeneration) {
+          return;
+        }
+        final next = <String, String>{
+          for (final reaction in reactions) reaction.messageId: reaction.emoji,
+        };
+        markReady('reactions');
+        setState(() {
+          final ids = <String>{
+            ..._myReactions.keys,
+            ..._confirmedReactions.keys,
+            ...next.keys,
+          };
+          for (final messageId in ids) {
+            if (_reactionMutationsInFlight.contains(messageId) ||
+                _pendingReactionTargets.containsKey(messageId)) {
+              continue;
+            }
+            final value = next[messageId];
+            value == null
+                ? _myReactions.remove(messageId)
+                : _myReactions[messageId] = value;
+            _confirmedReactions[messageId] = value;
+          }
+        });
+      },
+      onError: handleError,
+    );
+    _voteSub = _snackChatService.watchMyVotes(widget.snackChatId).listen(
+      (votes) {
+        if (!mounted || generation != _auxiliarySubscriptionGeneration) {
+          return;
+        }
+        final next = <String, Set<String>>{
+          for (final vote in votes) vote.messageId: vote.optionIds.toSet(),
+        };
+        markReady('votes');
+        setState(() {
+          final ids = <String>{
+            ..._myVotes.keys,
+            ..._confirmedVotes.keys,
+            ...next.keys,
+          };
+          for (final messageId in ids) {
+            if (_voteMutationsInFlight.contains(messageId) ||
+                _pendingVoteTargets.containsKey(messageId)) {
+              continue;
+            }
+            final value = next[messageId];
+            if (value == null) {
+              _myVotes.remove(messageId);
+              _confirmedVotes[messageId] = const <String>{};
+            } else {
+              _myVotes[messageId] = Set<String>.from(value);
+              _confirmedVotes[messageId] = Set<String>.from(value);
+            }
+          }
+        });
+      },
+      onError: handleError,
+    );
+    _blockSub = _snackChatService.watchBlockedUserIds().listen(
+      (ids) {
+        if (!mounted || generation != _auxiliarySubscriptionGeneration) {
+          return;
+        }
+        markReady('blocks');
+        if (_blockedUserIds.length == ids.length &&
+            _blockedUserIds.containsAll(ids)) {
+          return;
+        }
+        final anchor = _captureScrollAnchor();
+        setState(() {
+          _blockedUserIds
+            ..clear()
+            ..addAll(ids);
+        });
+        _scheduleSenderProfileHydration(_messages);
+        _restoreScrollAnchor(anchor);
+      },
+      onError: handleError,
+    );
+  }
+
+  _ScrollAnchor? _captureScrollAnchor() {
+    if (!_scrollController.hasClients) return null;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    _ScrollAnchor? best;
+    var bestDistance = double.infinity;
+    for (final message in _messages) {
+      final renderObject =
+          _messageKeys[message.id]?.currentContext?.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.attached) continue;
+      final dy = renderObject.localToGlobal(Offset.zero).dy;
+      final bottom = dy + renderObject.size.height;
+      if (bottom <= 0 || dy >= screenHeight) continue;
+      final distance = (dy - screenHeight * .45).abs();
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = _ScrollAnchor(messageId: message.id, globalDy: dy);
+      }
+    }
+    return best;
+  }
+
+  void _restoreScrollAnchor(_ScrollAnchor? anchor) {
+    if (anchor == null || _isUserScrolling) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isUserScrolling) return;
+      _applyScrollAnchorNow(anchor);
     });
   }
 
+  void _applyScrollAnchorNow(_ScrollAnchor? anchor) {
+    if (anchor == null || _isUserScrolling || !_scrollController.hasClients) {
+      return;
+    }
+    final renderObject =
+        _messageKeys[anchor.messageId]?.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) return;
+    final newDy = renderObject.localToGlobal(Offset.zero).dy;
+    final globalDelta = newDy - anchor.globalDy;
+    if (globalDelta.abs() < .5) return;
+    final position = _scrollController.position;
+    final offsetDelta =
+        position.axisDirection == AxisDirection.up ? -globalDelta : globalDelta;
+    final target = (position.pixels + offsetDelta)
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    if ((target - position.pixels).abs() >= .5) position.jumpTo(target);
+  }
+
+  void _sortMessages() => _messages.sort(SnackChatMessage.compareDescending);
+
+  void _applyCommitAck(
+    SnackChatCommitAck ack, {
+    required String ownerUid,
+    required String roomId,
+  }) {
+    if (!mounted ||
+        _uid != ownerUid ||
+        widget.snackChatId != roomId ||
+        _isLeavingRoom ||
+        _roomAccessTerminated ||
+        ack.sequence <= 0) {
+      return;
+    }
+
+    final index =
+        _messages.indexWhere((message) => message.id == ack.messageId);
+    if (index < 0) return;
+    final current = _messages[index];
+    if (current.senderId != ownerUid || current.isDeleted) return;
+
+    if (current.sequence != null && current.sequence != ack.sequence) {
+      Logger.error('Snack Chat 확정 순번 불일치: ${ack.messageId}');
+      // The live server snapshot remains authoritative. Do not hide a real
+      // mismatch by taking max or overwriting newer message contents.
+      return;
+    }
+    if (current.sequence == ack.sequence &&
+        current.sendStatus == MessageSendStatus.sent) {
+      return;
+    }
+
+    setState(() {
+      _messages[index] = current.copyWith(
+        sequence: ack.sequence,
+        sendStatus: MessageSendStatus.sent,
+        clearTransferProgress: current.type == SnackChatMessageType.image,
+        clearErrorMessage: true,
+      );
+      _sortMessages();
+    });
+    _scheduleMessageCacheWrite();
+    _releaseHeldOutbound(ownerUid, roomId, ack.messageId);
+  }
+
+  void _updateOldestMessageCursor(Iterable<SnackChatMessage> candidates) {
+    var oldest = _oldestMessage;
+    for (final candidate in candidates) {
+      if (candidate.id.isEmpty ||
+          candidate.isPending ||
+          candidate.hasFailed ||
+          !candidate.hasConfirmedServerTimestamp) {
+        continue;
+      }
+      if (oldest == null ||
+          candidate.createdAt.isBefore(oldest.createdAt) ||
+          (candidate.createdAt.isAtSameMomentAs(oldest.createdAt) &&
+              candidate.id.compareTo(oldest.id) < 0)) {
+        oldest = candidate;
+      }
+    }
+    _oldestMessage = oldest;
+  }
+
+  void _scheduleSequenceGapRecovery() {
+    if (!mounted ||
+        _isLeavingRoom ||
+        _roomAccessTerminated ||
+        _sequenceGapRecovery != null) {
+      return;
+    }
+    final liveMinimum = _liveWindowMinimumSequence;
+    if (liveMinimum == null || liveMinimum <= 1) return;
+    var cachedMaximumBeforeLive = 0;
+    for (final message in _messages) {
+      final sequence = message.sequence;
+      if (sequence != null &&
+          sequence > cachedMaximumBeforeLive &&
+          sequence < liveMinimum &&
+          message.hasConfirmedServerTimestamp) {
+        cachedMaximumBeforeLive = sequence;
+      }
+    }
+    if (cachedMaximumBeforeLive <= 0 ||
+        cachedMaximumBeforeLive + 1 >= liveMinimum) {
+      return;
+    }
+    final roomId = widget.snackChatId;
+    final ownerUid = _uid;
+    if (ownerUid == null) return;
+    final gapKey = '$cachedMaximumBeforeLive:$liveMinimum';
+    if (!_attemptedSequenceGaps.add(gapKey)) return;
+    final generation = ++_sequenceGapRecoveryGeneration;
+    late final Future<void> operation;
+    operation = _recoverSequenceGap(
+      roomId: roomId,
+      ownerUid: ownerUid,
+      generation: generation,
+      afterSequence: cachedMaximumBeforeLive,
+      beforeSequence: liveMinimum,
+    ).whenComplete(() {
+      if (identical(_sequenceGapRecovery, operation)) {
+        _sequenceGapRecovery = null;
+      }
+    });
+    _sequenceGapRecovery = operation;
+    unawaited(operation);
+  }
+
+  Future<void> _recoverSequenceGap({
+    required String roomId,
+    required String ownerUid,
+    required int generation,
+    required int afterSequence,
+    required int beforeSequence,
+  }) async {
+    var cursor = afterSequence;
+    try {
+      // The interval is frozen at detection time and each request is capped
+      // by the service at 100. Keep its cursor until the entire finite gap is
+      // exhausted; stopping after five pages silently lost longer gaps.
+      for (var page = 0; cursor + 1 < beforeSequence; page++) {
+        if (!_canApplySequenceGapPage(roomId, ownerUid, generation)) return;
+        final messages = await _snackChatService.fetchMessagesSequenceRange(
+          roomId,
+          afterSequence: cursor,
+          beforeSequence: beforeSequence,
+        );
+        if (!_canApplySequenceGapPage(roomId, ownerUid, generation)) return;
+        if (messages.isEmpty) break;
+        var nextCursor = cursor;
+        for (final message in messages) {
+          final sequence = message.sequence ?? 0;
+          if (sequence > nextCursor) nextCursor = sequence;
+        }
+        if (nextCursor <= cursor) break;
+        _mergeRecoveredSequencePage(messages);
+        cursor = nextCursor;
+        if (messages.length < 100) break;
+        if (page % 5 == 4) await Future<void>.delayed(Duration.zero);
+      }
+      _sequenceGapRetryAttempt = 0;
+    } catch (error, stackTrace) {
+      if (!_canApplySequenceGapPage(roomId, ownerUid, generation)) return;
+      _attemptedSequenceGaps.remove('$afterSequence:$beforeSequence');
+      Logger.error('Snack Chat 재접속 메시지 구간 복구 실패', error, stackTrace);
+      if (!_isTerminalRoomError(error) &&
+          _sequenceGapRetryTimer == null &&
+          _sequenceGapRetryAttempt < 3) {
+        final seconds = 1 << _sequenceGapRetryAttempt++;
+        _sequenceGapRetryTimer = Timer(Duration(seconds: seconds), () {
+          _sequenceGapRetryTimer = null;
+          _scheduleSequenceGapRecovery();
+        });
+      }
+      return;
+    }
+  }
+
+  bool _canApplySequenceGapPage(
+          String roomId, String ownerUid, int generation) =>
+      mounted &&
+      generation == _sequenceGapRecoveryGeneration &&
+      ownerUid == _uid &&
+      roomId == widget.snackChatId &&
+      !_isLeavingRoom &&
+      !_roomAccessTerminated;
+
+  void _mergeRecoveredSequencePage(List<SnackChatMessage> recovered) {
+    final anchor = _isNearLatest ? null : _captureScrollAnchor();
+    final added = <SnackChatMessage>[];
+    final replacements = <String, SnackChatMessage>{};
+    final localIndexes = <String, int>{
+      for (var index = 0; index < _messages.length; index++)
+        _messages[index].id: index,
+    };
+    for (final serverMessage in recovered) {
+      final index = localIndexes[serverMessage.id];
+      if (index == null) {
+        added.add(serverMessage);
+        continue;
+      }
+      final local = _messages[index];
+      if (!_isServerCommitted(local)) {
+        replacements[serverMessage.id] = serverMessage.copyWith(
+          localImagePath: local.localImagePath,
+          localFilePath: local.localFilePath,
+          clearErrorMessage: true,
+        );
+      }
+    }
+    if (added.isEmpty && replacements.isEmpty) return;
+    setState(() {
+      for (final message in added) {
+        _messageIds.add(message.id);
+        _messages.add(message);
+      }
+      for (var index = 0; index < _messages.length; index++) {
+        final replacement = replacements[_messages[index].id];
+        if (replacement != null) _messages[index] = replacement;
+      }
+      _sortMessages();
+      _updateOldestMessageCursor(recovered);
+    });
+    _scheduleSenderProfileHydration(added);
+    _scheduleMessageCacheWrite();
+    _restoreScrollAnchor(anchor);
+  }
+
+  void _scheduleMessageWindowExpansion() {
+    // 서비스의 실시간 쿼리도 200개로 제한되어 있다. 그보다 오래된 정적
+    // 페이지를 불러올 때 같은 최신 200개를 다시 구독해 읽기/병합 비용만
+    // 반복하지 않는다.
+    if (_messages.length >= _maxLiveMessageWindow) {
+      _messageWindowExpansionPending = false;
+      _messageWindowExpansionTimer?.cancel();
+      _messageWindowExpansionTimer = null;
+      return;
+    }
+    _messageWindowExpansionPending = true;
+    if (_isUserScrolling ||
+        !mounted ||
+        _isLeavingRoom ||
+        _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    _messageWindowExpansionTimer?.cancel();
+    _messageWindowExpansionTimer = Timer(
+      const Duration(milliseconds: 160),
+      () {
+        _messageWindowExpansionTimer = null;
+        if (!mounted ||
+            _isLeavingRoom ||
+            _isUserScrolling ||
+            _appLifecycleState != AppLifecycleState.resumed ||
+            !_messageWindowExpansionPending) {
+          return;
+        }
+        _subscribeToMessages();
+      },
+    );
+  }
+
   void _onScroll() {
+    _scheduleVisibleTranslationScanFromScroll();
+    final nearLatest = _scrollController.position.pixels <= 72;
+    if (nearLatest != _isNearLatest || (nearLatest && _newMessageCount > 0)) {
+      setState(() {
+        _isNearLatest = nearLatest;
+        if (nearLatest) _newMessageCount = 0;
+      });
+    }
     // 리스트가 끝(오래된 메시지 방향)에 다가오면 추가 로드
-    if (_scrollController.position.pixels >=
+    if (!_entryPositionInFlight &&
+        _scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 300 &&
         !_isLoadingMore &&
         _hasMore) {
@@ -179,366 +3799,3893 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     }
   }
 
+  bool _handleMessageScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+    }
+    final beginsUserScroll = (notification is ScrollStartNotification &&
+            notification.dragDetails != null) ||
+        (notification is ScrollUpdateNotification &&
+            notification.dragDetails != null);
+    if (beginsUserScroll && !_isUserScrolling) {
+      _isUserScrolling = true;
+      if (_entryPositionInFlight && !_entryPositionSettled) {
+        // A real gesture always wins over the initial unread-anchor jump.
+        // Release pagination and never fight the user's drag. Read advancement
+        // is based on the independent server-confirmed room boundary.
+        _entryPositionInFlight = false;
+        _entryPositionSettled = true;
+      }
+      _cancelPendingTranslationRestore();
+    }
+    if (notification is ScrollEndNotification && _isUserScrolling) {
+      _isUserScrolling = false;
+      if (_messageWindowExpansionPending) {
+        _scheduleMessageWindowExpansion();
+      }
+      // Requests already started while scrolling. Only the layout-changing
+      // result commit is deferred until the gesture settles.
+      if (_deferredTranslationOutcomes.isNotEmpty) {
+        _commitDeferredTranslationOutcomes();
+      }
+      _scheduleTranslationScanAfterLayout();
+      _scheduleActiveReadSync();
+    }
+    return false;
+  }
+
   Future<void> _loadMoreMessages() async {
     if (_isLoadingMore || !_hasMore) return;
+    final roomId = widget.snackChatId;
+    final ownerUid = _uid;
+    final uiLanguageCode = Localizations.localeOf(context).languageCode;
     setState(() => _isLoadingMore = true);
     try {
-      final older = await _snackChatService.fetchMessagesPage(
-        widget.snackChatId,
-        before: _oldestMessageTime,
-      );
-      if (!mounted) return;
+      var loadedFromCache = false;
+      var older = await _cachedOlderMessages(pageSize: 30);
+      if (older.isNotEmpty) {
+        loadedFromCache = true;
+      } else {
+        older = await _snackChatService.fetchMessagesPage(
+          widget.snackChatId,
+          beforeMessage: _oldestMessage,
+        );
+      }
+      // 이전 페이지도 화면에 삽입하기 전에 저장된 번역을 붙인다. 이 경로는
+      // 메모리/Hive만 읽고 번역 요청 큐에는 항목을 추가하지 않는다.
+      final cachedTranslations = older.isEmpty
+          ? const <String, ContentTranslationResult>{}
+          : await _cachedTranslationsForMessages(
+              roomId: roomId,
+              messages: older,
+              uiLanguageCode: uiLanguageCode,
+            );
+      if (!mounted || roomId != widget.snackChatId || ownerUid != _uid) return;
+      ContentTranslationResult? firstTranslatedResult;
       setState(() {
+        _loadMoreError = null;
+        firstTranslatedResult = _applyCachedMessageTranslations(
+          roomId: roomId,
+          messages: older,
+          cached: cachedTranslations,
+        );
         for (final m in older) {
           if (!_messageIds.contains(m.id)) {
             _messageIds.add(m.id);
             _messages.add(m);
           }
         }
-        if (older.isEmpty || older.length < 30) _hasMore = false;
+        _updateOldestMessageCursor(older);
+        // 로컬 캐시의 마지막 묶음은 서버 기록의 끝을 의미하지 않는다.
+        // 서버 페이지를 직접 확인한 경우에만 hasMore를 종료한다.
+        if (!loadedFromCache && (older.isEmpty || older.length < 30)) {
+          _hasMore = false;
+        }
         if (_messages.isNotEmpty) {
-          _messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          _oldestMessageTime = _messages.last.createdAt;
+          _sortMessages();
         }
       });
+      _scheduleSenderProfileHydration(older);
+      _registerCachedTranslationScope(firstTranslatedResult);
+      if (older.isNotEmpty) _scheduleMessageWindowExpansion();
+      _scheduleMessageCacheWrite();
+    } catch (error) {
+      if (mounted) setState(() => _loadMoreError = error);
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
+  Future<List<SnackChatMessage>> _cachedOlderMessages({
+    required int pageSize,
+  }) async {
+    final cursor = _oldestMessage;
+    if (cursor == null || pageSize <= 0) return const <SnackChatMessage>[];
+    final cached = await _localCache.getMessages(
+      widget.snackChatId,
+      limit: 2000,
+    );
+    final older = cached.where((message) {
+      if (_messageIds.contains(message.id) ||
+          message.isPending ||
+          message.hasFailed) {
+        return false;
+      }
+      return message.createdAt.isBefore(cursor.createdAt) ||
+          (message.createdAt.isAtSameMomentAs(cursor.createdAt) &&
+              message.id.compareTo(cursor.id) < 0);
+    }).toList(growable: true)
+      ..sort((a, b) {
+        final byTime = b.createdAt.compareTo(a.createdAt);
+        return byTime != 0 ? byTime : b.id.compareTo(a.id);
+      });
+    return older.take(pageSize).toList(growable: false);
+  }
+
+  void _scrollToLatest({bool animated = true}) {
+    if (_isUserScrolling || !_scrollController.hasClients || _followingLatest)
+      return;
+    if (_newMessageCount != 0 || !_isNearLatest) {
+      setState(() {
+        _newMessageCount = 0;
+        _isNearLatest = true;
+      });
+    }
+    final target = _scrollController.position.minScrollExtent;
+    if (animated && (_scrollController.position.pixels - target).abs() > 1) {
+      _followingLatest = true;
+      unawaited(_scrollController
+          .animateTo(
+            target,
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() => _followingLatest = false));
+    } else if ((_scrollController.position.pixels - target).abs() > .5) {
+      _scrollController.jumpTo(target);
+    }
+  }
+
   Future<String> _getSenderName(String senderId, String? senderName) async {
-    // ✅ users 컬렉션을 기본 소스로 사용 → 닉네임 변경 시 자동 반영
-    // senderName(메시지 저장 시점 스냅샷)은 getUserInfo 실패 시 fallback으로만 사용
+    final fallbackLabel = _genericUserLabel;
+    if (senderName != null && senderName.trim().isNotEmpty) {
+      return _safeUserLabel(senderName);
+    }
     if (_senderNameCache.containsKey(senderId)) {
       return _senderNameCache[senderId]!;
     }
     final userInfo = await _userInfoCache.getUserInfo(senderId);
-    final name = (userInfo?.nickname.isNotEmpty == true)
-        ? userInfo!.nickname
-        : (senderName?.isNotEmpty == true ? senderName! : senderId);
-    _senderNameCache[senderId] = name;
-    return name;
+    final name = userInfo?.nickname.trim() ?? '';
+    if (name.isNotEmpty && !_looksLikeInternalIdentifier(name)) {
+      _senderNameCache[senderId] = name;
+      return name;
+    }
+    return fallbackLabel;
+  }
+
+  String get _genericUserLabel => (isChineseUi(context)
+      ? '用户'
+      : Localizations.localeOf(context).languageCode == 'ko'
+          ? '사용자'
+          : 'User');
+
+  bool _looksLikeInternalIdentifier(String value) =>
+      RegExp(r'^[A-Za-z0-9_-]{20,}$').hasMatch(value.trim());
+
+  bool _isAnonymousSnackChatMessage(SnackChatMessage message) {
+    final metadata = message.metadata;
+    return metadata?['isAnonymous'] == true ||
+        metadata?['anonymous'] == true ||
+        metadata?['senderVisibility'] == 'anonymous';
+  }
+
+  String _safeUserLabel(String? value) {
+    final candidate = value?.trim() ?? '';
+    if (candidate == 'DELETED_ACCOUNT' || candidate == 'Deleted') {
+      return AppLocalizations.of(context)?.deletedAccount ??
+          ((isChineseUi(context)
+              ? '已注销账号'
+              : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '탈퇴한 계정'
+                  : 'Deleted Account'));
+    }
+    if (candidate.isEmpty || _looksLikeInternalIdentifier(candidate)) {
+      return _genericUserLabel;
+    }
+    return candidate;
+  }
+
+  Future<String> _senderNameFuture(
+    String senderId,
+    String? senderName,
+  ) {
+    if (senderName?.trim().isNotEmpty == true) {
+      return Future<String>.value(_safeUserLabel(senderName));
+    }
+    final cached = _senderNameCache[senderId];
+    if (cached != null) {
+      if (_senderProfileRefreshStarted.add(senderId)) {
+        unawaited(_refreshSenderName(senderId));
+      }
+      return Future<String>.value(cached);
+    }
+    return _senderNameFutures.putIfAbsent(
+      senderId,
+      () => _getSenderName(senderId, senderName),
+    );
+  }
+
+  Future<void> _refreshSenderName(String senderId) async {
+    final info = await _userInfoCache.getUserInfo(
+      senderId,
+      forceRefresh: true,
+    );
+    if (!mounted) return;
+    final previousName = _senderNameCache[senderId];
+    if (info != null) {
+      _publishSenderProfiles(<String, DMUserInfo?>{senderId: info});
+    }
+    final name = info?.nickname.trim() ?? '';
+    if (name.isEmpty ||
+        _looksLikeInternalIdentifier(name) ||
+        previousName == name) {
+      return;
+    }
+    setState(() => _senderNameCache[senderId] = name);
   }
 
   @override
   void dispose() {
-    _initialLoadingTimeoutTimer?.cancel();
-    _autoMarkReadDebounce?.cancel();
-    _roomSub?.cancel();
+    NavigationService.routeObserver.unsubscribe(this);
+    unawaited(_accountSubscription?.cancel());
+    // 화면 이동은 막지 않고, 읽음 동기화 Future만 백그라운드에서 완료한다.
+    _startBackgroundReadFlush();
+    _readSyncGeneration++;
+    _isLeavingRoom = true;
+    final outboundOwner = _uid;
+    if (outboundOwner != null) {
+      final lane = _outboundLanes['$outboundOwner::${widget.snackChatId}'];
+      if (lane != null) {
+        lane.pending.removeWhere((task) {
+          if (task.isValid()) return false;
+          if (!task.completion.isCompleted) {
+            task.completion.complete(null);
+          }
+          return true;
+        });
+      }
+    }
+    _cacheHydrationGeneration++;
+    _senderProfileGeneration++;
+    for (final notifier in _senderProfileNotifiers.values) {
+      notifier.dispose();
+    }
+    _senderProfileNotifiers.clear();
+    _senderProfileLookupsStarted.clear();
+    _auxiliarySubscriptionGeneration++;
+    _auxiliaryRetryTimer?.cancel();
+    _draftSaveDebounce?.cancel();
+    _messageCacheDebounce?.cancel();
+    _outboxRetryTimer?.cancel();
+    _messageRetryTimer?.cancel();
+    _messageWindowExpansionTimer?.cancel();
+    _sequenceGapRetryTimer?.cancel();
+    _fileExpiryTimer?.cancel();
+    _roomRetryTimer?.cancel();
+    _entryRetryTimer?.cancel();
+    for (final timer in _outboundEntranceExpiryTimers.values) {
+      timer.cancel();
+    }
+    _outboundEntranceExpiryTimers.clear();
+    _outboundEntranceMessageIds.clear();
+    _translationMicroBatchTimer?.cancel();
+    _translationRetryTimer?.cancel();
+    _cancelPendingTranslationRestore();
+    _deferredTranslationOutcomes.clear();
+    _translationCacheLookupsInFlight.clear();
+    _translationMicroBatchCandidates.clear();
+    _liveTranslationPriorityUntil.clear();
+    _translationStateGeneration++;
+    _translationService.removeListener(_handleTranslationServiceChange);
+    _messageController.removeListener(_onDraftChanged);
+    if (!_roomWasLeft && _uid != null) {
+      unawaited(
+        _localCache.saveDraft(widget.snackChatId, _messageController.text),
+      );
+      if (_messages.isNotEmpty) {
+        unawaited(
+          _localCache.upsertMessages(widget.snackChatId, List.of(_messages)),
+        );
+      }
+    }
+    WidgetsBinding.instance.removeObserver(this);
     if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
       SnackChatActiveConversation.setActive(null);
     }
     _msgSub?.cancel();
+    _memberSub?.cancel();
+    _reactionSub?.cancel();
+    _voteSub?.cancel();
+    _blockSub?.cancel();
+    _fileTransferSub?.cancel();
     _messageController.dispose();
+    _messageFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _send() async {
-    final text = _messageController.text.trim();
-    if (text.isEmpty || _isSending) return;
-    setState(() => _isSending = true);
-    try {
-      final ok = await _snackChatService.sendMessage(widget.snackChatId, text);
-      if (ok && mounted) {
-        _messageController.clear();
+  bool _isTerminalRoomError(Object? error) {
+    if (error is! FirebaseException) return false;
+    return error.code == 'permission-denied' ||
+        error.code == 'not-found' ||
+        error.code == 'unauthenticated';
+  }
+
+  void _scheduleRoomAccessTermination() {
+    if (_roomAccessTerminated || _roomAccessTerminationScheduled) return;
+    _roomAccessTerminationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _roomAccessTerminationScheduled = false;
+      if (!mounted || _roomAccessTerminated) return;
+      setState(() {
+        _roomAccessTerminated = true;
+        _roomWasLeft = true;
+        _lastRoom = null;
+      });
+      _draftSaveDebounce?.cancel();
+      _messageCacheDebounce?.cancel();
+      _outboxRetryTimer?.cancel();
+      _messageRetryTimer?.cancel();
+      _roomRetryTimer?.cancel();
+      unawaited(_localCache.clearRoom(widget.snackChatId));
+      _messageSubscriptionGeneration++;
+      _auxiliarySubscriptionGeneration++;
+      _auxiliaryRetryTimer?.cancel();
+      _auxiliaryRetryTimer = null;
+      final subscriptions = <StreamSubscription<dynamic>?>[
+        _msgSub,
+        _memberSub,
+        _reactionSub,
+        _voteSub,
+        _blockSub,
+      ];
+      _msgSub = null;
+      _memberSub = null;
+      _reactionSub = null;
+      _voteSub = null;
+      _blockSub = null;
+      for (final subscription in subscriptions) {
+        if (subscription != null) unawaited(subscription.cancel());
       }
+      if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+        SnackChatActiveConversation.setActive(null);
+      }
+    });
+  }
+
+  Future<void> _confirmRoomUnavailable() async {
+    if (_roomAccessTerminated ||
+        _roomAvailabilityCheckInFlight ||
+        _isLeavingRoom) {
+      return;
+    }
+    final roomId = widget.snackChatId;
+    _roomAvailabilityCheckInFlight = true;
+    try {
+      final confirmed = await _snackChatService.getSnackChatFromServer(
+        roomId,
+      );
+      if (!mounted || _isLeavingRoom || roomId != widget.snackChatId) return;
+      if (confirmed == null) {
+        setState(() => _lastRoom = null);
+        _scheduleRoomAccessTermination();
+      } else {
+        setState(() => _lastRoom = confirmed);
+      }
+    } catch (error) {
+      if (_isTerminalRoomError(error)) _scheduleRoomAccessTermination();
+      // A network timeout is not proof that access was revoked. Firestore's
+      // room stream remains attached and can recover on its own.
     } finally {
-      if (mounted) setState(() => _isSending = false);
+      _roomAvailabilityCheckInFlight = false;
     }
   }
 
-  Future<void> _pickAndSendImage() async {
-    if (_isUploadingImage || _isSending) return;
+  Future<void> _send() async {
+    final sendTappedAt = DateTime.now().millisecondsSinceEpoch;
+    final localBubbleStopwatch = Stopwatch()..start();
+    final roomId = widget.snackChatId;
+    final text = _messageController.text.trim();
+    final mentions = _messageController.trimmedMentions;
+    if (text.isEmpty || _isLeavingRoom) return;
+    final uid = _uid;
+    if (uid == null) return;
+    final messageId = _snackChatService.createMessageId(roomId);
+    if (!_sendingTextMessageIds.add(messageId)) return;
+    final mentionTargetsPreparation = mentions.isEmpty
+        ? null
+        : _snackChatService.prepareMentionTargets(
+            snackChatId: roomId,
+            messageId: messageId,
+            text: text,
+            mentions: mentions,
+          );
+    if (ChatTiming.enabled) {
+      ChatTiming.record(
+        '[SnackChatTiming] stage=sendTappedAt at=$sendTappedAt '
+        'roomId=$roomId messageId=$messageId sequence=0',
+      );
+    }
+    final reply = _replyPreviewForCurrentTarget();
+    final localMessage = SnackChatMessage(
+      id: messageId,
+      senderId: uid,
+      senderName: FirebaseAuth.instance.currentUser?.displayName,
+      text: text,
+      mentions: mentions,
+      createdAt: _nextOptimisticCreatedAt(),
+      replyToMessageId: reply?.messageId,
+      replyPreview: reply,
+      sendStatus: MessageSendStatus.sending,
+    );
+    final keepFocus = _messageFocusNode.hasFocus;
+    _messageController.clear();
+    unawaited(_localCache.saveDraft(roomId, ''));
+    unawaited(HapticFeedback.selectionClick());
+    _stageOutboundEntrance(messageId);
+    setState(() {
+      _clearReplyState();
+      _insertLocalMessage(localMessage);
+    });
+    if (ChatTiming.enabled) {
+      ChatTiming.record(
+        '[SnackChatTiming] stage=localBubbleInsertedAt '
+        'at=${DateTime.now().millisecondsSinceEpoch} roomId=$roomId '
+        'messageId=$messageId sequence=0 '
+        'durationMs=${localBubbleStopwatch.elapsedMilliseconds}',
+      );
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ChatTiming.enabled)
+        ChatTiming.record(
+            '[SnackChatTiming] stage=localFrame roomId=$roomId messageId=$messageId '
+            'durationMs=${localBubbleStopwatch.elapsedMilliseconds}');
+      if (mounted && keepFocus && !_messageFocusNode.hasFocus) {
+        _messageFocusNode.requestFocus();
+      }
+      if (mounted && _isNearLatest) _scrollToLatest(animated: true);
+    });
+    try {
+      void committedCallback(SnackChatCommitAck ack) => _applyCommitAck(
+            ack,
+            ownerUid: uid,
+            roomId: roomId,
+          );
+      await _sendOrderedAndResolve(
+        roomId,
+        messageId,
+        () => _snackChatService.sendMessage(
+          roomId,
+          text,
+          messageId: messageId,
+          mentions: mentions,
+          mentionTargetsPreparation: mentionTargetsPreparation,
+          replyPreview: reply,
+          onCommitted: committedCallback,
+        ),
+        protectUncertainCommit: true,
+        secureTextRequest: SnackChatService.secureTextSendEnabled &&
+                _secureTextBatchEnabled &&
+                mentions.isEmpty &&
+                reply == null
+            ? SnackChatTextSendRequest(
+                messageId: messageId,
+                text: text,
+                onCommitted: committedCallback,
+              )
+            : null,
+      );
+    } finally {
+      _sendingTextMessageIds.remove(messageId);
+    }
+  }
+
+  void _stageOutboundEntrance(String messageId) {
+    _outboundEntranceExpiryTimers.remove(messageId)?.cancel();
+    _outboundEntranceMessageIds.add(messageId);
+    _outboundEntranceExpiryTimers[messageId] = Timer(
+      SnackChatOutgoingEntrance.claimWindow,
+      () {
+        _outboundEntranceMessageIds.remove(messageId);
+        _outboundEntranceExpiryTimers.remove(messageId);
+      },
+    );
+  }
+
+  void _claimOutboundEntrance(String messageId) {
+    _outboundEntranceMessageIds.remove(messageId);
+    _outboundEntranceExpiryTimers.remove(messageId)?.cancel();
+  }
+
+  Future<bool?> _enqueueOutbound(
+    String roomId,
+    String messageId,
+    Future<bool> Function() operation, {
+    SnackChatTextSendRequest? secureTextRequest,
+    bool holdUncertain = false,
+  }) {
+    final owner = _uid;
+    if (owner == null) return Future<bool?>.value(null);
+    final queueKey = '$owner::$roomId';
+    final lane = _outboundLanes.putIfAbsent(
+      queueKey,
+      _SnackChatOutboundLane.new,
+    );
+    if (lane.sendingMessageId == messageId ||
+        (lane.activeTask?.messageId == messageId &&
+            lane.unresolvedMessageId != messageId)) {
+      // A timed-out UI wait must join the original transaction, not submit a
+      // second write with the same stable ID.
+      if (lane.recovery != null) return lane.recovery!;
+      final active = lane.activeTask;
+      if (active != null) return active.completion.future;
+    }
+    final task = _SnackChatOutboundTask(
+      roomId: roomId,
+      messageId: messageId,
+      isValid: () =>
+          mounted &&
+          _uid == owner &&
+          widget.snackChatId == roomId &&
+          !_isLeavingRoom &&
+          !_roomAccessTerminated,
+      send: operation,
+      sendSecureBatch: (requests) =>
+          _snackChatService.sendTextMessagesSecure(roomId, requests),
+      secureTextRequest: secureTextRequest,
+      holdUncertain: holdUncertain,
+      resolve: (success) => _resolveSendOutcome(
+        messageId,
+        success,
+        roomId: roomId,
+      ),
+    );
+    if (lane.unresolvedMessageId == messageId) {
+      return lane.recovery ??= _runHeldOutboundRecovery(owner, lane, task);
+    }
+    for (final pending in lane.pending) {
+      if (pending.messageId == messageId) return pending.completion.future;
+    }
+    lane.pending.add(task);
+    if (!lane.draining) {
+      lane.draining = true;
+      unawaited(_drainOutboundLane(queueKey, lane));
+    }
+    return task.completion.future;
+  }
+
+  Future<void> _drainOutboundLane(
+    String queueKey,
+    _SnackChatOutboundLane lane,
+  ) async {
+    try {
+      while (lane.pending.isNotEmpty && lane.unresolvedMessageId == null) {
+        while (lane.pending.isNotEmpty && !lane.pending.first.isValid()) {
+          final skipped = lane.pending.removeFirst();
+          if (!skipped.completion.isCompleted) {
+            skipped.completion.complete(null);
+          }
+        }
+        if (lane.pending.isEmpty) break;
+
+        final first = lane.pending.first;
+        final canBatch = SnackChatService.secureTextSendEnabled &&
+            _secureTextBatchEnabled &&
+            !first.forceSingle &&
+            first.secureTextRequest != null;
+        if (!canBatch) {
+          lane.pending.removeFirst();
+          await _runSingleOutboundTask(lane, first);
+          continue;
+        }
+
+        final prefixLength = snackChatSecureTextBatchPrefixLength(
+          lane.pending.map(
+            (task) =>
+                task.isValid() &&
+                !task.forceSingle &&
+                task.secureTextRequest != null,
+          ),
+        );
+        final batch = <_SnackChatOutboundTask>[];
+        while (batch.length < prefixLength && lane.pending.isNotEmpty) {
+          // Only the consecutive supported prefix can share this request.
+          // A reply, mention, image, file, or poll remains at the queue head
+          // and therefore cannot be overtaken by later plain text.
+          batch.add(lane.pending.removeFirst());
+        }
+        if (batch.length == 1) {
+          await _runSingleOutboundTask(lane, batch.single);
+        } else {
+          await _runSecureTextBatch(lane, batch);
+        }
+      }
+    } finally {
+      lane.draining = false;
+      if (lane.pending.isEmpty && lane.unresolvedMessageId == null) {
+        if (identical(_outboundLanes[queueKey], lane)) {
+          _outboundLanes.remove(queueKey);
+        }
+      } else if (lane.unresolvedMessageId == null &&
+          identical(_outboundLanes[queueKey], lane)) {
+        lane.draining = true;
+        unawaited(_drainOutboundLane(queueKey, lane));
+      }
+    }
+  }
+
+  Future<void> _runSingleOutboundTask(
+    _SnackChatOutboundLane lane,
+    _SnackChatOutboundTask task,
+  ) async {
+    if (ChatTiming.enabled) {
+      ChatTiming.record(
+        '[SnackChatTiming] stage=queueWait roomId=${task.roomId} '
+        'messageId=${task.messageId} '
+        'durationMs=${task.waiting.elapsedMilliseconds}',
+      );
+    }
+    lane.activeTask = task;
+    lane.sendingMessageId = task.messageId;
+    lane.acknowledgedMessageId = null;
+    try {
+      final result = await task.send();
+      lane.sendingMessageId = null;
+      if (!task.isValid()) {
+        if (!task.completion.isCompleted) task.completion.complete(result);
+        return;
+      }
+      if (task.holdUncertain) {
+        final resolved = await task.resolve(result);
+        if (!task.isValid()) {
+          if (!task.completion.isCompleted) task.completion.complete(result);
+          return;
+        }
+        if (shouldParkSnackChatOutbound(
+          sessionValid: task.isValid(),
+          resolved: resolved,
+          acknowledged: lane.acknowledgedMessageId == task.messageId,
+        )) {
+          lane.unresolvedMessageId = task.messageId;
+          if (!task.completion.isCompleted) task.completion.complete(result);
+          return;
+        }
+      }
+      if (!task.completion.isCompleted) task.completion.complete(result);
+    } catch (error, stackTrace) {
+      if (!task.isValid()) {
+        if (!task.completion.isCompleted) task.completion.complete(false);
+        return;
+      }
+      if (task.holdUncertain) {
+        Logger.error('Snack Chat 원본 저장 작업 종료 상태 불확실', error, stackTrace);
+        var resolved = false;
+        try {
+          resolved = await task.resolve(false);
+        } catch (resolutionError, resolutionStack) {
+          Logger.error(
+            'Snack Chat 저장 결과 확인 실패',
+            resolutionError,
+            resolutionStack,
+          );
+        }
+        if (!shouldParkSnackChatOutbound(
+          sessionValid: task.isValid(),
+          resolved: resolved,
+          acknowledged: lane.acknowledgedMessageId == task.messageId,
+        )) {
+          if (!task.completion.isCompleted) task.completion.complete(false);
+          return;
+        }
+        lane.unresolvedMessageId = task.messageId;
+        if (!task.completion.isCompleted) task.completion.complete(false);
+      } else if (!task.completion.isCompleted) {
+        task.completion.completeError(error, stackTrace);
+      }
+    } finally {
+      lane.sendingMessageId = null;
+      if (identical(lane.activeTask, task)) lane.activeTask = null;
+    }
+  }
+
+  Future<bool?> _runHeldOutboundRecovery(
+    String owner,
+    _SnackChatOutboundLane lane,
+    _SnackChatOutboundTask task,
+  ) async {
+    try {
+      if (!task.isValid()) return null;
+      lane.sendingMessageId = task.messageId;
+      final result = await task.send();
+      lane.sendingMessageId = null;
+      if (!task.isValid()) return result;
+      final resolved = await task.resolve(result);
+      if (resolved) _releaseHeldOutbound(owner, task.roomId, task.messageId);
+      return result;
+    } catch (error, stackTrace) {
+      Logger.error('Snack Chat 보류된 전송 복구 실패', error, stackTrace);
+      if (task.isValid()) {
+        try {
+          final resolved = await task.resolve(false);
+          if (resolved) {
+            _releaseHeldOutbound(owner, task.roomId, task.messageId);
+          }
+        } catch (resolutionError, resolutionStack) {
+          Logger.error(
+            'Snack Chat 보류된 전송 결과 확인 실패',
+            resolutionError,
+            resolutionStack,
+          );
+        }
+      }
+      return false;
+    } finally {
+      lane.sendingMessageId = null;
+      lane.recovery = null;
+      if (lane.releaseAfterRecovery) {
+        lane.releaseAfterRecovery = false;
+        _releaseHeldOutbound(owner, task.roomId, task.messageId);
+      }
+    }
+  }
+
+  void _releaseHeldOutbound(String? owner, String roomId, String messageId) {
+    if (owner == null) return;
+    final lane = _outboundLanes['$owner::$roomId'];
+    if (lane == null) return;
+    if (lane.activeTask?.messageId == messageId ||
+        lane.sendingMessageId == messageId) {
+      lane.acknowledgedMessageId = messageId;
+    }
+    if (lane.unresolvedMessageId != messageId) return;
+    if (lane.recovery != null) {
+      lane.releaseAfterRecovery = true;
+      return;
+    }
+    lane.unresolvedMessageId = null;
+    lane.acknowledgedMessageId = null;
+    final queueKey = '$owner::$roomId';
+    if (lane.pending.isNotEmpty && !lane.draining) {
+      lane.draining = true;
+      unawaited(_drainOutboundLane(queueKey, lane));
+    } else if (lane.pending.isEmpty &&
+        !lane.draining &&
+        lane.activeTask == null &&
+        identical(_outboundLanes[queueKey], lane)) {
+      _outboundLanes.remove(queueKey);
+    }
+  }
+
+  bool _isOutboundOriginalRunning(
+    String owner,
+    String roomId,
+    String messageId,
+  ) {
+    final lane = _outboundLanes['$owner::$roomId'];
+    return lane?.sendingMessageId == messageId ||
+        (lane?.activeTask?.messageId == messageId &&
+            lane?.unresolvedMessageId != messageId) ||
+        (lane?.pending.any((task) => task.messageId == messageId) ?? false);
+  }
+
+  Future<void> _runSecureTextBatch(
+    _SnackChatOutboundLane lane,
+    List<_SnackChatOutboundTask> tasks,
+  ) async {
+    final requests =
+        tasks.map((task) => task.secureTextRequest!).toList(growable: false);
+    if (ChatTiming.enabled) {
+      for (final task in tasks) {
+        ChatTiming.record(
+          '[SnackChatTiming] stage=queueWait roomId=${task.roomId} '
+          'messageId=${task.messageId} '
+          'batchSize=${tasks.length} '
+          'durationMs=${task.waiting.elapsedMilliseconds}',
+        );
+      }
+    }
+    try {
+      final results = await tasks.first.sendSecureBatch(requests);
+      final byId = <String, SnackChatTextSendResult>{
+        for (final result in results) result.messageId: result,
+      };
+      var held = false;
+      final retrySingle = <_SnackChatOutboundTask>[];
+      for (final task in tasks) {
+        if (!task.isValid()) {
+          if (!task.completion.isCompleted) task.completion.complete(null);
+          continue;
+        }
+        final result = byId[task.messageId];
+        final committed = result?.status == SnackChatTextSendStatus.committed;
+        if (committed) {
+          if (!task.completion.isCompleted) task.completion.complete(true);
+          continue;
+        }
+        if (result?.status == SnackChatTextSendStatus.rejected) {
+          try {
+            await task.resolve(false);
+          } catch (error, stackTrace) {
+            Logger.error('Snack Chat 거절된 묶음 메시지 반영 실패', error, stackTrace);
+          }
+          if (!task.completion.isCompleted) task.completion.complete(false);
+          continue;
+        }
+        if (held || result?.status == SnackChatTextSendStatus.notAttempted) {
+          task.forceSingle = true;
+          retrySingle.add(task);
+          continue;
+        }
+        var resolved = false;
+        try {
+          resolved = await task.resolve(false);
+        } catch (error, stackTrace) {
+          Logger.error('Snack Chat 묶음 메시지 결과 확인 실패', error, stackTrace);
+        }
+        if (shouldParkSnackChatOutbound(
+          sessionValid: task.isValid(),
+          resolved: resolved,
+          acknowledged: lane.acknowledgedMessageId == task.messageId,
+        )) {
+          lane.unresolvedMessageId = task.messageId;
+          held = true;
+        }
+        if (!task.completion.isCompleted) task.completion.complete(false);
+      }
+      for (final task in retrySingle.reversed) {
+        lane.pending.addFirst(task);
+      }
+    } catch (error, stackTrace) {
+      Logger.error('Snack Chat 묶음 전송 결과 확인 실패', error, stackTrace);
+      if (tasks.isEmpty) return;
+      final first = tasks.first;
+      var resolved = false;
+      if (first.isValid()) {
+        try {
+          resolved = await first.resolve(false);
+        } catch (resolutionError, resolutionStack) {
+          Logger.error(
+              'Snack Chat 묶음 첫 메시지 확인 실패', resolutionError, resolutionStack);
+        }
+      }
+      if (shouldParkSnackChatOutbound(
+        sessionValid: first.isValid(),
+        resolved: resolved,
+        acknowledged: lane.acknowledgedMessageId == first.messageId,
+      )) {
+        lane.unresolvedMessageId = first.messageId;
+      }
+      if (!first.completion.isCompleted) first.completion.complete(false);
+      for (final task in tasks.skip(1).toList().reversed) {
+        if (!task.isValid()) {
+          if (!task.completion.isCompleted) task.completion.complete(null);
+          continue;
+        }
+        task.forceSingle = true;
+        lane.pending.addFirst(task);
+      }
+    }
+  }
+
+  Future<void> _sendOrderedAndResolve(
+      String roomId, String messageId, Future<bool> Function() send,
+      {SnackChatTextSendRequest? secureTextRequest,
+      bool protectUncertainCommit = false}) async {
+    final owner = _uid;
+    final completion = _enqueueOutbound(
+      roomId,
+      messageId,
+      send,
+      secureTextRequest: secureTextRequest,
+      holdUncertain: protectUncertainCommit,
+    );
+    var uiTimedOut = false;
+    final reportedSuccess = await completion.timeout(
+      const Duration(seconds: 25),
+      onTimeout: () {
+        uiTimedOut = true;
+        return null;
+      },
+    );
+    if (uiTimedOut) {
+      final stillQueued = owner != null &&
+          (_outboundLanes['$owner::$roomId']
+                  ?.pending
+                  .any((task) => task.messageId == messageId) ??
+              false);
+      if (!protectUncertainCommit) {
+        unawaited(() async {
+          try {
+            final lateResult = await completion;
+            if (lateResult != null) {
+              await _resolveSendOutcome(messageId, lateResult, roomId: roomId);
+            }
+          } catch (error, stackTrace) {
+            Logger.error('Snack Chat 지연된 전송 결과 확인 실패', error, stackTrace);
+            await _resolveSendOutcome(messageId, false, roomId: roomId);
+          }
+        }());
+      }
+      final current = _messageById(messageId);
+      if (mounted &&
+          _uid == owner &&
+          roomId == widget.snackChatId &&
+          !stillQueued &&
+          current != null &&
+          !_isServerCommitted(current)) {
+        _updateLocalMessage(
+          messageId,
+          (message) => message.copyWith(
+            sendStatus: MessageSendStatus.uncertain,
+            errorMessage: '전송 상태를 확인하고 있습니다.',
+          ),
+        );
+        _scheduleOutboxRecovery();
+      }
+      return;
+    }
+    if (reportedSuccess == null) return;
+    if (protectUncertainCommit) return;
+    await _resolveSendOutcome(
+      messageId,
+      reportedSuccess,
+      roomId: roomId,
+    );
+  }
+
+  static const Set<String> _videoExtensions = {
+    'mp4', 'mov', 'm4v', '3gp', 'mkv', 'webm', 'avi', 'mpeg', 'mpg',
+  };
+
+  bool _looksLikeVideo(XFile file) {
+    final mime = (file.mimeType ?? '').toLowerCase();
+    if (mime.startsWith('video/')) return true;
+    if (mime.startsWith('image/')) return false;
+    final extension = SnackChatFilePolicy.extensionOf(
+      file.name.isNotEmpty ? file.name : file.path,
+    );
+    return _videoExtensions.contains(extension);
+  }
+
+  /// 갤러리에서 사진과 영상을 한 화면에서 고른다. 영상은 파일 전송 경로로,
+  /// 사진은 기존 이미지 경로로 보낸다.
+  Future<void> _pickAndSendMedia() async {
+    if (_isUploadingImage || _isLeavingRoom) return;
+    final roomId = widget.snackChatId;
+    final picked = await _imagePicker.pickMedia(
+      maxWidth: 1800,
+      maxHeight: 1800,
+      imageQuality: 88,
+    );
+    if (picked == null || !mounted || roomId != widget.snackChatId) return;
+    if (_looksLikeVideo(picked)) {
+      await _sendPickedVideo(File(picked.path));
+      return;
+    }
+    await _pickAndSendImage(preselected: picked);
+  }
+
+  /// 540p로 압축하고 썸네일을 만든 뒤 기존 파일 전송 큐로 보낸다.
+  Future<void> _sendPickedVideo(File source) async {
+    final roomId = widget.snackChatId;
+    final room = _lastRoom;
+    if (room == null || _uid == null) {
+      _showNotice('채팅방 정보를 확인한 뒤 다시 시도해 주세요.');
+      return;
+    }
+    final limits = VideoUploadPolicy.snackChat;
+    File? staged;
+    try {
+      final file = await runWithVideoPreparingDialog<SnackChatSelectedFile>(
+        context,
+        () async {
+          final prepared = await VideoPrepareService.instance
+              .prepare(source, limits: limits);
+          final meta =
+              await VideoPrepareService.instance.chatVideoMeta(prepared);
+          final stem = p.basenameWithoutExtension(source.path);
+          staged = await VideoPrepareService.instance
+              .stageForSend(prepared, stem: stem);
+          final validated = await SnackChatFilePolicy.validatePath(
+            staged!.path,
+            displayName: '${stem.isEmpty ? 'video' : stem}.mp4',
+          );
+          return validated.withVideoMeta(meta);
+        },
+      );
+      if (!mounted || roomId != widget.snackChatId) return;
+      final confirmed = await showSnackChatFileConfirmationSheet(
+        context,
+        files: <SnackChatSelectedFile>[file],
+        temporary24h: room.activeDurationHours != 0,
+      );
+      if (!mounted ||
+          confirmed == null ||
+          confirmed.isEmpty ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+      final reply = _replyPreviewForCurrentTarget();
+      late final List<SnackChatMessage> pending;
+      try {
+        pending = await _fileTransfer.enqueueFiles(
+          room: room,
+          files: confirmed,
+          replyPreview: reply,
+        );
+      } catch (_) {
+        if (mounted) _showNotice('영상 전송을 시작하지 못했습니다.');
+        return;
+      }
+      if (!mounted || roomId != widget.snackChatId) return;
+      for (final message in pending) {
+        _stageOutboundEntrance(message.id);
+      }
+      setState(() {
+        for (final message in pending) {
+          _insertLocalMessage(message);
+        }
+        _clearReplyState();
+      });
+      if (_isNearLatest) _scrollToLatest(animated: true);
+    } on SnackChatFileValidationException catch (error) {
+      if (mounted) _showNotice(error.message);
+    } catch (error, stackTrace) {
+      Logger.error('Snack Chat 영상 준비 실패', error, stackTrace);
+      if (mounted) {
+        _showNotice(videoPrepareErrorMessage(context, error, limits));
+      }
+    } finally {
+      // 전송 큐가 자기 저장소로 복사를 마친 뒤이므로 임시 사본은 지운다.
+      final temp = staged;
+      if (temp != null) {
+        try {
+          if (await temp.exists()) await temp.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _pickAndSendImage({XFile? preselected}) async {
+    if (_isUploadingImage || _isLeavingRoom) return;
+    final roomId = widget.snackChatId;
     final uid = _uid;
     if (uid == null) return;
 
+    String? pendingMessageId;
+    setState(() => _isUploadingImage = true);
     try {
-      final picked = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1800,
-        maxHeight: 1800,
-        imageQuality: 88,
-      );
+      final picked = preselected ??
+          await _imagePicker.pickImage(
+            source: ImageSource.gallery,
+            maxWidth: 1800,
+            maxHeight: 1800,
+            imageQuality: 88,
+          );
       if (picked == null) return;
+      if (!mounted || roomId != widget.snackChatId) return;
 
-      setState(() => _isUploadingImage = true);
-      final imageUrl = await _storageService.uploadDmImage(
-        File(picked.path),
-        userId: uid,
-        conversationId: widget.snackChatId,
+      final imageFile = File(picked.path);
+      // Compress and measure while the user is still looking at the
+      // confirmation sheet, so tapping "send" goes straight to the upload.
+      final preparing = _storageService.prepareChatImage(imageFile);
+      final confirmed = await showSnackChatImageConfirmationSheet(
+        context,
+        imageFile: imageFile,
       );
-      if (imageUrl == null || imageUrl.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('이미지 업로드에 실패했습니다.')),
+      if (!confirmed || !mounted || roomId != widget.snackChatId) {
+        unawaited(preparing.then((prepared) => prepared?.dispose()));
+        return;
+      }
+      unawaited(HapticFeedback.selectionClick());
+      final prepared = await preparing;
+
+      final messageId = _snackChatService.createMessageId(roomId);
+      pendingMessageId = messageId;
+      final reply = _replyPreviewForCurrentTarget();
+      _stageOutboundEntrance(messageId);
+      setState(() {
+        _clearReplyState();
+        _insertLocalMessage(SnackChatMessage(
+          id: messageId,
+          senderId: uid,
+          senderName: FirebaseAuth.instance.currentUser?.displayName,
+          type: SnackChatMessageType.image,
+          text: '',
+          createdAt: _nextOptimisticCreatedAt(),
+          replyToMessageId: reply?.messageId,
+          replyPreview: reply,
+          sendStatus: MessageSendStatus.sending,
+          localImagePath: picked.path,
+        ));
+      });
+      // Upload preparation does not occupy the ordered message-commit queue.
+      final upload = await _imageUploadQueue.run(uid, () async {
+        if (_uid != uid) return null;
+        final path = await ChatOutboxStore.instance
+            .retainImage(uid, messageId, picked.path);
+        if (_uid != uid) return null;
+        if (mounted && roomId == widget.snackChatId) {
+          _updateLocalMessage(
+              messageId, (m) => m.copyWith(localImagePath: path));
+        }
+        try {
+          return await _storageService.uploadPrivateSnackChatImage(
+            File(path),
+            userId: uid,
+            snackChatId: roomId,
+            prepared: prepared,
+            onProgress: (progress) {
+              if (mounted && _uid == uid && roomId == widget.snackChatId) {
+                _updateLocalMessage(
+                    messageId, (m) => m.copyWith(transferProgress: progress));
+              }
+            },
+          );
+        } finally {
+          unawaited(prepared?.dispose());
+        }
+      });
+      if (upload == null || upload.storagePath.isEmpty || _uid != uid) {
+        if (mounted && roomId == widget.snackChatId && _uid == uid) {
+          _markMessageFailed(messageId, '이미지 업로드에 실패했습니다.');
+        }
+        return;
+      }
+      await _sendOrderedAndResolve(roomId, messageId, () async {
+        if (_uid != uid) return false;
+        final imageUrl = upload.imageUrl;
+        final imagePath = upload.storagePath;
+        final storageBucket = upload.storageBucket;
+        if (mounted && roomId == widget.snackChatId) {
+          _updateLocalMessage(
+            messageId,
+            (message) => message.copyWith(
+              imageUrl: imageUrl,
+              imagePath: imagePath,
+              storageBucket: storageBucket,
+              imageWidth: upload.imageWidth,
+              imageHeight: upload.imageHeight,
+            ),
+          );
+        }
+
+        return _snackChatService.sendImageMessage(
+          roomId,
+          imageUrl: imageUrl,
+          imagePath: imagePath,
+          storageBucket: storageBucket,
+          imageWidth: upload.imageWidth,
+          imageHeight: upload.imageHeight,
+          messageId: messageId,
+          replyPreview: reply,
+          onCommitted: (ack) => _applyCommitAck(
+            ack,
+            ownerUid: uid,
+            roomId: roomId,
+          ),
         );
+      }, protectUncertainCommit: true);
+    } catch (_) {
+      if (pendingMessageId != null) {
+        if (mounted && roomId == widget.snackChatId) {
+          _markMessageFailed(
+            pendingMessageId,
+            '이미지를 전송하지 못했습니다. 눌러서 다시 시도하세요.',
+          );
+        }
+      } else if (mounted && roomId == widget.snackChatId) {
+        _showNotice('이미지를 불러오지 못했습니다.');
+      }
+    } finally {
+      if (mounted && roomId == widget.snackChatId) {
+        setState(() => _isUploadingImage = false);
+      }
+    }
+  }
+
+  ReplyMessagePreview? _replyPreviewForCurrentTarget({
+    bool forDisplay = false,
+  }) {
+    final target = _replyingTo;
+    if (target == null) return null;
+    final preview = ReplyMessagePreview.fromMessage(target);
+    final resolvedName = _replyingToSenderName?.trim() ?? '';
+    return forDisplay && resolvedName.isNotEmpty
+        ? preview.copyWith(senderName: resolvedName)
+        : preview;
+  }
+
+  void _clearReplyState() {
+    _replyingTo = null;
+    _replyingToSenderName = null;
+  }
+
+  void _insertLocalMessage(SnackChatMessage message) {
+    final index = _messages.indexWhere((item) => item.id == message.id);
+    if (index < 0) {
+      _messageIds.add(message.id);
+      _messages.add(message);
+    } else {
+      _messages[index] = message;
+    }
+    _sortMessages();
+    // Do not leave a newly captured packet behind the UI-cache debounce. This
+    // starts the existing account-scoped, serialized cache write immediately.
+    if (message.sendStatus != MessageSendStatus.sent && _uid != null) {
+      unawaited(_localCache.upsertMessages(widget.snackChatId, [message]));
+    }
+    _scheduleMessageCacheWrite();
+  }
+
+  void _updateLocalMessage(
+    String messageId,
+    SnackChatMessage Function(SnackChatMessage message) update,
+  ) {
+    if (!mounted) return;
+    final index = _messages.indexWhere((message) => message.id == messageId);
+    if (index < 0) return;
+    final current = _messages[index];
+    final next = update(current);
+    if (identical(current, next)) return;
+    final orderChanged = SnackChatMessage.compareDescending(current, next) != 0;
+    setState(() {
+      _messages[index] = next;
+      if (orderChanged) _sortMessages();
+    });
+    _scheduleMessageCacheWrite();
+  }
+
+  void _markMessageFailed(String messageId, String reason) {
+    final current = _messageById(messageId);
+    if (current == null || _isServerCommitted(current) || current.isDeleted) {
+      return;
+    }
+    _updateLocalMessage(
+      messageId,
+      (message) => message.withFailedSendStatus(reason),
+    );
+    _scheduleOutboxRecovery();
+  }
+
+  SnackChatMessage? _messageById(String messageId) {
+    final index = _messages.indexWhere((message) => message.id == messageId);
+    return index < 0 ? null : _messages[index];
+  }
+
+  bool _isServerCommitted(SnackChatMessage message) =>
+      message.isServerCommitted;
+
+  void _scheduleOutboxRecovery() {
+    if (_outboxRetryTimer != null ||
+        _isLeavingRoom ||
+        _roomAccessTerminated ||
+        _outboxRetryAttempt >= 5) {
+      return;
+    }
+    final uid = _uid;
+    if (uid == null || !_messages.any((m) => _autoRetryable(m, uid))) {
+      _outboxRetryAttempt = 0;
+      return;
+    }
+    final seconds = (1 << _outboxRetryAttempt).clamp(2, 30).toInt();
+    _outboxRetryAttempt++;
+    _outboxRetryTimer = Timer(Duration(seconds: seconds), () async {
+      _outboxRetryTimer = null;
+      if (!mounted ||
+          _isLeavingRoom ||
+          _roomAccessTerminated ||
+          _appLifecycleState != AppLifecycleState.resumed) {
+        return;
+      }
+      final owner = _uid;
+      if (owner == null) return;
+      final pending = _messages
+          .where((message) => _autoRetryable(message, owner))
+          .toList(growable: false)
+          .reversed
+          .toList(growable: false);
+      // Preserve the stable-id submission order during recovery. If an older
+      // uncertain message is still unresolved, a later queued message must
+      // not be retried in parallel and overtake it on the room sequence.
+      for (final message in pending) {
+        await _retryMessage(message);
+        if (!mounted) return;
+        final current = _messageById(message.id);
+        if (current != null && current.needsRetry) break;
+      }
+      if (!mounted) return;
+      if (_messages.any((m) => _autoRetryable(m, owner))) {
+        _scheduleOutboxRecovery();
+      } else {
+        _outboxRetryAttempt = 0;
+      }
+    });
+  }
+
+  bool _autoRetryable(SnackChatMessage message, String owner) =>
+      message.senderId == owner &&
+      message.needsRetry &&
+      !_definitivelyRejectedIds.contains(message.id);
+
+  Future<bool> _resolveSendOutcome(
+    String messageId,
+    bool reportedSuccess, {
+    String? roomId,
+  }) async {
+    final targetRoomId = roomId ?? widget.snackChatId;
+    final owner = _uid;
+    if (!mounted || owner == null || targetRoomId != widget.snackChatId) {
+      return reportedSuccess;
+    }
+    if (reportedSuccess) {
+      _updateLocalMessage(
+        messageId,
+        (message) => message.copyWith(
+          sendStatus: message.sequence == null
+              ? MessageSendStatus.sending
+              : MessageSendStatus.sent,
+          clearErrorMessage: true,
+        ),
+      );
+      return true;
+    }
+    if (_messageById(messageId) case final current?
+        when _isServerCommitted(current)) {
+      return true;
+    }
+    if (_snackChatService.wasSendRejected(owner, targetRoomId, messageId)) {
+      _definitivelyRejectedIds.add(messageId);
+      _markMessageFailed(messageId, '전송 요청이 거절되었습니다. 다시 확인해 주세요.');
+      return true;
+    }
+    final resolutionWatch = Stopwatch()..start();
+    try {
+      final serverMessage = await _snackChatService
+          .getMessageFromServer(targetRoomId, messageId)
+          .timeout(const Duration(seconds: 4));
+      if (serverMessage != null &&
+          mounted &&
+          _uid == owner &&
+          targetRoomId == widget.snackChatId) {
+        setState(() {
+          final index =
+              _messages.indexWhere((message) => message.id == messageId);
+          if (index >= 0) {
+            _messages[index] = serverMessage.copyWith(
+              localImagePath: _messages[index].localImagePath,
+              localFilePath: _messages[index].localFilePath,
+              fileTransferStatus: _messages[index].fileTransferStatus,
+              transferProgress: _messages[index].transferProgress,
+              clearTransferProgress:
+                  serverMessage.type == SnackChatMessageType.image,
+            );
+            _sortMessages();
+          }
+        });
+        return true;
+      }
+    } catch (_) {
+      // The stable document ID makes a later retry safe even when this lookup
+      // cannot disambiguate an offline timeout.
+    } finally {
+      if (ChatTiming.enabled) {
+        ChatTiming.record(
+          '[SnackChatTiming] stage=outcomeResolution roomId=$targetRoomId '
+          'messageId=$messageId durationMs=${resolutionWatch.elapsedMilliseconds}',
+        );
+      }
+    }
+    if (!mounted || _uid != owner || targetRoomId != widget.snackChatId) {
+      return false;
+    }
+    if (_messageById(messageId) case final current?
+        when _isServerCommitted(current)) {
+      return true;
+    }
+    if (!_sendRecoveryV2 ||
+        _snackChatService.wasSendRejected(owner, targetRoomId, messageId)) {
+      if (_snackChatService.wasSendRejected(owner, targetRoomId, messageId)) {
+        _definitivelyRejectedIds.add(messageId);
+      }
+      _markMessageFailed(messageId, '전송 요청이 거절되었습니다. 다시 확인해 주세요.');
+      return true;
+    }
+    _updateLocalMessage(
+        messageId,
+        (message) => message.copyWith(
+              sendStatus: MessageSendStatus.uncertain,
+              errorMessage: '전송 상태를 확인하고 있습니다.',
+            ));
+    _scheduleOutboxRecovery();
+    return false;
+  }
+
+  Future<void> _retryMessage(
+    SnackChatMessage message, {
+    bool manual = false,
+  }) async {
+    final owner = _uid;
+    if (owner == null || message.senderId != owner) return;
+    if (manual) {
+      _definitivelyRejectedIds.remove(message.id);
+    } else if (_definitivelyRejectedIds.contains(message.id)) {
+      return;
+    }
+    final roomId = widget.snackChatId;
+    // The automatic retry list is a snapshot. A live ack may have committed
+    // this stable ID before its turn reaches the queue.
+    final latest = _messageById(message.id);
+    if (latest == null ||
+        latest.senderId != owner ||
+        !latest.needsRetry ||
+        _isServerCommitted(latest) ||
+        _isOutboundOriginalRunning(owner, roomId, message.id) ||
+        _isLeavingRoom ||
+        !_retryingMessageIds.add(message.id)) {
+      return;
+    }
+    message = latest;
+    try {
+      if (message.isUncertain) {
+        final confirmed =
+            await _recoveryCheckQueue.run('$owner::$roomId', () async {
+          if (_uid != owner || _isLeavingRoom) return null;
+          return _snackChatService.getMessageFromServer(roomId, message.id);
+        });
+        if (!mounted || _uid != owner || roomId != widget.snackChatId) return;
+        if (confirmed != null) {
+          _releaseHeldOutbound(owner, roomId, message.id);
+          final current = _messageById(message.id);
+          if (current == null || _isServerCommitted(current)) return;
+          _updateLocalMessage(
+              message.id,
+              (local) => confirmed.copyWith(
+                  localImagePath: local.localImagePath,
+                  localFilePath: local.localFilePath));
+          return;
+        }
+      }
+      final current = _messageById(message.id);
+      if (!mounted ||
+          _uid != owner ||
+          roomId != widget.snackChatId ||
+          current == null ||
+          !current.needsRetry ||
+          _isServerCommitted(current) ||
+          _isOutboundOriginalRunning(owner, roomId, message.id)) return;
+      message = current;
+      if (message.type == SnackChatMessageType.file) {
+        await _fileTransfer.retry(message.id);
+        return;
+      }
+      _updateLocalMessage(
+        message.id,
+        (value) => _isServerCommitted(value)
+            ? value
+            : value.copyWith(
+                sendStatus: MessageSendStatus.sending,
+                clearErrorMessage: true,
+              ),
+      );
+      var imageUrl = message.imageUrl;
+      var imagePath = message.imagePath;
+      var storageBucket = message.storageBucket;
+      var imageWidth = message.imageWidth;
+      var imageHeight = message.imageHeight;
+      if (message.type == SnackChatMessageType.image &&
+          (imageUrl?.isNotEmpty != true) &&
+          (imagePath?.isNotEmpty != true) &&
+          message.localImagePath?.isNotEmpty == true) {
+        final upload = await _imageUploadQueue.run(owner, () async {
+          if (_uid != owner) return null;
+          return _storageService.uploadPrivateSnackChatImage(
+              File(message.localImagePath!),
+              userId: owner,
+              snackChatId: roomId);
+        });
+        if (_uid != owner) return;
+        if (upload != null) {
+          final uploadedCurrent = _messageById(message.id);
+          if (uploadedCurrent == null ||
+              _isServerCommitted(uploadedCurrent) ||
+              roomId != widget.snackChatId) return;
+          imageUrl = upload.imageUrl;
+          imagePath = upload.storagePath;
+          storageBucket = upload.storageBucket;
+          imageWidth = upload.imageWidth;
+          imageHeight = upload.imageHeight;
+          _updateLocalMessage(
+            message.id,
+            (m) => _isServerCommitted(m)
+                ? m
+                : m.copyWith(
+                    imageUrl: imageUrl,
+                    imagePath: imagePath,
+                    storageBucket: storageBucket,
+                    imageWidth: imageWidth,
+                    imageHeight: imageHeight,
+                  ),
+          );
+        }
+      }
+      if (_uid != owner ||
+          roomId != widget.snackChatId ||
+          _isServerCommitted(_messageById(message.id) ?? message)) return;
+      void committedCallback(SnackChatCommitAck ack) => _applyCommitAck(
+            ack,
+            ownerUid: owner,
+            roomId: roomId,
+          );
+      await _sendOrderedAndResolve(roomId, message.id, () async {
+        final sending = _messageById(message.id);
+        if (!mounted ||
+            _uid != owner ||
+            roomId != widget.snackChatId ||
+            sending == null ||
+            _isServerCommitted(sending)) return true;
+        bool ok = false;
+        if (message.type == SnackChatMessageType.image) {
+          if ((imageUrl?.isNotEmpty ?? false) ||
+              (imagePath?.isNotEmpty ?? false)) {
+            ok = await _snackChatService.sendImageMessage(
+              roomId,
+              messageId: message.id,
+              imageUrl: imageUrl,
+              imagePath: imagePath,
+              storageBucket: storageBucket,
+              imageWidth: imageWidth,
+              imageHeight: imageHeight,
+              text: message.text,
+              replyPreview: message.replyPreview,
+              onCommitted: committedCallback,
+            );
+          }
+        } else if (message.type == SnackChatMessageType.poll &&
+            message.poll != null) {
+          ok = await _snackChatService.sendPollMessage(
+            roomId,
+            poll: message.poll!,
+            messageId: message.id,
+            onCommitted: committedCallback,
+          );
+        } else {
+          ok = await _snackChatService.sendMessage(
+            roomId,
+            message.text,
+            messageId: message.id,
+            mentions: message.mentions,
+            replyPreview: message.replyPreview,
+            onCommitted: committedCallback,
+          );
+        }
+        return ok;
+      },
+          protectUncertainCommit: true,
+          secureTextRequest: SnackChatService.secureTextSendEnabled &&
+                  _secureTextBatchEnabled &&
+                  message.type == SnackChatMessageType.text &&
+                  message.mentions.isEmpty &&
+                  message.replyPreview == null
+              ? SnackChatTextSendRequest(
+                  messageId: message.id,
+                  text: message.text,
+                  onCommitted: committedCallback,
+                )
+              : null);
+    } catch (_) {
+      if (!mounted || _uid != owner || roomId != widget.snackChatId) return;
+      final current = _messageById(message.id);
+      if (current == null || _isServerCommitted(current)) return;
+      if (current.isUncertain) {
+        _updateLocalMessage(message.id,
+            (local) => local.copyWith(sendStatus: MessageSendStatus.uncertain));
+        _scheduleOutboxRecovery();
+      } else {
+        _markMessageFailed(message.id, '재전송하지 못했습니다. 다시 시도해 주세요.');
+      }
+    } finally {
+      _retryingMessageIds.remove(message.id);
+    }
+  }
+
+  Future<void> _removeFailedMessage(SnackChatMessage message) async {
+    final uid = _uid;
+    if (!message.hasFailed ||
+        uid == null ||
+        !_removingFailedMessageIds.add(message.id)) {
+      return;
+    }
+    try {
+      if (message.type == SnackChatMessageType.file) {
+        SnackChatMessage? confirmed;
+        try {
+          confirmed = await _snackChatService.getMessageFromServer(
+            widget.snackChatId,
+            message.id,
+          );
+        } catch (_) {
+          _showNotice('서버 전송 여부를 확인한 뒤 삭제할 수 있습니다.');
+          return;
+        }
+        if (confirmed != null) {
+          if (!mounted) return;
+          _updateLocalMessage(
+            message.id,
+            (current) => confirmed!.copyWith(
+              localFilePath: current.localFilePath,
+              fileTransferStatus: SnackChatFileTransferStatus.ready,
+              transferProgress: 1,
+              clearErrorMessage: true,
+            ),
+          );
+          _showNotice('이미 서버에 전송된 메시지입니다.');
+          return;
+        }
+        await _fileTransfer.cancelAndRemove(message.id);
+        if (!mounted) return;
+        setState(() {
+          _messages.removeWhere((item) => item.id == message.id);
+          _messageIds.remove(message.id);
+          _messageKeys.remove(message.id);
+          _sortMessages();
+        });
+        unawaited(_localCache.removeMessage(widget.snackChatId, message.id));
+        return;
+      }
+      late final SnackChatMessage? serverMessage;
+      try {
+        serverMessage = await _snackChatService.getMessageFromServer(
+          widget.snackChatId,
+          message.id,
+        );
+      } catch (_) {
+        _showNotice('서버 전송 여부를 확인한 뒤 삭제할 수 있습니다.');
+        return;
+      }
+      if (!mounted) return;
+      final confirmedMessage = serverMessage;
+      if (confirmedMessage != null) {
+        setState(() {
+          final index = _messages.indexWhere((item) => item.id == message.id);
+          if (index >= 0) {
+            _messages[index] = confirmedMessage.copyWith(
+              localImagePath: _messages[index].localImagePath,
+              clearErrorMessage: true,
+            );
+            _sortMessages();
+          }
+        });
+        _showNotice('이미 서버에 전송된 메시지입니다.');
         return;
       }
 
-      final ok = await _snackChatService.sendImageMessage(
-        widget.snackChatId,
-        imageUrl: imageUrl,
+      final storagePath = message.imagePath?.trim() ?? '';
+      if (storagePath.isNotEmpty) {
+        try {
+          await _storageService.deletePrivateSnackChatImage(
+            storagePath,
+            userId: uid,
+            snackChatId: widget.snackChatId,
+            storageBucket: message.storageBucket,
+          );
+        } catch (_) {
+          _showNotice('업로드된 이미지를 정리하지 못했습니다. 다시 시도해 주세요.');
+          return;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _messages.removeWhere((item) => item.id == message.id);
+        _messageIds.remove(message.id);
+        _messageKeys.remove(message.id);
+        _sortMessages();
+      });
+      unawaited(
+        _localCache.removeMessage(widget.snackChatId, message.id),
       );
-      if (!ok && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('이미지 전송에 실패했습니다.')),
-        );
+    } finally {
+      _removingFailedMessageIds.remove(message.id);
+    }
+  }
+
+  Future<void> _createPoll() async {
+    if (_isCreatingPoll) return;
+    final roomId = widget.snackChatId;
+    final owner = _uid;
+    if (owner == null) return;
+    setState(() => _isCreatingPoll = true);
+    try {
+      final poll = await showSnackChatPollDialog(context);
+      if (!mounted ||
+          poll == null ||
+          _uid != owner ||
+          roomId != widget.snackChatId) {
+        return;
+      }
+      final messageId = _snackChatService.createMessageId(roomId);
+      final local = SnackChatMessage(
+        id: messageId,
+        senderId: owner,
+        senderName: FirebaseAuth.instance.currentUser?.displayName,
+        type: SnackChatMessageType.poll,
+        text: poll.question,
+        createdAt: _nextOptimisticCreatedAt(),
+        poll: poll,
+        sendStatus: MessageSendStatus.sending,
+      );
+      _stageOutboundEntrance(messageId);
+      setState(() => _insertLocalMessage(local));
+      await _sendOrderedAndResolve(
+        roomId,
+        messageId,
+        () => _snackChatService.sendPollMessage(
+          roomId,
+          poll: poll,
+          messageId: messageId,
+          onCommitted: (ack) => _applyCommitAck(
+            ack,
+            ownerUid: owner,
+            roomId: roomId,
+          ),
+        ),
+        protectUncertainCommit: true,
+      );
+    } finally {
+      if (mounted && roomId == widget.snackChatId) {
+        setState(() => _isCreatingPoll = false);
+      } else {
+        _isCreatingPoll = false;
+      }
+    }
+  }
+
+  Future<void> _showAttachmentOptions() async {
+    if (_isAttachmentFlowOpen) return;
+    // 첨부 시트·갤러리가 열려 있는 동안 키보드가 함께 떠서 겹쳐 보이지 않도록
+    // 먼저 입력창 포커스를 내린다(시트는 requestFocus:false라 스스로 닫지 않는다).
+    _messageFocusNode.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _isAttachmentFlowOpen = true);
+    try {
+      final action = await showSnackChatAttachmentSheet(context);
+      if (!mounted) return;
+      if (action == SnackChatAttachmentAction.image) {
+        await _pickAndSendMedia();
+      } else if (action == SnackChatAttachmentAction.file) {
+        await _pickAndQueueFiles();
+      } else if (action == SnackChatAttachmentAction.poll) {
+        await _createPoll();
       }
     } finally {
-      if (mounted) setState(() => _isUploadingImage = false);
+      if (mounted) {
+        setState(() => _isAttachmentFlowOpen = false);
+      } else {
+        _isAttachmentFlowOpen = false;
+      }
     }
+  }
+
+  Future<void> _pickAndQueueFiles() async {
+    final roomId = widget.snackChatId;
+    final room = _lastRoom;
+    if (room == null || _uid == null) {
+      _showNotice('채팅방 정보를 확인한 뒤 다시 시도해 주세요.');
+      return;
+    }
+    final picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowMultiple: true,
+      withData: false,
+      withReadStream: false,
+      allowedExtensions:
+          SnackChatFilePolicy.allowedMimeByExtension.keys.toList(),
+    );
+    if (!mounted || picked == null || roomId != widget.snackChatId) return;
+    if (picked.files.length > SnackChatFilePolicy.maxSelectionCount) {
+      _showNotice('파일은 한 번에 최대 5개까지 선택할 수 있습니다.');
+      return;
+    }
+    final validated = <SnackChatSelectedFile>[];
+    for (final selected in picked.files) {
+      if (selected.size > SnackChatFilePolicy.maxFileBytes) {
+        _showNotice('${selected.name}: 파일은 20MB 이하만 전송할 수 있습니다.');
+        continue;
+      }
+      try {
+        final path = await _documentImporter.resolveReadablePath(
+          fileName: selected.name,
+          pickerPath: selected.path,
+          identifier: selected.identifier,
+        );
+        if (path == null) {
+          _showNotice('${selected.name}: 파일을 읽을 수 없습니다.');
+          continue;
+        }
+        SnackChatSelectedFile? checked;
+        Object? lastError;
+        StackTrace? lastStackTrace;
+        for (var attempt = 0; attempt < 4 && checked == null; attempt++) {
+          try {
+            checked = await SnackChatFilePolicy.validatePath(
+              path,
+              displayName: selected.name,
+            );
+          } on FileSystemException catch (error, stackTrace) {
+            lastError = error;
+            lastStackTrace = stackTrace;
+            await Future<void>.delayed(
+              Duration(milliseconds: 80 * (attempt + 1)),
+            );
+          }
+        }
+        if (checked == null) {
+          Error.throwWithStackTrace(
+            lastError ?? StateError('document-import-not-ready'),
+            lastStackTrace ?? StackTrace.current,
+          );
+        }
+        validated.add(checked);
+      } on SnackChatFileValidationException catch (error) {
+        if (mounted) _showNotice('${selected.name}: ${error.message}');
+      } catch (error, stackTrace) {
+        Logger.error(
+          'Snack Chat 첨부 파일 검사 실패: ${selected.name}',
+          error,
+          stackTrace,
+        );
+        if (mounted) _showNotice('${selected.name}: 파일을 확인할 수 없습니다.');
+      }
+    }
+    if (!mounted || validated.isEmpty || roomId != widget.snackChatId) return;
+    final confirmed = await showSnackChatFileConfirmationSheet(
+      context,
+      files: validated,
+      temporary24h: room.activeDurationHours != 0,
+    );
+    if (!mounted ||
+        confirmed == null ||
+        confirmed.isEmpty ||
+        roomId != widget.snackChatId) {
+      return;
+    }
+    final reply = _replyPreviewForCurrentTarget();
+    late final List<SnackChatMessage> pending;
+    try {
+      pending = await _fileTransfer.enqueueFiles(
+        room: room,
+        files: confirmed,
+        replyPreview: reply,
+      );
+    } catch (_) {
+      if (mounted) _showNotice('파일 전송을 시작하지 못했습니다.');
+      return;
+    }
+    if (!mounted || roomId != widget.snackChatId) return;
+    for (final message in pending) {
+      _stageOutboundEntrance(message.id);
+    }
+    setState(() {
+      for (final message in pending) {
+        _insertLocalMessage(message);
+      }
+      _clearReplyState();
+    });
+    if (_isNearLatest) _scrollToLatest(animated: true);
+  }
+
+  Future<void> _beginReply(SnackChatMessage message) async {
+    if (message.type == SnackChatMessageType.system ||
+        message.hasFailed ||
+        message.isPending ||
+        message.isDeleted) {
+      return;
+    }
+    setState(() {
+      _replyingTo = message;
+      _replyingToSenderName = _safeUserLabel(message.senderName);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _messageFocusNode.requestFocus();
+    });
+    final embeddedName = message.senderName?.trim() ?? '';
+    if (embeddedName.isNotEmpty &&
+        !_looksLikeInternalIdentifier(embeddedName)) {
+      return;
+    }
+    final resolvedName = await _senderNameFuture(
+      message.senderId,
+      message.senderName,
+    );
+    if (!mounted || _replyingTo?.id != message.id) return;
+    setState(() => _replyingToSenderName = resolvedName);
+  }
+
+  Future<void> _jumpToMessage(
+    String messageId, {
+    String? replyingMessageId,
+  }) async {
+    var index = _messages.indexWhere((message) => message.id == messageId);
+    SnackChatMessage? target = index >= 0 ? _messages[index] : null;
+    var missingWasConfirmed = false;
+    if (index < 0) {
+      try {
+        target = await _snackChatService.getMessageFromServer(
+          widget.snackChatId,
+          messageId,
+        );
+        missingWasConfirmed = target == null;
+        if (target != null && mounted) {
+          // Load the contiguous pages leading to the reply target first. A
+          // sparse one-off insertion makes its visual position ambiguous and
+          // fixed-height scroll estimates fail for images/long text/polls.
+          final deadline = DateTime.now().add(const Duration(seconds: 20));
+          var advancedLiveWindow = false;
+          while (mounted &&
+              _hasMore &&
+              _messages.every((message) => message.id != messageId) &&
+              _isOlderThanCursor(target, _oldestMessage) &&
+              DateTime.now().isBefore(deadline)) {
+            if (_isLoadingMore) {
+              await Future<void>.delayed(const Duration(milliseconds: 80));
+              continue;
+            }
+            setState(() => _isLoadingMore = true);
+            try {
+              final remaining = deadline.difference(DateTime.now());
+              if (remaining <= Duration.zero) break;
+              final older = await _snackChatService
+                  .fetchMessagesPage(
+                    widget.snackChatId,
+                    beforeMessage: _oldestMessage,
+                  )
+                  .timeout(remaining);
+              if (!mounted) return;
+              setState(() {
+                _loadMoreError = null;
+                for (final message in older) {
+                  if (_messageIds.add(message.id)) _messages.add(message);
+                }
+                if (older.isNotEmpty) {
+                  _updateOldestMessageCursor(older);
+                  advancedLiveWindow = true;
+                }
+                if (older.isEmpty || older.length < 30) _hasMore = false;
+                _sortMessages();
+              });
+              _scheduleSenderProfileHydration(older);
+              if (older.isEmpty) break;
+            } catch (error) {
+              if (mounted) setState(() => _loadMoreError = error);
+              break;
+            } finally {
+              if (mounted) setState(() => _isLoadingMore = false);
+            }
+          }
+          if (advancedLiveWindow) _scheduleMessageWindowExpansion();
+          index = _messages.indexWhere((message) => message.id == messageId);
+          if (index < 0) {
+            // Bounded fallback for exceptionally deep histories or a
+            // temporarily unavailable intermediate page. It still provides
+            // the immutable reply snapshot target without an endless wait.
+            setState(() => _insertLocalMessage(target!));
+            _scheduleSenderProfileHydration(<SnackChatMessage>[target]);
+            index = _messages.indexWhere((message) => message.id == messageId);
+          }
+        }
+      } catch (_) {}
+    }
+    if (!mounted || index < 0) {
+      if (missingWasConfirmed && replyingMessageId != null) {
+        _markReplyTargetDeleted(replyingMessageId, messageId);
+      }
+      _showNotice('원본 메시지를 불러올 수 없습니다.');
+      return;
+    }
+    final revealed = await _revealMessage(messageId, index);
+    if (!revealed) _showNotice('원본 메시지 위치를 표시하지 못했습니다.');
+  }
+
+  ReplyMessagePreview _effectiveReplyPreview(ReplyMessagePreview preview) {
+    var effective = preview;
+    if (effective.senderName.trim().isEmpty ||
+        _looksLikeInternalIdentifier(effective.senderName)) {
+      effective = effective.copyWith(
+        senderName: _senderNameCache[effective.senderId] ?? _genericUserLabel,
+      );
+    }
+    if (effective.isDeleted) return effective;
+    final index =
+        _messages.indexWhere((message) => message.id == effective.messageId);
+    if (index < 0 || !_messages[index].isDeleted) return effective;
+    return effective.copyWith(
+      isDeleted: true,
+      textPreview: '',
+      clearImageUrl: true,
+      clearImagePath: true,
+    );
+  }
+
+  void _markReplyTargetDeleted(String replyingMessageId, String targetId) {
+    _updateLocalMessage(replyingMessageId, (message) {
+      final preview = message.replyPreview;
+      if (preview == null || preview.messageId != targetId) return message;
+      return message.copyWith(
+        replyPreview: preview.copyWith(
+          isDeleted: true,
+          textPreview: '',
+          clearImageUrl: true,
+          clearImagePath: true,
+        ),
+      );
+    });
+  }
+
+  bool _isOlderThanCursor(
+    SnackChatMessage target,
+    SnackChatMessage? cursor,
+  ) {
+    if (cursor == null) return false;
+    if (target.sequence != null && cursor.sequence != null) {
+      return target.sequence! < cursor.sequence!;
+    }
+    final byTime = target.createdAt.compareTo(cursor.createdAt);
+    if (byTime != 0) return byTime < 0;
+    return target.id.compareTo(cursor.id) < 0;
+  }
+
+  Future<bool> _revealMessage(String messageId, int initialIndex) async {
+    var targetIndex = initialIndex;
+    for (var attempt = 0; attempt < 10; attempt++) {
+      if (!mounted) return false;
+      final targetContext = _messageKeys[messageId]?.currentContext;
+      if (targetContext != null) {
+        if (!targetContext.mounted) continue;
+        await Scrollable.ensureVisible(
+          targetContext,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+        return true;
+      }
+      if (!_scrollController.hasClients || _messages.isEmpty) return false;
+      targetIndex = _messages.indexWhere((message) => message.id == messageId);
+      if (targetIndex < 0) return false;
+
+      final position = _scrollController.position;
+      final maxExtent = position.maxScrollExtent;
+      final builtIndices = <int>[];
+      for (var index = 0; index < _messages.length; index++) {
+        if (_messageKeys[_messages[index].id]?.currentContext != null) {
+          builtIndices.add(index);
+        }
+      }
+      final averageExtent = maxExtent <= 0
+          ? 76.0
+          : maxExtent / (_messages.length - 1).clamp(1, 1 << 20);
+      double estimate;
+      if (builtIndices.isEmpty) {
+        estimate = averageExtent * targetIndex;
+      } else {
+        builtIndices.sort((a, b) =>
+            (a - targetIndex).abs().compareTo((b - targetIndex).abs()));
+        final nearest = builtIndices.first;
+        estimate = position.pixels + (targetIndex - nearest) * averageExtent;
+      }
+      final bounded = estimate.clamp(0.0, maxExtent).toDouble();
+      if ((bounded - position.pixels).abs() < 1 && maxExtent > 0) {
+        final direction =
+            targetIndex > (builtIndices.isEmpty ? 0 : builtIndices.first)
+                ? 1.0
+                : -1.0;
+        position.jumpTo(
+          (position.pixels + direction * position.viewportDimension * 0.8)
+              .clamp(0.0, maxExtent)
+              .toDouble(),
+        );
+      } else {
+        position.jumpTo(bounded);
+      }
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    return _messageKeys[messageId]?.currentContext != null;
+  }
+
+  Future<void> _toggleReaction(
+    SnackChatMessage message,
+    String emoji,
+  ) async {
+    if (message.isDeleted || message.isPending || message.hasFailed) return;
+    final oldEmoji = _myReactions[message.id];
+    final nextEmoji = oldEmoji == emoji ? null : emoji;
+    if (nextEmoji != null) _reactionMotionEvents.record(message.id, nextEmoji);
+    if (!_reactionMutationsInFlight.contains(message.id) &&
+        !_pendingReactionTargets.containsKey(message.id)) {
+      _confirmedReactions[message.id] = oldEmoji;
+    }
+    setState(() {
+      _applyReactionTargetInState(message.id, nextEmoji);
+    });
+    _pendingReactionTargets[message.id] = nextEmoji;
+    await _flushReactionMutations(message.id);
+  }
+
+  void _applyReactionTargetInState(String messageId, String? target) {
+    final current = _myReactions[messageId];
+    if (current == target) return;
+    target == null
+        ? _myReactions.remove(messageId)
+        : _myReactions[messageId] = target;
+    final index = _messages.indexWhere((item) => item.id == messageId);
+    if (index < 0) return;
+    final counts = Map<String, int>.from(_messages[index].reactionCounts);
+    if (current != null) {
+      final remaining = (counts[current] ?? 1) - 1;
+      remaining <= 0 ? counts.remove(current) : counts[current] = remaining;
+    }
+    if (target != null) counts[target] = (counts[target] ?? 0) + 1;
+    _messages[index] = _messages[index].copyWith(reactionCounts: counts);
+  }
+
+  Future<void> _flushReactionMutations(String messageId) async {
+    if (!_reactionMutationsInFlight.add(messageId)) return;
+    try {
+      while (_pendingReactionTargets.containsKey(messageId)) {
+        final target = _pendingReactionTargets.remove(messageId);
+        try {
+          await _snackChatService
+              .setReaction(
+                snackChatId: widget.snackChatId,
+                messageId: messageId,
+                emoji: target,
+              )
+              .timeout(const Duration(seconds: 10));
+          _confirmedReactions[messageId] = target;
+        } on TimeoutException {
+          // Firestore timeouts do not cancel the queued local write. Keep the
+          // latest explicit target instead of rolling back to a state that a
+          // delayed acknowledgement may immediately invalidate.
+          _confirmedReactions[messageId] = target;
+          if (!_pendingReactionTargets.containsKey(messageId)) {
+            _showNotice('네트워크 연결 후 반응이 동기화됩니다.');
+          }
+        } catch (_) {
+          if (!_pendingReactionTargets.containsKey(messageId) && mounted) {
+            setState(() => _applyReactionTargetInState(
+                  messageId,
+                  _confirmedReactions[messageId],
+                ));
+            _showNotice(AppLocalizations.of(context)!.chatReactionSaveFailed);
+          }
+        }
+      }
+    } finally {
+      _reactionMutationsInFlight.remove(messageId);
+      // A tap can arrive between the loop condition and the in-flight cleanup.
+      if (_pendingReactionTargets.containsKey(messageId)) {
+        unawaited(_flushReactionMutations(messageId));
+      }
+    }
+  }
+
+  Future<void> _showReactionUsers(
+    SnackChatMessage message,
+    String emoji,
+  ) async {
+    try {
+      final reactions = await _snackChatService.fetchMessageReactions(
+        snackChatId: widget.snackChatId,
+        messageId: message.id,
+      );
+      final ids = reactions
+          .where((reaction) => reaction.emoji == emoji)
+          .map((reaction) => reaction.userId)
+          .toList(growable: false);
+      if (!mounted) return;
+      final label = AppLocalizations.of(context)!.chatReactionPeople;
+      await _showPeopleSheet(title: '$label · ${ids.length}', userIds: ids);
+    } catch (_) {
+      if (mounted) _showNotice('반응한 사용자를 불러오지 못했습니다.');
+    }
+  }
+
+  Future<void> _castVote(
+    SnackChatMessage message,
+    List<String> optionIds,
+  ) async {
+    if (message.isPending ||
+        message.hasFailed ||
+        message.isDeleted ||
+        message.poll == null ||
+        message.poll!.isClosed()) {
+      return;
+    }
+    final target = optionIds.toSet();
+    if (!_voteMutationsInFlight.contains(message.id) &&
+        !_pendingVoteTargets.containsKey(message.id)) {
+      _confirmedVotes[message.id] =
+          Set<String>.from(_myVotes[message.id] ?? const <String>{});
+    }
+    setState(() => _myVotes[message.id] = target);
+    _pendingVoteTargets[message.id] = target;
+    await _flushVoteMutations(message.id);
+  }
+
+  Future<void> _flushVoteMutations(String messageId) async {
+    if (!_voteMutationsInFlight.add(messageId)) return;
+    try {
+      while (_pendingVoteTargets.containsKey(messageId)) {
+        final target = Set<String>.from(
+          _pendingVoteTargets.remove(messageId) ?? const <String>{},
+        );
+        try {
+          await _snackChatService
+              .castVote(
+                snackChatId: widget.snackChatId,
+                messageId: messageId,
+                optionIds: target.toList(growable: false),
+              )
+              .timeout(const Duration(seconds: 10));
+          _confirmedVotes[messageId] = Set<String>.from(target);
+        } on TimeoutException {
+          _confirmedVotes[messageId] = Set<String>.from(target);
+          if (!_pendingVoteTargets.containsKey(messageId)) {
+            _showNotice('네트워크 연결 후 투표가 동기화됩니다.');
+          }
+        } catch (_) {
+          if (!_pendingVoteTargets.containsKey(messageId) && mounted) {
+            setState(() {
+              _myVotes[messageId] = Set<String>.from(
+                _confirmedVotes[messageId] ?? const <String>{},
+              );
+            });
+            _showNotice('투표를 저장하지 못했습니다.');
+          }
+        }
+      }
+    } finally {
+      _voteMutationsInFlight.remove(messageId);
+      if (_pendingVoteTargets.containsKey(messageId)) {
+        unawaited(_flushVoteMutations(messageId));
+      }
+    }
+  }
+
+  _ReadReceiptData _readReceiptFor(SnackChatMessage message) {
+    final sequence = message.sequence;
+    if (sequence == null ||
+        (message.type != SnackChatMessageType.text &&
+            message.type != SnackChatMessageType.image &&
+            message.type != SnackChatMessageType.file) ||
+        message.isPending ||
+        message.hasFailed) {
+      return const _ReadReceiptData(read: <String>[], unread: <String>[]);
+    }
+    final targets = <String>{};
+    final deliveredAtSend = message.deliveryRecipientIds;
+    if (deliveredAtSend != null) {
+      targets.addAll(deliveredAtSend);
+    } else {
+      for (final member in _members.values) {
+        if (member.wasRecipientFor(sequence, message.senderId)) {
+          targets.add(member.userId);
+        }
+      }
+      // recipientIds is the immutable client send-time fallback while the
+      // server delivery marker is propagating or for a legacy message.
+      targets.addAll(message.recipientIds);
+      // Shared-room delivery/read state is independent from direct-contact
+      // restrictions, including while the server marker is still propagating.
+    }
+    targets.remove(message.senderId);
+    final read = <String>[];
+    final unread = <String>[];
+    for (final userId in targets) {
+      final member = _members[userId];
+      if ((member?.lastReadSequence ?? 0) >= sequence ||
+          message.readBy.contains(userId)) {
+        read.add(userId);
+      } else {
+        unread.add(userId);
+      }
+    }
+    return _ReadReceiptData(read: read, unread: unread);
+  }
+
+  Map<String, DMUserInfo?> _cachedPeople(Iterable<String> userIds) =>
+      <String, DMUserInfo?>{
+        for (final id in userIds) id: _userInfoCache.getCachedUserInfo(id),
+      };
+
+  Future<Map<String, DMUserInfo?>> _loadPeople(
+    List<String> userIds,
+  ) =>
+      _userInfoCache.getUserInfoBatch(userIds).timeout(_peopleLookupDeadline);
+
+  Widget _peopleLoadRetry({
+    required bool isKo,
+    required VoidCallback onRetry,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              (isChineseUi(context)
+                  ? '部分资料加载失败，正在显示已保存的信息。'
+                  : isKo
+                      ? '일부 프로필을 불러오지 못해 저장된 정보를 표시합니다.'
+                      : 'Some profiles could not be loaded. Showing saved information.'),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 12.5,
+                height: 1.35,
+                color: _secondaryText,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded, size: 17),
+            label: Text((isChineseUi(context)
+                ? '重试'
+                : isKo
+                    ? '다시 시도'
+                    : 'Retry')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showReadReceiptDetails(SnackChatMessage message) async {
+    final receipt = _readReceiptFor(message);
+    if (receipt.total == 0) return;
+    final ids = <String>[...receipt.read, ...receipt.unread];
+    final initialCached = _cachedPeople(ids);
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    var peopleFuture = _loadPeople(ids);
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.72,
+        child: StatefulBuilder(
+          builder: (context, setSheetState) =>
+              FutureBuilder<Map<String, DMUserInfo?>>(
+            future: peopleFuture,
+            initialData: initialCached,
+            builder: (context, snapshot) {
+              final users = _cachedPeople(ids);
+              final loaded = snapshot.data;
+              if (loaded != null) users.addAll(loaded);
+              final loading = snapshot.connectionState != ConnectionState.done;
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                children: [
+                  if (snapshot.hasError)
+                    _peopleLoadRetry(
+                      isKo: isKo,
+                      onRetry: () => setSheetState(
+                        () => peopleFuture = _loadPeople(ids),
+                      ),
+                    ),
+                  _peopleSectionTitle(
+                    (isChineseUi(context)
+                        ? '已读 ${receipt.read.length}'
+                        : isKo
+                            ? '확인 ${receipt.read.length}명'
+                            : 'Seen ${receipt.read.length}'),
+                  ),
+                  ...receipt.read.map(
+                    (id) => _personTile(id, users[id], loading: loading),
+                  ),
+                  const SizedBox(height: 16),
+                  _peopleSectionTitle(
+                    (isChineseUi(context)
+                        ? '未读 ${receipt.unread.length}'
+                        : isKo
+                            ? '미확인 ${receipt.unread.length}명'
+                            : 'Not seen ${receipt.unread.length}'),
+                  ),
+                  ...receipt.unread.map(
+                    (id) => _personTile(id, users[id], loading: loading),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showPeopleSheet({
+    required String title,
+    required List<String> userIds,
+  }) async {
+    final initialCached = _cachedPeople(userIds);
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    // Android edge-to-edge 환경에서는 modal route 내부 MediaQuery가 하단
+    // 시스템 영역을 0으로 돌려줄 수 있어 호출 화면의 값을 함께 보존한다.
+    final rootSystemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    var peopleFuture = _loadPeople(userIds);
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: false,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      barrierColor: Colors.black.withValues(alpha: 0.46),
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      constraints: const BoxConstraints(maxWidth: 600),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) =>
+            FutureBuilder<Map<String, DMUserInfo?>>(
+          future: peopleFuture,
+          initialData: initialCached,
+          builder: (sheetContext, snapshot) {
+            final users = _cachedPeople(userIds);
+            final loaded = snapshot.data;
+            if (loaded != null) users.addAll(loaded);
+            final loading = snapshot.connectionState != ConnectionState.done;
+            return SnackChatPeopleSheetContent(
+              rootSystemBottomInset: rootSystemBottomInset,
+              children: [
+                if (snapshot.hasError)
+                  _peopleLoadRetry(
+                    isKo: isKo,
+                    onRetry: () => setSheetState(
+                      () => peopleFuture = _loadPeople(userIds),
+                    ),
+                  ),
+                _peopleSectionTitle(title),
+                ...userIds.map(
+                  (id) => _personTile(id, users[id], loading: loading),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _peopleSectionTitle(String text) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+
+  Widget _personTile(
+    String userId,
+    DMUserInfo? info, {
+    bool loading = false,
+  }) {
+    final name = info == null
+        ? loading
+            ? '불러오는 중…'
+            : '탈퇴한 사용자'
+        : _safeUserLabel(info.nickname);
+    final photoUrl = info?.photoURL ?? '';
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      minLeadingWidth: 40,
+      leading: info != null
+          ? UserAvatar(
+              uid: userId,
+              photoUrl: photoUrl,
+              photoVersion: info.photoVersion,
+              isAnonymous: false,
+              size: 36,
+              placeholderIcon: Icons.person_outline_rounded,
+              placeholderIconSize: 19,
+            )
+          : CircleAvatar(
+              radius: 18,
+              backgroundColor: const Color(0xFFE4E7EC),
+              child: loading
+                  ? const SizedBox.square(
+                      dimension: 15,
+                      child: CircularProgressIndicator(strokeWidth: 1.5),
+                    )
+                  : const Icon(Icons.person_outline_rounded, size: 19),
+            ),
+      title: Text(
+        name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMessageActions(SnackChatMessage message) async {
+    final isMe = message.senderId == _uid;
+    final canDirectlyInteract =
+        isMe || !_blockedUserIds.contains(message.senderId);
+    final currentTranslation = _currentTranslationForMessage(message);
+    final canRetranslate = !isMe &&
+        !message.hasFailed &&
+        !message.isPending &&
+        !message.isDeleted &&
+        _translationModeReady &&
+        !_translationShowsOriginal &&
+        _canTranslateMessage(message) &&
+        currentTranslation?.isSameLanguage != true &&
+        !_manualTranslationRetryKeys.contains(_translationRequestKey(message)) &&
+        !_isTranslationWorkPending(_translationRequestKey(message));
+    final action = await showModalBottomSheet<_MessageAction>(
+      context: context,
+      useSafeArea: false,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.48),
+      builder: (sheetContext) {
+        final media = MediaQuery.of(sheetContext);
+        final bottomSafeArea = media.viewPadding.bottom;
+        final maxSheetHeight = media.size.height * 0.72;
+        return Material(
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxSheetHeight),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                0,
+                8,
+                0,
+                (bottomSafeArea + 10).clamp(18, 42).toDouble(),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (!message.hasFailed &&
+                      !message.isPending &&
+                      !message.isDeleted &&
+                      canDirectlyInteract) ...[
+                    ChatReactionPickerRow(
+                      selectedReaction: _myReactions[message.id],
+                      addLabel:
+                          AppLocalizations.of(sheetContext)!.chatReactionAdd,
+                      removeLabel:
+                          AppLocalizations.of(sheetContext)!.chatReactionRemove,
+                      onSelected: (emoji) => Navigator.pop(
+                        sheetContext,
+                        _MessageAction(
+                          _MessageActionType.reaction,
+                          emoji: emoji,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    _messageActionTile(
+                      icon: Icons.reply_rounded,
+                      label: AppLocalizations.of(sheetContext)!.chatReply,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.reply),
+                      ),
+                    ),
+                  ],
+                  if (canRetranslate)
+                    _messageActionTile(
+                      icon: Icons.translate_rounded,
+                      label: AppLocalizations.of(sheetContext)!
+                          .chatTranslationRetry,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.retranslate),
+                      ),
+                    ),
+                  if (message.hasFailed && isMe) ...[
+                    _messageActionTile(
+                      icon: Icons.refresh_rounded,
+                      label: '다시 시도',
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.retry),
+                      ),
+                    ),
+                    _messageActionTile(
+                      icon: Icons.delete_outline_rounded,
+                      label: '실패 메시지 삭제',
+                      destructive: true,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.removeFailed),
+                      ),
+                    ),
+                  ],
+                  if (!isMe && !message.hasFailed && !message.isPending) ...[
+                    _messageActionTile(
+                      icon: Icons.report_gmailerrorred_outlined,
+                      label:
+                          AppLocalizations.of(sheetContext)!.chatReportMessage,
+                      destructive: true,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.report),
+                      ),
+                    ),
+                    _messageActionTile(
+                      icon: Icons.block_outlined,
+                      label: AppLocalizations.of(sheetContext)!.blockUser,
+                      destructive: true,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.block),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || action == null) return;
+    switch (action.type) {
+      case _MessageActionType.reaction:
+        final emoji = action.emoji;
+        if (emoji != null) await _toggleReaction(message, emoji);
+        break;
+      case _MessageActionType.reply:
+        await _beginReply(message);
+        break;
+      case _MessageActionType.retranslate:
+        await _retryFailedTranslation(message, forceRefresh: true);
+        break;
+      case _MessageActionType.retry:
+        await _retryMessage(message, manual: true);
+        break;
+      case _MessageActionType.removeFailed:
+        await _removeFailedMessage(message);
+        break;
+      case _MessageActionType.report:
+        await showReportDialog(
+          context,
+          reportedUserId: message.senderId,
+          targetType: 'snack_chat_message',
+          targetId: '${widget.snackChatId}/${message.id}',
+          targetTitle: message.type == SnackChatMessageType.file
+              ? message.originalFileName ?? '파일 메시지'
+              : message.text.trim().isEmpty
+                  ? '이미지 메시지'
+                  : message.text.trim(),
+        );
+        break;
+      case _MessageActionType.block:
+        await showBlockUserDialog(
+          context,
+          userId: message.senderId,
+          userName: _safeUserLabel(message.senderName),
+        );
+        break;
+    }
+  }
+
+  Widget _messageActionTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool destructive = false,
+  }) {
+    final color =
+        destructive ? const Color(0xFFD92D20) : const Color(0xFF111827);
+    return MotionPress(
+      pressedScale: .99,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 52),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 34,
+                    child: Icon(icon, size: 22, color: color),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                        height: isChineseUi(context) ? 1.3 : 1.25,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openExternalUrl(String rawUrl) async {
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) return;
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) _showNotice('링크를 열 수 없습니다.');
+    } catch (_) {
+      if (mounted) _showNotice('링크를 열 수 없습니다.');
+    }
+  }
+
+  void _showNotice(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// 정보 화면이 완전히 닫힌 뒤 현재 채팅 화면을 즉시 종료하고, 서버의
+  /// 원자적 참여자 제거는 백그라운드에서 완료한다. 라우트가 겹친 상태에서
+  /// StreamBuilder를 재구성하지 않아 Flutter teardown assertion을 피한다.
+  void _leaveRoomAndExit() {
+    if (_isLeavingRoom || !mounted) return;
+    _isLeavingRoom = true;
+    _roomWasLeft = true;
+    _draftSaveDebounce?.cancel();
+    _messageCacheDebounce?.cancel();
+    _outboxRetryTimer?.cancel();
+    _messageRetryTimer?.cancel();
+    _roomRetryTimer?.cancel();
+    _auxiliarySubscriptionGeneration++;
+    _auxiliaryRetryTimer?.cancel();
+    _auxiliaryRetryTimer = null;
+    _messageSubscriptionGeneration++;
+    _readSyncGeneration++;
+
+    final subscriptions = <StreamSubscription<dynamic>?>[
+      _msgSub,
+      _memberSub,
+      _reactionSub,
+      _voteSub,
+      _blockSub,
+      _fileTransferSub,
+    ];
+    _msgSub = null;
+    _memberSub = null;
+    _reactionSub = null;
+    _voteSub = null;
+    _blockSub = null;
+    _fileTransferSub = null;
+    for (final subscription in subscriptions) {
+      if (subscription != null) unawaited(subscription.cancel());
+    }
+
+    final roomId = widget.snackChatId;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final leaveFuture = _snackChatService.leaveRoom(roomId);
+    unawaited(
+      _finishRoomLeave(
+        roomId: roomId,
+        leaveFuture: leaveFuture,
+        messenger: messenger,
+        isKo: isKo,
+      ),
+    );
+
+    if (SnackChatActiveConversation.isActive(roomId)) {
+      SnackChatActiveConversation.setActive(null);
+    }
+    if (widget.fromPush) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const MainScreen(
+            initialGroupTabIndex: snackChatTabIndex,
+          ),
+        ),
+        (_) => false,
+      );
+      return;
+    }
+    Navigator.of(context).pop(true);
+  }
+
+  Future<void> _finishRoomLeave({
+    required String roomId,
+    required Future<void> leaveFuture,
+    required ScaffoldMessengerState? messenger,
+    required bool isKo,
+  }) async {
+    try {
+      await leaveFuture;
+      await _localCache.clearRoom(roomId);
+      await FCMService()
+          .cancelSnackChatNotification(roomId, expectedOwner: _screenOwnerUid);
+      unawaited(BadgeService.refreshNow());
+    } catch (error, stackTrace) {
+      Logger.error('Snack Chat 나가기 백그라운드 처리 실패', error, stackTrace);
+      if (messenger?.mounted ?? false) {
+        messenger!.showSnackBar(
+          SnackBar(
+            content: Text(
+              (isChineseUi(messenger.context)
+                  ? '退出群聊失败，请重试。'
+                  : isKo
+                      ? '채팅방에서 나가지 못했습니다. 다시 시도해 주세요.'
+                      : 'Could not leave the chat. Please try again.'),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _openRoomInfo(SnackChat room) async {
+    if (_isLeavingRoom) return;
+    _startBackgroundReadFlush();
+    if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      SnackChatActiveConversation.setActive(null);
+    }
+    final infoRoute = MaterialPageRoute<bool>(
+      builder: (_) => SnackChatInfoScreen(
+        snackChatId: room.id,
+      ),
+    );
+    final didLeave = await Navigator.of(context).push<bool>(infoRoute);
+    if (!mounted) return;
+    if (didLeave != true) {
+      _exitReadFlushStarted = false;
+      if (_appLifecycleState == AppLifecycleState.resumed) {
+        SnackChatActiveConversation.setActive(widget.snackChatId);
+        _scheduleActiveReadSync();
+      }
+      return;
+    }
+
+    // push()의 Future는 reverse transition이 끝나기 전에 완료될 수 있다.
+    // 정보 화면의 overlay가 완전히 제거된 뒤 채팅 화면을 닫아 연속 pop으로
+    // 인한 framework dependency assertion을 방지한다.
+    await infoRoute.completed;
+    if (!mounted) return;
+
+    _leaveRoomAndExit();
   }
 
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final l10n = AppLocalizations.of(context)!;
     return StreamBuilder<SnackChat?>(
-      stream: _roomStream,
+      stream: _isLeavingRoom ? null : _roomStream,
       builder: (context, roomSnap) {
-        final room = roomSnap.data;
+        final incomingRoom = roomSnap.data;
+        if (incomingRoom != null) {
+          _roomRetryTimer?.cancel();
+          _roomRetryTimer = null;
+          _roomRetryAttempt = 0;
+          _lastRoom = incomingRoom;
+          _cacheRoomIfChanged(incomingRoom);
+        } else if (!_isLeavingRoom &&
+            !roomSnap.hasError &&
+            roomSnap.connectionState == ConnectionState.active) {
+          // An active null snapshot is a definitive deleted/missing room, not
+          // an initial loading frame. Confirm against the server before
+          // stopping child listeners because an empty local cache can also
+          // briefly produce a null document snapshot during startup.
+          unawaited(_confirmRoomUnavailable());
+        } else if (roomSnap.hasError && _isTerminalRoomError(roomSnap.error)) {
+          _lastRoom = null;
+          _scheduleRoomAccessTermination();
+        } else if (roomSnap.hasError) {
+          _scheduleRoomRetry();
+        }
+        final terminalRoomError =
+            roomSnap.hasError && _isTerminalRoomError(roomSnap.error);
+        final room = _roomAccessTerminated || terminalRoomError
+            ? null
+            : incomingRoom ?? _lastRoom;
+        if (room == null &&
+            roomSnap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
         if (room == null) {
           return Scaffold(
             appBar: AppBar(),
-            body: const Center(child: Text('대화방을 찾을 수 없습니다.')),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    roomSnap.hasError ? '대화방을 불러오지 못했습니다.' : '대화방을 찾을 수 없습니다.',
+                  ),
+                  if (roomSnap.hasError) ...[
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: _retryRoomStream,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: Text((isChineseUi(context)
+                          ? '重试'
+                          : isKo
+                              ? '다시 시도'
+                              : 'Retry')),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           );
         }
+        unawaited(_snackChatService.ensureParticipantIntegrity(room));
+        _verifyParticipantCount(room);
+        final participantCount =
+            _verifiedParticipantCount ?? room.participantIds.toSet().length;
 
         return PopScope(
           canPop: !widget.fromPush,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop && widget.fromPush) {
-              _handlePushBackNavigation(room);
+            if (didPop) {
+              _startBackgroundReadFlush();
+            } else if (widget.fromPush) {
+              _handleRoutePop(room);
             }
           },
           child: Scaffold(
-            backgroundColor: const Color(0xFFFF9A47),
+            backgroundColor: _chatBackground,
             appBar: AppBar(
               backgroundColor: Colors.white,
               surfaceTintColor: Colors.white,
-              centerTitle: true,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              toolbarHeight: context.rh(58, min: 56, max: 62),
+              leadingWidth: 48,
+              centerTitle: false,
               titleSpacing: 0,
-              title: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    room.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    isKo
-                        ? '${room.participantCount}명 참여'
-                        : '${room.participantCount} Participants',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 12,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
+              shape: const Border(
+                bottom: BorderSide(color: SnackChatPalette.hairline),
+              ),
+              iconTheme: IconThemeData(
+                color: const Color(0xFF111827),
+                size: context.ri(22).clamp(21, 24).toDouble(),
+              ),
+              title: SnackChatHeaderTitle(
+                roomTitle: room.title.trim().isEmpty ||
+                        _looksLikeInternalIdentifier(room.title)
+                    ? l10n.snackChat
+                    : room.title.trim(),
+                participantLabel:
+                    l10n.snackChatParticipantCount(participantCount),
+                participantAvatars: _headerParticipantAvatars(room),
               ),
               actions: [
+                _buildTranslationSplitButton(isKo: isKo),
+                const SizedBox(width: 2),
                 IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            SnackChatInfoScreen(snackChatId: room.id),
-                      ),
-                    );
-                  },
+                  onPressed: _isLeavingRoom ? null : () => _openRoomInfo(room),
                   icon: const Icon(
-                    Icons.menu,
-                    color: AppColors.pointColor,
+                    Icons.more_vert_rounded,
+                    color: SnackChatPalette.ink,
                   ),
+                  iconSize: context.ri(22).clamp(21, 24).toDouble(),
+                  constraints: const BoxConstraints.tightFor(
+                    width: 44,
+                    height: 44,
+                  ),
+                  padding: EdgeInsets.zero,
+                  tooltip: (isChineseUi(context)
+                      ? '更多'
+                      : isKo
+                          ? '더보기'
+                          : 'More'),
                 ),
+                SizedBox(width: context.rs(2).clamp(0, 4).toDouble()),
               ],
             ),
             body: Column(
               children: [
+                if (room.postId != null)
+                  PinnedPostCard(postId: room.postId!),
                 Expanded(
-                  child: _isInitialLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _messages.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.chat_bubble_outline,
-                                    size: 64,
-                                    color: Colors.grey.shade300,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    isKo
-                                        ? '아직 메시지가 없습니다.\n첫 메시지를 보내보세요!'
-                                        : 'No messages yet.\nSend the first message!',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 14,
-                                      color: Colors.grey.shade500,
-                                      height: 1.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.builder(
-                              controller: _scrollController,
-                              reverse: true,
-                              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                              itemCount: _messages.length + (_hasMore ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                // 맨 아래(오래된 쪽)에 로딩 인디케이터
-                                if (index == _messages.length) {
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 12),
-                                    child: Center(
-                                      child: _isLoadingMore
-                                          ? const SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child: CircularProgressIndicator(
-                                                  strokeWidth: 2),
-                                            )
-                                          : const SizedBox.shrink(),
-                                    ),
-                                  );
-                                }
-                                final msg = _messages[index];
-                                final isMe = msg.senderId == _uid;
-
-                                // 날짜 구분선 표시 여부
-                                final bool showDateDivider =
-                                    _shouldShowDateDivider(index);
-
-                                // 시간 표시 로직
-                                final String timeText =
-                                    _formatTime(msg.createdAt);
-
-                                // ✅ 시간 표시 로직: 이전 메시지와 시간이 다르거나 발신자가 다를 때만 표시
-                                bool showTimeText = false;
-                                if (index > 0) {
-                                  final prevMsg = _messages[index - 1];
-                                  final String prevTimeText =
-                                      _formatTime(prevMsg.createdAt);
-                                  // 시간이 바뀌거나 발신자가 바뀌면 시간 표시
-                                  showTimeText = timeText != prevTimeText ||
-                                      prevMsg.senderId != msg.senderId;
-                                } else {
-                                  // 가장 최근 메시지는 항상 시간 표시
-                                  showTimeText = true;
-                                }
-
-                                // ✅ 이름 표시 로직: 이전 메시지와 발신자가 다르면 이름 표시
-                                final bool showSenderName =
-                                    index == _messages.length - 1 || // 맨 처음 메시지
-                                        _messages[index + 1].senderId !=
-                                            msg.senderId; // 이전 메시지가 다른 사용자
-
-                                return Column(
-                                  children: [
-                                    // 날짜 구분선
-                                    if (showDateDivider)
-                                      _buildDateDivider(msg.createdAt),
-                                    // 메시지 버블
-                                    _buildMessageBubble(
-                                      message: msg,
-                                      isMe: isMe,
-                                      timeText: timeText,
-                                      showTimeText: showTimeText,
-                                      showSenderName: showSenderName,
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                ),
-                // 하단 입력창 영역 (흰색 배경)
-                Container(
-                  color: Colors.white,
-                  child: SafeArea(
-                    top: false,
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                      color: Colors.white,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed:
-                                _isUploadingImage ? null : _pickAndSendImage,
-                            icon: _isUploadingImage
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.add_circle, size: 30),
-                            color: AppColors.pointColor,
-                            tooltip: isKo ? '이미지 첨부' : 'Attach image',
-                          ),
-                          Expanded(
-                            child: TextField(
-                              controller: _messageController,
-                              maxLines: 4,
-                              minLines: 1,
-                              textInputAction: TextInputAction.send,
-                              onSubmitted: (_) => _send(),
-                              decoration: InputDecoration(
-                                hintText: isKo
-                                    ? '메시지를 입력하세요...'
-                                    : 'Type a message...',
-                                filled: true,
-                                fillColor: const Color(0xFFF3F4F6),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                  borderSide: BorderSide.none,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                              ),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: SnackChatBackdrop(
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 760),
+                              child: _buildMessageContent(isKo: isKo),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          FloatingActionButton.small(
-                            onPressed: _isSending ? null : _send,
-                            backgroundColor: AppColors.pointColor,
-                            child: _isSending
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.send_rounded,
-                                    color: Colors.white),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
+                _buildMessageComposer(isKo: isKo, room: room),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTranslationSplitButton({required bool isKo}) {
+    final zh = isChineseUi(context);
+    final translationOn = !_translationShowsOriginal;
+    // 접근성 라벨: 누르면 일어날 일(기존 문구 그대로).
+    final toggleLabel = translationOn
+        ? (zh ? '查看原文' : (isKo ? '원문 보기' : 'View original'))
+        : (zh ? '查看译文' : (isKo ? '번역 보기' : 'View translation'));
+    final settingsLabel =
+        zh ? '翻译语言' : (isKo ? '번역 언어 설정' : 'Translation language');
+    final code = _targetLanguageCode;
+    final languageLabel = code == null
+        ? ''
+        : ContentTranslationService.supportedLanguages[code] ?? '';
+    return SnackChatTranslationSplitButton(
+      translationOn: translationOn,
+      enabled: _translationModeReady,
+      languageLabel: languageLabel,
+      toggleSemanticLabel: toggleLabel,
+      languageSemanticLabel: settingsLabel,
+      onToggle: _toggleSnackTranslation,
+      onOpenLanguage: _openSnackTranslationLanguageSettings,
+    );
+  }
+
+  /// 상단 바의 언어 이름. targetLanguage는 비동기라 state에 보관하고
+  /// 방 진입과 언어 변경(languageRevision) 때만 갱신한다.
+  Future<void> _refreshTargetLanguageLabel() async {
+    final revision = _translationService.languageRevision;
+    final code = await _translationService.targetLanguage(
+      uiLanguageCode: Localizations.localeOf(context).languageCode,
+    );
+    if (!mounted || revision != _translationService.languageRevision) return;
+    if (code == _targetLanguageCode) return;
+    setState(() => _targetLanguageCode = code);
+  }
+
+  /// 이미 캐시에 있는 참여자만 16px 아바타로 보여 준다(추가 조회 없음).
+  List<Widget> _headerParticipantAvatars(SnackChat room) {
+    final me = _uid;
+    final ordered = <String>[
+      ...room.participantIds.where((id) => id != me),
+      if (me != null && room.participantIds.contains(me)) me,
+    ];
+    final avatars = <Widget>[];
+    for (final id in ordered) {
+      final info = _userInfoCache.getCachedUserInfo(id);
+      if (info == null) continue;
+      avatars.add(
+        DecoratedBox(
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(1),
+            child: UserAvatar(
+              key: ValueKey('snack-header-$id-${info.photoVersion}'),
+              uid: id,
+              photoUrl: info.photoURL,
+              photoVersion: info.photoVersion,
+              isAnonymous: info.isDeletedAccount,
+              size: SnackChatHeaderTitle.avatarSize - 2,
+              placeholderIcon: Icons.person_outline_rounded,
+              placeholderIconSize: 9,
+            ),
+          ),
+        ),
+      );
+      if (avatars.length == 3) break;
+    }
+    return avatars;
+  }
+
+  Widget _buildMessageContent({required bool isKo}) {
+    if (_isInitialLoading) {
+      // Room data and the bounded message listener are already running. Keep
+      // the conversation surface stable instead of replacing it with a
+      // full-screen loader while the first cache/listener event arrives.
+      return const SizedBox.expand();
+    }
+    if (_messages.isEmpty && _messageStreamError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_outlined,
+                  color: _tertiaryText, size: 40),
+              const SizedBox(height: 10),
+              Text(
+                (isChineseUi(context)
+                    ? '消息加载失败。'
+                    : isKo
+                        ? '메시지를 불러오지 못했습니다.'
+                        : 'Messages could not be loaded.'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 14,
+                  color: _secondaryText,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _subscribeToMessages,
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text((isChineseUi(context)
+                    ? '重试'
+                    : isKo
+                        ? '다시 시도'
+                        : 'Retry')),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_messages.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.forum_outlined,
+                size: context.ri(42).clamp(38, 46).toDouble(),
+                color: _tertiaryText,
+              ),
+              SizedBox(height: context.rs(10)),
+              Text(
+                (isChineseUi(context)
+                    ? '发送此群聊的第一条消息吧。'
+                    : isKo
+                        ? '스낵챗의 첫 메시지를 보내보세요.'
+                        : 'Send the first message in this Snack Chat.'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                  color: _secondaryText,
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    _scheduleVisibleTranslations();
+    final messageList = NotificationListener<ScrollNotification>(
+      onNotification: _handleMessageScrollNotification,
+      child: ListView.builder(
+        key: _messageViewportKey,
+        controller: _scrollController,
+        reverse: true,
+        findChildIndexCallback: (key) {
+          for (var index = 0; index < _messages.length; index++) {
+            if (identical(_messageKeys[_messages[index].id], key)) {
+              return index;
+            }
+          }
+          return null;
+        },
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        scrollCacheExtent: ScrollCacheExtent.pixels(
+          MediaQuery.sizeOf(context).height * 1.25,
+        ),
+        padding: EdgeInsets.fromLTRB(
+          context.rs(10).clamp(8, 14).toDouble(),
+          // v3: 번역 버튼은 상단 바로 옮겨 목록 위에 떠 있는 요소가 없다.
+          12,
+          context.rs(10).clamp(8, 14).toDouble(),
+          context.rs(6).clamp(4, 8).toDouble(),
+        ),
+        itemCount: _messages.length + (_hasMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == _messages.length) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: _isLoadingMore
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _secondaryText,
+                        ),
+                      )
+                    : _loadMoreError != null
+                        ? TextButton.icon(
+                            onPressed: _loadMoreMessages,
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: Text((isChineseUi(context)
+                                ? '重新加载更早的消息'
+                                : isKo
+                                    ? '이전 메시지 다시 불러오기'
+                                    : 'Retry older messages')),
+                          )
+                        : const SizedBox.shrink(),
+              ),
+            );
+          }
+          final message = _messages[index];
+          final isMe = message.senderId == _uid;
+          final groupedWithNewer = index > 0 &&
+              !_hasUnreadBoundaryBetween(message, _messages[index - 1]) &&
+              shouldGroupSnackChatMessages(message, _messages[index - 1]);
+          final groupedWithOlder = index < _messages.length - 1 &&
+              !_hasUnreadBoundaryBetween(message, _messages[index + 1]) &&
+              shouldGroupSnackChatMessages(message, _messages[index + 1]);
+          final olderMessage =
+              index < _messages.length - 1 ? _messages[index + 1] : null;
+          final startsSenderIdentityGroup = !isMe &&
+              (!groupedWithOlder ||
+                  olderMessage?.isDeleted == true ||
+                  olderMessage?.type == SnackChatMessageType.system);
+          // The list is newest-first and rendered with reverse=true. A date
+          // marker therefore belongs to the oldest message of each local day;
+          // it will appear directly above that day's message group onscreen.
+          final showDateSeparator = index == _messages.length - 1 ||
+              !isSameLocalSnackChatDay(
+                message.createdAt,
+                _messages[index + 1].createdAt,
+              );
+          final row = Column(
+            children: [
+              if (showDateSeparator)
+                SnackChatDateSeparator(
+                  date: message.createdAt,
+                  languageCode: Localizations.localeOf(context).languageCode,
+                ),
+              SnackChatOutgoingEntrance(
+                key: ValueKey<String>('snack-outgoing-${message.id}'),
+                animateOnMount:
+                    isMe && _outboundEntranceMessageIds.contains(message.id),
+                onAnimationClaimed: () => _claimOutboundEntrance(message.id),
+                child: _buildMessageBubble(
+                  message: message,
+                  isMe: isMe,
+                  timeText: message.hasConfirmedServerTimestamp
+                      ? _formatTime(message.createdAt)
+                      : '',
+                  showTimeText:
+                      !groupedWithNewer && message.hasConfirmedServerTimestamp,
+                  showSenderName: startsSenderIdentityGroup,
+                  groupedWithNewer: groupedWithNewer,
+                  groupedWithOlder: groupedWithOlder,
+                ),
+              ),
+            ],
+          );
+          return KeyedSubtree(
+            key: _messageKeys.putIfAbsent(
+              message.id,
+              () => GlobalKey(debugLabel: 'snack-chat-${message.id}'),
+            ),
+            child: row,
+          );
+        },
+      ),
+    );
+    return Stack(
+      children: [
+        Positioned.fill(child: messageList),
+        if (_messageStreamError != null)
+          Positioned(
+            top: 4,
+            left: 12,
+            right: 12,
+            child: Center(
+              child: Material(
+                color: const Color(0xFFF2F4F7),
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  onTap: _subscribeToMessages,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.sync_problem_rounded,
+                          size: 16,
+                          color: _secondaryText,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            (isChineseUi(context)
+                                ? '实时更新已暂停，点击重连'
+                                : isKo
+                                    ? '연결이 잠시 멈췄습니다. 다시 연결'
+                                    : 'Live updates paused. Reconnect'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _secondaryText,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (_newMessageCount > 0)
+          Positioned(
+            right: context.rs(14).clamp(12, 18).toDouble(),
+            bottom: context.rs(10).clamp(8, 14).toDouble(),
+            child: Semantics(
+              button: true,
+              label: (isChineseUi(context)
+                  ? '查看${_newMessageCount}条新消息'
+                  : isKo
+                      ? '새 메시지 $_newMessageCount개로 이동'
+                      : 'Jump to $_newMessageCount new messages'),
+              child: Material(
+                color: const Color(0xFF344054),
+                borderRadius: BorderRadius.circular(22),
+                child: InkWell(
+                  onTap: _scrollToLatest,
+                  borderRadius: BorderRadius.circular(22),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white,
+                          size: 19,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$_newMessageCount',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMessageComposer({
+    required bool isKo,
+    required SnackChat room,
+  }) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isNarrow = screenWidth < 360;
+    final horizontalPadding = (screenWidth * 0.032).clamp(10.0, 18.0);
+    // 터치 영역 44, 보이는 전송 원 32, 입력창 최소 높이 40.
+    const actionExtent = 44.0;
+    const sendVisual = 32.0;
+    const inputMinHeight = 40.0;
+    const itemGap = 4.0;
+    const composerRadius = 16.0;
+    final replyingTo = _replyingTo;
+
+    return Material(
+      color: SnackChatPalette.background,
+      shape: const Border(
+        top: BorderSide(color: SnackChatPalette.hairline),
+      ),
+      child: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 4),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding - 8,
+                6,
+                horizontalPadding,
+                6,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SnackChatMentionPicker(
+                      key: ValueKey(widget.snackChatId),
+                      roomId: widget.snackChatId,
+                      controller: _messageController,
+                      focusNode: _messageFocusNode,
+                      participantIds: room.participantIds,
+                      blockedUserIds: _blockedUserIds,
+                      fallbackNames: {
+                        for (final id in room.participantIds)
+                          if ((_senderNameCache[id] ?? '').trim().isNotEmpty)
+                            id: _senderNameCache[id]!.trim(),
+                      },
+                      participantProfiles: {
+                        for (final id in room.participantIds)
+                          id: _senderProfileNotifier(id),
+                      }),
+                  ChatReplyReveal(
+                    replyId: replyingTo?.id,
+                    child: replyingTo == null
+                        ? null
+                        : Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 0, 4, 6),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: SnackChatReplyPreviewView(
+                                    preview: _replyPreviewForCurrentTarget(
+                                      forDisplay: true,
+                                    )!,
+                                    isOutgoing: false,
+                                    onTap: () => _jumpToMessage(replyingTo.id),
+                                  ),
+                                ),
+                                MotionPress(
+                                  pressedScale: .9,
+                                  child: IconButton(
+                                    onPressed: () => setState(_clearReplyState),
+                                    tooltip: (isChineseUi(context)
+                                        ? '取消回复'
+                                        : isKo
+                                            ? '답장 취소'
+                                            : 'Cancel reply'),
+                                    icon: const Icon(Icons.close_rounded,
+                                        size: 19),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _buildComposerButton(
+                        width: actionExtent,
+                        height: actionExtent,
+                        visualSize: actionExtent,
+                        tooltip: (isChineseUi(context)
+                            ? '添加附件'
+                            : isKo
+                                ? '첨부'
+                                : 'Attach'),
+                        onPressed: _isAttachmentFlowOpen
+                            ? null
+                            : _showAttachmentOptions,
+                        enabledColor: Colors.transparent,
+                        disabledColor: Colors.transparent,
+                        child: Icon(
+                          Icons.add_rounded,
+                          size: 26,
+                          color: _isAttachmentFlowOpen
+                              ? _tertiaryText
+                              : SnackChatPalette.ink,
+                        ),
+                      ),
+                      const SizedBox(width: itemGap),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: _composerBackground,
+                              borderRadius:
+                                  BorderRadius.circular(composerRadius),
+                            ),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                minHeight: inputMinHeight,
+                                maxHeight: 108,
+                              ),
+                              child: MediaQuery.withClampedTextScaling(
+                                maxScaleFactor: 1.3,
+                                child: TextField(
+                                  controller: _messageController,
+                                  focusNode: _messageFocusNode,
+                                  maxLines: 4,
+                                  minLines: 1,
+                                  maxLength: 500,
+                                  buildCounter: (
+                                    _, {
+                                    required currentLength,
+                                    required isFocused,
+                                    required maxLength,
+                                  }) =>
+                                      null,
+                                  keyboardType: TextInputType.multiline,
+                                  textInputAction: TextInputAction.newline,
+                                  cursorColor: SnackChatPalette.pointStrong,
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w400,
+                                    color: SnackChatPalette.ink,
+                                    height: 1.35,
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: (isChineseUi(context)
+                                        ? '输入消息…'
+                                        : isKo
+                                            ? '메시지를 입력하세요...'
+                                            : 'Type a message...'),
+                                    hintStyle: TextStyle(
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w400,
+                                      color: _tertiaryText,
+                                    ),
+                                    isDense: true,
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: isNarrow ? 12 : 14,
+                                      vertical: 9,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: itemGap),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _messageController,
+                        builder: (context, value, _) {
+                          final canSend = value.text.trim().isNotEmpty;
+                          return _buildComposerButton(
+                            width: actionExtent,
+                            height: actionExtent,
+                            visualSize: sendVisual,
+                            tooltip: (isChineseUi(context)
+                                ? '发送'
+                                : isKo
+                                    ? '전송'
+                                    : 'Send'),
+                            onPressed: canSend ? _send : null,
+                            enabledColor: _composerAction,
+                            disabledColor: _composerActionDisabled,
+                            child: Icon(
+                              Icons.arrow_upward_rounded,
+                              size: 18,
+                              color: canSend ? Colors.white : _tertiaryText,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComposerButton({
+    required double width,
+    required double height,
+    required double visualSize,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    required Color enabledColor,
+    required Color disabledColor,
+    required Widget child,
+  }) {
+    final enabled = onPressed != null;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: MotionPress(
+          enabled: enabled,
+          pressedScale: .90,
+          // 터치 상자(width x height) 가운데에 보이는 원(visualSize)을 둔다.
+          child: InkResponse(
+            onTap: onPressed,
+            radius: width / 2,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: MotionTokens.reduceMotion(context)
+                      ? Duration.zero
+                      : MotionTokens.fast,
+                  width: visualSize,
+                  height: visualSize,
+                  decoration: BoxDecoration(
+                    color: enabled ? enabledColor : disabledColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(child: child),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 번역은 상단 버튼(방 단위)으로만 켜고 끈다. 메시지별 전환은 없다.
+  bool _wantsTranslation(SnackChatMessage message) =>
+      _translationModeReady && !_translationShowsOriginal;
+
+  _SnackTranslationView _translationViewFor(
+    SnackChatMessage message, {
+    required bool isMe,
+    required bool Function(ContentTranslationResult result) hasDisplayable,
+  }) {
+    if (isMe || !_translationModeReady || !_canTranslateMessage(message)) {
+      return const _SnackTranslationView.none();
+    }
+    final result = _currentTranslationForMessage(message);
+    if (result?.isSameLanguage == true) {
+      return const _SnackTranslationView.none();
+    }
+    final requestKey = _translationRequestKey(message);
+    final pending = _isTranslationWorkPending(requestKey);
+    final ready = result != null && result.isReady && hasDisplayable(result);
+    final wants = _wantsTranslation(message);
+    if (wants && ready) {
+      return _SnackTranslationView(
+        state: SnackChatTranslationState.translated,
+        result: result,
+      );
+    }
+    if (wants && pending) {
+      return const _SnackTranslationView(
+        state: SnackChatTranslationState.pending,
+      );
+    }
+    final failed = (_translationFailures[requestKey] ?? 0) >= 2 &&
+        result == null &&
+        !pending;
+    if (wants && failed) {
+      final retryAvailable = canStartUserSnackTranslationRetry(
+        retryInFlight: _manualTranslationRetryKeys.contains(requestKey),
+        messageWorkPending: pending,
+        lifecycleResumed: _appLifecycleState == AppLifecycleState.resumed,
+        isLeavingRoom: _isLeavingRoom,
+        roomAccessTerminated: _roomAccessTerminated,
+      );
+      return _SnackTranslationView(
+        state: SnackChatTranslationState.failed,
+        canRetry: retryAvailable,
+      );
+    }
+    // 방 번역이 꺼져 있거나 아직 결과·요청이 없으면 발 줄 없이 원문만 둔다.
+    return const _SnackTranslationView.none();
+  }
+
+  Widget _buildSnackTranslatedContent({
+    required SnackChatMessage message,
+    required _SnackTranslationView view,
+    required Widget original,
+    Widget? translated,
+    bool preserveChildState = false,
+  }) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final zh = isChineseUi(context);
+    final l10n = AppLocalizations.of(context)!;
+    final result = view.result;
+    return SnackChatTranslatedText(
+      key: ValueKey<String>('message-translation:${message.id}'),
+      state: view.state,
+      presentationKey: result == null
+          ? 'original:${_translationSourceSignature(message)}'
+          : '${result.sourceHash}:${result.targetLanguage}:'
+              '${result.translatedAt ?? 0}',
+      original: original,
+      translated: translated,
+      sourceLanguageLabel: result == null
+          ? ''
+          : translationSourceLanguageLabel(context, result.sourceLanguage),
+      showTranslationLabel:
+          zh ? '查看译文' : (isKo ? '번역 보기' : 'View translation'),
+      showOriginalLabel: zh ? '查看原文' : (isKo ? '원문 보기' : 'View original'),
+      translatingLabel: l10n.chatTranslationTranslating,
+      retryLabel: l10n.chatTranslationRetry,
+      // 번역은 상단 버튼으로만 켜고 끈다. 발 줄은 상태(번역 중/원문 언어/다시 번역)만 알린다.
+      onRetry: view.canRetry
+          ? () => unawaited(_retryFailedTranslation(message))
+          : null,
+      preserveChildState: preserveChildState,
+    );
+  }
+
+  Widget _buildTranslatedMessageText({
+    required SnackChatMessage message,
+    required bool isMe,
+    required TextStyle textStyle,
+  }) {
+    final view = _translationViewFor(
+      message,
+      isMe: isMe,
+      hasDisplayable: (result) =>
+          (result.translatedFields['text'] ?? '').trim().isNotEmpty,
+    );
+    final linkStyle = textStyle.copyWith(
+      color: isMe ? textStyle.color : SnackChatPalette.pointStrong,
+      decoration: TextDecoration.underline,
+      decorationColor: isMe ? textStyle.color : SnackChatPalette.pointStrong,
+    );
+    Widget linkified(String text) => Linkify(
+          text: text,
+          onOpen: (link) => _openExternalUrl(link.url),
+          style: textStyle,
+          linkStyle: linkStyle,
+        );
+    final original = linkified(message.text);
+    if (view.state == SnackChatTranslationState.none && isMe) return original;
+    return _buildSnackTranslatedContent(
+      message: message,
+      view: view,
+      original: original,
+      translated: view.result == null
+          ? null
+          : linkified(view.result!.translatedFields['text']!),
+    );
+  }
+
+  Widget _buildTranslatedPoll({
+    required SnackChatMessage message,
+    required bool isMe,
+  }) {
+    final view = _translationViewFor(
+      message,
+      isMe: isMe,
+      hasDisplayable: (_) => true,
+    );
+    Widget card(SnackChatPoll poll) => SnackChatPollCard(
+          poll: poll,
+          myOptionIds: _myVotes[message.id] ?? const <String>{},
+          isOutgoing: isMe,
+          enabled:
+              !message.isPending && !message.hasFailed && !message.isDeleted,
+          onVote: (ids) => _castVote(message, ids),
+        );
+    final showTranslated = view.state == SnackChatTranslationState.translated;
+    // 투표 카드는 내부 상태가 있어 같은 위젯을 유지하고 내용만 바꾼다.
+    final poll = card(_displayPollForMessage(message, isMe: isMe));
+    return _buildSnackTranslatedContent(
+      message: message,
+      view: view,
+      original: poll,
+      translated: showTranslated ? poll : null,
+      preserveChildState: true,
+    );
+  }
+
+  SnackChatPoll _displayPollForMessage(
+    SnackChatMessage message, {
+    required bool isMe,
+  }) {
+    final poll = message.poll!;
+    final result = _currentTranslationForMessage(message);
+    if (isMe ||
+        !_translationModeReady ||
+        !_wantsTranslation(message) ||
+        result == null ||
+        result.isSameLanguage) {
+      return poll;
+    }
+
+    // Translation results for a poll are atomic. The completeness check in
+    // _currentTranslationForMessage guarantees every non-empty question and
+    // option is present before any translated poll text reaches the UI.
+    final translatedQuestion = result.translatedFields['text'];
+    return SnackChatPoll(
+      question: translatedQuestion?.trim().isNotEmpty == true
+          ? translatedQuestion!
+          : poll.question,
+      options: <SnackChatPollOption>[
+        for (var index = 0; index < poll.options.length; index++)
+          SnackChatPollOption(
+            id: poll.options[index].id,
+            text: (result.translatedFields['pollOption$index'] ?? '')
+                    .trim()
+                    .isNotEmpty
+                ? result.translatedFields['pollOption$index']!
+                : poll.options[index].text,
+          ),
+      ],
+      allowMultiple: poll.allowMultiple,
+      isAnonymous: poll.isAnonymous,
+      closesAt: poll.closesAt,
+      voteCounts: poll.voteCounts,
+      totalVoters: poll.totalVoters,
     );
   }
 
@@ -548,224 +7695,968 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     required String timeText,
     required bool showTimeText,
     required bool showSenderName,
+    required bool groupedWithNewer,
+    required bool groupedWithOlder,
   }) {
-    final hasImage = message.imageUrl != null && message.imageUrl!.isNotEmpty;
-    final hasText = message.text.trim().isNotEmpty;
-
-    if (isMe) {
-      // 내 메시지: 시간이 왼쪽에 표시
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10, left: 60, right: 12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // 시간 표시 (왼쪽)
-            Visibility(
-              visible: showTimeText,
-              maintainAnimation: true,
-              maintainSize: true,
-              maintainState: true,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 6, bottom: 2),
-                child: Text(
-                  timeText,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
+    if (message.type == SnackChatMessageType.system) {
+      return _buildSystemMessage(message);
+    }
+    final hasImage = message.imageUrl?.isNotEmpty == true ||
+        message.imagePath?.isNotEmpty == true ||
+        message.localImagePath?.isNotEmpty == true;
+    final hasFile = message.type == SnackChatMessageType.file;
+    final hasText = message.text.trim().isNotEmpty &&
+        message.type != SnackChatMessageType.poll &&
+        !hasFile;
+    final isAnonymousSender = _isAnonymousSnackChatMessage(message);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final maxBubbleWidth = (screenWidth * (hasImage || hasFile ? 0.76 : 0.70))
+        .clamp(160.0, 420.0)
+        .toDouble();
+    final horizontalPadding = context.rs(2).clamp(0, 4).toDouble();
+    final bottomSpacing = groupedWithNewer ? 3.0 : 10.0;
+    final bubblePadding = EdgeInsets.fromLTRB(
+      hasImage
+          ? 6
+          : hasFile
+              ? 10
+              : 12,
+      hasImage
+          ? 6
+          : hasFile
+              ? 10
+              : 8,
+      hasImage
+          ? 6
+          : hasFile
+              ? 10
+              : 12,
+      hasImage
+          ? 6
+          : hasFile
+              ? 10
+              : 8,
+    );
+    final textStyle = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: 15,
+      fontWeight: FontWeight.w400,
+      height: isChineseUi(context) ? 1.47 : 22 / 15,
+      color: isMe ? Colors.white : _incomingText,
+    );
+    // 같은 묶음에서 이웃과 붙는 쪽 모서리만 8로 좁힌다.
+    final bubbleRadius = BorderRadius.only(
+      topLeft: Radius.circular(!isMe && groupedWithOlder ? 8 : 16),
+      topRight: Radius.circular(isMe && groupedWithOlder ? 8 : 16),
+      bottomLeft: Radius.circular(!isMe && groupedWithNewer ? 8 : 16),
+      bottomRight: Radius.circular(isMe && groupedWithNewer ? 8 : 16),
+    );
+    final replyPreview = message.replyPreview == null
+        ? null
+        : _effectiveReplyPreview(message.replyPreview!);
+    final canOpenReadReceipt = hasText &&
+        !message.isDeleted &&
+        !message.isPending &&
+        !message.hasFailed &&
+        message.sequence != null;
+    // 사진·영상만 있는 메시지는 말풍선 배경 없이 미디어만 보여준다.
+    final mediaOnly = !message.isDeleted &&
+        (hasImage ||
+            (hasFile && SnackChatFilePolicy.isVideoMime(message.mimeType))) &&
+        !hasText &&
+        message.poll == null &&
+        replyPreview == null &&
+        (message.linkPreview == null || message.linkPreviewRemoved);
+    final bubble = MotionPress(
+      enabled: hasFile || hasImage || canOpenReadReceipt || !message.isPending,
+      pressedScale: .985,
+      child: GestureDetector(
+        onTap: hasFile
+            ? () => _handleFileTap(message)
+            : canOpenReadReceipt
+                ? () => _showReadReceiptDetails(message)
+                : null,
+        onLongPress:
+            message.isPending ? null : () => _showMessageActions(message),
+        child: Container(
+          padding: mediaOnly ? EdgeInsets.zero : bubblePadding,
+          constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+          decoration: mediaOnly
+              ? null
+              : BoxDecoration(
+                  color: isMe ? _outgoingBubble : _incomingBubble,
+                  borderRadius: bubbleRadius,
+                ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (replyPreview != null)
+                SnackChatReplyPreviewView(
+                  preview: replyPreview,
+                  isOutgoing: isMe,
+                  onTap: replyPreview.isDeleted
+                      ? null
+                      : () => _jumpToMessage(
+                            replyPreview.messageId,
+                            replyingMessageId: message.id,
+                          ),
+                ),
+              if (message.isDeleted)
+                Text(
+                  '삭제된 메시지',
+                  style: textStyle.copyWith(fontStyle: FontStyle.italic),
+                )
+              else ...[
+                if (hasImage) _buildImageBubble(message: message, isMe: isMe),
+                if (hasFile) _buildFileBubble(message: message, isMe: isMe),
+                if (hasImage && (hasText || message.poll != null))
+                  const SizedBox(height: 8),
+                if (message.poll != null)
+                  _buildTranslatedPoll(message: message, isMe: isMe)
+                else if (hasText)
+                  _buildTranslatedMessageText(
+                    message: message,
+                    isMe: isMe,
+                    textStyle: textStyle,
+                  )
+                else if (!hasImage && !hasFile)
+                  Text(
+                    message.type == SnackChatMessageType.unknown
+                        ? '지원하지 않는 메시지입니다.'
+                        : '메시지',
+                    style: textStyle,
                   ),
+                if (message.linkPreview != null && !message.linkPreviewRemoved)
+                  SnackChatLinkPreviewCard(
+                    preview: message.linkPreview!,
+                    isOutgoing: isMe,
+                    onOpen: () => _openExternalUrl(message.linkPreview!.url),
+                    onRemove: isMe
+                        ? () async {
+                            final previousPreview = message.linkPreview;
+                            final previousRemoved = message.linkPreviewRemoved;
+                            _updateLocalMessage(
+                              message.id,
+                              (value) => value.copyWith(
+                                clearLinkPreview: true,
+                                linkPreviewRemoved: true,
+                              ),
+                            );
+                            try {
+                              await _snackChatService.removeLinkPreview(
+                                widget.snackChatId,
+                                message.id,
+                              );
+                            } on TimeoutException {
+                              // Firestore keeps the queued write after the
+                              // Future timeout, so retaining the explicit local
+                              // target avoids flicker and late state reversal.
+                              _showNotice('네트워크 연결 후 미리보기가 제거됩니다.');
+                            } catch (_) {
+                              if (previousPreview != null) {
+                                _updateLocalMessage(
+                                  message.id,
+                                  (value) => value.copyWith(
+                                    linkPreview: previousPreview,
+                                    linkPreviewRemoved: previousRemoved,
+                                  ),
+                                );
+                              }
+                              _showNotice('미리보기를 제거하지 못했습니다.');
+                            }
+                          }
+                        : null,
+                  ),
+              ],
+              SnackChatReactionBar(
+                counts: message.reactionCounts,
+              myReaction: _myReactions[message.id],
+              animateLocalSelectionOnMount: _reactionMotionEvents.claim(message.id, _myReactions[message.id]),
+                isOutgoing: isMe,
+                onToggle: (emoji) => _toggleReaction(message, emoji),
+                onShowUsers: (emoji) => _showReactionUsers(message, emoji),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final row = Row(
+      mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (isMe) _buildOutgoingMessageMeta(message, timeText, showTimeText),
+        Flexible(child: bubble),
+        if (!isMe && showTimeText)
+          Padding(
+            padding: const EdgeInsets.only(left: 5, bottom: 2),
+            child: _messageTimeText(timeText),
+          ),
+      ],
+    );
+    Widget messageContent = Column(
+      crossAxisAlignment:
+          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        if (!isMe && showSenderName)
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 4),
+            child: FutureBuilder<String>(
+              future: isAnonymousSender
+                  ? null
+                  : _senderNameFuture(message.senderId, message.senderName),
+              initialData: isAnonymousSender
+                  ? AppLocalizations.of(context)?.anonymous ?? 'Anonymous'
+                  : message.senderName?.trim().isNotEmpty == true
+                      ? _safeUserLabel(message.senderName)
+                      : _senderNameCache[message.senderId] ?? _genericUserLabel,
+              builder: (context, snapshot) => Text(
+                snapshot.data ?? '사용자',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _incomingText,
+                  height: isChineseUi(context) ? 1.38 : 18 / 13,
                 ),
               ),
             ),
-            // 메시지 버블
-            Flexible(
-              child: Container(
-                padding: EdgeInsets.fromLTRB(
-                  hasImage ? 8 : 12,
-                  hasImage ? 8 : 10,
-                  hasImage ? 8 : 12,
-                  hasImage ? 8 : 10,
+          ),
+        row,
+      ],
+    );
+    if (!isMe) {
+      messageContent = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSenderAvatarSlot(
+            message: message,
+            showAvatar: showSenderName,
+          ),
+          const SizedBox(width: _senderAvatarGap),
+          Expanded(child: messageContent),
+        ],
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: bottomSpacing,
+        left: horizontalPadding,
+        right: horizontalPadding,
+      ),
+      child: messageContent,
+    );
+  }
+
+  Widget _buildSenderAvatarSlot({
+    required SnackChatMessage message,
+    required bool showAvatar,
+  }) {
+    if (!showAvatar) return const SizedBox(width: _senderAvatarSize);
+    final isAnonymous = _isAnonymousSnackChatMessage(message);
+
+    return SizedBox.square(
+      dimension: _senderAvatarSize,
+      child: ValueListenableBuilder<DMUserInfo?>(
+        valueListenable: _senderProfileNotifier(message.senderId),
+        builder: (context, profile, _) => RepaintBoundary(
+          child: UserAvatar(
+            key: ValueKey(
+              'snack-sender-${message.senderId}-${profile?.photoVersion ?? 0}',
+            ),
+            uid: message.senderId,
+            photoUrl: profile?.photoURL ?? '',
+            photoVersion: profile?.photoVersion ?? 0,
+            isAnonymous: isAnonymous || profile?.isDeletedAccount == true,
+            size: _senderAvatarSize,
+            placeholderIcon: Icons.person_outline_rounded,
+            placeholderIconSize: 15,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleFileTap(SnackChatMessage message) async {
+    if (message.hasFailed) {
+      await _retryMessage(message, manual: true);
+      return;
+    }
+    if (message.isPending) return;
+    if (SnackChatFilePolicy.isVideoMime(message.mimeType)) {
+      if (message.isFileExpired) {
+        _showNotice('만료된 영상입니다.');
+        return;
+      }
+      final localPath = message.localFilePath?.trim() ?? '';
+      final storagePath = message.storagePath?.trim() ?? '';
+      if (localPath.isNotEmpty && await File(localPath).exists()) {
+        await VideoPlaybackScreen.open(
+          context,
+          localFile: File(localPath),
+          title: message.originalFileName,
+        );
+      } else if (storagePath.isNotEmpty) {
+        await VideoPlaybackScreen.open(
+          context,
+          reference: AppStorage.ref(
+            storagePath,
+            storageBucket: message.storageBucket,
+          ),
+          title: message.originalFileName,
+        );
+      } else {
+        _showNotice('영상을 열 수 없습니다.');
+      }
+      return;
+    }
+    try {
+      await _fileTransfer.openFile(message, roomId: widget.snackChatId);
+    } catch (error) {
+      if (!mounted) return;
+      final text = error.toString().replaceFirst('Bad state: ', '');
+      _showNotice(text.isEmpty ? '파일을 열 수 없습니다.' : text);
+    }
+  }
+
+  Widget _buildFileBubble({
+    required SnackChatMessage message,
+    required bool isMe,
+  }) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final expired = message.isFileExpired;
+    final status = message.fileTransferStatus;
+    final progress = (message.transferProgress ?? 0).clamp(0.0, 1.0).toDouble();
+    if (SnackChatFilePolicy.isVideoMime(message.mimeType)) {
+      final uploading = status == SnackChatFileTransferStatus.uploading ||
+          status == SnackChatFileTransferStatus.downloading;
+      return ChatVideoTile(
+        thumbnailDataUrl: message.videoThumbnail,
+        durationMs: message.videoDurationMs ?? 0,
+        width: message.videoWidth ?? 0,
+        height: message.videoHeight ?? 0,
+        progress: uploading ? progress : null,
+        expired: expired,
+        failed: message.hasFailed,
+        statusText: expired
+            ? (isChineseUi(context) ? '已过期' : isKo ? '만료됨' : 'Expired')
+            : null,
+        onTap: () => _handleFileTap(message),
+      );
+    }
+    String statusText;
+    if (expired) {
+      statusText = (isChineseUi(context)
+          ? '已过期'
+          : isKo
+              ? '만료됨'
+              : 'Expired');
+    } else {
+      statusText = switch (status) {
+        SnackChatFileTransferStatus.queued => (isChineseUi(context)
+            ? '等待中'
+            : isKo
+                ? '업로드 대기'
+                : 'Waiting'),
+        SnackChatFileTransferStatus.uploading => (isChineseUi(context)
+            ? '上传中 ${(progress * 100).round()}%'
+            : isKo
+                ? '업로드 ${(progress * 100).round()}%'
+                : 'Uploading ${(progress * 100).round()}%'),
+        SnackChatFileTransferStatus.finalizing => (isChineseUi(context)
+            ? '发送中'
+            : isKo
+                ? '전송 처리 중'
+                : 'Sending'),
+        SnackChatFileTransferStatus.downloading => (isChineseUi(context)
+            ? '下载中 ${(progress * 100).round()}%'
+            : isKo
+                ? '다운로드 ${(progress * 100).round()}%'
+                : 'Downloading ${(progress * 100).round()}%'),
+        SnackChatFileTransferStatus.downloaded => (isChineseUi(context)
+            ? '已下载'
+            : isKo
+                ? '다운로드 완료'
+                : 'Downloaded'),
+        SnackChatFileTransferStatus.failed => (isChineseUi(context)
+            ? '失败 · 重试'
+            : isKo
+                ? '실패 · 다시 시도'
+                : 'Failed · Retry'),
+        SnackChatFileTransferStatus.canceled => (isChineseUi(context)
+            ? '已取消'
+            : isKo
+                ? '전송 취소'
+                : 'Canceled'),
+        SnackChatFileTransferStatus.expired => (isChineseUi(context)
+            ? '已过期'
+            : isKo
+                ? '만료됨'
+                : 'Expired'),
+        _ => message.isPending
+            ? ((isChineseUi(context)
+                ? '准备中'
+                : isKo
+                    ? '전송 준비 중'
+                    : 'Preparing'))
+            : ((isChineseUi(context)
+                ? '点击打开'
+                : isKo
+                    ? '눌러서 열기'
+                    : 'Tap to open')),
+      };
+    }
+    final foreground = isMe ? Colors.white : _incomingText;
+    final secondary =
+        isMe ? Colors.white.withValues(alpha: 0.94) : _secondaryText;
+    final extension = (message.fileExtension ?? '').toUpperCase();
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 190),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox.square(
+                dimension: 38,
+                child: Center(
+                  child: Icon(
+                    _fileIcon(message.fileExtension),
+                    size: 24,
+                    color: expired ? _tertiaryText : foreground,
+                  ),
                 ),
-                constraints: const BoxConstraints(maxWidth: 290),
-                decoration: BoxDecoration(
-                  color: AppColors.pointColor,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 6,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (hasImage)
-                      _buildImageBubble(
-                        message: message,
-                        isMe: true,
+                    Text(
+                      expired
+                          ? ((isChineseUi(context)
+                              ? '此文件已过期'
+                              : isKo
+                                  ? '만료된 파일입니다'
+                                  : 'This file expired'))
+                          : message.originalFileName ??
+                              ((isChineseUi(context)
+                                  ? '文档'
+                                  : isKo
+                                      ? '문서 파일'
+                                      : 'Document')),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
+                        height: isChineseUi(context) ? 1.3 : 1.25,
+                        fontWeight: FontWeight.w700,
+                        color: expired ? _tertiaryText : foreground,
                       ),
-                    if (hasImage && hasText) const SizedBox(height: 8),
-                    if (hasText)
-                      Text(
-                        message.text,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      <String>[
+                        if (extension.isNotEmpty) extension,
+                        if (message.fileSize != null)
+                          SnackChatFilePolicy.formatBytes(message.fileSize!),
+                      ].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: secondary,
                       ),
+                    ),
                   ],
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  statusText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: message.hasFailed
+                        ? (isMe ? Colors.white : const Color(0xFFB42318))
+                        : secondary,
+                  ),
+                ),
+              ),
+              if (!expired && message.expiresAt != null)
+                Text(
+                  message.retentionMode == 'temporary24h'
+                      ? ((isChineseUi(context)
+                          ? '24小时'
+                          : isKo
+                              ? '24시간'
+                              : '24h'))
+                      : ((isChineseUi(context)
+                          ? '30天'
+                          : isKo
+                              ? '30일'
+                              : '30d')),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: secondary,
+                  ),
+                ),
+            ],
+          ),
+          if (!expired &&
+              (status == SnackChatFileTransferStatus.uploading ||
+                  status == SnackChatFileTransferStatus.downloading)) ...[
+            const SizedBox(height: 7),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                minHeight: 2,
+                value: progress,
+                color: isMe ? Colors.white : _secondaryText,
+                backgroundColor: isMe
+                    ? Colors.white.withValues(alpha: 0.22)
+                    : Colors.white,
+              ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  IconData _fileIcon(String? extension) {
+    final value = extension?.toLowerCase();
+    if (value == 'pdf') return Icons.picture_as_pdf_outlined;
+    if (<String>{'xls', 'xlsx', 'csv'}.contains(value)) {
+      return Icons.table_chart_outlined;
+    }
+    if (<String>{'ppt', 'pptx'}.contains(value)) {
+      return Icons.slideshow_outlined;
+    }
+    return Icons.description_outlined;
+  }
+
+  Widget _buildSystemMessage(SnackChatMessage message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
+      child: Center(
+        child: Text(
+          _localizedSystemMessage(message),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
+            fontSize: context.rf(11.5).clamp(10.5, 12.5).toDouble(),
+            fontWeight: FontWeight.w600,
+            color: _secondaryText,
+            height: 1.4,
+          ),
         ),
+      ),
+    );
+  }
+
+  String _localizedSystemMessage(SnackChatMessage message) {
+    final fallback = message.text.trim();
+    final metadata = message.metadata ?? const <String, dynamic>{};
+    final systemType = (metadata['systemType'] ?? '').toString();
+    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+    final rawUserName = (metadata['userName'] ?? '').toString().trim();
+    final userName = _redactInternalIdentifiers(rawUserName);
+    final rawNewTitle = (metadata['newTitle'] ?? '').toString().trim();
+    final newTitle =
+        _looksLikeInternalIdentifier(rawNewTitle) ? '' : rawNewTitle;
+    final question = (metadata['question'] ?? '').toString().trim();
+    final announcement =
+        (metadata['announcement'] ?? message.text).toString().trim();
+
+    switch (systemType) {
+      case 'member_joined':
+        if (userName.isNotEmpty) {
+          return (isChineseUi(context)
+              ? '${userName}加入了群聊。'
+              : isKorean
+                  ? '$userName님이 스낵챗에 참여했어요.'
+                  : '$userName joined the Snack Chat.');
+        }
+        break;
+      case 'member_left':
+        if (userName.isNotEmpty) {
+          return (isChineseUi(context)
+              ? '${userName}退出了群聊。'
+              : isKorean
+                  ? '$userName님이 스낵챗에서 나갔어요.'
+                  : '$userName left the Snack Chat.');
+        }
+        break;
+      case 'title_changed':
+        if (newTitle.isNotEmpty) {
+          return (isChineseUi(context)
+              ? '群聊名称已改为“${newTitle}”。'
+              : isKorean
+                  ? '스낵챗 이름이 "$newTitle"로 변경됐어요.'
+                  : 'The Snack Chat name changed to "$newTitle".');
+        }
+        break;
+      case 'poll_created':
+        if (userName.isNotEmpty && question.isNotEmpty) {
+          return (isChineseUi(context)
+              ? '${userName}创建了投票：${question}'
+              : isKorean
+                  ? '$userName님이 투표를 만들었어요: $question'
+                  : '$userName created a poll: $question');
+        }
+        break;
+      case 'poll_closed':
+        if (question.isNotEmpty) {
+          return (isChineseUi(context)
+              ? '投票已结束：${question}'
+              : isKorean
+                  ? '투표가 종료됐어요: $question'
+                  : 'Poll ended: $question');
+        }
+        break;
+      case 'announcement':
+        if (announcement.isNotEmpty) {
+          return (isChineseUi(context)
+              ? '📢 公告 · ${announcement}'
+              : isKorean
+                  ? '📢 공지 · $announcement'
+                  : '📢 Announcement · $announcement');
+        }
+        break;
+    }
+    final localizedLegacy = _localizedLegacySystemMessage(
+      fallback,
+      isKorean: isKorean,
+    );
+    if (localizedLegacy != null) return localizedLegacy;
+    if (fallback.isNotEmpty) return _redactInternalIdentifiers(fallback);
+    return (isChineseUi(context)
+        ? '群聊信息已更新。'
+        : isKorean
+            ? '채팅방 정보가 변경되었습니다.'
+            : 'Snack Chat information was updated.');
+  }
+
+  String? _localizedLegacySystemMessage(
+    String fallback, {
+    required bool isKorean,
+  }) {
+    if (fallback.isEmpty) return null;
+
+    RegExpMatch? match =
+        RegExp(r'^(.+) joined the Snack Chat\.$').firstMatch(fallback);
+    match ??= RegExp(r'^(.+)님이 스낵챗에 참여했어요\.$').firstMatch(fallback);
+    if (match != null) {
+      final name = _redactInternalIdentifiers(match.group(1)!.trim());
+      return (isChineseUi(context)
+          ? '${name}加入了群聊。'
+          : isKorean
+              ? '$name님이 스낵챗에 참여했어요.'
+              : '$name joined the Snack Chat.');
+    }
+
+    match = RegExp(r'^(.+) left the Snack Chat\.$').firstMatch(fallback);
+    match ??= RegExp(r'^(.+)님이 스낵챗에서 나갔어요\.$').firstMatch(fallback);
+    if (match != null) {
+      final name = _redactInternalIdentifiers(match.group(1)!.trim());
+      return (isChineseUi(context)
+          ? '${name}退出了群聊。'
+          : isKorean
+              ? '$name님이 스낵챗에서 나갔어요.'
+              : '$name left the Snack Chat.');
+    }
+
+    match = RegExp(r'^The Snack Chat name changed to "(.+)"\.$')
+        .firstMatch(fallback);
+    match ??= RegExp(r'^스낵챗 이름이 "(.+)"로 변경됐어요\.$').firstMatch(fallback);
+    if (match != null) {
+      final title = match.group(1)!.trim();
+      return (isChineseUi(context)
+          ? '群聊名称已改为“${title}”。'
+          : isKorean
+              ? '스낵챗 이름이 "$title"로 변경됐어요.'
+              : 'The Snack Chat name changed to "$title".');
+    }
+
+    match = RegExp(r'^(.+) created a poll: (.+)$').firstMatch(fallback);
+    match ??= RegExp(r'^(.+)님이 투표를 만들었어요: (.+)$').firstMatch(fallback);
+    if (match != null) {
+      final name = _redactInternalIdentifiers(match.group(1)!.trim());
+      final question = match.group(2)!.trim();
+      return (isChineseUi(context)
+          ? '${name}创建了投票：${question}'
+          : isKorean
+              ? '$name님이 투표를 만들었어요: $question'
+              : '$name created a poll: $question');
+    }
+
+    match = RegExp(r'^Poll ended: (.+)$').firstMatch(fallback);
+    match ??= RegExp(r'^투표가 종료됐어요: (.+)$').firstMatch(fallback);
+    if (match != null) {
+      final question = match.group(1)!.trim();
+      return (isChineseUi(context)
+          ? '投票已结束：${question}'
+          : isKorean
+              ? '투표가 종료됐어요: $question'
+              : 'Poll ended: $question');
+    }
+
+    return null;
+  }
+
+  String _redactInternalIdentifiers(String value) {
+    if (value.isEmpty) return value;
+    return value.replaceAll(
+      RegExp(r'[A-Za-z0-9_-]{20,}'),
+      _genericUserLabel,
+    );
+  }
+
+  Widget _buildOutgoingMessageMeta(
+    SnackChatMessage message,
+    String timeText,
+    bool showTimeText,
+  ) {
+    final receipt = _readReceiptFor(message);
+    final hasReceipt = receipt.total > 0;
+    final remainingUnread = receipt.unread.length;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final failureReason = message.errorMessage?.trim() ?? '';
+    final failureLabel = isKo
+        ? failureReason.contains('업로드')
+            ? '업로드 실패. 다시 시도'
+            : '전송 실패. 다시 시도'
+        : failureReason.contains('업로드')
+            ? 'Upload failed. Retry'
+            : 'Send failed. Retry';
+    if (message.isUncertain) {
+      return IconButton(
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 44),
+        padding: EdgeInsets.zero,
+        tooltip: snackDiscoveryText(context, '전송 확인 중 · 다시 확인',
+            'Confirming delivery · Check again', '正在确认发送 · 再次检查'),
+        onPressed: () => _retryMessage(message, manual: true),
+        icon: const Icon(Icons.schedule, size: 15, color: _secondaryText),
       );
-    } else {
-      // 상대방 메시지: 이름 위에, 시간이 오른쪽에 표시
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10, left: 12, right: 60),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ✅ 이름 표시 (연속된 메시지면 첫 번째에만 표시)
-            if (showSenderName)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: FutureBuilder<String>(
-                  future: _getSenderName(message.senderId, message.senderName),
-                  initialData: message.senderName ?? message.senderId,
-                  builder: (context, snap) => Text(
-                    snap.data ?? message.senderId,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black,
+    }
+    if (message.isPending) return const SizedBox(width: 5);
+    if (!message.isPending && !message.hasFailed && !showTimeText) {
+      return const SizedBox(width: 5);
+    }
+    return Padding(
+      padding: const EdgeInsets.only(right: 3, bottom: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (message.hasFailed)
+            Tooltip(
+              message: failureReason.isEmpty ? failureLabel : failureReason,
+              child: InkWell(
+                onTap: () => _retryMessage(message, manual: true),
+                borderRadius: BorderRadius.circular(14),
+                child: const SizedBox.square(
+                  dimension: 28,
+                  child: Center(
+                    child: Icon(
+                      Icons.error_outline_rounded,
+                      size: 15,
+                      color: Color(0xFFB42318),
                     ),
                   ),
                 ),
               ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                // 메시지 버블
-                Flexible(
-                  child: Container(
-                    padding: EdgeInsets.fromLTRB(
-                      hasImage ? 8 : 12,
-                      hasImage ? 8 : 10,
-                      hasImage ? 8 : 12,
-                      hasImage ? 8 : 10,
-                    ),
-                    constraints: const BoxConstraints(maxWidth: 290),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 6,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (hasImage)
-                          _buildImageBubble(
-                            message: message,
-                            isMe: false,
-                          ),
-                        if (hasImage && hasText) const SizedBox(height: 8),
-                        if (hasText)
-                          Text(
-                            message.text,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF111827),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                // 시간 표시 (오른쪽)
-                Visibility(
-                  visible: showTimeText,
-                  maintainAnimation: true,
-                  maintainSize: true,
-                  maintainState: true,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 6, bottom: 2),
+            )
+          else if (hasReceipt && remainingUnread > 0)
+            Tooltip(
+              message: (isChineseUi(context)
+                  ? '${remainingUnread}人未读'
+                  : isKo
+                      ? '$remainingUnread명 미확인'
+                      : '$remainingUnread not seen'),
+              child: InkWell(
+                onTap: () => _showReadReceiptDetails(message),
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 28,
+                  height: 24,
+                  child: Align(
+                    alignment: Alignment.centerRight,
                     child: Text(
-                      timeText,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                      '$remainingUnread',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
+                        fontWeight: FontWeight.w700,
+                        color: _readCountText,
+                        height: 1,
                       ),
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
-          ],
+          if (showTimeText) _messageTimeText(timeText),
+        ],
+      ),
+    );
+  }
+
+  Widget _messageTimeText(String timeText) => Text(
+        timeText,
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: 11,
+          fontWeight: FontWeight.w400,
+          color: _tertiaryText,
+          height: isChineseUi(context) ? 1.36 : 15 / 11,
         ),
       );
-    }
-  }
 
   Widget _buildImageBubble({
     required SnackChatMessage message,
     required bool isMe,
   }) {
     final imageUrl = message.imageUrl;
-    if (imageUrl == null || imageUrl.isEmpty) {
+    final storagePath = message.imagePath;
+    final localPath = message.localImagePath;
+    if ((imageUrl == null || imageUrl.isEmpty) &&
+        (storagePath == null || storagePath.isEmpty) &&
+        (localPath == null || localPath.isEmpty)) {
       return const SizedBox.shrink();
     }
     final heroTag = 'snack_chat_image_${widget.snackChatId}_${message.id}';
+    final mediaSize = MediaQuery.sizeOf(context);
+    final maxImageWidth =
+        (mediaSize.width * 0.7).clamp(180.0, 380.0).toDouble();
+    final maxImageHeight =
+        (mediaSize.height * 0.38).clamp(240.0, 360.0).toDouble();
+    final imageAspectRatio = message.imageWidth != null &&
+            message.imageWidth! > 0 &&
+            message.imageHeight != null &&
+            message.imageHeight! > 0
+        ? message.imageWidth! / message.imageHeight!
+        : null;
 
-    return GestureDetector(
-      onTap: () => _openImageViewer(imageUrl, heroTag: heroTag),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Hero(
-          tag: heroTag,
-          child: CachedNetworkImage(
-            imageUrl: imageUrl,
-            cacheManager: AppImageCacheManager.instance,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
-              height: 140,
-              width: 240,
-              color: Colors.black12,
-              alignment: Alignment.center,
-              child: const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
+    Widget adaptiveImage(ImageProvider imageProvider) => SnackChatAdaptiveImage(
+          imageProvider: imageProvider,
+          maxWidth: maxImageWidth,
+          maxHeight: maxImageHeight,
+          aspectRatio: imageAspectRatio,
+          cacheKey: heroTag,
+          error: _imageError(isMe),
+        );
+    Widget loadingFrame() => _imageLoading(
+          maxWidth: maxImageWidth,
+          maxHeight: maxImageHeight,
+          aspectRatio: imageAspectRatio,
+          cacheKey: heroTag,
+        );
+    Widget errorFrame({VoidCallback? onRetry}) => _imageError(
+          isMe,
+          maxWidth: maxImageWidth,
+          maxHeight: maxImageHeight,
+          aspectRatio: imageAspectRatio,
+          cacheKey: heroTag,
+          onRetry: onRetry,
+        );
+    final showUploadProgress =
+        message.isPending && message.transferProgress != null;
+    final uploadProgress = message.transferProgress?.clamp(0.0, 1.0).toDouble();
+
+    final image = localPath?.isNotEmpty == true &&
+            (storagePath == null || message.isPending)
+        ? adaptiveImage(FileImage(File(localPath!)))
+        : storagePath?.isNotEmpty == true
+            ? SnackChatStorageImage(
+                storagePath: storagePath!,
+                storageBucket: message.storageBucket,
+                imageBuilder: (_, imageProvider) =>
+                    adaptiveImage(imageProvider),
+                loading: loadingFrame(),
+                error: imageUrl?.isNotEmpty == true
+                    ? CachedNetworkImage(
+                        imageUrl: imageUrl!,
+                        cacheManager: AppImageCacheManager.instance,
+                        imageBuilder: (_, imageProvider) =>
+                            adaptiveImage(imageProvider),
+                        placeholder: (_, __) => loadingFrame(),
+                        errorWidget: (_, __, ___) => errorFrame(),
+                      )
+                    : errorFrame(),
+              )
+            : RetryableChatNetworkImage(
+                imageUrl: imageUrl!,
+                cacheManager: AppImageCacheManager.instance,
+                imageBuilder: (_, imageProvider) =>
+                    adaptiveImage(imageProvider),
+                placeholder: (_, __) => loadingFrame(),
+                errorBuilder: (_, __, ___, retry) => errorFrame(
+                  onRetry: retry,
+                ),
+              );
+
+    return MotionPress(
+      enabled: !(message.isPending && imageUrl == null && storagePath == null),
+      pressedScale: .985,
+      child: GestureDetector(
+        onTap: message.isPending && imageUrl == null && storagePath == null
+            ? null
+            : () => _openImageViewer(
+                imageUrl,
+                storagePath: storagePath,
+                storageBucket: message.storageBucket,
+                heroTag: heroTag,
               ),
-            ),
-            errorWidget: (_, __, ___) => Container(
-              height: 140,
-              width: 240,
-              color: Colors.black12,
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.broken_image_outlined,
-                color: isMe ? Colors.white70 : Colors.black54,
-              ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: maxImageWidth,
+            maxHeight: maxImageHeight,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: Stack(
+              children: [
+                Hero(tag: heroTag, child: image),
+                if (showUploadProgress)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: LinearProgressIndicator(
+                      minHeight: 3,
+                      value: uploadProgress,
+                      backgroundColor: Colors.white.withValues(alpha: 0.35),
+                      color: const Color(0xFF2A9DEB),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
@@ -773,10 +8664,82 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     );
   }
 
-  void _openImageViewer(String imageUrl, {required String heroTag}) {
-    showFullscreenImageViewer(
+  Widget _imageLoading({
+    required double maxWidth,
+    required double maxHeight,
+    double? aspectRatio,
+    required String cacheKey,
+  }) {
+    final size = SnackChatAdaptiveImage.displaySizeFor(
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      aspectRatio:
+          aspectRatio ?? SnackChatAdaptiveImage.cachedAspectRatioFor(cacheKey),
+    );
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: const Center(
+        child: SizedBox.square(
+          dimension: 22,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    );
+  }
+
+  Widget _imageError(
+    bool isMe, {
+    double? maxWidth,
+    double? maxHeight,
+    double? aspectRatio,
+    String? cacheKey,
+    VoidCallback? onRetry,
+  }) {
+    final icon = Center(
+      child: onRetry == null
+          ? Icon(
+              Icons.broken_image_outlined,
+              color: isMe ? Colors.white70 : Colors.black54,
+            )
+          : IconButton(
+              onPressed: onRetry,
+              tooltip: (isChineseUi(context)
+                  ? '重新加载图片'
+                  : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '이미지 다시 불러오기'
+                      : 'Retry image'),
+              icon: Icon(
+                Icons.refresh_rounded,
+                color: isMe ? Colors.white70 : Colors.black54,
+              ),
+            ),
+    );
+    if (maxWidth == null || maxHeight == null) return icon;
+    final size = SnackChatAdaptiveImage.displaySizeFor(
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      aspectRatio:
+          aspectRatio ?? SnackChatAdaptiveImage.cachedAspectRatioFor(cacheKey),
+    );
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: icon,
+    );
+  }
+
+  Future<void> _openImageViewer(
+    String? imageUrl, {
+    String? storagePath,
+    String? storageBucket,
+    required String heroTag,
+  }) async {
+    await showFullscreenImageViewer(
       context,
-      imageUrls: [imageUrl],
+      imageUrls: [imageUrl ?? ''],
+      storagePaths: [storagePath],
+      storageBuckets: [storageBucket],
       initialIndex: 0,
       heroTag: heroTag,
     );
@@ -785,115 +8748,40 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   String _formatTime(DateTime t) {
     final local = t.toLocal();
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final period =
-        local.hour < 12 ? (isKo ? '오전' : 'AM') : (isKo ? '오후' : 'PM');
+    final period = local.hour < 12
+        ? ((isChineseUi(context)
+            ? '上午'
+            : isKo
+                ? '오전'
+                : 'AM'))
+        : ((isChineseUi(context)
+            ? '下午'
+            : isKo
+                ? '오후'
+                : 'PM'));
     final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
     final minute = local.minute.toString().padLeft(2, '0');
     return '$period $hour:$minute';
   }
 
-  // 날짜가 바뀌는지 확인
-  bool _shouldShowDateDivider(int index) {
-    if (index == _messages.length - 1) {
-      // 맨 처음(가장 오래된) 메시지는 항상 날짜 표시
-      return true;
-    }
-    final currentMsg = _messages[index];
-    final prevMsg = _messages[index + 1]; // reverse=true이므로 index+1이 더 오래된 메시지
-
-    final currentDate = currentMsg.createdAt.toLocal();
-    final prevDate = prevMsg.createdAt.toLocal();
-
-    // 날짜가 다르면 구분선 표시
-    return currentDate.year != prevDate.year ||
-        currentDate.month != prevDate.month ||
-        currentDate.day != prevDate.day;
+  bool _hasUnreadBoundaryBetween(
+    SnackChatMessage first,
+    SnackChatMessage second,
+  ) {
+    final boundary = _firstUnreadSequence;
+    if (boundary == null) return false;
+    final firstSequence = first.sequence;
+    final secondSequence = second.sequence;
+    if (firstSequence == null || secondSequence == null) return false;
+    return (firstSequence >= boundary && secondSequence < boundary) ||
+        (secondSequence >= boundary && firstSequence < boundary);
   }
 
-  // 날짜 구분선 UI
-  Widget _buildDateDivider(DateTime dateTime) {
-    final local = dateTime.toLocal();
-    final now = DateTime.now();
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-
-    String dateText;
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final messageDate = DateTime(local.year, local.month, local.day);
-
-    if (messageDate == today) {
-      dateText = isKo ? '오늘' : 'Today';
-    } else if (messageDate == yesterday) {
-      dateText = isKo ? '어제' : 'Yesterday';
-    } else {
-      // 올해면 월/일만, 다른 해면 년/월/일
-      if (local.year == now.year) {
-        dateText = isKo
-            ? '${local.month}월 ${local.day}일'
-            : '${_getMonthName(local.month)} ${local.day}';
-      } else {
-        dateText = isKo
-            ? '${local.year}년 ${local.month}월 ${local.day}일'
-            : '${_getMonthName(local.month)} ${local.day}, ${local.year}';
-      }
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 16),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              height: 1,
-              color: Colors.white.withValues(alpha: 0.3),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.25),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                dateText,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: Container(
-              height: 1,
-              color: Colors.white.withValues(alpha: 0.3),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _getMonthName(int month) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return months[month - 1];
+  void _handleRoutePop(SnackChat room) {
+    if (_pushBackNavigationInFlight) return;
+    _pushBackNavigationInFlight = true;
+    _startBackgroundReadFlush();
+    _handlePushBackNavigation(room);
   }
 
   void _handlePushBackNavigation(SnackChat room) {
@@ -902,8 +8790,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (_) => const MainScreen(
-            initialTabIndex: 1,
-            initialGroupTabIndex: 1,
+            initialGroupTabIndex: snackChatTabIndex,
           ),
         ),
         (route) => false,
@@ -915,4 +8802,22 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
       );
     }
   }
+}
+
+/// 한 메시지의 번역 표시 상태(화면 state에서 계산한 값).
+class _SnackTranslationView {
+  const _SnackTranslationView({
+    required this.state,
+    this.result,
+    this.canRetry = false,
+  });
+
+  const _SnackTranslationView.none()
+      : state = SnackChatTranslationState.none,
+        result = null,
+        canRetry = false;
+
+  final SnackChatTranslationState state;
+  final ContentTranslationResult? result;
+  final bool canRetry;
 }

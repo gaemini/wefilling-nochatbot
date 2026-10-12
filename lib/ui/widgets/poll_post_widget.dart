@@ -5,11 +5,28 @@ import 'package:flutter/material.dart';
 import '../../constants/app_constants.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/post_service.dart';
+import '../../models/content_translation.dart';
+import '../../models/post.dart';
+import '../../utils/post_translation_policy.dart';
+import 'translatable_content.dart';
+import 'post_translation_feed.dart';
+import '../../l10n/ui_locale.dart';
 
 class PollPostWidget extends StatefulWidget {
   final String postId;
+  final Post? post;
+  final bool translationEnabled;
+  final bool deferTranslationUntilVisible;
+  final VoidCallback? onTranslationLoaderAttached;
 
-  const PollPostWidget({super.key, required this.postId});
+  const PollPostWidget({
+    super.key,
+    required this.postId,
+    this.post,
+    this.translationEnabled = true,
+    this.deferTranslationUntilVisible = false,
+    this.onTranslationLoaderAttached,
+  });
 
   @override
   State<PollPostWidget> createState() => _PollPostWidgetState();
@@ -26,9 +43,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final postRef = _firestore.collection('posts').doc(widget.postId);
-    final voteRef = user != null
-        ? postRef.collection('pollVotes').doc(user.uid)
-        : null;
+    final voteRef =
+        user != null ? postRef.collection('pollVotes').doc(user.uid) : null;
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: postRef.snapshots(),
@@ -55,20 +71,30 @@ class _PollPostWidgetState extends State<PollPostWidget> {
             ? (postData['pollTotalVotes'] as int)
             : 0;
 
-        Widget contentForVote(String? votedOptionId, bool hasVoted) {
+        Widget contentForVote(
+          String? votedOptionId,
+          bool hasVoted,
+          Map<String, String> translatedFields,
+        ) {
           if (options.isEmpty) return const SizedBox.shrink();
 
           if (hasVoted) {
             return Column(
-              children: options.map((o) {
+              children: options.asMap().entries.map((entry) {
+                final index = entry.key;
+                final o = entry.value;
                 final id = o['id']?.toString() ?? '';
-                final text = o['text']?.toString() ?? '';
+                final originalText = o['text']?.toString() ?? '';
+                final text = translatedFields[
+                        postPollOptionTranslationField(id, index)] ??
+                    originalText;
                 final votes = (o['votes'] is int) ? (o['votes'] as int) : 0;
                 final ratio = totalVotes <= 0 ? 0.0 : (votes / totalVotes);
                 final percent = (ratio * 100).round();
 
                 final isMine = votedOptionId != null && votedOptionId == id;
-                final votesLabel = AppLocalizations.of(context)!.pollVotesUnit(votes);
+                final votesLabel =
+                    AppLocalizations.of(context)!.pollVotesUnit(votes);
                 final countStr = votes.toString();
                 final countIndex = votesLabel.indexOf(countStr);
 
@@ -83,9 +109,11 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                             child: Text(
                               text,
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: uiFontFamily(context, 'Inter'),
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
-                                fontWeight: isMine ? FontWeight.w700 : FontWeight.w600,
+                                fontWeight:
+                                    isMine ? FontWeight.w700 : FontWeight.w600,
                                 color: const Color(0xFF111827),
                               ),
                             ),
@@ -94,7 +122,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                           Text(
                             '$percent%',
                             style: TextStyle(
-                              fontFamily: 'Pretendard',
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
                               color: const Color(0xFF111827),
@@ -117,16 +146,22 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                           children: countIndex < 0
                               ? [TextSpan(text: votesLabel)]
                               : [
-                                  TextSpan(text: votesLabel.substring(0, countIndex)),
+                                  TextSpan(
+                                      text:
+                                          votesLabel.substring(0, countIndex)),
                                   TextSpan(
                                     text: countStr,
-                                    style: const TextStyle(fontWeight: FontWeight.w800),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w800),
                                   ),
-                                  TextSpan(text: votesLabel.substring(countIndex + countStr.length)),
+                                  TextSpan(
+                                      text: votesLabel.substring(
+                                          countIndex + countStr.length)),
                                 ],
                         ),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                           color: Color(0xFF6B7280),
@@ -142,9 +177,14 @@ class _PollPostWidgetState extends State<PollPostWidget> {
           // 투표 전 UI
           return Column(
             children: [
-              ...options.map((o) {
+              ...options.asMap().entries.map((entry) {
+                final index = entry.key;
+                final o = entry.value;
                 final id = o['id']?.toString() ?? '';
-                final text = o['text']?.toString() ?? '';
+                final originalText = o['text']?.toString() ?? '';
+                final text = translatedFields[
+                        postPollOptionTranslationField(id, index)] ??
+                    originalText;
                 final selected = _selectedOptionId == id;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
@@ -156,12 +196,16 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                             setState(() => _selectedOptionId = id);
                           },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
                       decoration: BoxDecoration(
-                        color: selected ? const Color(0xFFE8EAF6) : Colors.white,
+                        color:
+                            selected ? const Color(0xFFE8EAF6) : Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: selected ? AppColors.pointColor : const Color(0xFFE5E7EB),
+                          color: selected
+                              ? AppColors.pointColor
+                              : const Color(0xFFE5E7EB),
                           width: selected ? 2 : 1,
                         ),
                       ),
@@ -170,8 +214,9 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                           Expanded(
                             child: Text(
                               text,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                                 color: Color(0xFF111827),
@@ -179,7 +224,8 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                             ),
                           ),
                           if (selected)
-                            Icon(Icons.check_circle, color: AppColors.pointColor, size: 18),
+                            Icon(Icons.check_circle,
+                                color: AppColors.pointColor, size: 18),
                         ],
                       ),
                     ),
@@ -190,41 +236,48 @@ class _PollPostWidgetState extends State<PollPostWidget> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: (user == null || _selectedOptionId == null || _isVoting)
-                      ? null
-                      : () async {
-                          setState(() => _isVoting = true);
-                          final ok = await _postService.voteOnPoll(widget.postId, _selectedOptionId!);
-                          if (mounted) {
-                            setState(() => _isVoting = false);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  ok
-                                      ? AppLocalizations.of(context)!.pollVoteSuccess
-                                      : AppLocalizations.of(context)!.pollVoteFailed,
-                                ),
-                                duration: const Duration(seconds: 2),
-                              ),
-                            );
-                          }
-                        },
+                  onPressed:
+                      (user == null || _selectedOptionId == null || _isVoting)
+                          ? null
+                          : () async {
+                              setState(() => _isVoting = true);
+                              final ok = await _postService.voteOnPoll(
+                                  widget.postId, _selectedOptionId!);
+                              if (mounted) {
+                                setState(() => _isVoting = false);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      ok
+                                          ? AppLocalizations.of(context)!
+                                              .pollVoteSuccess
+                                          : AppLocalizations.of(context)!
+                                              .pollVoteFailed,
+                                    ),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.pointColor,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   child: _isVoting
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
                         )
                       : Text(
                           AppLocalizations.of(context)!.pollVoteButton,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -235,8 +288,9 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                   padding: EdgeInsets.only(top: 8),
                   child: Text(
                     AppLocalizations.of(context)!.pollLoginToVote,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF6B7280),
@@ -247,7 +301,11 @@ class _PollPostWidgetState extends State<PollPostWidget> {
           );
         }
 
-        Widget buildCard({required bool hasVoted, String? votedOptionId}) {
+        Widget buildCard({
+          required bool hasVoted,
+          String? votedOptionId,
+          Map<String, String> translatedFields = const <String, String>{},
+        }) {
           return Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -264,8 +322,9 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                     alignment: Alignment.centerRight,
                     child: Text(
                       AppLocalizations.of(context)!.pollVoteToSeeResults,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF6B7280),
@@ -274,26 +333,58 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                   ),
                   const SizedBox(height: 10),
                 ],
-                contentForVote(votedOptionId, hasVoted),
+                contentForVote(votedOptionId, hasVoted, translatedFields),
               ],
             ),
           );
         }
 
+        Widget translatedCard({
+          required bool hasVoted,
+          String? votedOptionId,
+        }) {
+          final post = widget.post;
+          if (!widget.translationEnabled || post == null) {
+            return buildCard(
+              hasVoted: hasVoted,
+              votedOptionId: votedOptionId,
+            );
+          }
+          return TranslatableContent(
+            request: ContentTranslationRequest(
+              contentType: 'post',
+              contentId: widget.postId,
+              sourceFields: postTranslationSourceFields(post),
+            ),
+            scope: PostTranslationFeed.scopeOf(context, widget.postId),
+            showToggle: false,
+            loadOnDemand: false,
+            onLoaderAttached: widget.onTranslationLoaderAttached,
+            builder: (context, fields) => buildCard(
+              hasVoted: hasVoted,
+              votedOptionId: votedOptionId,
+              translatedFields: fields,
+            ),
+          );
+        }
+
         if (voteRef == null) {
-          return buildCard(hasVoted: false, votedOptionId: null);
+          return translatedCard(hasVoted: false, votedOptionId: null);
         }
 
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: voteRef.snapshots(),
           builder: (context, voteSnap) {
             final hasVoted = voteSnap.data?.exists == true;
-            final votedOptionId = voteSnap.data?.data()?['optionId']?.toString();
-            return buildCard(hasVoted: hasVoted, votedOptionId: votedOptionId);
+            final votedOptionId =
+                voteSnap.data?.data()?['optionId']?.toString();
+            return translatedCard(
+              hasVoted: hasVoted,
+              votedOptionId: votedOptionId,
+            );
           },
         );
       },
     );
   }
 }
-

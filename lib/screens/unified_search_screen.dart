@@ -3,24 +3,38 @@
 
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
+import '../models/meetup.dart';
 import '../models/post.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
+import '../models/social_profile_data.dart';
+import '../models/organization_profile.dart';
 import '../providers/relationship_provider.dart';
+import '../screens/meetup_detail_screen.dart';
+import '../screens/friend_profile_screen.dart';
+import '../services/meetup_service.dart';
 import '../services/post_service.dart';
+import '../services/feature_flag_service.dart';
+import '../services/organization_account_service.dart';
 import '../ui/widgets/app_icon_button.dart';
-import '../utils/sharing_category.dart';
+import '../ui/widgets/hanyang_verification_gate.dart';
 import '../widgets/post_search_card.dart';
 import '../widgets/user_tile.dart';
-import 'friend_profile_screen.dart';
+import '../utils/responsive_helper.dart';
+import '../utils/latest_request_guard.dart';
+import '../l10n/ui_locale.dart';
+import 'organization_profile_screen.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
-  /// 0: 이름(유저), 1: 나눔, 2: 피드
+  /// 0: 이름(유저), 1: 게시글, 2: 모임
   final int initialTabIndex;
   final String? initialQuery;
 
@@ -42,16 +56,30 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
+  StreamSubscription<User?>? _authSubscription;
+  String? _observedAuthUid;
+  final ScrollController _userResultsController = ScrollController();
+  String? _selectedInterestId;
 
   final PostService _postService = PostService();
+  final MeetupService _meetupService = MeetupService();
 
   bool _relationshipInitialized = false;
 
   bool _isLoadingPosts = false;
+  bool _isLoadingMeetups = false;
 
   String? _postsError;
+  String? _meetupsError;
 
   List<Post> _postResults = const [];
+  List<Meetup> _meetupResults = const [];
+  final LatestRequestGuard _postSearchGuard = LatestRequestGuard();
+  final LatestRequestGuard _meetupSearchGuard = LatestRequestGuard();
+  final LatestRequestGuard _organizationSearchGuard = LatestRequestGuard();
+  List<OrganizationProfile> _organizationResults = const [];
+  bool _isLoadingOrganizations = false;
+  String? _organizationsError;
 
   @override
   void initState() {
@@ -72,6 +100,19 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       if (mounted) setState(() {});
     });
 
+    _userResultsController.addListener(_onUserResultsScrolled);
+    _observedAuthUid = FirebaseAuth.instance.currentUser?.uid;
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (!mounted) return;
+      final nextUid = user?.uid;
+      if (nextUid == _observedAuthUid) return;
+      _observedAuthUid = nextUid;
+      context.read<RelationshipProvider>().clearSearchResults();
+      if (_selectedInterestId != null) {
+        setState(() => _selectedInterestId = null);
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initializeRelationshipProvider();
 
@@ -86,11 +127,28 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _postSearchGuard.invalidate();
+    _meetupSearchGuard.invalidate();
+    _organizationSearchGuard.invalidate();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _userResultsController
+      ..removeListener(_onUserResultsScrolled)
+      ..dispose();
+    _authSubscription?.cancel();
     super.dispose();
+  }
+
+  void _onUserResultsScrolled() {
+    if (!_userResultsController.hasClients ||
+        _selectedInterestId == null ||
+        _searchController.text.trim().isNotEmpty ||
+        _userResultsController.position.extentAfter > 240) {
+      return;
+    }
+    context.read<RelationshipProvider>().loadMoreInterestUsers();
   }
 
   Future<void> _initializeRelationshipProvider() async {
@@ -100,7 +158,18 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     } catch (_) {
       // 유저 검색 탭에서 에러 상태로 표기됨 (provider.errorMessage)
     } finally {
-      if (mounted) setState(() => _relationshipInitialized = true);
+      if (mounted) {
+        setState(() => _relationshipInitialized = true);
+
+        // The user can start typing while the relationship subscriptions are
+        // initializing. Run the latest text once initialization finishes so
+        // the first search is not silently dropped.
+        final query = _searchController.text.trim();
+        if (_tabController.index == 0 && query.isNotEmpty) {
+          _debounceTimer?.cancel();
+          _searchUsers(query);
+        }
+      }
     }
   }
 
@@ -114,10 +183,34 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   void _onQueryChanged(String query) {
     final q = query.trim();
     _debounceTimer?.cancel();
+    // 입력 순간 진행 중인 이전 검색을 무효화한다. 새 요청이 300ms 뒤에
+    // 시작되기 전 오래된 응답이 도착해도 현재 검색어 결과를 덮지 않는다.
+    _postSearchGuard.invalidate();
+    _meetupSearchGuard.invalidate();
+    _organizationSearchGuard.invalidate();
+    // User search has its own async request guard in RelationshipProvider.
+    // Clearing here invalidates it during the debounce window, preventing an
+    // old response from being rendered under newly typed text.
     if (q.isEmpty) {
       _clearAllResults();
       return;
     }
+    context.read<RelationshipProvider>().clearSearchResults();
+    // 새 검색어를 입력한 직후에는 이전 검색어의 포스트/모임을 화면에서
+    // 제거한다. 네트워크 요청이 시작되는 300ms 동안 오래된 결과가 새
+    // 검색어의 결과처럼 보이는 것을 방지한다.
+    setState(() {
+      _selectedInterestId = null;
+      _postResults = const [];
+      _meetupResults = const [];
+      _postsError = null;
+      _meetupsError = null;
+      _isLoadingPosts = false;
+      _isLoadingMeetups = false;
+      _organizationResults = const [];
+      _organizationsError = null;
+      _isLoadingOrganizations = false;
+    });
 
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       if (!mounted) return;
@@ -126,12 +219,22 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   }
 
   void _clearAllResults() {
+    _postSearchGuard.invalidate();
+    _meetupSearchGuard.invalidate();
+    _organizationSearchGuard.invalidate();
     // 유저 검색 결과는 provider에 있음
     context.read<RelationshipProvider>().clearSearchResults();
     setState(() {
+      _selectedInterestId = null;
       _postsError = null;
+      _meetupsError = null;
       _postResults = const [];
+      _meetupResults = const [];
       _isLoadingPosts = false;
+      _isLoadingMeetups = false;
+      _organizationResults = const [];
+      _organizationsError = null;
+      _isLoadingOrganizations = false;
     });
   }
 
@@ -144,8 +247,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         _searchUsers(q);
         return;
       case 1:
-      case 2:
         await _searchPosts(q);
+        return;
+      case 2:
+        await _searchMeetups(q);
         return;
     }
   }
@@ -154,26 +259,91 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (!_relationshipInitialized) return;
     final provider = context.read<RelationshipProvider>();
     provider.searchUsers(query);
+    if (FeatureFlagService().isFeatureEnabled(
+      FeatureFlagService.FEATURE_ORGANIZATION_PROFILES,
+    )) {
+      unawaited(_searchOrganizations(query));
+    }
+  }
+
+  Future<void> _searchOrganizations(String query) async {
+    final token = _organizationSearchGuard.begin();
+    setState(() {
+      _isLoadingOrganizations = true;
+      _organizationsError = null;
+    });
+    try {
+      final results = await OrganizationAccountService.instance.search(query);
+      if (!mounted || !_organizationSearchGuard.isCurrent(token)) return;
+      setState(() {
+        _organizationResults = results;
+        _isLoadingOrganizations = false;
+      });
+    } catch (_) {
+      if (!mounted || !_organizationSearchGuard.isCurrent(token)) return;
+      setState(() {
+        _organizationResults = const [];
+        _isLoadingOrganizations = false;
+        _organizationsError = 'unavailable';
+      });
+    }
+  }
+
+  Future<void> _selectInterest(String interestId) async {
+    _debounceTimer?.cancel();
+    _searchFocusNode.unfocus();
+    final provider = context.read<RelationshipProvider>();
+    if (_selectedInterestId == interestId) {
+      provider.clearSearchResults();
+      setState(() => _selectedInterestId = null);
+      return;
+    }
+    setState(() => _selectedInterestId = interestId);
+    await provider.searchUsersByInterest(interestId);
   }
 
   Future<void> _searchPosts(String query) async {
+    final requestToken = _postSearchGuard.begin();
     setState(() {
       _isLoadingPosts = true;
       _postsError = null;
     });
     try {
       final posts = await _postService.searchPosts(query);
-      if (!mounted) return;
+      if (!mounted || !_postSearchGuard.isCurrent(requestToken)) return;
       setState(() {
         _postResults = posts;
         _isLoadingPosts = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_postSearchGuard.isCurrent(requestToken)) return;
       setState(() {
         _postResults = const [];
         _isLoadingPosts = false;
         _postsError = e.toString();
+      });
+    }
+  }
+
+  Future<void> _searchMeetups(String query) async {
+    final requestToken = _meetupSearchGuard.begin();
+    setState(() {
+      _isLoadingMeetups = true;
+      _meetupsError = null;
+    });
+    try {
+      final meetups = await _meetupService.searchMeetupsAsync(query);
+      if (!mounted || !_meetupSearchGuard.isCurrent(requestToken)) return;
+      setState(() {
+        _meetupResults = meetups;
+        _isLoadingMeetups = false;
+      });
+    } catch (e) {
+      if (!mounted || !_meetupSearchGuard.isCurrent(requestToken)) return;
+      setState(() {
+        _meetupResults = const [];
+        _isLoadingMeetups = false;
+        _meetupsError = e.toString();
       });
     }
   }
@@ -189,7 +359,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         content: Text(
           success
               ? (l10n?.friendRequestSent ?? '')
-              : (provider.errorMessage ?? l10n?.friendRequestFailed ?? ''),
+              : (provider.actionErrorMessage ??
+                  l10n?.friendRequestFailed ??
+                  ''),
         ),
         backgroundColor: success ? Colors.green : Colors.red,
         duration: const Duration(seconds: 2),
@@ -210,6 +382,63 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               : (l10n?.friendRequestCancelFailed ?? ''),
         ),
         backgroundColor: success ? Colors.orange : Colors.red,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _acceptFriendRequest(String fromUid) async {
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.acceptFriendRequest(fromUid);
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? l10n.friendRequestAccepted
+              : (provider.actionErrorMessage ?? l10n.friendRequestAcceptFailed),
+        ),
+        backgroundColor: success ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _rejectFriendRequest(String fromUid) async {
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        title: Text(l10n.rejectFriendRequest),
+        content: Text(l10n.confirmRejectFriendRequest),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.confirm),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final provider = context.read<RelationshipProvider>();
+    final success = await provider.rejectFriendRequest(fromUid);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? l10n.friendRequestRejected
+              : (provider.actionErrorMessage ?? l10n.friendRequestRejectFailed),
+        ),
+        backgroundColor: success ? Colors.black87 : Colors.red,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -291,6 +520,14 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         duration: const Duration(seconds: 2),
       ),
     );
+    if (success && _tabController.index == 0) {
+      final currentQuery = _searchController.text.trim();
+      if (currentQuery.isNotEmpty) {
+        // 차단으로 제거됐던 사용자를 임의로 삽입하지 않고, 현재 입력에
+        // 여전히 일치하고 공개 가능한지 서버 정책으로 다시 확인한다.
+        unawaited(provider.searchUsers(currentQuery));
+      }
+    }
   }
 
   void _handleUserAction(UserProfile user, RelationshipStatus status) {
@@ -308,291 +545,17 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         _unblockUser(user.uid);
         break;
       case RelationshipStatus.pendingIn:
+        _acceptFriendRequest(user.uid);
+        break;
       case RelationshipStatus.blockedBy:
         break;
     }
   }
 
-  // ---- UI ----
-  String _tabLabel(BuildContext context, int index) {
-    final locale = Localizations.localeOf(context).languageCode;
-    final isKo = locale == 'ko';
-    switch (index) {
-      case 0:
-        return isKo ? '이름' : 'Name';
-      case 1:
-        return isKo ? '나눔' : 'Sharing';
-      case 2:
-        return isKo ? '피드' : 'Feed';
-      default:
-        return '';
-    }
-  }
-
-  Widget _buildSearchField(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final showCenteredPlaceholder =
-        _searchController.text.trim().isEmpty && !_searchFocusNode.hasFocus;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Container(
-        height: 56,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F6F8),
-          borderRadius: BorderRadius.circular(28),
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Row(
-              children: [
-                const SizedBox(
-                  width: 44,
-                  child: Center(
-                    child: Icon(
-                      Icons.search,
-                      color: Color(0xFF6B7280),
-                      size: 22,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFocusNode,
-                    autofocus: true,
-                    textAlign: TextAlign.start, // 입력은 항상 왼쪽부터
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 0, vertical: 16),
-                    ),
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      color: Color(0xFF111827),
-                    ),
-                    textInputAction: TextInputAction.search,
-                    onChanged: _onQueryChanged,
-                    onSubmitted: (_) =>
-                        _performSearchForActiveTab(immediate: true),
-                  ),
-                ),
-                SizedBox(
-                  width: 44,
-                  child: _searchController.text.isNotEmpty
-                      ? GestureDetector(
-                          onTap: () {
-                            _searchController.clear();
-                            _clearAllResults();
-                            FocusScope.of(context).unfocus();
-                          },
-                          child: const Icon(
-                            Icons.clear,
-                            color: Colors.black54,
-                            size: 18,
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ],
-            ),
-            if (showCenteredPlaceholder)
-              IgnorePointer(
-                child: Padding(
-                  // 좌/우 아이콘 영역을 제외하고 가운데 배치
-                  padding: const EdgeInsets.symmetric(horizontal: 44),
-                  child: Text(
-                    l10n.enterSearchQuery,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      color: Color(0xFF6B7280),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyPrompt({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // 중앙 안내가 너무 흐리지 않게 톤 업
-          Icon(icon, size: 72, color: Colors.grey.shade400),
-          const SizedBox(height: 18),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade800,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: true,
-        leading: AppIconButton(
-          icon: Icons.arrow_back,
-          onPressed: () => Navigator.pop(context),
-          semanticLabel: AppLocalizations.of(context)!.back,
-        ),
-        title: Text(
-          Localizations.localeOf(context).languageCode == 'ko'
-              ? '검색어'
-              : 'Search',
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: Colors.black,
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          _buildSearchField(context),
-          TabBar(
-            controller: _tabController,
-            isScrollable: false,
-            labelColor: const Color(0xFF111827),
-            unselectedLabelColor: const Color(0xFF6B7280),
-            labelStyle: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.2,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.2,
-            ),
-            indicatorColor: AppColors.pointColor,
-            indicatorWeight: 3,
-            indicatorSize: TabBarIndicatorSize.label,
-            tabs: List.generate(
-              _tabCount,
-              (i) => Tab(text: _tabLabel(context, i)),
-            ),
-          ),
-          const Divider(height: 1, color: Color(0xFFD1D5DB)),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildUsersTab(),
-                _buildSharingPostsTab(),
-                _buildFeedPostsTab(),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUsersTab() {
-    final q = _searchController.text.trim();
-    final locale = Localizations.localeOf(context).languageCode;
-    final isKo = locale == 'ko';
-
-    if (!_relationshipInitialized) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (q.isEmpty) {
-      return _buildEmptyPrompt(
-        icon: Icons.search,
-        title: isKo ? '사용자를 검색해보세요' : 'Search for users',
-        subtitle: isKo
-            ? '닉네임이나 이름으로 검색하여\n새로운 친구를 찾아보세요'
-            : 'Search by nickname or name\nto find new friends',
-      );
-    }
-
-    return Consumer<RelationshipProvider>(
-      builder: (context, provider, _) {
-        if (provider.isLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (provider.errorMessage != null) {
-          return _buildEmptyPrompt(
-            icon: Icons.error_outline,
-            title: AppLocalizations.of(context)!.error,
-            subtitle: provider.errorMessage!,
-          );
-        }
-
-        if (provider.searchResults.isEmpty) {
-          return _buildEmptyPrompt(
-            icon: Icons.person_off,
-            title: AppLocalizations.of(context)!.noResultsFound,
-            subtitle: AppLocalizations.of(context)!.tryDifferentSearch,
-          );
-        }
-
-        final bottomPadding = MediaQuery.of(context).padding.bottom;
-        return ListView.builder(
-          padding: EdgeInsets.only(
-            top: 8,
-            bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
-          ),
-          itemCount: provider.searchResults.length,
-          itemBuilder: (context, index) {
-            final user = provider.searchResults[index];
-            final status = provider.getRelationshipStatus(user.uid);
-            return UserTile(
-              user: user,
-              relationshipStatus: status,
-              onActionPressed: () => _handleUserAction(user, status),
-              onTilePressed: () => _openUserProfile(user),
-            );
-          },
-        );
-      },
-    );
-  }
-
   void _openUserProfile(UserProfile user) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
         builder: (_) => FriendProfileScreen(
           userId: user.uid,
           nickname: user.displayNameOrNickname,
@@ -605,27 +568,835 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     );
   }
 
-  Widget _buildSharingPostsTab() {
-    return _buildPostResultsTab(
-      emptyTitleKo: '나눔을 검색해보세요',
-      emptySubtitleKo: '제목/내용 기준으로\n나눔 글을 찾아볼 수 있어요',
-      filter: isSharingPost,
+  // ---- UI ----
+  String _tabLabel(BuildContext context, int index) {
+    final locale = Localizations.localeOf(context).languageCode;
+    final isKo = locale == 'ko';
+    switch (index) {
+      case 0:
+        return (isChineseUi(context)
+            ? '名称'
+            : isKo
+                ? '이름'
+                : 'Name');
+      case 1:
+        return (isChineseUi(context)
+            ? '动态'
+            : isKo
+                ? '포스트'
+                : 'Posts');
+      case 2:
+        return (isChineseUi(context)
+            ? '聚会'
+            : isKo
+                ? '모임'
+                : 'Meetups');
+      default:
+        return '';
+    }
+  }
+
+  Widget _buildSearchField(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 360;
+    final horizontal = (width * 0.045).clamp(14.0, 24.0).toDouble();
+    final showCenteredPlaceholder =
+        _searchController.text.trim().isEmpty && !_searchFocusNode.hasFocus;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(horizontal, 10, horizontal, 8),
+      child: SizedBox(
+        height: compact ? 44 : 46,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF4F5F7),
+            borderRadius: BorderRadius.circular(compact ? 14 : 16),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Row(
+                children: [
+                  SizedBox(
+                    width: compact ? 40 : 44,
+                    child: const Center(
+                      child: Icon(
+                        Icons.search_rounded,
+                        color: Color(0xFF667085),
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      autofocus: true,
+                      textAlign: TextAlign.start, // 입력은 항상 왼쪽부터
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+                      ),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF111827),
+                      ),
+                      textInputAction: TextInputAction.search,
+                      onChanged: _onQueryChanged,
+                    ),
+                  ),
+                  SizedBox(
+                    width: compact ? 40 : 44,
+                    child: _searchController.text.isNotEmpty
+                        ? MotionPress(
+                          pressedScale: .92,
+                          child: GestureDetector(
+                            onTap: () {
+                              _searchController.clear();
+                              _clearAllResults();
+                              FocusScope.of(context).unfocus();
+                            },
+                            child: const Icon(
+                              Icons.close_rounded,
+                              color: Color(0xFF667085),
+                              size: 19,
+                            ),
+                          ),
+                        )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+              if (showCenteredPlaceholder)
+                IgnorePointer(
+                  child: Padding(
+                    // 좌/우 아이콘 영역을 제외하고 가운데 배치
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 40 : 44,
+                    ),
+                    child: Text(
+                      l10n.enterSearchQuery,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        color: const Color(0xFF98A2B3),
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _buildFeedPostsTab() {
-    return _buildPostResultsTab(
-      emptyTitleKo: '피드를 검색해보세요',
-      emptySubtitleKo: '제목/내용 기준으로\n피드 글을 찾아볼 수 있어요',
-      filter: (post) => !isSharingPost(post),
-    );
-  }
-
-  Widget _buildPostResultsTab({
-    required String emptyTitleKo,
-    required String emptySubtitleKo,
-    required bool Function(Post post) filter,
+  Widget _buildEmptyPrompt({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    String? actionLabel,
+    VoidCallback? onAction,
   }) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 72),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: (constraints.maxHeight - 96).clamp(0.0, double.infinity),
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.25,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 36, color: const Color(0xFF98A2B3)),
+                    const SizedBox(height: 16),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                        height: 1.3,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      subtitle,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF667085),
+                        height: 1.5,
+                      ),
+                    ),
+                    if (actionLabel != null && onAction != null) ...[
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: onAction,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: Text(actionLabel),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.pointColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 11,
+                          ),
+                          textStyle: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: ['NotoSansKR'],
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        toolbarHeight: 56,
+        centerTitle: true,
+        leading: AppIconButton(
+          icon: Icons.arrow_back_rounded,
+          onPressed: () => Navigator.pop(context),
+          semanticLabel: AppLocalizations.of(context)!.back,
+        ),
+        title: Text(
+          (isChineseUi(context)
+              ? '搜索'
+              : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '검색'
+                  : 'Search'),
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: ['NotoSansKR'],
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF111827),
+            letterSpacing: -0.2,
+          ),
+        ),
+        actions: const [SizedBox(width: 48)],
+      ),
+      body: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.25,
+        child: SafeArea(
+          top: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: Column(
+                children: [
+                  _buildSearchField(context),
+                  TabBar(
+                    controller: _tabController,
+                    isScrollable: false,
+                    labelColor: const Color(0xFF111827),
+                    unselectedLabelColor: const Color(0xFF6B7280),
+                    labelStyle: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.1,
+                    ),
+                    unselectedLabelStyle: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.1,
+                    ),
+                    indicatorColor: AppColors.pointColor,
+                    indicatorWeight: 2.5,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    tabs: List.generate(
+                      _tabCount,
+                      (i) => Tab(text: _tabLabel(context, i)),
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFEAECF0)),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildUsersTab(),
+                        _buildPostsTab(),
+                        _buildMeetupsTab(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUsersTab() {
+    final q = _searchController.text.trim();
+    final l10n = AppLocalizations.of(context)!;
+    final organizationsEnabled = FeatureFlagService().isFeatureEnabled(
+      FeatureFlagService.FEATURE_ORGANIZATION_PROFILES,
+    );
+
+    if (!_relationshipInitialized) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (q.isEmpty) {
+      return _buildInterestDiscovery(l10n);
+    }
+
+    return Consumer<RelationshipProvider>(
+      builder: (context, provider, _) {
+        if (provider.isSearchLoading ||
+            (organizationsEnabled && _isLoadingOrganizations)) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if ((provider.errorMessage != null ||
+                (organizationsEnabled && _organizationsError != null)) &&
+            provider.searchResults.isEmpty &&
+            _organizationResults.isEmpty) {
+          return _buildEmptyPrompt(
+            icon: Icons.error_outline,
+            title: AppLocalizations.of(context)!.error,
+            // Repository/provider errors may contain implementation details
+            // such as an App Check exception name. Keep those in diagnostics,
+            // but present a localized recovery path to the user.
+            subtitle: AppLocalizations.of(context)!.errorOccurred,
+            actionLabel: AppLocalizations.of(context)!.retryAction,
+            onAction: () => _searchUsers(q),
+          );
+        }
+
+        if (provider.searchResults.isEmpty &&
+            (!organizationsEnabled || _organizationResults.isEmpty)) {
+          return _buildEmptyPrompt(
+            icon: Icons.person_off,
+            title: AppLocalizations.of(context)!.noResultsFound,
+            subtitle: AppLocalizations.of(context)!.tryDifferentSearch,
+          );
+        }
+
+        final bottomPadding = MediaQuery.of(context).padding.bottom;
+        if (!organizationsEnabled) {
+          return ListView(
+            controller: _userResultsController,
+            padding: EdgeInsets.only(
+              top: 8,
+              bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+            ),
+            children: [
+              if (provider.errorMessage != null) _buildInlineUserSearchError(q),
+              ...provider.searchResults.map((user) {
+                final status = provider.getRelationshipStatus(user.uid);
+                return UserTile(
+                  key: ValueKey(user.uid),
+                  user: user,
+                  relationshipStatus: status,
+                  onActionPressed: () => _handleUserAction(user, status),
+                  onRejectPressed: status == RelationshipStatus.pendingIn
+                      ? () => _rejectFriendRequest(user.uid)
+                      : null,
+                  onTilePressed: () => _openUserProfile(user),
+                  isLoading: provider.isLoading,
+                  minimal: true,
+                );
+              }),
+            ],
+          );
+        }
+        return ListView(
+          controller: _userResultsController,
+          padding: EdgeInsets.only(
+            top: 8,
+            bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+          ),
+          children: [
+            if (provider.errorMessage != null) _buildInlineUserSearchError(q),
+            if (_organizationResults.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 5),
+                child: Text(
+                  isChineseUi(context)
+                      ? '机构'
+                      : Localizations.localeOf(context).languageCode == 'ko'
+                          ? '단체'
+                          : 'Organizations',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF667085),
+                  ),
+                ),
+              ),
+              ..._organizationResults.map(_buildOrganizationTile),
+              if (provider.searchResults.isNotEmpty)
+                const Divider(height: 20, color: Color(0xFFEAECF0)),
+            ],
+            ...provider.searchResults.map((user) {
+              final status = provider.getRelationshipStatus(user.uid);
+              return UserTile(
+                key: ValueKey(user.uid),
+                user: user,
+                relationshipStatus: status,
+                onActionPressed: () => _handleUserAction(user, status),
+                onRejectPressed: status == RelationshipStatus.pendingIn
+                    ? () => _rejectFriendRequest(user.uid)
+                    : null,
+                onTilePressed: () => _openUserProfile(user),
+                isLoading: provider.isLoading,
+                minimal: true,
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildInlineUserSearchError(String query) {
+    final l10n = AppLocalizations.of(context)!;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 12, 8),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 20,
+            color: Color(0xFF667085),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              l10n.errorOccurred,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF475467),
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () => _searchUsers(query),
+            icon: const Icon(Icons.refresh_rounded, size: 17),
+            label: Text(l10n.retryAction),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrganizationTile(OrganizationProfile organization) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: const Color(0xFFF2F4F7),
+        backgroundImage: organization.logoUrl.isNotEmpty
+            ? NetworkImage(organization.logoUrl)
+            : null,
+        child: organization.logoUrl.isEmpty
+            ? const Icon(Icons.apartment_rounded,
+                size: 23, color: Color(0xFF667085))
+            : null,
+      ),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              organization.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF101828),
+              ),
+            ),
+          ),
+          if (organization.verificationStatus == 'verified') ...[
+            const SizedBox(width: 5),
+            const Icon(Icons.verified_rounded,
+                size: 17, color: AppColors.pointColor),
+          ],
+        ],
+      ),
+      subtitle: Text(
+        [
+          '@${organization.handle}',
+          organization.organizationType,
+          organization.affiliation,
+        ].where((value) => value.isNotEmpty).join(' · '),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 12.5, color: Color(0xFF667085)),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded,
+          size: 20, color: Color(0xFF98A2B3)),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => OrganizationProfileScreen(
+          organization: organization,
+        ),
+      )),
+    );
+  }
+
+  List<SocialProfileOption> get _featuredInterests {
+    // Keep search discovery in sync with the profile interest catalogue.
+    // A separate hand-picked list caused valid profile tags to be omitted.
+    return SocialProfileCatalog.interests;
+  }
+
+  SocialProfileOption? _interestById(String? id) {
+    if (id == null) return null;
+    for (final option in SocialProfileCatalog.interests) {
+      if (option.id == id) return option;
+    }
+    return null;
+  }
+
+  Widget _buildInterestDiscovery(AppLocalizations l10n) {
+    final languageCode = Localizations.localeOf(context).languageCode;
+    final selected = _interestById(_selectedInterestId);
+
+    return Consumer<RelationshipProvider>(
+      builder: (context, provider, _) {
+        return CustomScrollView(
+          controller: _userResultsController,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          slivers: [
+            SliverToBoxAdapter(
+              child: _buildInterestHeader(
+                l10n: l10n,
+                languageCode: languageCode,
+                selected: selected,
+              ),
+            ),
+            if (selected != null) ...[
+              const SliverToBoxAdapter(
+                child: Divider(height: 1, color: Color(0xFFEAECF0)),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Text(
+                    l10n.interestPeopleTitle(selected.label(languageCode)),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: ['NotoSansKR'],
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ),
+              ),
+              ..._buildInterestResultSlivers(
+                provider: provider,
+                selected: selected,
+                languageCode: languageCode,
+                l10n: l10n,
+              ),
+            ],
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: MediaQuery.viewPaddingOf(context).bottom + 24,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildInterestHeader({
+    required AppLocalizations l10n,
+    required String languageCode,
+    required SocialProfileOption? selected,
+  }) {
+    final compact = MediaQuery.sizeOf(context).width < 360;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        compact ? 16 : 20,
+        compact ? 16 : 20,
+        compact ? 16 : 20,
+        14,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (selected == null) ...[
+            Text(
+              l10n.userSearchIdleTitle,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF111827),
+                height: 1.3,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.userSearchIdleDescription,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: ['NotoSansKR'],
+                fontSize: 13,
+                color: Color(0xFF667085),
+                height: 1.45,
+              ),
+            ),
+            SizedBox(height: compact ? 22 : 26),
+          ],
+          Text(
+            l10n.interestFriendDiscoveryTitle,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            l10n.interestFriendDiscoveryDescription,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 13,
+              color: Color(0xFF667085),
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: compact ? 6 : 8,
+            runSpacing: compact ? 6 : 8,
+            children: _featuredInterests.map((option) {
+              final isSelected = option.id == selected?.id;
+              return MotionSelectable(
+                selected: isSelected,
+                pressedScale: MotionSelectable.chipScale,
+                child: ChoiceChip(
+                selected: isSelected,
+                showCheckmark: false,
+                label: Text('#${option.label(languageCode)}'),
+                onSelected: (_) => _selectInterest(option.id),
+                backgroundColor: const Color(0xFFF4F5F7),
+                selectedColor: AppColors.pointColor,
+                side: BorderSide.none,
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 6 : 8,
+                  vertical: compact ? 5 : 6,
+                ),
+                labelStyle: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: compact ? 12 : 13,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : const Color(0xFF344054),
+                ),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              );
+            }).toList(growable: false),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildInterestResultSlivers({
+    required RelationshipProvider provider,
+    required SocialProfileOption selected,
+    required String languageCode,
+    required AppLocalizations l10n,
+  }) {
+    if (provider.isSearchLoading) {
+      return const [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ),
+      ];
+    }
+    if (provider.errorMessage != null && provider.searchResults.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: _buildInterestStatus(
+            icon: Icons.error_outline_rounded,
+            title: l10n.interestSearchErrorTitle,
+            subtitle: l10n.interestSearchErrorDescription,
+            actionLabel: l10n.retryAction,
+            onAction: () => context
+                .read<RelationshipProvider>()
+                .searchUsersByInterest(selected.id),
+          ),
+        ),
+      ];
+    }
+    if (provider.searchResults.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: _buildInterestStatus(
+            icon: Icons.people_outline_rounded,
+            title: l10n.interestNoUsersTitle(selected.label(languageCode)),
+            subtitle: l10n.interestNoUsersDescription,
+          ),
+        ),
+      ];
+    }
+
+    final showFooter = provider.isInterestLoadingMore ||
+        provider.interestPaginationError != null;
+    return [
+      SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final user = provider.searchResults[index];
+            final status = provider.getRelationshipStatus(user.uid);
+            return UserTile(
+              key: ValueKey(user.uid),
+              user: user,
+              relationshipStatus: status,
+              onActionPressed: () => _handleUserAction(user, status),
+              onRejectPressed: status == RelationshipStatus.pendingIn
+                  ? () => _rejectFriendRequest(user.uid)
+                  : null,
+              onTilePressed: () => _openUserProfile(user),
+              isLoading: provider.isLoading,
+              minimal: true,
+            );
+          },
+          childCount: provider.searchResults.length,
+        ),
+      ),
+      if (showFooter)
+        SliverToBoxAdapter(
+          child: provider.isInterestLoadingMore
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: Center(
+                    child: SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    ),
+                  ),
+                )
+              : Center(
+                  child: TextButton(
+                    onPressed: provider.loadMoreInterestUsers,
+                    child: Text(l10n.retryAction),
+                  ),
+                ),
+        ),
+    ];
+  }
+
+  Widget _buildInterestStatus({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+      child: Column(
+        children: [
+          Icon(icon, size: 32, color: const Color(0xFF98A2B3)),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: ['NotoSansKR'],
+              fontSize: 13,
+              color: Color(0xFF667085),
+              height: 1.45,
+            ),
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 14),
+            TextButton(
+              onPressed: onAction,
+              child: Text(actionLabel),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPostsTab() {
     final q = _searchController.text.trim();
     final locale = Localizations.localeOf(context).languageCode;
     final isKo = locale == 'ko';
@@ -633,8 +1404,16 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (q.isEmpty) {
       return _buildEmptyPrompt(
         icon: Icons.search,
-        title: isKo ? emptyTitleKo : 'Search posts',
-        subtitle: isKo ? emptySubtitleKo : 'Search by title/content',
+        title: (isChineseUi(context)
+            ? '搜索动态'
+            : isKo
+                ? '포스트를 검색해보세요'
+                : 'Search posts'),
+        subtitle: (isChineseUi(context)
+            ? '搜索标题或内容'
+            : isKo
+                ? '제목/내용 기준으로\n포스트를 찾아볼 수 있어요'
+                : 'Search by title/content'),
       );
     }
 
@@ -646,25 +1425,236 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.error_outline,
         title: AppLocalizations.of(context)!.error,
-        subtitle: _postsError!,
+        subtitle: AppLocalizations.of(context)!.errorOccurred,
+        actionLabel: AppLocalizations.of(context)!.retryAction,
+        onAction: () => _searchPosts(q),
       );
     }
 
-    final filteredResults = _postResults.where(filter).toList();
-
-    if (filteredResults.isEmpty) {
+    if (_postResults.isEmpty) {
       return _buildEmptyPrompt(
         icon: Icons.search_off,
         title: AppLocalizations.of(context)!.noSearchResults,
-        subtitle: '"$q"${isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found'}',
+        subtitle:
+            '"$q"${(isChineseUi(context) ? ' - 未找到结果' : isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found')}',
       );
     }
 
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: filteredResults.length,
+      padding: EdgeInsets.only(top: 6, bottom: bottomPadding + 12),
+      itemCount: _postResults.length,
       itemBuilder: (context, index) {
-        return PostSearchCard(post: filteredResults[index]);
+        return PostSearchCard(post: _postResults[index]);
+      },
+    );
+  }
+
+  Widget _buildMeetupsTab() {
+    final q = _searchController.text.trim();
+    final locale = Localizations.localeOf(context).languageCode;
+    final isKo = locale == 'ko';
+
+    if (q.isEmpty) {
+      return _buildEmptyPrompt(
+        icon: Icons.search,
+        title: (isChineseUi(context)
+            ? '搜索聚会'
+            : isKo
+                ? '모임을 검색해보세요'
+                : 'Search meetups'),
+        subtitle: (isChineseUi(context)
+            ? '搜索标题、介绍、地点或发起人'
+            : isKo
+                ? '제목/설명/위치/호스트 기준으로\n모임을 찾아볼 수 있어요'
+                : 'Search by title/description/location/host'),
+      );
+    }
+
+    if (_isLoadingMeetups) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_meetupsError != null) {
+      return _buildEmptyPrompt(
+        icon: Icons.error_outline,
+        title: AppLocalizations.of(context)!.error,
+        subtitle: AppLocalizations.of(context)!.errorOccurred,
+        actionLabel: AppLocalizations.of(context)!.retryAction,
+        onAction: () => _searchMeetups(q),
+      );
+    }
+
+    if (_meetupResults.isEmpty) {
+      return _buildEmptyPrompt(
+        icon: Icons.search_off,
+        title: AppLocalizations.of(context)!.noSearchResults,
+        subtitle:
+            '"$q"${(isChineseUi(context) ? ' - 未找到结果' : isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found')}',
+      );
+    }
+
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontal = (width * 0.045).clamp(14.0, 24.0).toDouble();
+    final compact = width < 360;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    return ListView.separated(
+      padding: EdgeInsets.only(top: 4, bottom: bottomPadding + 12),
+      itemCount: _meetupResults.length,
+      separatorBuilder: (_, __) => Divider(
+        height: 1,
+        thickness: 1,
+        indent: horizontal,
+        endIndent: horizontal,
+        color: const Color(0xFFEAECF0),
+      ),
+      itemBuilder: (context, index) {
+        final meetup = _meetupResults[index];
+        final hostName = (meetup.hostNickname ?? '').trim().isNotEmpty
+            ? meetup.hostNickname!.trim()
+            : meetup.host;
+        final isHanyangLocked = HanyangVerificationGate.isLockedForCurrentUser(
+          context,
+          meetup.requiresHanyangVerification,
+        );
+        return HanyangVerificationGate(
+          locked: isHanyangLocked,
+          compact: true,
+          child: Material(
+            color: Colors.white,
+            child: InkWell(
+              onTap: isHanyangLocked
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MeetupDetailScreen(
+                            meetup: meetup,
+                            meetupId: meetup.id,
+                            onMeetupDeleted: () {
+                              final q = _searchController.text.trim();
+                              if (q.isNotEmpty) _searchMeetups(q);
+                            },
+                          ),
+                        ),
+                      );
+                    },
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: horizontal,
+                  vertical: compact ? 12 : 14,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            meetup.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: compact ? 14.5 : 15.5,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF111827),
+                              height: 1.35,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          meetup.getFormattedDate(context),
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: ['NotoSansKR'],
+                            fontSize: 12,
+                            color: Color(0xFF667085),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '${AppLocalizations.of(context)!.host}: $hostName',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 12.5,
+                        color: Color(0xFF667085),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      meetup.description,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: ['NotoSansKR'],
+                        fontSize: 13.5,
+                        color: Color(0xFF475467),
+                        height: 1.45,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 15,
+                          color: Color(0xFF667085),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            meetup.location,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: ['NotoSansKR'],
+                              fontSize: 12,
+                              color: Color(0xFF667085),
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Icon(
+                          Icons.people_outline_rounded,
+                          size: 16,
+                          color: Color(0xFF667085),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${meetup.currentParticipants}/${meetup.maxParticipants}',
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: ['NotoSansKR'],
+                            fontSize: 12,
+                            color: Color(0xFF475467),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
       },
     );
   }

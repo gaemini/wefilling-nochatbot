@@ -1,0 +1,6 @@
+{
+  "firestore": {
+    "rules": "firestore.denyall.rules",
+    "indexes": "firestore.kr.indexes.json"
+  }
+}

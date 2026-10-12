@@ -13,13 +13,18 @@ import '../screens/signup_method_selection_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/widgets/app_button.dart';
+import '../ui/widgets/motion_press.dart';
+import '../design/tokens.dart';
 import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../l10n/ui_locale.dart';
+import '../ui/widgets/motion_selectable.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool showLogoutSuccess;
-  
-  const LoginScreen({Key? key, this.showLogoutSuccess = false}) : super(key: key);
+
+  const LoginScreen({Key? key, this.showLogoutSuccess = false})
+      : super(key: key);
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -29,30 +34,21 @@ class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeInAnimation;
-  late Animation<Offset> _slideAnimation;
+  final Animation<Offset> _slideAnimation =
+      const AlwaysStoppedAnimation<Offset>(Offset.zero);
 
   @override
   void initState() {
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: MotionTokens.medium,
     );
 
     _fadeInAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: const Interval(0.0, 0.7, curve: Curves.easeInOut),
-      ),
-    );
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: const Interval(0.2, 0.8, curve: Curves.easeInOut),
+        curve: MotionTokens.decelerate,
       ),
     );
 
@@ -61,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen>
     // 화면 진입 시 처리
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      
+
       // 로그아웃 성공 메시지 표시
       if (widget.showLogoutSuccess) {
         AppSnackBar.show(
@@ -70,101 +66,20 @@ class _LoginScreenState extends State<LoginScreen>
           type: AppSnackBarType.success,
         );
       }
-      
+
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       if (authProvider.consumeSignupRequiredFlag()) {
-        // 동일한 다이얼로그를 재사용
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            contentPadding: const EdgeInsets.all(24),
-            title: Column(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  color: Colors.blue.shade600,
-                  size: 48,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  AppLocalizations.of(context)!.registrationRequired,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1E293B),
-                    letterSpacing: -0.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  AppLocalizations.of(context)!.signupRequired,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                    height: 1.6,
-                    color: Color(0xFF475569),
-                    letterSpacing: -0.3,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0F9FF),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFFBAE6FD),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.lightbulb_outline,
-                        color: Colors.blue.shade700,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          AppLocalizations.of(context)!.signUpFirstMessage,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.blue.shade900,
-                            height: 1.5,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                AppButton(
-                  label: AppLocalizations.of(context)!.confirm,
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                ),
-              ],
-            ),
-          ),
-        );
+        _showRegistrationRequiredDialog();
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MotionTokens.reduceMotion(context)) {
+      _animationController.value = 1;
+    }
   }
 
   @override
@@ -173,9 +88,112 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
+  Future<void> _showRegistrationRequiredDialog() async {
+    if (!mounted) return;
+
+    final shouldStartSignup = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      useSafeArea: true,
+      builder: (dialogContext) {
+        final l10n = AppLocalizations.of(dialogContext)!;
+        final screenSize = MediaQuery.sizeOf(dialogContext);
+        final isCompactWidth = screenSize.width < 360;
+
+        return Dialog(
+          insetPadding: EdgeInsets.symmetric(
+            horizontal: isCompactWidth ? 16 : 24,
+            vertical: 24,
+          ),
+          elevation: 0,
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 380,
+              maxHeight: screenSize.height * 0.82,
+            ),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                isCompactWidth ? 20 : 24,
+                12,
+                isCompactWidth ? 20 : 24,
+                16,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      tooltip: l10n.close,
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 22,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.person_add_alt_1_rounded,
+                    size: 36,
+                    color: Color(0xFF2F9AE5),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    l10n.registrationRequired,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: isCompactWidth ? 20 : 22,
+                      fontWeight: FontWeight.w700,
+                      height: isChineseUi(context) ? 1.3 : 1.25,
+                      letterSpacing: -0.4,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    l10n.signUpFirstMessage,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: isCompactWidth ? 14 : 15,
+                      fontWeight: FontWeight.w400,
+                      height: 1.55,
+                      letterSpacing: -0.2,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  AppButton(
+                    label: l10n.signUp,
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    variant: AppButtonVariant.text,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || shouldStartSignup != true) return;
+    _navigateToSignUpFlow(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
+    final isCompactLanguageButton = MediaQuery.sizeOf(context).width < 360;
+    final currentLanguageCode = Localizations.localeOf(context).languageCode;
 
     return Scaffold(
       body: Container(
@@ -188,387 +206,381 @@ class _LoginScreenState extends State<LoginScreen>
           ),
         ),
         child: SafeArea(
-          child: Stack(
-            children: [
-              // 기존 로그인 UI
-              FadeTransition(
-                opacity: _fadeInAnimation,
-                child: SlideTransition(
-                  position: _slideAnimation,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isShort = constraints.maxHeight < 760;
-                      final isVeryShort = constraints.maxHeight < 700;
-                      final hPadding = isVeryShort ? 16.0 : 24.0;
-                      final logoSize = isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
-                      final appNameSize = isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
-                      final cardVPadding = isVeryShort ? 14.0 : 20.0;
-                      final cardHPadding = isVeryShort ? 16.0 : 24.0;
-                      final buttonGap = isVeryShort ? 10.0 : 14.0;
-                      final titleGap = isVeryShort ? 4.0 : 6.0;
-                      final headerTopGap = ((constraints.maxHeight *
-                                  (isVeryShort ? 0.065 : 0.095)) +
-                              (isVeryShort ? 14.0 : 24.0))
-                          .clamp(56.0, 108.0);
+          child: _LoginPageLayout(
+            compactLanguages: isCompactLanguageButton,
+            content: FadeTransition(
+              opacity: _fadeInAnimation,
+              child: SlideTransition(
+                position: _slideAnimation,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isShort = constraints.maxHeight < 760;
+                    final isVeryShort = constraints.maxHeight < 700;
+                    final hPadding = isVeryShort ? 16.0 : 24.0;
+                    final logoSize =
+                        isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
+                    final appNameSize =
+                        isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
+                    final isChineseBrand = isChineseUi(context);
+                    final cardVPadding = isVeryShort ? 14.0 : 20.0;
+                    final cardHPadding = isVeryShort ? 16.0 : 24.0;
+                    final buttonGap = isVeryShort ? 10.0 : 14.0;
+                    final titleGap = isVeryShort ? 4.0 : 6.0;
+                    final headerTopGap = ((constraints.maxHeight *
+                                (isVeryShort ? 0.065 : 0.095)) +
+                            (isVeryShort ? 14.0 : 24.0))
+                        .clamp(56.0, 108.0);
 
-                      return SingleChildScrollView(
-                        physics: const ClampingScrollPhysics(),
-                        padding: EdgeInsets.symmetric(horizontal: hPadding),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            minHeight: constraints.maxHeight,
-                          ),
-                          child: IntrinsicHeight(
-                            child: Column(
-                              children: [
-                                SizedBox(height: headerTopGap),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Image.asset(
-                                      'assets/images/wefilling_boot_logo.png',
-                                      width: logoSize,
-                                      height: logoSize,
-                                      fit: BoxFit.contain,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return Icon(
-                                          Icons.people_alt_rounded,
-                                          size: logoSize * 0.8,
-                                          color: Colors.blue.shade700,
-                                        );
-                                      },
-                                    ),
-                                    SizedBox(height: isVeryShort ? 8 : 12),
-                                    FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text(
-                                        AppLocalizations.of(context)!.appName,
-                                        maxLines: 1,
-                                        style: TextStyle(
-                                          fontSize: appNameSize,
-                                          fontWeight: FontWeight.bold,
-                                          fontFamily: 'HancomMalrangmalrang',
-                                          fontFamilyFallback: const ['Pretendard'],
-                                          color: Colors.black,
-                                          letterSpacing: 1.2,
+                    return SingleChildScrollView(
+                      physics: const ClampingScrollPhysics(),
+                      padding: EdgeInsets.symmetric(horizontal: hPadding),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: IntrinsicHeight(
+                          child: Column(
+                            children: [
+                              SizedBox(height: headerTopGap),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Image.asset(
+                                    'assets/images/wefilling_boot_logo.png',
+                                    width: logoSize,
+                                    height: logoSize,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(
+                                        Icons.people_alt_rounded,
+                                        size: logoSize * 0.8,
+                                        color: Colors.blue.shade700,
+                                      );
+                                    },
+                                  ),
+                                  SizedBox(height: isVeryShort ? 8 : 12),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        ExcludeSemantics(
+                                          child: Opacity(
+                                            opacity: 0,
+                                            child: Text(
+                                              isChineseBrand
+                                                  ? 'Wefilling'
+                                                  : AppLocalizations.of(
+                                                      context,
+                                                    )!
+                                                      .appName,
+                                              maxLines: 1,
+                                              style: TextStyle(
+                                                fontSize: appNameSize,
+                                                fontWeight: FontWeight.bold,
+                                                fontFamily: 'Inter',
+                                                fontFamilyFallback: const [
+                                                  'NotoSansKR'
+                                                ],
+                                                color: Colors.black,
+                                                letterSpacing: 1.2,
+                                              ),
+                                            ),
+                                          ),
                                         ),
+                                        Positioned.fill(
+                                          child: Center(
+                                            child: Transform.scale(
+                                              scale: isChineseBrand ? 1.18 : 1,
+                                              child: Text(
+                                                key: const ValueKey(
+                                                  'login_brand_name',
+                                                ),
+                                                AppLocalizations.of(context)!
+                                                    .appName,
+                                                maxLines: 1,
+                                                style: TextStyle(
+                                                  fontSize: appNameSize,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontFamily: isChineseBrand
+                                                      ? 'NotoSansSC'
+                                                      : 'Inter',
+                                                  fontFamilyFallback:
+                                                      _loginFontFallback(
+                                                    context,
+                                                  ),
+                                                  color: Colors.black,
+                                                  letterSpacing:
+                                                      isChineseBrand ? 3 : 1.2,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(height: isVeryShort ? 2 : 4),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      AppLocalizations.of(context)!.appTagline,
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback:
+                                            _loginFontFallback(context),
+                                        fontSize: isVeryShort ? 15 : 18,
+                                        color: Colors.grey.shade700,
+                                        letterSpacing: 0.5,
                                       ),
                                     ),
-                                    SizedBox(height: isVeryShort ? 2 : 4),
-                                    FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text(
-                                        Localizations.localeOf(context).languageCode == 'ko'
-                                            ? '버리긴 아깝고 팔긴 귀찮을 때, 우리 학교 무료 나눔 Wefilling'
-                                            : 'Free campus sharing — too good to toss, too easy to give.',
-                                        maxLines: 1,
-                                        style: TextStyle(
-                                          fontSize: isVeryShort ? 15 : 18,
-                                          color: Colors.grey.shade700,
-                                          letterSpacing: 0.5,
-                                        ),
-                                      ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: isVeryShort ? 8 : 12),
+                              Container(
+                                width: double.infinity,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: cardHPadding,
+                                  vertical: cardVPadding,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      offset: const Offset(0, 3),
+                                      blurRadius: 10,
+                                      spreadRadius: 0,
                                     ),
                                   ],
                                 ),
-                                  SizedBox(height: isVeryShort ? 8 : 12),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: cardHPadding,
-                                      vertical: cardVPadding,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      AppLocalizations.of(context)!
+                                          .welcomeTitle,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback:
+                                            _loginFontFallback(context),
+                                        fontSize: isVeryShort ? 20 : 22,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue.shade800,
+                                      ),
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(16),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.05),
-                                          offset: const Offset(0, 3),
-                                          blurRadius: 10,
-                                          spreadRadius: 0,
-                                        ),
-                                      ],
+                                    SizedBox(height: titleGap),
+                                    Text(
+                                      AppLocalizations.of(context)!
+                                          .googleLoginDescription,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontFamilyFallback:
+                                            _loginFontFallback(context),
+                                        fontSize: isVeryShort ? 15 : 16,
+                                        height: 1.4,
+                                        color: Colors.grey.shade800,
+                                      ),
                                     ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          AppLocalizations.of(context)!.welcomeTitle,
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontSize: isVeryShort ? 20 : 22,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blue.shade800,
-                                          ),
-                                        ),
-                                        SizedBox(height: titleGap),
-                                        Text(
-                                          AppLocalizations.of(context)!.googleLoginDescription,
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontSize: isVeryShort ? 15 : 16,
-                                            height: 1.4,
-                                            color: Colors.grey.shade800,
-                                          ),
-                                        ),
-                                        SizedBox(height: isVeryShort ? 14 : 20),
-                                        AppButton(
-                                          label: AppLocalizations.of(context)!.appleLogin,
-                                          onPressed: authProvider.isLoading
-                                              ? null
-                                              : () => _handleAppleLogin(
-                                                    context,
-                                                    authProvider,
-                                                  ),
-                                          variant: AppButtonVariant.outline,
-                                          size: AppButtonSize.m,
-                                          leading: Icon(
-                                            Icons.apple,
-                                            size: isVeryShort ? 19 : 20,
-                                            color: Colors.black,
-                                          ),
-                                        ),
-                                        SizedBox(height: buttonGap),
-                                        AppButton(
-                                          label: AppLocalizations.of(context)!.googleLogin,
-                                          onPressed: authProvider.isLoading
-                                              ? null
-                                              : () => _handleGoogleLogin(
-                                                    context,
-                                                    authProvider,
-                                                  ),
-                                          variant: AppButtonVariant.outline,
-                                          size: AppButtonSize.m,
-                                          leading: Image.asset(
-                                            'assets/icons/google_logo.png',
+                                    SizedBox(height: isVeryShort ? 14 : 20),
+                                    _LoginMethodButton(
+                                      label: AppLocalizations.of(context)!
+                                          .appleLogin,
+                                      onPressed: authProvider.isLoading
+                                          ? null
+                                          : () => _handleAppleLogin(
+                                                context,
+                                                authProvider,
+                                              ),
+                                      backgroundColor: const Color(0xFFF3F4F6),
+                                      foregroundColor: const Color(0xFF111827),
+                                      leading: Icon(
+                                        Icons.apple,
+                                        size: isVeryShort ? 19 : 20,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                    SizedBox(height: buttonGap),
+                                    _LoginMethodButton(
+                                      label: AppLocalizations.of(context)!
+                                          .googleLogin,
+                                      onPressed: authProvider.isLoading
+                                          ? null
+                                          : () => _handleGoogleLogin(
+                                                context,
+                                                authProvider,
+                                              ),
+                                      backgroundColor: const Color(0xFFF3F4F6),
+                                      foregroundColor: const Color(0xFF111827),
+                                      leading: Image.asset(
+                                        'assets/icons/google_logo.png',
+                                        width: isVeryShort ? 18 : 20,
+                                        height: isVeryShort ? 18 : 20,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                          return SizedBox(
                                             width: isVeryShort ? 18 : 20,
                                             height: isVeryShort ? 18 : 20,
-                                            errorBuilder: (context, error, stackTrace) {
-                                              return SizedBox(
-                                                width: isVeryShort ? 18 : 20,
-                                                height: isVeryShort ? 18 : 20,
-                                                child: CustomPaint(
-                                                  painter: GoogleLogoPainter(),
+                                            child: CustomPaint(
+                                              painter: GoogleLogoPainter(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    SizedBox(height: buttonGap),
+                                    _LoginMethodButton(
+                                      label: AppLocalizations.of(context)!
+                                          .emailLogin,
+                                      onPressed: authProvider.isLoading
+                                          ? null
+                                          : () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      const EmailLoginScreen(),
                                                 ),
                                               );
                                             },
-                                          ),
-                                        ),
-                                        SizedBox(height: buttonGap),
-                                        AppButton(
-                                          label: AppLocalizations.of(context)!.emailLogin,
-                                          onPressed: authProvider.isLoading
-                                              ? null
-                                              : () {
-                                                  Navigator.push(
-                                                    context,
-                                                    MaterialPageRoute(
-                                                      builder: (_) => const EmailLoginScreen(),
-                                                    ),
-                                                  );
-                                                },
-                                          variant: AppButtonVariant.outline,
-                                          size: AppButtonSize.m,
-                                          leading: Icon(
-                                            Icons.email_outlined,
-                                            size: isVeryShort ? 18 : 19,
-                                            color: Colors.black87,
-                                          ),
-                                        ),
-                                        SizedBox(height: isVeryShort ? 8 : 12),
-                                        TextButton(
-                                          onPressed: authProvider.isLoading
-                                              ? null
-                                              : () {
-                                                  _navigateToSignUpFlow(context);
-                                                },
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                AppLocalizations.of(context)!.noAccountYet,
-                                                style: TextStyle(
-                                                  fontSize: isVeryShort ? 13 : 14,
-                                                  color: Colors.grey.shade700,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                AppLocalizations.of(context)!.signUp,
-                                                style: TextStyle(
-                                                  fontSize: isVeryShort ? 17 : 18,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (authProvider.isLoading)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 10),
-                                            child: Column(
-                                              children: [
-                                                const SizedBox(
-                                                  height: 18,
-                                                  width: 18,
-                                                  child: CircularProgressIndicator(
-                                                    valueColor:
-                                                        AlwaysStoppedAnimation<Color>(
-                                                      Colors.blue,
-                                                    ),
-                                                    strokeWidth: 2,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  AppLocalizations.of(context)!.loggingIn,
-                                                  style: TextStyle(
-                                                    fontSize: isVeryShort ? 12 : 13,
-                                                    color: Colors.grey.shade600,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                      ],
+                                      backgroundColor: const Color(0xFFF3F4F6),
+                                      foregroundColor: const Color(0xFF111827),
+                                      leading: Icon(
+                                        Icons.email_outlined,
+                                        size: isVeryShort ? 18 : 19,
+                                        color: const Color(0xFF374151),
+                                      ),
                                     ),
-                                  ),
-                                const Spacer(),
-                                Text(
-                                  AppLocalizations.of(context)!.loginTermsNotice,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: isVeryShort ? 11 : 12,
-                                    color: Colors.grey.shade600,
-                                  ),
+                                    SizedBox(height: buttonGap),
+                                    _LoginMethodButton(
+                                      label:
+                                          AppLocalizations.of(context)!.signUp,
+                                      onPressed: authProvider.isLoading
+                                          ? null
+                                          : () =>
+                                              _navigateToSignUpFlow(context),
+                                      backgroundColor: Colors.white,
+                                      foregroundColor: const Color(0xFF147FC4),
+                                    ),
+                                    if (authProvider.isLoading)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 10),
+                                        child: Column(
+                                          children: [
+                                            const SizedBox(
+                                              height: 18,
+                                              width: 18,
+                                              child: CircularProgressIndicator(
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                        Color>(
+                                                  Colors.blue,
+                                                ),
+                                                strokeWidth: 2,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              AppLocalizations.of(context)!
+                                                  .loggingIn,
+                                              style: TextStyle(
+                                                fontFamily: 'Inter',
+                                                fontFamilyFallback:
+                                                    _loginFontFallback(context),
+                                                fontSize: isVeryShort ? 12 : 13,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                                SizedBox(height: isVeryShort ? 6 : 12),
-                              ],
-                            ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                AppLocalizations.of(context)!.loginTermsNotice,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontFamilyFallback:
+                                      _loginFontFallback(context),
+                                  fontSize: isVeryShort ? 11 : 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              SizedBox(height: isVeryShort ? 6 : 12),
+                            ],
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
               ),
-              
-              // 언어 선택 버튼 (상단 우측)
-              Positioned(
-                top: 16,
-                right: 16,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+            ),
+
+            // 언어 선택 (상단 우측)
+            languageSelector: Material(
+              color: Colors.transparent,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _LoginLanguageChoice(
+                    label: 'KOR',
+                    semanticsLabel: '한국어',
+                    isSelected: currentLanguageCode == 'ko',
+                    isCompact: isCompactLanguageButton,
+                    onTap: () => MeetupApp.of(context)?.changeLanguage('ko'),
                   ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap: () => _showLanguageDialog(context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.language,
-                              size: 20,
-                              color: Colors.black,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              Localizations.localeOf(context).languageCode == 'ko' 
-                                  ? 'KOR' 
-                                  : 'ENG',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ],
-                        ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Text(
+                      '/',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: isCompactLanguageButton ? 13 : 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black45,
                       ),
                     ),
                   ),
-                ),
+                  _LoginLanguageChoice(
+                    label: 'ENG',
+                    semanticsLabel: 'English',
+                    isSelected: currentLanguageCode == 'en',
+                    isCompact: isCompactLanguageButton,
+                    onTap: () => MeetupApp.of(context)?.changeLanguage('en'),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Text(
+                      '/',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: isCompactLanguageButton ? 13 : 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black45,
+                      ),
+                    ),
+                  ),
+                  _LoginLanguageChoice(
+                    label: '简体中文',
+                    semanticsLabel: '简体中文',
+                    isSelected: currentLanguageCode == 'zh',
+                    isCompact: isCompactLanguageButton,
+                    onTap: () =>
+                        MeetupApp.of(context)?.changeLanguage('zh_Hans'),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-  
-  /// 언어 선택 다이얼로그
-  void _showLanguageDialog(BuildContext context) {
-    final currentLocale = Localizations.localeOf(context).languageCode;
-    
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        backgroundColor: Colors.white,
-        contentPadding: const EdgeInsets.all(24),
-        title: Text(
-          currentLocale == 'ko' ? '언어 선택' : 'Select Language',
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF111827),
-            letterSpacing: -0.3,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            _LanguageOption(
-              label: AppLocalizations.of(context)!.korean,
-              value: 'ko',
-              groupValue: currentLocale,
-              onTap: () {
-                MeetupApp.of(context)?.changeLanguage('ko');
-                Navigator.pop(dialogContext);
-              },
-            ),
-            const SizedBox(height: 12),
-            _LanguageOption(
-              label: 'English',
-              value: 'en',
-              groupValue: currentLocale,
-              onTap: () {
-                MeetupApp.of(context)?.changeLanguage('en');
-                Navigator.pop(dialogContext);
-              },
-            ),
-            const SizedBox(height: 20),
-            AppButton(
-              label: currentLocale == 'ko' ? '취소' : 'Cancel',
-              onPressed: () => Navigator.pop(dialogContext),
-              variant: AppButtonVariant.outline,
-            ),
-          ],
         ),
       ),
     );
@@ -579,12 +591,16 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   void _navigateToSignUpFlow(BuildContext context) {
-    // ✅ 한국어/영어 모두 동일하게 바로 가입 방식 선택 화면으로 이동
-    // skipHanyangVerification: true = 한양메일 인증 없이 가입
+    final isEnglishSignUp = _isEnglishLocale(context);
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const SignUpMethodSelectionScreen(skipHanyangVerification: true),
+        builder: (_) => isEnglishSignUp
+            ? const SignUpMethodSelectionScreen(skipHanyangVerification: true)
+            : const SignUpMethodSelectionScreen(
+                skipHanyangVerification: true,
+                unverifiedSignupLanguage: 'ko',
+              ),
       ),
     );
   }
@@ -594,6 +610,7 @@ class _LoginScreenState extends State<LoginScreen>
     BuildContext context,
     AuthProvider authProvider,
   ) async {
+    if (authProvider.isLoading) return;
     try {
       // Google 로그인 처리
       final success = await authProvider.signInWithGoogle();
@@ -602,11 +619,10 @@ class _LoginScreenState extends State<LoginScreen>
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
-        Logger.log("로그인 성공: ${authProvider.user?.email}");
+        if (Logger.isVerboseEnabled) Logger.log("Google 로그인 성공");
 
-        // 프로필 완성 여부 확인
-        if (!authProvider.isProfileComplete) {
-          Logger.log("프로필 미완성 -> 닉네임 설정 화면으로 이동");
+        if (!authProvider.isRegistrationComplete) {
+          if (Logger.isVerboseEnabled) Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -614,132 +630,29 @@ class _LoginScreenState extends State<LoginScreen>
           return;
         }
 
-        // 프로필 완성되었으면 메인 화면
-        Logger.log("로그인 성공 -> 메인 화면으로 이동");
+        // 닉네임 있으면 메인 화면
+        if (Logger.isVerboseEnabled) Logger.log("로그인 성공 -> 메인 화면으로 이동");
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
         );
-      } 
-      // 로그인 실패한 경우 (신규 사용자)
+      }
+      // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
+        if (authProvider.lastGoogleSignInWasCancelled) {
+          if (Logger.isVerboseEnabled) Logger.log("사용자가 Google 로그인을 취소함");
+          return;
+        }
         Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
-        
+
         // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          
+
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
-            Logger.log("회원가입 필요 메시지 표시");
-            showDialog(
-              context: context,
-              barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
-              builder: (dialogContext) => AlertDialog(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                contentPadding: const EdgeInsets.all(24),
-                title: Column(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue.shade600,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      AppLocalizations.of(context)!.registrationRequired,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1E293B),
-                        letterSpacing: -0.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      AppLocalizations.of(context)!.signupRequired,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w400,
-                        height: 1.6,
-                        color: Color(0xFF475569),
-                        letterSpacing: -0.3,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F9FF),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFBAE6FD),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.lightbulb_outline,
-                            color: Colors.blue.shade700,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              AppLocalizations.of(context)!.signUpFirstMessage,
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.blue.shade900,
-                                height: 1.5,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: AppButton(
-                            label: AppLocalizations.of(context)!.close,
-                            onPressed: () => Navigator.of(dialogContext).pop(),
-                            variant: AppButtonVariant.outline,
-                            size: AppButtonSize.m,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: AppButton(
-                            label: AppLocalizations.of(context)!.signUp,
-                            onPressed: () {
-                              Navigator.of(dialogContext).pop();
-                              _navigateToSignUpFlow(context);
-                            },
-                            size: AppButtonSize.m,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
+            if (Logger.isVerboseEnabled) Logger.log("회원가입 필요 메시지 표시");
+            _showRegistrationRequiredDialog();
           } else {
             Logger.error("로그인 취소 또는 기타 실패 - 조용히 처리");
           }
@@ -750,7 +663,7 @@ class _LoginScreenState extends State<LoginScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.loginError}: $e'),
+            content: Text(AppLocalizations.of(context)!.loginErrorGeneric),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -764,6 +677,7 @@ class _LoginScreenState extends State<LoginScreen>
     BuildContext context,
     AuthProvider authProvider,
   ) async {
+    if (authProvider.isLoading) return;
     try {
       // Apple 로그인 처리
       final success = await authProvider.signInWithApple();
@@ -772,11 +686,10 @@ class _LoginScreenState extends State<LoginScreen>
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
-        Logger.log("로그인 성공: ${authProvider.user?.email}");
+        if (Logger.isVerboseEnabled) Logger.log("Apple 로그인 성공");
 
-        // 프로필 완성 여부 확인
-        if (!authProvider.isProfileComplete) {
-          Logger.log("프로필 미완성 -> 닉네임 설정 화면으로 이동");
+        if (!authProvider.isRegistrationComplete) {
+          if (Logger.isVerboseEnabled) Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -784,132 +697,25 @@ class _LoginScreenState extends State<LoginScreen>
           return;
         }
 
-        // 프로필 완성되었으면 메인 화면
-        Logger.log("로그인 성공 -> 메인 화면으로 이동");
+        // 닉네임 있으면 메인 화면
+        if (Logger.isVerboseEnabled) Logger.log("로그인 성공 -> 메인 화면으로 이동");
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
         );
-      } 
-      // 로그인 실패한 경우 (신규 사용자)
+      }
+      // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
         Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
-        
+
         // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          
+
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
-            Logger.log("회원가입 필요 메시지 표시");
-            showDialog(
-              context: context,
-              barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
-              builder: (dialogContext) => AlertDialog(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                contentPadding: const EdgeInsets.all(24),
-                title: Column(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue.shade600,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      AppLocalizations.of(context)!.registrationRequired,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1E293B),
-                        letterSpacing: -0.5,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      AppLocalizations.of(context)!.signupRequired,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w400,
-                        height: 1.6,
-                        color: Color(0xFF475569),
-                        letterSpacing: -0.3,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F9FF),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFBAE6FD),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.lightbulb_outline,
-                            color: Colors.blue.shade700,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              AppLocalizations.of(context)!.signUpFirstMessage,
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.blue.shade900,
-                                height: 1.5,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: AppButton(
-                            label: AppLocalizations.of(context)!.close,
-                            onPressed: () => Navigator.of(dialogContext).pop(),
-                            variant: AppButtonVariant.outline,
-                            size: AppButtonSize.m,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: AppButton(
-                            label: AppLocalizations.of(context)!.signUp,
-                            onPressed: () {
-                              Navigator.of(dialogContext).pop();
-                              _navigateToSignUpFlow(context);
-                            },
-                            size: AppButtonSize.m,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
+            if (Logger.isVerboseEnabled) Logger.log("회원가입 필요 메시지 표시");
+            _showRegistrationRequiredDialog();
           } else {
             Logger.error("로그인 취소 또는 기타 실패 - 조용히 처리");
           }
@@ -917,13 +723,13 @@ class _LoginScreenState extends State<LoginScreen>
       }
     } catch (e) {
       Logger.error("Apple 로그인 오류: $e");
-      
+
       // 사용자 친화적 에러 메시지 생성
       String errorMessage = '로그인 중 오류가 발생했습니다';
       String errorDetail = '';
-      
+
       final errorString = e.toString();
-      
+
       if (errorString.contains('operation-not-allowed')) {
         // Firebase Console에서 Apple Sign In 미활성화 상태
         // 사용자에게 명확한 안내 표시
@@ -936,12 +742,14 @@ class _LoginScreenState extends State<LoginScreen>
               ),
               title: Row(
                 children: [
-                  Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 28),
+                  Icon(Icons.warning_amber,
+                      color: Colors.orange.shade700, size: 28),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
                       'Firebase 설정 필요',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
                     ),
                   ),
                 ],
@@ -959,7 +767,8 @@ class _LoginScreenState extends State<LoginScreen>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: Text(AppLocalizations.of(context)!.confirm, style: TextStyle(fontSize: 16)),
+                  child: Text(AppLocalizations.of(context)!.confirm,
+                      style: TextStyle(fontSize: 16)),
                 ),
               ],
             ),
@@ -973,17 +782,19 @@ class _LoginScreenState extends State<LoginScreen>
             '• 또는 실제 iPhone에서 테스트 권장\n\n'
             'Xcode 설정 확인:\n'
             '• Sign in with Apple Capability 추가 필요';
-      } else if (errorString.contains('canceled') || errorString.contains('cancelled')) {
+      } else if (errorString.contains('canceled') ||
+          errorString.contains('cancelled')) {
         errorMessage = 'Apple 로그인이 취소되었습니다';
         errorDetail = '';
-      } else if (errorString.contains('network') || errorString.contains('Network')) {
+      } else if (errorString.contains('network') ||
+          errorString.contains('Network')) {
         errorMessage = '네트워크 연결을 확인해주세요';
         errorDetail = '\n인터넷 연결 상태를 확인하고 다시 시도해주세요.';
       } else {
         errorMessage = 'Apple 로그인에 실패했습니다';
         errorDetail = '\n\n다시 시도하거나 Google 로그인을 이용해주세요.';
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1000,6 +811,98 @@ class _LoginScreenState extends State<LoginScreen>
         );
       }
     }
+  }
+}
+
+// Keep Latin branding/metrics in Inter; use SC only for missing Chinese glyphs.
+List<String> _loginFontFallback(BuildContext context) => isChineseUi(context)
+    ? const ['NotoSansSC', 'NotoSansKR']
+    : const ['NotoSansKR'];
+
+/// All UI languages share the original login layout.
+class _LoginPageLayout extends StatelessWidget {
+  const _LoginPageLayout({
+    required this.compactLanguages,
+    required this.content,
+    required this.languageSelector,
+  });
+
+  final bool compactLanguages;
+  final Widget content;
+  final Widget languageSelector;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(children: [
+      content,
+      Positioned(
+        top: compactLanguages ? 12 : 16,
+        right: compactLanguages ? 12 : 16,
+        child: languageSelector,
+      ),
+    ]);
+  }
+}
+
+class _LoginMethodButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final Widget? leading;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  const _LoginMethodButton({
+    required this.label,
+    required this.onPressed,
+    this.leading,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: MotionPress(
+        enabled: onPressed != null,
+        pressedScale: .975,
+        child: FilledButton(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            backgroundColor: backgroundColor,
+            foregroundColor: foregroundColor,
+            disabledBackgroundColor: backgroundColor.withValues(alpha: 0.45),
+            disabledForegroundColor: foregroundColor.withValues(alpha: 0.55),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (leading != null) ...[leading!, const SizedBox(width: 10)],
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontFamilyFallback: _loginFontFallback(context),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1076,82 +979,72 @@ class GoogleLogoPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// 언어 선택 옵션 위젯
-class _LanguageOption extends StatelessWidget {
+// 로그인 화면 언어 선택 항목
+class _LoginLanguageChoice extends StatelessWidget {
   final String label;
-  final String value;
-  final String groupValue;
+  final String semanticsLabel;
+  final bool isSelected;
+  final bool isCompact;
   final VoidCallback onTap;
 
-  const _LanguageOption({
+  const _LoginLanguageChoice({
     required this.label,
-    required this.value,
-    required this.groupValue,
+    required this.semanticsLabel,
+    required this.isSelected,
+    required this.isCompact,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isSelected = value == groupValue;
-    
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: semanticsLabel,
+      child: MotionSelectable(
+        selected: isSelected,
+        pressedScale: MotionSelectable.segmentScale,
+        child: InkResponse(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: isSelected 
-                ? const Color(0xFF6CCFF6).withOpacity(0.08) 
-                : const Color(0xFFF9FAFB),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isSelected 
-                  ? const Color(0xFF6CCFF6) 
-                  : const Color(0xFFE5E7EB),
-              width: isSelected ? 2 : 1,
+        radius: 28,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minWidth: isCompact ? 42 : 46,
+            minHeight: 44,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedDefaultTextStyle(
+                  duration: MotionTokens.of(context, MotionTokens.state),
+                  curve: MotionTokens.curve,
+                  style: TextStyle(
+                    fontFamily: label == '简体中文' ? 'NotoSansSC' : 'Inter',
+                    fontSize: isCompact ? 13 : 14,
+                    height: 1.1,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    color: isSelected ? Colors.black : Colors.black54,
+                  ),
+                  child: Text(label, maxLines: 1),
+                ),
+                const SizedBox(height: 4),
+                AnimatedContainer(
+                  duration: MotionTokens.of(context, MotionTokens.state),
+                  curve: MotionTokens.curve,
+                  width: isSelected ? 18 : 0,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    color: isSelected ? Colors.black : Colors.transparent,
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              ],
             ),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isSelected 
-                      ? const Color(0xFF6CCFF6) 
-                      : Colors.transparent,
-                  border: Border.all(
-                    color: isSelected
-                        ? const Color(0xFF6CCFF6)
-                        : const Color(0xFFD1D5DB),
-                    width: 2,
-                  ),
-                ),
-                child: isSelected
-                    ? const Icon(
-                        Icons.check,
-                        size: 14,
-                        color: Colors.white,
-                      )
-                    : null,
-              ),
-            ],
-          ),
+        ),
         ),
       ),
     );

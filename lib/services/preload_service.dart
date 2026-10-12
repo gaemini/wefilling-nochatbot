@@ -3,10 +3,8 @@
 // 히어로 콘텐츠 우선 로딩, 하위 콘텐츠 지연 로딩
 
 import 'package:flutter/material.dart';
-import '../utils/image_utils.dart';
 import '../models/meetup.dart';
 import '../models/post.dart';
-import '../models/user_profile.dart';
 
 /// 프리로딩 우선순위
 enum PreloadPriority {
@@ -90,9 +88,8 @@ class PreloadService {
 
         // 작성자 프로필 이미지는 현재 구현되지 않았으므로 주석 처리
         // 추후 필요시 host 기반으로 구현 가능
-      } catch (e) {
-        // 안전한 실패 처리
-        debugPrint('Failed to preload meetup images: $e');
+      } catch (_) {
+        // 프리로드 실패는 실제 화면 로드 경로에 영향을 주지 않는다.
       }
     }
   }
@@ -127,9 +124,8 @@ class PreloadService {
             preloadImage(profileImageUrl, priority: PreloadPriority.medium);
           }
         }
-      } catch (e) {
-        // 안전한 실패 처리
-        debugPrint('Failed to preload post images: $e');
+      } catch (_) {
+        // 프리로드 실패는 실제 화면 로드 경로에 영향을 주지 않는다.
       }
     }
   }
@@ -146,9 +142,8 @@ class PreloadService {
         if (profileImageUrl is String && profileImageUrl.isNotEmpty) {
           preloadImage(profileImageUrl, priority: priority);
         }
-      } catch (e) {
-        // 안전한 실패 처리
-        debugPrint('Failed to preload user images: $e');
+      } catch (_) {
+        // 프리로드 실패는 실제 화면 로드 경로에 영향을 주지 않는다.
       }
     }
   }
@@ -186,18 +181,18 @@ class PreloadService {
 
     try {
       // 우선순위별로 정렬
-      final sortedItems =
-          _preloadQueue.values.toList()..sort((a, b) {
-            final priorityOrder = {
-              PreloadPriority.critical: 0,
-              PreloadPriority.high: 1,
-              PreloadPriority.medium: 2,
-              PreloadPriority.low: 3,
-            };
-            return priorityOrder[a.priority]!.compareTo(
-              priorityOrder[b.priority]!,
-            );
-          });
+      final sortedItems = _preloadQueue.values.toList()
+        ..sort((a, b) {
+          final priorityOrder = {
+            PreloadPriority.critical: 0,
+            PreloadPriority.high: 1,
+            PreloadPriority.medium: 2,
+            PreloadPriority.low: 3,
+          };
+          return priorityOrder[a.priority]!.compareTo(
+            priorityOrder[b.priority]!,
+          );
+        });
 
       // 배치 처리 (한 번에 최대 5개)
       const batchSize = 5;
@@ -242,9 +237,8 @@ class PreloadService {
           await _preloadImageData(item.data['url'] as String);
           break;
       }
-    } catch (e) {
+    } catch (_) {
       // 프리로딩 실패는 무시 (실제 로드 시 재시도)
-      debugPrint('Preload failed for $key: $e');
     }
   }
 
@@ -261,10 +255,9 @@ class PreloadService {
   /// 캐시 정리
   void clearCache({ContentType? type}) {
     if (type != null) {
-      final keysToRemove =
-          _preloadedData.keys
-              .where((key) => key.startsWith('${type.name}_'))
-              .toList();
+      final keysToRemove = _preloadedData.keys
+          .where((key) => key.startsWith('${type.name}_'))
+          .toList();
 
       for (final key in keysToRemove) {
         _preloadedData.remove(key);

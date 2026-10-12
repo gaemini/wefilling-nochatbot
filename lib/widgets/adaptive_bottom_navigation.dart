@@ -3,27 +3,39 @@
 
 import 'package:flutter/material.dart';
 import 'notification_badge.dart';
-import '../ui/widgets/shape_icon.dart';
-import '../constants/app_constants.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_press.dart';
 import '../utils/responsive_helper.dart';
+import '../l10n/ui_locale.dart';
+
+/// A single rounded-outline style for the five main destinations.
+enum BottomNavGlyph { posts, meetup, snackChat, myPage, dm }
 
 /// 하단 네비게이션 아이템 데이터 클래스
 class BottomNavigationItem {
+  final BottomNavGlyph? glyph;
   final IconData? icon;
   final IconData? selectedIcon;
   final String? iconImagePath; // 이미지 경로 추가
   final String? selectedIconImagePath; // 선택된 이미지 경로 추가
   final String label;
   final int? badgeCount; // 배지 카운트 추가
+  final String? semanticLabel;
+  final Color? selectedColor;
+  final double iconSizeMultiplier;
 
   const BottomNavigationItem({
+    this.glyph,
     this.icon,
     this.selectedIcon,
     this.iconImagePath,
     this.selectedIconImagePath,
     required this.label,
     this.badgeCount,
-  });
+    this.semanticLabel,
+    this.selectedColor,
+    this.iconSizeMultiplier = 1,
+  }) : assert(iconSizeMultiplier > 0);
 }
 
 /// 완전 반응형 하단 네비게이션 바
@@ -44,30 +56,48 @@ class AdaptiveBottomNavigation extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final mediaQuery = MediaQuery.of(context);
-        final screenWidth = mediaQuery.size.width;
-        final screenHeight = mediaQuery.size.height;
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : mediaQuery.size.width;
         final bottomPadding = mediaQuery.padding.bottom;
         final textScale = MediaQuery.textScalerOf(context).scale(1.0);
 
         // 화면 크기별 동적 크기 계산
-        final navHeight = _calculateNavHeight(
+        final baseNavHeight = _calculateNavHeight(
           context,
-          screenWidth,
-          screenHeight,
+          availableWidth,
           textScale,
         );
         final iconSize = _calculateIconSize(context);
-        final fontSize = _calculateFontSize(context, textScale);
-        final allowTwoLineLabel =
-            textScale > 1.25 || screenWidth < 360 || context.isCompactLayout;
-
+        final fontSize = _calculateFontSize(context);
+        final verticalPadding = _calculateVerticalPadding(context);
+        final maxIconMultiplier = items.fold<double>(
+          1,
+          (largest, item) => item.iconSizeMultiplier > largest
+              ? item.iconSizeMultiplier
+              : largest,
+        );
+        final largestIconSize =
+            (iconSize * maxIconMultiplier).clamp(18.0, 28.0);
+        final effectiveTextScale = textScale.clamp(1.0, 1.3);
+        final requiredNavHeight = largestIconSize +
+            3 +
+            (fontSize *
+                (isChineseUi(context) ? 1.3 : 1.1) *
+                effectiveTextScale) +
+            8 +
+            (verticalPadding * 2) +
+            2;
+        final navHeight = baseNavHeight < requiredNavHeight
+            ? requiredNavHeight
+            : baseNavHeight;
         return Container(
           height: navHeight + bottomPadding,
           decoration: BoxDecoration(
             color: Colors.white,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.08),
+                color: Colors.black.withValues(alpha: 0.08),
                 blurRadius: 8,
                 offset: const Offset(0, -2),
               ),
@@ -78,7 +108,7 @@ class AdaptiveBottomNavigation extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: _calculateHorizontalPadding(context),
-                vertical: _calculateVerticalPadding(context),
+                vertical: verticalPadding,
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -87,6 +117,8 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                   final index = entry.key;
                   final item = entry.value;
                   final isSelected = index == selectedIndex;
+                  final itemIconSize =
+                      (iconSize * item.iconSizeMultiplier).clamp(18.0, 28.0);
 
                   return Expanded(
                     child: _buildNavItem(
@@ -94,9 +126,8 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                       item: item,
                       isSelected: isSelected,
                       onTap: () => onItemTapped(index),
-                      iconSize: iconSize,
+                      iconSize: itemIconSize,
                       fontSize: fontSize,
-                      allowTwoLineLabel: allowTwoLineLabel,
                     ),
                   );
                 }).toList(),
@@ -112,12 +143,11 @@ class AdaptiveBottomNavigation extends StatelessWidget {
   double _calculateNavHeight(
     BuildContext context,
     double width,
-    double height,
     double textScale,
   ) {
-    final base = context.rh(56, min: 52, max: 68);
-    if (textScale > 1.35) return (base + 8).clamp(56, 74);
-    if (width < 360 && textScale > 1.2) return (base + 4).clamp(54, 72);
+    final base = context.rh(60, min: 60, max: 72);
+    if (textScale > 1.35) return (base + 8).clamp(64, 80);
+    if (width < 360 && textScale > 1.2) return (base + 4).clamp(62, 76);
     return base;
   }
 
@@ -127,10 +157,8 @@ class AdaptiveBottomNavigation extends StatelessWidget {
   }
 
   /// 화면 크기별 폰트 크기 계산
-  double _calculateFontSize(BuildContext context, double textScale) {
-    final scaled = context.rf(11).clamp(10, 12.5);
-    if (textScale > 1.35) return (scaled * 0.95).clamp(10, 12).toDouble();
-    return scaled.toDouble();
+  double _calculateFontSize(BuildContext context) {
+    return context.rf(11).clamp(10, 12.5).toDouble();
   }
 
   /// 화면 크기별 수평 패딩 계산
@@ -151,95 +179,236 @@ class AdaptiveBottomNavigation extends StatelessWidget {
     required VoidCallback onTap,
     required double iconSize,
     required double fontSize,
-    required bool allowTwoLineLabel,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    // 선택 상태 색상: 검정(#000000)으로 고정
     const selectedColor = Color(0xFF000000);
-    final unselectedColor = colorScheme.onSurface.withOpacity(0.6);
-    final isGroupsTriangle = item.icon == Icons.change_history_outlined ||
-        item.selectedIcon == Icons.change_history;
-    // 그룹(세모)도 다른 탭과 동일하게: 선택=검정, 비선택=회색
-    final iconColor = isGroupsTriangle
-        ? AppColors.friendsOnlyAccent
-        : (isSelected ? selectedColor : unselectedColor);
+    final unselectedColor = colorScheme.onSurface.withValues(alpha: 0.6);
+    final activeColor = item.selectedColor ?? selectedColor;
+    final iconColor = isSelected ? activeColor : unselectedColor;
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      splashColor: colorScheme.primary.withOpacity(0.1),
-      highlightColor: colorScheme.primary.withOpacity(0.05),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // 아이콘을 고정 크기 컨테이너로 감싸서 정렬 유지
-            SizedBox(
-              height: iconSize,
-              width: iconSize,
-              child: Center(
-                child: NotificationBadge(
-                  count: item.badgeCount ?? 0,
-                  size: 13, // 더 작은 크기
-                  fontSize: 8,
-                  top: -5, // 더 위로 이동
-                  right: -8, // 더 오른쪽으로 이동 (아이콘을 덜 가림)
-                  child: item.iconImagePath != null
-                      ? Image.asset(
-                          isSelected
-                              ? (item.selectedIconImagePath ??
-                                  item.iconImagePath!)
-                              : item.iconImagePath!,
-                          width: iconSize,
-                          height: iconSize,
-                          color: iconColor,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Icon(
-                              Icons.person,
-                              size: iconSize,
-                              color: iconColor,
-                            );
-                          },
-                        )
-                      : (isGroupsTriangle && isSelected)
-                          ? ShapeIcon(
-                              // Material 기본 아이콘(change_history)은 채움 버전이 없어,
-                              // 선택 상태에서는 커스텀 정삼각형(채움)으로 렌더링한다.
-                              iconName: 'shape_triangle',
-                              color: iconColor,
-                              size: iconSize,
-                            )
-                          : Icon(
-                              isSelected ? item.selectedIcon : item.icon,
-                              size: iconSize,
-                              color: iconColor,
-                              weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
-                            ),
-                ),
-              ),
-            ),
-            if (item.label.isNotEmpty) ...[
-              const SizedBox(height: 3),
-              Flexible(
-                child: Text(
-                  item.label,
-                  style: TextStyle(
-                    fontSize: fontSize,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                    color: isSelected ? selectedColor : unselectedColor,
-                    height: allowTwoLineLabel ? 1.2 : 1.1,
+    return Semantics(
+      label: item.semanticLabel ?? '${item.label} tab',
+      button: true,
+      selected: isSelected,
+      excludeSemantics: true,
+      child: MotionPress(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          splashColor: colorScheme.primary.withValues(alpha: 0.1),
+          highlightColor: colorScheme.primary.withValues(alpha: 0.05),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // 아이콘을 고정 크기 컨테이너로 감싸서 정렬 유지
+                SizedBox(
+                  height: iconSize,
+                  width: iconSize,
+                  child: Center(
+                    child: NotificationBadge(
+                      count: item.badgeCount ?? 0,
+                      size: 13, // 더 작은 크기
+                      fontSize: 8,
+                      top: -5, // 더 위로 이동
+                      right: -8, // 더 오른쪽으로 이동 (아이콘을 덜 가림)
+                      child: AnimatedSwitcher(
+                        duration: MotionTokens.reduceMotion(context)
+                            ? Duration.zero
+                            : MotionTokens.state,
+                        switchInCurve: MotionTokens.curve,
+                        switchOutCurve: MotionTokens.curve,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: ScaleTransition(
+                            scale: Tween<double>(begin: .90, end: 1)
+                                .animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey<bool>(isSelected),
+                          child: item.glyph != null
+                              ? CustomPaint(
+                                  size: Size.square(iconSize),
+                                  painter: _BottomNavGlyphPainter(
+                                    glyph: item.glyph!,
+                                    color: iconColor,
+                                    selected: isSelected,
+                                  ),
+                                )
+                              : item.iconImagePath != null
+                                  ? Image.asset(
+                                      isSelected
+                                          ? (item.selectedIconImagePath ??
+                                              item.iconImagePath!)
+                                          : item.iconImagePath!,
+                                      width: iconSize,
+                                      height: iconSize,
+                                      color: iconColor,
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
+                                        return Icon(
+                                          Icons.person,
+                                          size: iconSize,
+                                          color: iconColor,
+                                        );
+                                      },
+                                    )
+                                  : Icon(
+                                      isSelected
+                                          ? item.selectedIcon
+                                          : item.icon,
+                                      size: iconSize,
+                                      color: iconColor,
+                                      weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
+                                    ),
+                        ),
+                      ),
+                    ),
                   ),
-                  maxLines: allowTwoLineLabel ? 2 : 1,
-                  overflow: TextOverflow.fade,
-                  textAlign: TextAlign.center,
                 ),
-              ),
-            ],
-          ],
+                const SizedBox(height: 3),
+                SizedBox(
+                  width: double.infinity,
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.3,
+                    child: TweenAnimationBuilder<TextStyle>(
+                      duration: MotionTokens.reduceMotion(context)
+                          ? Duration.zero
+                          : MotionTokens.state,
+                      curve: MotionTokens.curve,
+                      tween: TextStyleTween(
+                        end: TextStyle(
+                          fontSize: fontSize,
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.w400,
+                          color: isSelected ? activeColor : unselectedColor,
+                          height: isChineseUi(context) ? 1.3 : 1.1,
+                        ),
+                      ),
+                      builder: (context, style, child) => Text(
+                        item.label,
+                        style: style,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.fade,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
+}
+
+class _BottomNavGlyphPainter extends CustomPainter {
+  const _BottomNavGlyphPainter({
+    required this.glyph,
+    required this.color,
+    required this.selected,
+  });
+
+  final BottomNavGlyph glyph;
+  final Color color;
+  final bool selected;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 24, size.height / 24);
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = selected ? 1.9 : 1.75
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    switch (glyph) {
+      case BottomNavGlyph.posts:
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            const Rect.fromLTWH(4, 2.5, 16, 19),
+            const Radius.circular(2.4),
+          ),
+          stroke,
+        );
+        canvas.drawLine(const Offset(8, 8), const Offset(16, 8), stroke);
+        canvas.drawLine(const Offset(8, 12), const Offset(16, 12), stroke);
+        canvas.drawLine(const Offset(8, 16), const Offset(13, 16), stroke);
+      case BottomNavGlyph.meetup:
+        canvas.drawCircle(const Offset(12, 7), 2.6, stroke);
+        canvas.drawCircle(const Offset(4.8, 9.5), 2.1, stroke);
+        canvas.drawCircle(const Offset(19.2, 9.5), 2.1, stroke);
+        final people = Path()
+          ..moveTo(6.5, 20)
+          ..cubicTo(6.5, 16, 8.5, 13.7, 12, 13.7)
+          ..cubicTo(15.5, 13.7, 17.5, 16, 17.5, 20)
+          ..moveTo(5.5, 14.3)
+          ..cubicTo(2.8, 14.3, 1.5, 16.4, 1.5, 19)
+          ..lineTo(4.3, 19)
+          ..moveTo(18.5, 14.3)
+          ..cubicTo(21.2, 14.3, 22.5, 16.4, 22.5, 19)
+          ..lineTo(19.7, 19);
+        canvas.drawPath(people, stroke);
+      case BottomNavGlyph.snackChat:
+        final front = Path()
+          ..moveTo(17, 13)
+          ..lineTo(12, 13)
+          ..lineTo(7, 18)
+          ..lineTo(7, 13)
+          ..lineTo(5.3, 13)
+          ..cubicTo(3.8, 13, 3, 12.1, 3, 10.7)
+          ..lineTo(3, 5.5)
+          ..cubicTo(3, 4, 4, 3, 5.5, 3)
+          ..lineTo(16.5, 3)
+          ..cubicTo(18, 3, 19, 4, 19, 5.5)
+          ..lineTo(19, 10.7)
+          ..cubicTo(19, 12.1, 18.3, 13, 17, 13);
+        canvas.drawPath(front, stroke);
+        final back = Path()
+          ..moveTo(19, 8.5)
+          ..cubicTo(20.5, 8.5, 21.5, 9.5, 21.5, 11)
+          ..lineTo(21.5, 16)
+          ..cubicTo(21.5, 17.5, 20.5, 18.5, 19, 18.5)
+          ..lineTo(18, 18.5)
+          ..lineTo(18, 21)
+          ..lineTo(15.5, 18.5)
+          ..lineTo(12.5, 18.5);
+        canvas.drawPath(back, stroke);
+      case BottomNavGlyph.myPage:
+        canvas.drawCircle(const Offset(12, 12), 10, stroke);
+        canvas.drawCircle(const Offset(12, 9), 3, stroke);
+        final shoulders = Path()
+          ..moveTo(5.8, 19.1)
+          ..cubicTo(6.3, 15.8, 8.5, 14, 12, 14)
+          ..cubicTo(15.5, 14, 17.7, 15.8, 18.2, 19.1);
+        canvas.drawPath(shoulders, stroke);
+      case BottomNavGlyph.dm:
+        final plane = Path()
+          ..moveTo(2.5, 10.8)
+          ..lineTo(21.5, 3)
+          ..lineTo(16, 21)
+          ..lineTo(11.6, 14.2)
+          ..close()
+          ..moveTo(11.6, 14.2)
+          ..lineTo(21.5, 3);
+        canvas.drawPath(plane, stroke);
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _BottomNavGlyphPainter oldDelegate) =>
+      oldDelegate.glyph != glyph ||
+      oldDelegate.color != color ||
+      oldDelegate.selected != selected;
 }

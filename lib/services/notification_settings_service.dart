@@ -5,20 +5,20 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/logger.dart';
+import 'fcm_service.dart';
 
 // 알림 설정 키 상수 (통합된 구조)
 class NotificationSettingKeys {
   // 전체 알림 토글
   static const String allNotifications = 'all_notifications';
-
+  
   // 통합 카테고리 (사용자에게 표시되는 6개)
   static const String meetupAlerts = 'meetup_alerts'; // 모임 관련 (정원+취소+참여자)
   static const String friendAlerts = 'friend_alerts'; // 친구 관련 (요청+수락)
-  static const String postInteractions =
-      'post_interactions'; // 게시글 (댓글+좋아요+비공개)
+  static const String postInteractions = 'post_interactions'; // 게시글 (댓글+좋아요+비공개)
   static const String dmMessages = 'dm_messages'; // DM 메시지
   static const String marketing = 'marketing'; // 광고/프로모션
-
+  
   // 레거시 키 (기존 코드 호환성을 위해 유지, 내부적으로 통합 키로 매핑)
   static const String dmReceived = 'dm_received';
   static const String snackChatInvite = 'snack_chat_invite';
@@ -26,14 +26,14 @@ class NotificationSettingKeys {
   static const String meetupCancelled = 'meetup_cancelled';
   static const String meetupParticipantJoined = 'meetup_participant_joined';
   static const String meetupParticipantLeft = 'meetup_participant_left';
+  static const String meetupCreated = 'meetup_created';
   static const String newComment = 'new_comment';
   static const String newLike = 'new_like';
-  static const String sharingRequest = 'sharing_request';
-  static const String sharingLike = 'sharing_like';
   static const String postPrivate = 'post_private';
+  static const String postCreated = 'post_created';
   static const String friendRequest = 'friend_request';
   static const String adUpdates = 'ad_updates';
-
+  
   // 레거시 키를 통합 키로 매핑
   static String mapLegacyToUnified(String legacyKey) {
     switch (legacyKey) {
@@ -41,25 +41,25 @@ class NotificationSettingKeys {
       case meetupCancelled:
       case meetupParticipantJoined:
       case meetupParticipantLeft:
+      case meetupCreated:
         return meetupAlerts;
-
+      
       case friendRequest:
         return friendAlerts;
-
+      
       case newComment:
       case newLike:
-      case sharingRequest:
-      case sharingLike:
       case postPrivate:
+      case postCreated:
         return postInteractions;
-
+      
       case dmReceived:
       case snackChatInvite:
         return dmMessages;
-
+      
       case adUpdates:
         return marketing;
-
+      
       default:
         return legacyKey;
     }
@@ -142,8 +142,8 @@ class NotificationSettingsService {
     // 통합 키가 없고 레거시 키가 있으면 마이그레이션
     if (!settings.containsKey(NotificationSettingKeys.meetupAlerts)) {
       // 모임 관련 알림: 하나라도 true면 true
-      final meetupValue = (settings[NotificationSettingKeys.meetupFull] ??
-              true) ||
+      final meetupValue = 
+          (settings[NotificationSettingKeys.meetupFull] ?? true) ||
           (settings[NotificationSettingKeys.meetupCancelled] ?? true) ||
           (settings[NotificationSettingKeys.meetupParticipantJoined] ?? true) ||
           (settings[NotificationSettingKeys.meetupParticipantLeft] ?? true);
@@ -152,35 +152,35 @@ class NotificationSettingsService {
     }
 
     if (!settings.containsKey(NotificationSettingKeys.friendAlerts)) {
-      settings[NotificationSettingKeys.friendAlerts] =
+      settings[NotificationSettingKeys.friendAlerts] = 
           settings[NotificationSettingKeys.friendRequest] ?? true;
       changed = true;
     }
 
     if (!settings.containsKey(NotificationSettingKeys.postInteractions)) {
       // 게시글 관련: 하나라도 true면 true
-      final postValue =
+      final postValue = 
           (settings[NotificationSettingKeys.newComment] ?? true) ||
-              (settings[NotificationSettingKeys.newLike] ?? true) ||
-              (settings[NotificationSettingKeys.postPrivate] ?? true);
+          (settings[NotificationSettingKeys.newLike] ?? true) ||
+          (settings[NotificationSettingKeys.postPrivate] ?? true);
       settings[NotificationSettingKeys.postInteractions] = postValue;
       changed = true;
     }
 
     if (!settings.containsKey(NotificationSettingKeys.dmMessages)) {
-      settings[NotificationSettingKeys.dmMessages] =
+      settings[NotificationSettingKeys.dmMessages] = 
           settings[NotificationSettingKeys.dmReceived] ?? true;
       changed = true;
     }
 
     if (!settings.containsKey(NotificationSettingKeys.marketing)) {
-      settings[NotificationSettingKeys.marketing] =
+      settings[NotificationSettingKeys.marketing] = 
           settings[NotificationSettingKeys.adUpdates] ?? true;
       changed = true;
     }
 
     if (changed) {
-      Logger.log('✅ 알림 설정 마이그레이션 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 알림 설정 마이그레이션 완료');
     }
 
     return changed;
@@ -212,11 +212,10 @@ class NotificationSettingsService {
       }
 
       // 광고 토픽 구독/해제 처리 (marketing 키 사용)
+      // 토픽 처리 실패는 설정 저장 실패로 취급하지 않는다.
       if (key == NotificationSettingKeys.marketing) {
         try {
-          // 지연 import 방지 (순환참조 회피)
-          // ignore: avoid_dynamic_calls
-          final dynamic fcm = await _loadFCMService();
+          final fcm = FCMService();
           if (value) {
             await fcm.subscribeToTopic('ads');
           } else {
@@ -244,36 +243,9 @@ class NotificationSettingsService {
     }
 
     // 레거시 키를 통합 키로 변환
-    final unifiedKey =
-        NotificationSettingKeys.mapLegacyToUnified(notificationType);
-
+    final unifiedKey = NotificationSettingKeys.mapLegacyToUnified(notificationType);
+    
     // 통합 키로 확인
     return settings[unifiedKey] ?? true;
-  }
-
-  // 지연 로딩으로 FCMService 인스턴스 획득 (순환 의존성 회피용)
-  Future<dynamic> _loadFCMService() async {
-    // ignore: avoid_dynamic_calls
-    final fcm = (await Future.microtask(() => null));
-    // 실제 앱에서는 DI 컨테이너를 사용하거나, FCMService를 상위에서 주입받도록 개선 가능
-    // 여기서는 전역 싱글턴 패턴 대신 간단히 import하여 생성
-    // late import 방지: 직접 new FCMService() 생성
-    // ignore: prefer_const_constructors
-    return new _FCMServiceShim();
-  }
-}
-
-// 간단한 셈플 shim: subscribe/unsubscribe만 사용
-class _FCMServiceShim {
-  Future<void> subscribeToTopic(String topic) async {
-    // 지연 import로 실제 FCMService 사용
-    // ignore: avoid_print
-    Logger.log('Shim subscribeToTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
-  }
-
-  Future<void> unsubscribeFromTopic(String topic) async {
-    // ignore: avoid_print
-    Logger.log(
-        'Shim unsubscribeFromTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
   }
 }

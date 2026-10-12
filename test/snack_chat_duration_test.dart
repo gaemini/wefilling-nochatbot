@@ -1,0 +1,408 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:wefilling/models/snack_chat.dart';
+import 'package:wefilling/services/snack_chat_service.dart';
+
+SnackChat _chat({
+  String id = 'chat',
+  required int durationHours,
+  required DateTime expiresAt,
+  DateTime? createdAt,
+  DateTime? lastMessageTime,
+  int lastMessageSequence = 0,
+  List<String> participants = const ['owner', 'friend'],
+  List<String> favorites = const [],
+  int participantIntegrityVersion =
+      SnackChat.currentParticipantIntegrityVersion,
+}) {
+  final now = createdAt ?? DateTime(2026, 1, 1);
+  return SnackChat(
+    id: id,
+    title: 'Topic',
+    creatorId: 'owner',
+    participantIds: participants,
+    participantIntegrityVersion: participantIntegrityVersion,
+    visibleToCategoryIds: const [],
+    createdAt: now,
+    activeDurationHours: durationHours,
+    expiresAt: expiresAt,
+    favoriteUserIds: favorites,
+    lastMessage: '',
+    lastMessageTime: lastMessageTime ?? now,
+    lastMessageSenderId: 'owner',
+    lastMessageSequence: lastMessageSequence,
+    unreadCount: const {},
+    updatedAt: now,
+  );
+}
+
+void main() {
+  test('no-end chats never expire', () {
+    final chat = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+    );
+
+    expect(chat.hasNoExpiration, isTrue);
+    expect(chat.isExpired(DateTime.utc(9999, 12, 30)), isFalse);
+    expect(chat.toFirestore()['activeDurationHours'], 0);
+    expect(
+      (chat.toFirestore()['expiresAt'] as Timestamp).toDate().year,
+      9999,
+    );
+  });
+
+  test('24-hour chats still expire normally', () {
+    final chat = _chat(
+      durationHours: 24,
+      expiresAt: DateTime.utc(2026, 1, 2),
+    );
+
+    expect(chat.hasNoExpiration, isFalse);
+    expect(chat.isExpired(DateTime.utc(2026, 1, 2)), isTrue);
+    expect(chat.isExpired(DateTime.utc(2026, 1, 2, 0, 0, 1)), isTrue);
+  });
+
+  test('48-hour duration is not supported', () {
+    expect(
+      () => _chat(
+        durationHours: 48,
+        expiresAt: DateTime.utc(2026, 1, 3),
+      ),
+      throwsA(isA<AssertionError>()),
+    );
+  });
+
+  test('participant model has no six-person ceiling', () {
+    final chat = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      participants: List.generate(20, (index) => 'user-$index'),
+    );
+
+    expect(chat.participantCount, 20);
+    expect(chat.hasVerifiedParticipantIntegrity, isTrue);
+  });
+
+  test('previous participant projection is rechecked without hiding its count',
+      () {
+    final chat = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      participantIntegrityVersion: 1,
+    );
+
+    expect(chat.hasVerifiedParticipantIntegrity, isFalse);
+    // 서버의 1회 보정이 끝나기 전에도 UI는 이미 내려온 참여자 목록으로
+    // 숫자를 즉시 표시할 수 있어야 한다.
+    expect(chat.participantCount, 2);
+    expect(chat.toFirestore()['participantIntegrityVersion'], 1);
+  });
+
+  test('every current participant can invite members to a regular room', () {
+    final chat = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+    );
+
+    expect(chat.canInviteMembers('owner'), isTrue);
+    expect(chat.canInviteMembers('friend'), isTrue);
+    expect(chat.canInviteMembers('not-a-participant'), isFalse);
+    expect(chat.canInviteMembers(null), isFalse);
+  });
+
+  test('meetup-linked chats can start with the host only', () {
+    final now = DateTime(2026, 7, 26, 10);
+    final expiresAt = now.add(const Duration(hours: 24));
+    final chat = SnackChat(
+      id: 'meetup-chat',
+      title: 'Meetup',
+      creatorId: 'owner',
+      participantIds: const ['owner'],
+      visibleToCategoryIds: const [],
+      createdAt: now,
+      activeDurationHours: 24,
+      expiresAt: expiresAt,
+      favoriteUserIds: const [],
+      lastMessage: '',
+      lastMessageTime: now,
+      lastMessageSenderId: 'owner',
+      unreadCount: const {'owner': 0},
+      updatedAt: now,
+      meetupId: 'meetup-1',
+      allowMeetupJoin: true,
+    );
+
+    expect(chat.participantIds, const ['owner']);
+    expect(chat.participantCount, 1);
+    expect(chat.meetupId, 'meetup-1');
+    expect(chat.allowMeetupJoin, isTrue);
+    expect(chat.canInviteMembers('owner'), isFalse);
+    expect(chat.hasNoExpiration, isFalse);
+    expect(chat.expiresAt, expiresAt);
+    expect(chat.toFirestore()['activeDurationHours'], 24);
+    expect(chat.toFirestore()['participantIds'], const ['owner']);
+  });
+
+  test('chats created today stay in Today until local midnight', () {
+    final chats = [
+      _chat(
+        id: 'today-24-hour',
+        durationHours: 24,
+        expiresAt: DateTime(2026, 7, 25, 9),
+        createdAt: DateTime(2026, 7, 24, 9),
+      ),
+      _chat(
+        id: 'today-no-end',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+      ),
+    ];
+
+    final today = filterSnackChatsBySection(
+      chats,
+      section: SnackChatListSection.today,
+      now: DateTime(2026, 7, 24, 23, 59, 59, 999),
+    );
+
+    expect(today, hasLength(2));
+  });
+
+  test('every previous-date chat moves to All at midnight', () {
+    final noEnd = _chat(
+      id: 'previous-no-end',
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime(2026, 7, 24, 23, 59),
+    );
+    final favorited = _chat(
+      id: 'previous-favorite',
+      durationHours: 24,
+      expiresAt: DateTime(2026, 7, 25, 23, 59),
+      createdAt: DateTime(2026, 7, 24, 23, 59),
+      favorites: const ['owner'],
+    );
+    final regular = _chat(
+      id: 'previous-regular',
+      durationHours: 24,
+      expiresAt: DateTime(2026, 7, 25, 23, 59),
+      createdAt: DateTime(2026, 7, 24, 23, 59),
+    );
+
+    final all = filterSnackChatsBySection(
+      [noEnd, favorited, regular],
+      section: SnackChatListSection.all,
+      now: DateTime(2026, 7, 25),
+    );
+    final today = filterSnackChatsBySection(
+      [noEnd, favorited, regular],
+      section: SnackChatListSection.today,
+      now: DateTime(2026, 7, 25),
+    );
+
+    expect(all, containsAll([noEnd, favorited, regular]));
+    expect(today, isEmpty);
+  });
+
+  test('unified list contains visible rooms without date sections', () {
+    final today = _chat(
+      id: 'unified-today',
+      durationHours: 24,
+      expiresAt: DateTime(2026, 7, 26),
+      createdAt: DateTime(2026, 7, 25, 10),
+    );
+    final previous = _chat(
+      id: 'unified-previous',
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime(2026, 7, 24, 10),
+    );
+
+    final unified = filterSnackChatsBySection(
+      [today, previous],
+      section: SnackChatListSection.unified,
+      now: DateTime(2026, 7, 25, 12),
+    );
+
+    expect(unified, containsAll([today, previous]));
+  });
+
+  test('a room from yesterday is not Today even when under 24 hours old', () {
+    final chat = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime(2026, 7, 24, 23, 59),
+    );
+
+    final today = filterSnackChatsBySection(
+      [chat],
+      section: SnackChatListSection.today,
+      now: DateTime(2026, 7, 25, 0, 1),
+    );
+    final all = filterSnackChatsBySection(
+      [chat],
+      section: SnackChatListSection.all,
+      now: DateTime(2026, 7, 25, 0, 1),
+    );
+
+    expect(today, isEmpty);
+    expect(all, contains(chat));
+  });
+
+  test('rooms before the 2026-07-24 policy boundary are isolated', () {
+    final legacy = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime.utc(2026, 7, 23, 14, 59, 59, 999),
+    );
+
+    final today = filterSnackChatsBySection(
+      [legacy],
+      section: SnackChatListSection.today,
+      now: DateTime(2026, 7, 24, 12),
+    );
+    final all = filterSnackChatsBySection(
+      [legacy],
+      section: SnackChatListSection.all,
+      now: DateTime(2026, 7, 24, 12),
+    );
+
+    expect(today, isEmpty);
+    expect(all, isEmpty);
+  });
+
+  test('expired rooms stay visible only while favorited', () {
+    final favorited = _chat(
+      durationHours: 24,
+      expiresAt: DateTime(2026, 7, 25, 9),
+      createdAt: DateTime(2026, 7, 25, 8),
+      favorites: const ['owner'],
+    );
+    final notFavorited = _chat(
+      durationHours: 24,
+      expiresAt: DateTime(2026, 7, 25, 9),
+      createdAt: DateTime(2026, 7, 25, 8),
+    );
+
+    final all = filterSnackChatsBySection(
+      [favorited, notFavorited],
+      section: SnackChatListSection.all,
+      now: DateTime(2026, 7, 26),
+      currentUserId: 'owner',
+    );
+
+    expect(all, contains(favorited));
+    expect(all, isNot(contains(notFavorited)));
+  });
+
+  test('favorites lead while both groups retain message recency', () {
+    final rooms = <SnackChat>[
+      _chat(
+        id: 'regular-new',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: DateTime(2026, 7, 24, 16, 30),
+      ),
+      _chat(
+        id: 'favorite-old',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: DateTime(2026, 7, 24, 15),
+        favorites: const ['owner'],
+      ),
+      _chat(
+        id: 'regular-old',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: DateTime(2026, 7, 24, 16),
+      ),
+      _chat(
+        id: 'favorite-new',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: DateTime(2026, 7, 24, 15, 30),
+        favorites: const ['owner'],
+      ),
+    ];
+
+    final ordered = orderSnackChatsForCurrentUser(
+      rooms,
+      currentUserId: 'owner',
+    );
+
+    expect(
+      ordered.map((room) => room.id),
+      <String>[
+        'favorite-new',
+        'favorite-old',
+        'regular-new',
+        'regular-old',
+      ],
+    );
+  });
+
+  test('favorite ordering is user-specific and stable on equal timestamps', () {
+    final sameTime = DateTime(2026, 7, 24, 16);
+    final rooms = <SnackChat>[
+      _chat(
+        id: 'room-b',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: sameTime,
+        lastMessageSequence: 8,
+        favorites: const ['user-b'],
+      ),
+      _chat(
+        id: 'room-c',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: sameTime,
+        lastMessageSequence: 9,
+      ),
+      _chat(
+        id: 'room-a',
+        durationHours: 0,
+        expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
+        lastMessageTime: sameTime,
+        lastMessageSequence: 8,
+        favorites: const ['owner'],
+      ),
+    ];
+
+    expect(
+      orderSnackChatsForCurrentUser(rooms, currentUserId: 'owner')
+          .map((room) => room.id),
+      <String>['room-a', 'room-c', 'room-b'],
+    );
+    expect(
+      orderSnackChatsForCurrentUser(rooms, currentUserId: 'user-b')
+          .map((room) => room.id),
+      <String>['room-b', 'room-c', 'room-a'],
+    );
+  });
+
+  test('one room id is emitted at most once', () {
+    final room = _chat(
+      id: 'same-room',
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime(2026, 7, 24),
+    );
+
+    expect(
+      orderSnackChatsForCurrentUser(
+        <SnackChat>[room, room],
+        currentUserId: 'owner',
+      ),
+      hasLength(1),
+    );
+  });
+}

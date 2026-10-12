@@ -7,6 +7,7 @@ import 'package:intl/intl.dart' as intl;
 
 import 'app_localizations_en.dart';
 import 'app_localizations_ko.dart';
+import 'app_localizations_zh.dart';
 
 // ignore_for_file: type=lint
 
@@ -95,7 +96,8 @@ abstract class AppLocalizations {
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
-    Locale('ko')
+    Locale('ko'),
+    Locale('zh')
   ];
 
   /// No description provided for @login.
@@ -176,6 +178,138 @@ abstract class AppLocalizations {
   /// **'비밀번호 재설정'**
   String get resetPassword;
 
+  /// No description provided for @passwordResetDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일로 받은 6자리 인증번호를 입력해 비밀번호를 재설정하세요.'**
+  String get passwordResetDescription;
+
+  /// No description provided for @emailAddress.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일 주소'**
+  String get emailAddress;
+
+  /// No description provided for @sendCode.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증번호 보내기'**
+  String get sendCode;
+
+  /// No description provided for @passwordResetCodeSent.
+  ///
+  /// In ko, this message translates to:
+  /// **'해당 이메일로 가입한 계정이 있다면 인증번호를 보냈습니다.'**
+  String get passwordResetCodeSent;
+
+  /// No description provided for @verificationCodeHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'6자리 인증번호 입력'**
+  String get verificationCodeHint;
+
+  /// No description provided for @newPassword.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 비밀번호'**
+  String get newPassword;
+
+  /// No description provided for @resendCode.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증번호 다시 보내기'**
+  String get resendCode;
+
+  /// No description provided for @resendCodeIn.
+  ///
+  /// In ko, this message translates to:
+  /// **'{seconds}초 후 다시 보내기'**
+  String resendCodeIn(int seconds);
+
+  /// No description provided for @passwordChangedSuccessfully.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호가 변경되었습니다.'**
+  String get passwordChangedSuccessfully;
+
+  /// No description provided for @signInWithNewPassword.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 비밀번호로 로그인해 주세요.'**
+  String get signInWithNewPassword;
+
+  /// No description provided for @backToEmailLogin.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일 로그인으로 돌아가기'**
+  String get backToEmailLogin;
+
+  /// No description provided for @invalidVerificationCode.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증번호가 올바르지 않습니다.'**
+  String get invalidVerificationCode;
+
+  /// No description provided for @expiredVerificationCode.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증번호가 만료되었습니다. 새 인증번호를 요청해 주세요.'**
+  String get expiredVerificationCode;
+
+  /// No description provided for @tooManyVerificationAttempts.
+  ///
+  /// In ko, this message translates to:
+  /// **'입력 횟수를 초과했습니다. 새 인증번호를 요청해 주세요.'**
+  String get tooManyVerificationAttempts;
+
+  /// No description provided for @passwordResetRateLimited.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 인증번호를 다시 요청해 주세요.'**
+  String get passwordResetRateLimited;
+
+  /// No description provided for @passwordResetGenericError.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호를 재설정하지 못했어요. 잠시 후 다시 시도해 주세요.'**
+  String get passwordResetGenericError;
+
+  /// No description provided for @passwordResetNetworkError.
+  ///
+  /// In ko, this message translates to:
+  /// **'인터넷 연결을 확인한 뒤 다시 시도해 주세요.'**
+  String get passwordResetNetworkError;
+
+  /// No description provided for @passwordResetRequestVerificationFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'요청을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.'**
+  String get passwordResetRequestVerificationFailed;
+
+  /// No description provided for @currentPassword.
+  ///
+  /// In ko, this message translates to:
+  /// **'현재 비밀번호'**
+  String get currentPassword;
+
+  /// No description provided for @currentPasswordHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'현재 비밀번호 입력'**
+  String get currentPasswordHint;
+
+  /// No description provided for @emailReauthenticationDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'안전을 위해 회원 탈퇴 전에 현재 비밀번호를 확인해 주세요.'**
+  String get emailReauthenticationDescription;
+
+  /// No description provided for @reauthenticationFailedTryAgain.
+  ///
+  /// In ko, this message translates to:
+  /// **'본인 확인에 실패했습니다. 다시 시도해 주세요.'**
+  String get reauthenticationFailedTryAgain;
+
   /// No description provided for @sendResetEmail.
   ///
   /// In ko, this message translates to:
@@ -241,6 +375,42 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'내 정보'**
   String get myPage;
+
+  /// No description provided for @snackChat.
+  ///
+  /// In ko, this message translates to:
+  /// **'스낵챗'**
+  String get snackChat;
+
+  /// No description provided for @snackChatTabSemantic.
+  ///
+  /// In ko, this message translates to:
+  /// **'스낵챗 탭'**
+  String get snackChatTabSemantic;
+
+  /// No description provided for @groupsTabSemantic.
+  ///
+  /// In ko, this message translates to:
+  /// **'그룹 탭'**
+  String get groupsTabSemantic;
+
+  /// No description provided for @groupNoFriendsSelected.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택한 친구가 여기에 표시됩니다.'**
+  String get groupNoFriendsSelected;
+
+  /// No description provided for @groupNoSearchResults.
+  ///
+  /// In ko, this message translates to:
+  /// **'검색 결과가 없습니다.'**
+  String get groupNoSearchResults;
+
+  /// No description provided for @groupRemoveFriendHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'두 번 탭하여 이 그룹에서 제외합니다.'**
+  String get groupRemoveFriendHint;
 
   /// No description provided for @home.
   ///
@@ -461,7 +631,7 @@ abstract class AppLocalizations {
   /// No description provided for @todayNoMeetups.
   ///
   /// In ko, this message translates to:
-  /// **'오늘 올라온 밋업이 없어요.'**
+  /// **'오늘 만들었거나 예정된 밋업이 없어요.'**
   String get todayNoMeetups;
 
   /// No description provided for @todayNoPosts.
@@ -659,7 +829,7 @@ abstract class AppLocalizations {
   /// No description provided for @snackChatVisibilityDurationHint.
   ///
   /// In ko, this message translates to:
-  /// **'마지막 대화 기준으로 24시간 또는 48시간 동안 노출됩니다.'**
+  /// **'24시간 후 종료하거나 계속 유지할 수 있습니다.'**
   String get snackChatVisibilityDurationHint;
 
   /// No description provided for @snackChatDuration24Hours.
@@ -668,11 +838,11 @@ abstract class AppLocalizations {
   /// **'24시간'**
   String get snackChatDuration24Hours;
 
-  /// No description provided for @snackChatDuration48Hours.
+  /// No description provided for @snackChatDurationNoEnd.
   ///
   /// In ko, this message translates to:
-  /// **'48시간'**
-  String get snackChatDuration48Hours;
+  /// **'종료 없음'**
+  String get snackChatDurationNoEnd;
 
   /// No description provided for @snackChatSelectParticipants.
   ///
@@ -683,8 +853,14 @@ abstract class AppLocalizations {
   /// No description provided for @snackChatParticipantLimit.
   ///
   /// In ko, this message translates to:
-  /// **'최대 6명까지 친구를 초대할 수 있습니다'**
+  /// **'함께할 친구를 자유롭게 초대하세요'**
   String get snackChatParticipantLimit;
+
+  /// No description provided for @snackChatParticipantCount.
+  ///
+  /// In ko, this message translates to:
+  /// **'{count}명 참여'**
+  String snackChatParticipantCount(int count);
 
   /// No description provided for @snackChatMe.
   ///
@@ -704,6 +880,42 @@ abstract class AppLocalizations {
   /// **'친구 초대'**
   String get snackChatInviteFriends;
 
+  /// No description provided for @snackChatInviteStepTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 초대'**
+  String get snackChatInviteStepTitle;
+
+  /// No description provided for @snackChatInviteStepHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'함께할 친구를 한 명 이상 선택해주세요.'**
+  String get snackChatInviteStepHint;
+
+  /// No description provided for @snackChatSelectedFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택한 친구'**
+  String get snackChatSelectedFriends;
+
+  /// No description provided for @snackChatNoFriendsSelected.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택한 친구가 여기에 표시됩니다.'**
+  String get snackChatNoFriendsSelected;
+
+  /// No description provided for @snackChatFriendList.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 목록'**
+  String get snackChatFriendList;
+
+  /// No description provided for @snackChatDragForFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'드래그해서 더 보기'**
+  String get snackChatDragForFriends;
+
   /// No description provided for @snackChatSelectionComplete.
   ///
   /// In ko, this message translates to:
@@ -719,7 +931,7 @@ abstract class AppLocalizations {
   /// No description provided for @snackChatMaxParticipants.
   ///
   /// In ko, this message translates to:
-  /// **'참여자는 최대 6명(본인 포함)까지 선택할 수 있습니다.'**
+  /// **'초대할 친구를 선택해주세요.'**
   String get snackChatMaxParticipants;
 
   /// No description provided for @snackChatEnterTitle.
@@ -767,7 +979,7 @@ abstract class AppLocalizations {
   /// No description provided for @snackChatGuideDesc.
   ///
   /// In ko, this message translates to:
-  /// **'최대 6명과 함께 가볍게\n즐기는 소셜 채팅 공간입니다.'**
+  /// **'친구들과 가볍게\n즐기는 소셜 채팅 공간입니다.'**
   String get snackChatGuideDesc;
 
   /// No description provided for @editPost.
@@ -2411,13 +2623,13 @@ abstract class AppLocalizations {
   /// No description provided for @createFirstCategory.
   ///
   /// In ko, this message translates to:
-  /// **'그룹으로 친구 관리하기'**
+  /// **'친구 그룹으로 공개 범위를 관리해요'**
   String get createFirstCategory;
 
   /// No description provided for @createFirstCategoryDescription.
   ///
   /// In ko, this message translates to:
-  /// **'친구들을 그룹으로 관리해보세요.\n아래 추가 버튼을 통해 그룹을 만들어보세요.'**
+  /// **'친구들을 그룹으로 관리하고,\n포스트와 밋업의 공개 범위를 간편하게 설정해 보세요.'**
   String get createFirstCategoryDescription;
 
   /// No description provided for @editAction.
@@ -2513,7 +2725,7 @@ abstract class AppLocalizations {
   /// No description provided for @deleteCategoryConfirm.
   ///
   /// In ko, this message translates to:
-  /// **'\'{name}\' 그룹을 삭제하시겠습니까?\n\n이 그룹에 속한 친구들은 다른 그룹으로 이동됩니다.'**
+  /// **'\'{name}\' 그룹을 삭제하시겠습니까?\n\n그룹만 삭제되며 친구들은 다른 그룹으로 이동하지 않습니다.'**
   String deleteCategoryConfirm(String name);
 
   /// No description provided for @unfriendConfirm.
@@ -2731,6 +2943,60 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'추천 친구 보기'**
   String get viewRecommendedFriends;
+
+  /// No description provided for @userSearchIdleTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용자를 검색해보세요'**
+  String get userSearchIdleTitle;
+
+  /// No description provided for @userSearchIdleDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'닉네임이나 이름으로 새로운 친구를 찾아보세요.'**
+  String get userSearchIdleDescription;
+
+  /// No description provided for @interestFriendDiscoveryTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사로 친구 찾기'**
+  String get interestFriendDiscoveryTitle;
+
+  /// No description provided for @interestFriendDiscoveryDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.'**
+  String get interestFriendDiscoveryDescription;
+
+  /// No description provided for @interestPeopleTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{interest}에 관심 있는 사람'**
+  String interestPeopleTitle(String interest);
+
+  /// No description provided for @interestNoUsersTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 #{interest}에 관심사를 등록한 사용자가 없어요'**
+  String interestNoUsersTitle(String interest);
+
+  /// No description provided for @interestNoUsersDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'다른 관심사를 선택해 새로운 친구를 찾아보세요.'**
+  String get interestNoUsersDescription;
+
+  /// No description provided for @interestSearchErrorTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사 검색을 불러오지 못했어요'**
+  String get interestSearchErrorTitle;
+
+  /// No description provided for @interestSearchErrorDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 다시 시도해 주세요.'**
+  String get interestSearchErrorDescription;
 
   /// No description provided for @tryDifferentKeyword.
   ///
@@ -3020,6 +3286,12 @@ abstract class AppLocalizations {
   /// **'{name}님이 친구요청을 보냈습니다'**
   String friendRequestMessage(String name);
 
+  /// No description provided for @friendRequestAcceptedMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'{name}님이 회원님의 친구요청을 수락했습니다'**
+  String friendRequestAcceptedMessage(String name);
+
   /// No description provided for @emailSignup.
   ///
   /// In ko, this message translates to:
@@ -3209,7 +3481,7 @@ abstract class AppLocalizations {
   /// No description provided for @appName.
   ///
   /// In ko, this message translates to:
-  /// **'Wefilling'**
+  /// **'위필링'**
   String get appName;
 
   /// No description provided for @appTagline.
@@ -3227,7 +3499,7 @@ abstract class AppLocalizations {
   /// No description provided for @googleLoginDescription.
   ///
   /// In ko, this message translates to:
-  /// **'구글 계정으로 로그인하고\n다양한 기능을 이용해 보세요.'**
+  /// **'원하는 방법으로 로그인하고\n위필링을 시작해 보세요.'**
   String get googleLoginDescription;
 
   /// No description provided for @googleLogin.
@@ -3293,7 +3565,7 @@ abstract class AppLocalizations {
   /// No description provided for @signupRequired.
   ///
   /// In ko, this message translates to:
-  /// **'회원가입이 필요합니다.\n\n신규 사용자이거나 탈퇴한 계정인 경우 \'회원가입하기\' 버튼을 눌러 가입을 진행해주세요.'**
+  /// **'회원가입이 필요합니다.\n\n신규 사용자이거나 탈퇴한 계정인 경우 \'회원가입하기\' 버튼을 눌러 한양메일 인증을 진행해주세요.'**
   String get signupRequired;
 
   /// No description provided for @meetupNotifications.
@@ -4259,7 +4531,7 @@ abstract class AppLocalizations {
   /// No description provided for @signUpFirstMessage.
   ///
   /// In ko, this message translates to:
-  /// **'아래 \"회원가입하기\" 버튼을 눌러\n가입을 먼저 진행해주세요.'**
+  /// **'아래 \"회원가입하기\" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.'**
   String get signUpFirstMessage;
 
   /// No description provided for @none.
@@ -4562,6 +4834,60 @@ abstract class AppLocalizations {
   /// **'닉네임이 무엇인가요?'**
   String get nicknameQuestion;
 
+  /// No description provided for @nicknamePolicyHelp.
+  ///
+  /// In ko, this message translates to:
+  /// **'한글과 영문만 2~20자로 입력해 주세요. 숫자, 공백, 특수문자는 사용할 수 없어요.'**
+  String get nicknamePolicyHelp;
+
+  /// No description provided for @nicknameChecking.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용 가능 여부를 확인하고 있어요.'**
+  String get nicknameChecking;
+
+  /// No description provided for @nicknameAvailable.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용 가능한 닉네임이에요.'**
+  String get nicknameAvailable;
+
+  /// No description provided for @nicknameTaken.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미 사용 중인 닉네임이에요.'**
+  String get nicknameTaken;
+
+  /// No description provided for @nicknameInvalidCharacters.
+  ///
+  /// In ko, this message translates to:
+  /// **'한글과 영문만 입력해 주세요. 숫자, 공백, 특수문자는 사용할 수 없어요.'**
+  String get nicknameInvalidCharacters;
+
+  /// No description provided for @nicknameLetterRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'한글 또는 영문자를 하나 이상 포함해 주세요.'**
+  String get nicknameLetterRequired;
+
+  /// No description provided for @nicknameReserved.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용할 수 없는 닉네임이에요.'**
+  String get nicknameReserved;
+
+  /// No description provided for @nicknameCheckNetworkError.
+  ///
+  /// In ko, this message translates to:
+  /// **'닉네임을 확인하지 못했어요. 다시 시도해 주세요.'**
+  String get nicknameCheckNetworkError;
+
+  /// No description provided for @nicknameNormalizedPreview.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장될 닉네임: {nickname}'**
+  String nicknameNormalizedPreview(String nickname);
+
   /// No description provided for @notification.
   ///
   /// In ko, this message translates to:
@@ -4598,11 +4924,17 @@ abstract class AppLocalizations {
   /// **'카페'**
   String get cafe;
 
-  /// No description provided for @drink.
+  /// No description provided for @trip.
   ///
   /// In ko, this message translates to:
-  /// **'술'**
-  String get drink;
+  /// **'여행'**
+  String get trip;
+
+  /// No description provided for @hangout.
+  ///
+  /// In ko, this message translates to:
+  /// **'행아웃'**
+  String get hangout;
 
   /// No description provided for @friendsOnlyBadge.
   ///
@@ -4633,6 +4965,90 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'친구 선택'**
   String get friendSelection;
+
+  /// No description provided for @dmRecipientSelectionTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 메시지'**
+  String get dmRecipientSelectionTitle;
+
+  /// No description provided for @dmRecipientFriendsTab.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구'**
+  String get dmRecipientFriendsTab;
+
+  /// No description provided for @dmRecipientIdSearchTab.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디 검색'**
+  String get dmRecipientIdSearchTab;
+
+  /// No description provided for @dmRecipientFriendSearchHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 아이디 검색'**
+  String get dmRecipientFriendSearchHint;
+
+  /// No description provided for @dmRecipientIdSearchHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용자 아이디 검색'**
+  String get dmRecipientIdSearchHint;
+
+  /// No description provided for @dmRecipientNoFriendsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 친구가 없어요'**
+  String get dmRecipientNoFriendsTitle;
+
+  /// No description provided for @dmRecipientNoFriendsDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디 검색에서 메시지를 보낼 사람을 찾아보세요.'**
+  String get dmRecipientNoFriendsDescription;
+
+  /// No description provided for @dmRecipientSearchPromptTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디로 찾아보세요'**
+  String get dmRecipientSearchPromptTitle;
+
+  /// No description provided for @dmRecipientSearchPromptDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디 일부만 입력해도 사용자를 찾을 수 있어요.'**
+  String get dmRecipientSearchPromptDescription;
+
+  /// No description provided for @dmRecipientNoResultsDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디 철자를 확인하거나 다른 검색어를 입력해보세요.'**
+  String get dmRecipientNoResultsDescription;
+
+  /// No description provided for @dmRecipientSearchFailedTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'검색하지 못했어요'**
+  String get dmRecipientSearchFailedTitle;
+
+  /// No description provided for @dmRecipientSearchFailedDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'연결을 확인하고 다시 시도해주세요.'**
+  String get dmRecipientSearchFailedDescription;
+
+  /// No description provided for @dmRecipientFriendsLoadFailedTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 목록을 불러오지 못했어요'**
+  String get dmRecipientFriendsLoadFailedTitle;
+
+  /// No description provided for @dmRecipientFriendsLoadFailedDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 다시 시도해주세요.'**
+  String get dmRecipientFriendsLoadFailedDescription;
 
   /// No description provided for @noFriendsInCategory.
   ///
@@ -5036,30 +5452,6 @@ abstract class AppLocalizations {
   /// **'환영합니다! 프로필을 설정해주세요.'**
   String get profileSetupWelcome;
 
-  /// No description provided for @signupCancelDialogTitle.
-  ///
-  /// In ko, this message translates to:
-  /// **'가입을 중단할까요?'**
-  String get signupCancelDialogTitle;
-
-  /// No description provided for @signupCancelDialogContent.
-  ///
-  /// In ko, this message translates to:
-  /// **'지금 나가면 입력한 정보가 모두 삭제되고\n처음부터 다시 가입해야 합니다.'**
-  String get signupCancelDialogContent;
-
-  /// No description provided for @signupCancelDialogContinue.
-  ///
-  /// In ko, this message translates to:
-  /// **'계속 가입하기'**
-  String get signupCancelDialogContinue;
-
-  /// No description provided for @signupCancelDialogQuit.
-  ///
-  /// In ko, this message translates to:
-  /// **'가입 취소하기'**
-  String get signupCancelDialogQuit;
-
   /// No description provided for @profileSetupSuccess.
   ///
   /// In ko, this message translates to:
@@ -5117,7 +5509,7 @@ abstract class AppLocalizations {
   /// No description provided for @signUpMethodSelectionDescription.
   ///
   /// In ko, this message translates to:
-  /// **'한양메일 인증이 완료되었습니다.\n원하는 회원가입 방식을 선택할 수 있어요.'**
+  /// **'사용할 계정으로 계속 진행해주세요.'**
   String get signUpMethodSelectionDescription;
 
   /// No description provided for @signUpWithApple.
@@ -5143,6 +5535,36 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'아이디로 회원가입'**
   String get signUpWithId;
+
+  /// No description provided for @generalEmailVerificationTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일 인증'**
+  String get generalEmailVerificationTitle;
+
+  /// No description provided for @generalEmailVerificationHeading.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일을 인증해주세요'**
+  String get generalEmailVerificationHeading;
+
+  /// No description provided for @generalEmailVerificationDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용할 이메일로 4자리 인증번호를 보내드릴게요.'**
+  String get generalEmailVerificationDescription;
+
+  /// No description provided for @verifiedEmailLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증된 이메일'**
+  String get verifiedEmailLabel;
+
+  /// No description provided for @generalEmailPasswordDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증한 이메일에 사용할 비밀번호를 설정해주세요.\n최소 8자 이상이어야 합니다.'**
+  String get generalEmailPasswordDescription;
 
   /// No description provided for @appleSignupIosOnlyError.
   ///
@@ -5465,7 +5887,7 @@ abstract class AppLocalizations {
   /// No description provided for @postComposeImageRequired.
   ///
   /// In ko, this message translates to:
-  /// **'이미지 첨부'**
+  /// **'이미지/동영상 첨부하기'**
   String get postComposeImageRequired;
 
   /// No description provided for @postComposeImageHelper.
@@ -5483,7 +5905,7 @@ abstract class AppLocalizations {
   /// No description provided for @postVisibilityPublicTitle.
   ///
   /// In ko, this message translates to:
-  /// **'모두에게 공개'**
+  /// **'전체 공개'**
   String get postVisibilityPublicTitle;
 
   /// No description provided for @postVisibilityPublicDescription.
@@ -5492,10 +5914,22 @@ abstract class AppLocalizations {
   /// **'모든 사용자가 게시글을 볼 수 있습니다'**
   String get postVisibilityPublicDescription;
 
+  /// No description provided for @postVisibilityAnonymousTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'전체 익명 공개'**
+  String get postVisibilityAnonymousTitle;
+
+  /// No description provided for @postVisibilityAnonymousDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'작성자 정보 없이 모든 사용자에게 공개됩니다'**
+  String get postVisibilityAnonymousDescription;
+
   /// No description provided for @postVisibilityGroupTitle.
   ///
   /// In ko, this message translates to:
-  /// **'그룹 선택'**
+  /// **'그룹 공개'**
   String get postVisibilityGroupTitle;
 
   /// No description provided for @postVisibilityGroupDescription.
@@ -5612,6 +6046,18 @@ abstract class AppLocalizations {
   /// **'정말 나가시겠습니까?\n입력한 정보는 저장되지 않습니다.'**
   String get exitMeetupCreationMessage;
 
+  /// No description provided for @exitMeetupEditing.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 수정 나가기'**
+  String get exitMeetupEditing;
+
+  /// No description provided for @exitMeetupEditingMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'정말 나가시겠습니까?\n수정한 내용은 저장되지 않습니다.'**
+  String get exitMeetupEditingMessage;
+
   /// No description provided for @exit.
   ///
   /// In ko, this message translates to:
@@ -5647,6 +6093,312 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'이 Snack Chat을 즐겨찾기에서 해제할까요?'**
   String get snackChatUnfavoriteMessage;
+
+  /// No description provided for @postCategoriesTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'카테고리'**
+  String get postCategoriesTitle;
+
+  /// No description provided for @postCategoriesSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 있는 주제에서 새로운 이야기를 찾아보세요.'**
+  String get postCategoriesSubtitle;
+
+  /// No description provided for @postCategorySelectTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글 카테고리'**
+  String get postCategorySelectTitle;
+
+  /// No description provided for @postCategorySelectAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'카테고리 선택'**
+  String get postCategorySelectAction;
+
+  /// No description provided for @postCategoryRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글 카테고리를 선택해 주세요.'**
+  String get postCategoryRequired;
+
+  /// No description provided for @postCategoryEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 {category} 카테고리에 글이 없어요.'**
+  String postCategoryEmpty(String category);
+
+  /// No description provided for @postCategoryEmptySubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'첫 번째 기록을 남겨보세요.'**
+  String get postCategoryEmptySubtitle;
+
+  /// No description provided for @postCategoryCreateAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'글 작성하기'**
+  String get postCategoryCreateAction;
+
+  /// No description provided for @postCategoryStyle.
+  ///
+  /// In ko, this message translates to:
+  /// **'스타일'**
+  String get postCategoryStyle;
+
+  /// No description provided for @postCategoryStyleDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'패션·뷰티·아이템'**
+  String get postCategoryStyleDescription;
+
+  /// No description provided for @postCategoryCreate.
+  ///
+  /// In ko, this message translates to:
+  /// **'레스토랑'**
+  String get postCategoryCreate;
+
+  /// No description provided for @postCategoryCreateDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'맛집·외식·음식'**
+  String get postCategoryCreateDescription;
+
+  /// No description provided for @postCategoryPhoto.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진'**
+  String get postCategoryPhoto;
+
+  /// No description provided for @postCategoryPhotoDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진·영상·카메라'**
+  String get postCategoryPhotoDescription;
+
+  /// No description provided for @postCategoryContent.
+  ///
+  /// In ko, this message translates to:
+  /// **'콘텐츠'**
+  String get postCategoryContent;
+
+  /// No description provided for @postCategoryContentDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'음악·영화·드라마'**
+  String get postCategoryContentDescription;
+
+  /// No description provided for @postCategoryCafe.
+  ///
+  /// In ko, this message translates to:
+  /// **'카페'**
+  String get postCategoryCafe;
+
+  /// No description provided for @postCategoryCafeDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'카페·디저트·공간'**
+  String get postCategoryCafeDescription;
+
+  /// No description provided for @postCategoryAcademicStudy.
+  ///
+  /// In ko, this message translates to:
+  /// **'학업·스터디'**
+  String get postCategoryAcademicStudy;
+
+  /// No description provided for @postCategoryAcademicStudyDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'수업·과제·시험·스터디'**
+  String get postCategoryAcademicStudyDescription;
+
+  /// No description provided for @postCategoryBooksWriting.
+  ///
+  /// In ko, this message translates to:
+  /// **'책·글'**
+  String get postCategoryBooksWriting;
+
+  /// No description provided for @postCategoryBooksWritingDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'독서·글쓰기·문장'**
+  String get postCategoryBooksWritingDescription;
+
+  /// No description provided for @postCategoryTravelLocal.
+  ///
+  /// In ko, this message translates to:
+  /// **'여행·로컬'**
+  String get postCategoryTravelLocal;
+
+  /// No description provided for @postCategoryTravelLocalDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'여행·동네·장소'**
+  String get postCategoryTravelLocalDescription;
+
+  /// No description provided for @postCategoryGlobal.
+  ///
+  /// In ko, this message translates to:
+  /// **'글로벌'**
+  String get postCategoryGlobal;
+
+  /// No description provided for @postCategoryGlobalDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'언어·문화·유학생'**
+  String get postCategoryGlobalDescription;
+
+  /// No description provided for @postCategoryOther.
+  ///
+  /// In ko, this message translates to:
+  /// **'기타'**
+  String get postCategoryOther;
+
+  /// No description provided for @postCategoryOtherDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'기존 글과 자유로운 이야기'**
+  String get postCategoryOtherDescription;
+
+  /// No description provided for @meetupTabLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'밋업'**
+  String get meetupTabLabel;
+
+  /// No description provided for @meetupEmptyTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'Wefilling의 뜻을 아시나요?'**
+  String get meetupEmptyTitle;
+
+  /// No description provided for @meetupEmptyDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'\"We\"와 \"filling\"의 합성어로,\n사람과 사람 사이의 공간을 채운다는 뜻입니다.'**
+  String get meetupEmptyDescription;
+
+  /// No description provided for @postSubmitAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'등록'**
+  String get postSubmitAction;
+
+  /// No description provided for @chatReactionAdd.
+  ///
+  /// In ko, this message translates to:
+  /// **'반응 추가'**
+  String get chatReactionAdd;
+
+  /// No description provided for @chatReactionRemove.
+  ///
+  /// In ko, this message translates to:
+  /// **'반응 취소'**
+  String get chatReactionRemove;
+
+  /// No description provided for @chatReactionPeople.
+  ///
+  /// In ko, this message translates to:
+  /// **'반응한 사람'**
+  String get chatReactionPeople;
+
+  /// No description provided for @chatReactionSaveFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'반응을 저장하지 못했습니다.'**
+  String get chatReactionSaveFailed;
+
+  /// No description provided for @chatReply.
+  ///
+  /// In ko, this message translates to:
+  /// **'답장'**
+  String get chatReply;
+
+  /// No description provided for @chatReportMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'메시지 신고'**
+  String get chatReportMessage;
+
+  /// No description provided for @chatTranslationTranslating.
+  ///
+  /// In ko, this message translates to:
+  /// **'번역 중'**
+  String get chatTranslationTranslating;
+
+  /// No description provided for @chatTranslationTranslated.
+  ///
+  /// In ko, this message translates to:
+  /// **'번역됨'**
+  String get chatTranslationTranslated;
+
+  /// No description provided for @chatTranslationRetry.
+  ///
+  /// In ko, this message translates to:
+  /// **'다시 번역'**
+  String get chatTranslationRetry;
+
+  /// No description provided for @semesterGuideTitleById.
+  ///
+  /// In ko, this message translates to:
+  /// **'{guideId, select, check_enrollment{수강신청 내역 확인하기} exchange_orientation{교환학생 오리엔테이션 확인하기} campus_welcome_meetup{새 학기 모임 둘러보기} check_syllabus{강의계획서와 평가 방식 확인하기} course_change_period{수강 정정 기간 확인하기} club_fair{동아리와 학생 활동 찾아보기} academic_calendar{학사 일정 저장하기} arc_documents{외국인등록 관련 서류 확인하기} language_exchange{언어교환 모임 참여하기} campus_services{교내 지원 서비스 알아두기} dorm_rules{기숙사 생활 규칙 확인하기} buddy_program{버디 프로그램 찾아보기} assignment_check{밀린 과제와 출석 확인하기} study_meetup{전공 또는 시험 스터디 찾아보기} midterm_schedule{중간고사 일정 정리하기} library_space{집중할 공부 장소 찾아보기} midterm_readiness{중간고사 준비 상태 점검하기} study_break{짧은 휴식 모임 참여하기} midterm_followup{시험 후 과목별 계획 다시 세우기} wellbeing_check{이번 학기 컨디션 돌아보기} festival_events{교내 행사 일정 확인하기} exchange_culture_event{문화 교류 행사 참여하기} grade_progress{과목별 성취도 확인하기} academic_advising{필요한 학업 상담 예약하기} final_projects{기말 과제와 팀 프로젝트 일정 확인하기} career_program{진로·취업 프로그램 찾아보기} next_term_notice{다음 학기 주요 일정 확인하기} exchange_departure_plan{귀국 전 행정 절차 확인하기} final_schedule{기말고사 일정 확정하기} semester_memory{학기 마무리 모임 계획하기} final_readiness{기말 준비 상태 점검하기} return_items{대여 물품과 도서 반납 일정 확인하기} final_submissions{최종 제출물 확인하기} semester_reflection{이번 학기 기록 돌아보기} stay_connected{함께한 친구들과 연락 이어가기} semester_wrap_up{학기 마무리 항목 확인하기} next_semester_plan{다음 학기 계획 세우기} other{}}'**
+  String semesterGuideTitleById(String guideId);
+
+  /// No description provided for @semesterGuideDescriptionById.
+  ///
+  /// In ko, this message translates to:
+  /// **'{guideId, select, check_enrollment{포털에서 강의 시간과 강의실을 다시 확인하세요.} exchange_orientation{국제처 일정과 준비물을 확인하세요.} campus_welcome_meetup{관심사가 맞는 학생들과 가볍게 인사해 보세요.} check_syllabus{과제, 시험, 출석 기준을 일정에 정리하세요.} course_change_period{변경이 필요하다면 마감 전에 처리하세요.} club_fair{이번 학기에 함께할 활동을 하나 찾아보세요.} academic_calendar{시험, 휴일, 수강 철회 일정을 캘린더에 기록하세요.} arc_documents{신청 대상이라면 국제처 안내와 준비 서류를 확인하세요.} language_exchange{서로의 언어와 문화를 나눌 친구를 만나보세요.} campus_services{보건, 상담, 학습 지원센터의 위치와 이용 방법을 확인하세요.} dorm_rules{거주 중이라면 출입, 분리수거, 시설 이용 규칙을 확인하세요.} buddy_program{교환학생과 한국인 학생이 함께하는 교류 프로그램을 확인하세요.} assignment_check{과목별 누락 항목이 없는지 점검하세요.} study_meetup{혼자 준비하기 어려운 과목은 함께 공부해 보세요.} midterm_schedule{시험일, 범위, 과제 마감일을 한곳에 정리하세요.} library_space{도서관이나 교내 학습 공간을 이용해 보세요.} midterm_readiness{과목별 남은 분량과 준비 시간을 확인하세요.} study_break{시험 준비 사이에 식사나 산책으로 재충전해 보세요.} midterm_followup{피드백과 남은 평가 일정을 반영해 계획을 조정하세요.} wellbeing_check{수면, 식사, 스트레스 상태를 확인하고 필요한 도움을 받으세요.} festival_events{축제, 공연, 전시 등 관심 있는 행사를 저장하세요.} exchange_culture_event{다른 배경의 학생들과 자연스럽게 교류해 보세요.} grade_progress{현재 점수와 남은 평가 비중을 확인하세요.} academic_advising{수업이나 학점에 고민이 있다면 담당 부서에 문의하세요.} final_projects{역할, 중간 마감, 제출 형식을 미리 확인하세요.} career_program{관심 있는 진로 상담, 특강, 채용 행사를 확인하세요.} next_term_notice{휴학, 복학, 기숙사, 수강신청 관련 일정을 확인하세요.} exchange_departure_plan{성적표, 기숙사 퇴실, 체류 관련 안내를 확인하세요.} final_schedule{시험일, 장소, 범위와 제출 마감을 최종 확인하세요.} semester_memory{함께한 친구들과 가볍게 학기를 마무리해 보세요.} final_readiness{남은 학습량과 제출물을 과목별로 확인하세요.} return_items{도서관 도서와 교내 대여 물품의 반납일을 확인하세요.} final_submissions{제출 완료 여부와 파일 상태를 마지막으로 확인하세요.} semester_reflection{좋았던 활동과 다음 학기에 이어갈 목표를 기록해 보세요.} stay_connected{학기 중 만난 사람들과 다음 약속을 만들어 보세요.} semester_wrap_up{성적 확인 일정, 반납할 물품, 남은 행정 절차를 점검하세요.} next_semester_plan{이번 학기를 돌아보고 다음 학기에 이어갈 목표를 정리하세요.} other{}}'**
+  String semesterGuideDescriptionById(String guideId);
+
+  /// No description provided for @postViewCountMeta.
+  ///
+  /// In ko, this message translates to:
+  /// **'조회 {count}'**
+  String postViewCountMeta(int count);
+
+  /// No description provided for @postSnackChatTalking.
+  ///
+  /// In ko, this message translates to:
+  /// **'{count}명이 이야기 중'**
+  String postSnackChatTalking(int count);
+
+  /// No description provided for @postSnackChatContinue.
+  ///
+  /// In ko, this message translates to:
+  /// **'스낵챗에서 이어가기'**
+  String get postSnackChatContinue;
+
+  /// No description provided for @postSnackChatOpen.
+  ///
+  /// In ko, this message translates to:
+  /// **'스낵챗 열기'**
+  String get postSnackChatOpen;
+
+  /// No description provided for @postSnackChatSheetSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 포스트가 채팅방 위에 고정돼요'**
+  String get postSnackChatSheetSubtitle;
+
+  /// No description provided for @postSnackChatNoInvite.
+  ///
+  /// In ko, this message translates to:
+  /// **'댓글 단 사람에게는 초대 대신 ‘열린 스낵챗’ 표시만 보여요. 들어올지는 각자 정해요.'**
+  String get postSnackChatNoInvite;
+
+  /// No description provided for @commentLikeAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'좋아요'**
+  String get commentLikeAction;
+
+  /// No description provided for @commentUnlikeAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'좋아요 취소'**
+  String get commentUnlikeAction;
 }
 
 class _AppLocalizationsDelegate
@@ -5660,7 +6412,7 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) =>
-      <String>['en', 'ko'].contains(locale.languageCode);
+      <String>['en', 'ko', 'zh'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -5673,6 +6425,8 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
       return AppLocalizationsEn();
     case 'ko':
       return AppLocalizationsKo();
+    case 'zh':
+      return AppLocalizationsZh();
   }
 
   throw FlutterError(

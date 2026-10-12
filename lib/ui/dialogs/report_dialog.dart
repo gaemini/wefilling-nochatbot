@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../models/report.dart';
 import '../../services/report_service.dart';
 import '../../l10n/app_localizations.dart';
+import '../../l10n/ui_locale.dart';
 
 class ReportDialog extends StatefulWidget {
   final String reportedUserId;
@@ -101,8 +102,9 @@ class _ReportDialogState extends State<ReportDialog> {
           const SizedBox(width: 12),
           Text(
             getTargetTypeTitle(context),
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -130,8 +132,9 @@ class _ReportDialogState extends State<ReportDialog> {
                     Expanded(
                       child: Text(
                         widget.targetTitle!,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                           color: Color(0xFF6B7280),
@@ -148,8 +151,9 @@ class _ReportDialogState extends State<ReportDialog> {
             
             Text(
               AppLocalizations.of(context)!.reportReasonSelect,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF374151),
@@ -164,8 +168,9 @@ class _ReportDialogState extends State<ReportDialog> {
               RadioListTile<String>(
                 title: Text(
                   reason,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF1F2937),
@@ -189,8 +194,9 @@ class _ReportDialogState extends State<ReportDialog> {
             // 상세 설명 (선택사항)
             Text(
               AppLocalizations.of(context)!.reportDescriptionLabel,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF374151),
@@ -201,15 +207,17 @@ class _ReportDialogState extends State<ReportDialog> {
               controller: descriptionController,
               maxLines: 3,
               maxLength: 500,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF111827),
               ),
               decoration: InputDecoration(
                 hintText: AppLocalizations.of(context)!.reportDescriptionHint,
-                hintStyle: const TextStyle(
-                  fontFamily: 'Pretendard',
+                hintStyle: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
                   fontSize: 14,
                   color: Color(0xFF9CA3AF),
                 ),
@@ -234,8 +242,9 @@ class _ReportDialogState extends State<ReportDialog> {
             const SizedBox(height: 8),
             Text(
               AppLocalizations.of(context)!.reportWarning,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF9CA3AF),
@@ -261,8 +270,9 @@ class _ReportDialogState extends State<ReportDialog> {
                 ),
                 child: Text(
                   AppLocalizations.of(context)!.cancel,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF6B7280),
@@ -297,8 +307,9 @@ class _ReportDialogState extends State<ReportDialog> {
                       )
                     : Text(
                         AppLocalizations.of(context)!.reportButton,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                         ),

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../constants/app_constants.dart';
 import '../../utils/ui_utils.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 소셜 미디어 스타일 액션 버튼
 class SocialActionButton extends StatefulWidget {
@@ -593,7 +594,7 @@ class _SocialCommentInputState extends State<SocialCommentInput> {
                     vertical: 10,
                   ),
                 ),
-                style: AppTheme.bodyMedium,
+                style: uiTextStyle(context, AppTheme.bodyMedium),
               ),
             ),
           ),

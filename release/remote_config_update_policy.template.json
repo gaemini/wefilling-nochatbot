@@ -1,0 +1,16 @@
+{
+  "update_kill_switch": true,
+  "android_minimum_build": 0,
+  "android_latest_build": 0,
+  "android_force_update": false,
+  "android_store_url": "https://play.google.com/store/apps/details?id=com.wefilling.app",
+  "android_release_state": "paused",
+  "android_release_id": "",
+  "ios_minimum_build": 0,
+  "ios_latest_build": 0,
+  "ios_latest_version_name": "",
+  "ios_force_update": false,
+  "ios_store_url": "https://apps.apple.com/app/id6756271839",
+  "ios_release_state": "paused",
+  "ios_release_id": ""
+}

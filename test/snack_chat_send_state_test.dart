@@ -1,0 +1,138 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:wefilling/models/snack_chat_message.dart';
+import 'package:wefilling/screens/snack_chat_screen.dart';
+import 'package:wefilling/services/snack_chat_service.dart';
+
+SnackChatMessage message({
+  required String id,
+  required MessageSendStatus status,
+  int? sequence,
+  DateTime? createdAt,
+}) =>
+    SnackChatMessage(
+      id: id,
+      senderId: 'sender',
+      text: id,
+      createdAt: createdAt ?? DateTime.utc(2026, 9, 23),
+      sequence: sequence,
+      sendStatus: status,
+    );
+
+void main() {
+  test('regular commit does not call uncertain failures definitive', () {
+    for (final code in <String>[
+      'failed-precondition',
+      'aborted',
+      'deadline-exceeded',
+      'unavailable',
+    ]) {
+      expect(isDefinitiveSnackChatCommitErrorCode(code), isFalse, reason: code);
+    }
+    for (final code in <String>[
+      'permission-denied',
+      'invalid-argument',
+      'not-found',
+      'unauthenticated',
+    ]) {
+      expect(isDefinitiveSnackChatCommitErrorCode(code), isTrue, reason: code);
+    }
+  });
+
+  test('late failure cannot roll a committed message back', () {
+    final committed = message(
+      id: 'committed',
+      status: MessageSendStatus.sent,
+      sequence: 42,
+    );
+
+    expect(committed.withFailedSendStatus('late failure'), same(committed));
+    expect(committed.isServerCommitted, isTrue);
+  });
+
+  test('an unconfirmed message can still transition to failed', () {
+    final pending = message(
+      id: 'pending',
+      status: MessageSendStatus.sending,
+    );
+
+    final failed = pending.withFailedSendStatus('network');
+    expect(failed.sendStatus, MessageSendStatus.failed);
+    expect(failed.errorMessage, 'network');
+    expect(failed.isServerCommitted, isFalse);
+  });
+
+  test('a recovered canonical sequence changes message order', () {
+    final olderPending = message(
+      id: 'pending',
+      status: MessageSendStatus.sending,
+      createdAt: DateTime.utc(2026, 9, 23, 10),
+    );
+    final canonical = message(
+      id: 'canonical',
+      status: MessageSendStatus.sent,
+      sequence: 11,
+    );
+    final recovered = olderPending.copyWith(
+      sequence: 12,
+      sendStatus: MessageSendStatus.sent,
+    );
+    final messages = <SnackChatMessage>[canonical, recovered]
+      ..sort(SnackChatMessage.compareDescending);
+
+    expect(messages.map((value) => value.id), <String>['pending', 'canonical']);
+  });
+
+  test('secure text batching stops at an unsupported queue item', () {
+    expect(
+      snackChatSecureTextBatchPrefixLength(
+        <bool>[true, true, false, true],
+      ),
+      2,
+    );
+  });
+
+  test('secure text batching is capped at five without a wait window', () {
+    expect(
+      snackChatSecureTextBatchPrefixLength(List<bool>.filled(8, true)),
+      5,
+    );
+  });
+
+  test('ACK during outcome resolution prevents a stale queue hold', () async {
+    final resolution = Completer<bool>();
+    var acknowledged = false;
+    final decision =
+        resolution.future.then((resolved) => shouldParkSnackChatOutbound(
+              sessionValid: true,
+              resolved: resolved,
+              acknowledged: acknowledged,
+            ));
+    acknowledged = true;
+    resolution.complete(false);
+    expect(await decision, isFalse);
+  });
+
+  test('screen exit during outcome resolution cannot park its queue', () async {
+    final resolution = Completer<bool>();
+    var sessionValid = true;
+    final decision =
+        resolution.future.then((resolved) => shouldParkSnackChatOutbound(
+              sessionValid: sessionValid,
+              resolved: resolved,
+              acknowledged: false,
+            ));
+    sessionValid = false;
+    resolution.complete(false);
+    expect(await decision, isFalse);
+    expect(
+      shouldParkSnackChatOutbound(
+        sessionValid: true,
+        resolved: false,
+        acknowledged: false,
+      ),
+      isTrue,
+    );
+  });
+}

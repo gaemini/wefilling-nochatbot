@@ -23,7 +23,8 @@ class ReviewPost {
   final PrivacyLevel privacyLevel;
   final String? sourceReviewId; // meetup_reviews 원본 ID
   final bool hidden; // 개별 프로필에서 숨김 처리
-  
+  final String participationRole; // host | participant
+
   ReviewPost({
     required this.id,
     required this.authorId,
@@ -42,6 +43,7 @@ class ReviewPost {
     required this.privacyLevel,
     this.sourceReviewId,
     this.hidden = false,
+    this.participationRole = 'participant',
   });
 
   factory ReviewPost.fromJson(Map<String, dynamic> json) {
@@ -57,7 +59,8 @@ class ReviewPost {
       category: json['category'] ?? '',
       rating: json['rating'] ?? 5,
       taggedUserIds: List<String>.from(json['taggedUserIds'] ?? []),
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
+      createdAt:
+          DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
       likedBy: List<String>.from(json['likedBy'] ?? []),
       commentCount: json['commentCount'] ?? 0,
       privacyLevel: PrivacyLevel.values.firstWhere(
@@ -66,6 +69,8 @@ class ReviewPost {
       ),
       sourceReviewId: json['sourceReviewId'],
       hidden: json['hidden'] == true,
+      participationRole:
+          (json['participationRole'] ?? 'participant').toString(),
     );
   }
 
@@ -83,8 +88,8 @@ class ReviewPost {
       category: map['category'] ?? '',
       rating: map['rating'] ?? 5,
       taggedUserIds: List<String>.from(map['taggedUserIds'] ?? []),
-      createdAt: map['createdAt'] is DateTime 
-          ? map['createdAt'] 
+      createdAt: map['createdAt'] is DateTime
+          ? map['createdAt']
           : (map['createdAt']?.toDate() ?? DateTime.now()),
       likedBy: List<String>.from(map['likedBy'] ?? []),
       commentCount: map['commentCount'] ?? 0,
@@ -94,6 +99,7 @@ class ReviewPost {
       ),
       sourceReviewId: map['sourceReviewId'],
       hidden: map['hidden'] == true,
+      participationRole: (map['participationRole'] ?? 'participant').toString(),
     );
   }
 
@@ -116,6 +122,7 @@ class ReviewPost {
       'privacyLevel': privacyLevel.toString().split('.').last,
       'sourceReviewId': sourceReviewId,
       'hidden': hidden,
+      'participationRole': participationRole,
     };
   }
 
@@ -140,11 +147,11 @@ class ReviewPost {
       return '${createdAt.year}.${createdAt.month.toString().padLeft(2, '0')}.${createdAt.day.toString().padLeft(2, '0')}';
     } else if (difference.inDays > 0) {
       // 지역화 함수 호출
-        return AppLocalizations.of(context)!.daysAgo(difference.inDays);
-      } else if (difference.inHours > 0) {
-        return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
-      } else if (difference.inMinutes > 0) {
-        return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
+      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
+    } else if (difference.inHours > 0) {
+      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
+    } else if (difference.inMinutes > 0) {
+      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow;
     }
@@ -169,6 +176,7 @@ class ReviewPost {
     PrivacyLevel? privacyLevel,
     String? sourceReviewId,
     bool? hidden,
+    String? participationRole,
   }) {
     return ReviewPost(
       id: id ?? this.id,
@@ -188,6 +196,7 @@ class ReviewPost {
       privacyLevel: privacyLevel ?? this.privacyLevel,
       sourceReviewId: sourceReviewId ?? this.sourceReviewId,
       hidden: hidden ?? this.hidden,
+      participationRole: participationRole ?? this.participationRole,
     );
   }
 
@@ -207,10 +216,10 @@ class ReviewPost {
 }
 
 enum PrivacyLevel {
-  private,   // 나만 보기
-  friends,   // 친구만 보기
-  school,    // 같은 학교만 보기
-  public     // 전체 공개
+  private, // 나만 보기
+  friends, // 친구만 보기
+  school, // 같은 학교만 보기
+  public // 전체 공개
 }
 
 // PrivacyLevel 확장 메서드

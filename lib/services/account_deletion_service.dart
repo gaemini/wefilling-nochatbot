@@ -1,13 +1,17 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../config/app_config.dart';
+import '../repositories/users_repository.dart';
 import '../utils/logger.dart';
+import 'user_info_cache_service.dart';
 
 class AccountDeletionService {
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions =
+      AppFunctions.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   /// Google 계정으로 재인증
@@ -20,24 +24,27 @@ class AccountDeletionService {
     try {
       // Google Sign-In 7.x API 사용
       final GoogleSignIn googleSignIn = GoogleSignIn.instance;
-      
+
       // 플랫폼별 clientId 분기 (iOS/macOS만)
       final clientId = AppConfig.getGoogleClientId();
       await googleSignIn.initialize(clientId: clientId);
-      
+
       // 기존 로그인 세션 초기화
       await googleSignIn.signOut();
-      
+
       // authenticate 메소드로 재인증
       final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
       final credential = GoogleAuthProvider.credential(
         idToken: googleAuth.idToken,
       );
 
       await user.reauthenticateWithCredential(credential);
+      await user.getIdToken(true);
+    } on FirebaseAuthException {
+      rethrow;
     } catch (e) {
       throw Exception('Google 재인증 실패: $e');
     }
@@ -57,12 +64,42 @@ class AccountDeletionService {
       appleProvider.addScope('name');
 
       await user.reauthenticateWithProvider(appleProvider);
+      await user.getIdToken(true);
+    } on FirebaseAuthException {
+      rethrow;
     } catch (e) {
       throw Exception('Apple 재인증 실패: $e');
     }
   }
 
+  /// 이메일/비밀번호 계정으로 재인증한다. 비밀번호는 Firebase Auth에만
+  /// 전달하고 Firestore 또는 Cloud Functions에는 전송하지 않는다.
+  Future<void> reauthenticateWithPassword(String password) async {
+    final user = _auth.currentUser;
+    final email = user?.email?.trim() ?? '';
+    if (user == null || email.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'user-not-found',
+        message: '로그인된 이메일 계정을 찾을 수 없습니다.',
+      );
+    }
+    if (!user.providerData.any((info) => info.providerId == 'password')) {
+      throw FirebaseAuthException(
+        code: 'operation-not-allowed',
+        message: '이메일/비밀번호 로그인 계정이 아닙니다.',
+      );
+    }
+
+    final credential = EmailAuthProvider.credential(
+      email: email,
+      password: password,
+    );
+    await user.reauthenticateWithCredential(credential);
+    await user.getIdToken(true);
+  }
+
   Future<void> deleteAccountImmediately({required String reason}) async {
+    final deletingUid = _auth.currentUser?.uid;
     // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
     final callable = _functions.httpsCallable('deleteAccountImmediately');
     await callable.call({
@@ -70,9 +107,13 @@ class AccountDeletionService {
     }).timeout(
       const Duration(seconds: 30),
       onTimeout: () {
-        Logger.log('⏱️ 계정 삭제 타임아웃 (30초)');
+        if (Logger.isVerboseEnabled) Logger.log('⏱️ 계정 삭제 타임아웃 (30초)');
         throw TimeoutException('계정 삭제 시간 초과');
       },
     );
+    if (deletingUid != null) {
+      UserInfoCacheService().invalidateUser(deletingUid);
+      UsersRepository().invalidateCache(deletingUid);
+    }
   }
 }

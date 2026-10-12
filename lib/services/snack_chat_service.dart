@@ -1,85 +1,1134 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
+import '../utils/snack_chat_mentions.dart';
 import '../repositories/users_repository.dart';
+import 'content_filter_service.dart';
+import 'snack_chat_local_cache_service.dart';
+import '../utils/local_calendar_day.dart';
 import '../utils/logger.dart';
+import '../utils/chat_timing.dart';
+import 'snack_chat_active_conversation.dart';
+import '../utils/snack_chat_list_policy.dart';
+import '../utils/snack_chat_read_policy.dart';
+
+const Duration _snackChatFirstEventDeadline = Duration(seconds: 12);
+
+/// Only codes that identify a rejected regular Firestore message commit.
+/// failed-precondition can also mean a transaction conflict, so a server
+/// lookup and the existing bounded recovery must resolve that case.
+bool isDefinitiveSnackChatCommitErrorCode(String code) => const {
+      'permission-denied',
+      'invalid-argument',
+      'not-found',
+      'unauthenticated',
+    }.contains(code);
+
+/// Immutable server entry boundary captured before the room advances its read
+/// cursor. Keeping this separate from the live unread aggregate prevents a
+/// newly arrived message from moving the divider while the screen is open.
+class SnackChatEntryContext {
+  const SnackChatEntryContext({
+    required this.lastReadSequence,
+    required this.roomLastSequence,
+    required this.roomUnreadCount,
+    required this.canAdvanceReadCursor,
+    this.firstUnreadMessageId,
+    this.firstUnreadSequence,
+  });
+
+  final int lastReadSequence;
+  final int roomLastSequence;
+  final int roomUnreadCount;
+  final bool canAdvanceReadCursor;
+  final String? firstUnreadMessageId;
+  final int? firstUnreadSequence;
+
+  bool get hasUnreadAnchor =>
+      roomUnreadCount > 0 &&
+      firstUnreadMessageId != null &&
+      firstUnreadMessageId!.isNotEmpty &&
+      firstUnreadSequence != null &&
+      firstUnreadSequence! > lastReadSequence;
+}
+
+/// Exact server result for advancing one room's read cursor.
+class SnackChatReadResult {
+  const SnackChatReadResult({
+    required this.clearedCount,
+    required this.unreadCount,
+    required this.readThroughSequence,
+  });
+
+  final int clearedCount;
+  final int unreadCount;
+  final int readThroughSequence;
+}
+
+/// Acknowledges only the atomic server commit and canonical room sequence.
+/// Delivery, read state, and the server timestamp still arrive through the
+/// existing live message stream.
+class SnackChatCommitAck {
+  const SnackChatCommitAck({
+    required this.messageId,
+    required this.sequence,
+  });
+
+  final String messageId;
+  final int sequence;
+}
+
+enum SnackChatTextSendStatus {
+  committed,
+  rejected,
+  uncertain,
+  notAttempted,
+}
+
+class SnackChatTextSendRequest {
+  const SnackChatTextSendRequest({
+    required this.messageId,
+    required this.text,
+    this.suppressLinkPreview = false,
+    this.onCommitted,
+  });
+
+  final String messageId;
+  final String text;
+  final bool suppressLinkPreview;
+  final void Function(SnackChatCommitAck ack)? onCommitted;
+}
+
+class SnackChatTextSendResult {
+  const SnackChatTextSendResult({
+    required this.messageId,
+    required this.status,
+    this.sequence,
+    this.code,
+    this.transactionAttempts,
+    this.serverDurationMs,
+  });
+
+  final String messageId;
+  final SnackChatTextSendStatus status;
+  final int? sequence;
+  final String? code;
+  final int? transactionAttempts;
+  final int? serverDurationMs;
+}
+
+class _SnackChatReadSyncState {
+  int pendingSequence = 0;
+  int confirmedSequence = 0;
+  Future<SnackChatReadResult>? inFlight;
+  Future<void> persistence = Future<void>.value();
+}
+
+enum SnackChatSummarySectionType {
+  mustKnow,
+  responseRequired,
+  scheduleAndPlace,
+  decisionsAndChanges,
+  unresolved,
+  sharedInformation,
+  otherConversation,
+}
+
+enum SnackChatSummaryStatus {
+  confirmed,
+  proposed,
+  changed,
+  cancelled,
+  unresolved,
+  responseRequired,
+  information,
+}
+
+SnackChatSummarySectionType _summarySectionType(Object? raw) {
+  final value = raw?.toString();
+  if (value == 'sharedContent') {
+    return SnackChatSummarySectionType.sharedInformation;
+  }
+  return SnackChatSummarySectionType.values.firstWhere(
+    (item) => item.name == value,
+    orElse: () => SnackChatSummarySectionType.sharedInformation,
+  );
+}
+
+SnackChatSummaryStatus _summaryStatus(Object? raw) {
+  final value = raw?.toString();
+  return SnackChatSummaryStatus.values.firstWhere(
+    (item) => item.name == value,
+    orElse: () => SnackChatSummaryStatus.information,
+  );
+}
+
+List<int> _summarySequences(Object? raw) => raw is List
+    ? raw
+        .whereType<num>()
+        .map((value) => value.toInt())
+        .where((value) => value > 0)
+        .toSet()
+        .toList(growable: false)
+    : const <int>[];
+
+List<String> _summaryMessageIds(Object? raw) => raw is List
+    ? raw
+        .map((value) => value.toString().trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false)
+    : const <String>[];
+
+DateTime? _summaryDate(Object? raw) {
+  if (raw is Timestamp) return raw.toDate();
+  return DateTime.tryParse(raw?.toString() ?? '');
+}
+
+enum SnackChatSummaryRangeType { unread, today }
+
+SnackChatSummaryRangeType _summaryRangeType(Object? raw) =>
+    raw?.toString() == 'today'
+        ? SnackChatSummaryRangeType.today
+        : SnackChatSummaryRangeType.unread;
+
+class SnackChatTodaySummaryWindow {
+  const SnackChatTodaySummaryWindow({
+    required this.localDate,
+    required this.timezoneOffsetMinutes,
+    required this.timezoneName,
+    required this.start,
+    required this.nextStart,
+  });
+
+  final String localDate;
+  final int timezoneOffsetMinutes;
+  final String timezoneName;
+  final DateTime start;
+  final DateTime nextStart;
+}
+
+SnackChatTodaySummaryWindow buildSnackChatTodaySummaryWindow(DateTime value) {
+  final local = value.toLocal();
+  final start = startOfLocalCalendarDay(local);
+  final nextStart = startOfNextLocalCalendarDay(local);
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+  return SnackChatTodaySummaryWindow(
+    localDate:
+        '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)}',
+    timezoneOffsetMinutes: local.timeZoneOffset.inMinutes,
+    timezoneName: local.timeZoneName,
+    start: start,
+    nextStart: nextStart,
+  );
+}
+
+class SnackChatUnreadSummaryItem {
+  const SnackChatUnreadSummaryItem({
+    String? text,
+    String? content,
+    this.label = '',
+    this.status = SnackChatSummaryStatus.information,
+    this.importance = 'important',
+    this.sourceMessageIds = const <String>[],
+    this.representativeMessageId = '',
+    required this.sourceSequences,
+  }) : text = content ?? text ?? '';
+
+  final String text;
+  String get content => text;
+  final String label;
+  final SnackChatSummaryStatus status;
+  final String importance;
+  final List<String> sourceMessageIds;
+  final String representativeMessageId;
+  final List<int> sourceSequences;
+
+  factory SnackChatUnreadSummaryItem.fromMap(Map<String, dynamic> map) {
+    final rawImportance = (map['importance'] ?? 'important').toString();
+    return SnackChatUnreadSummaryItem(
+      content: (map['description'] ?? map['content'] ?? map['text'] ?? '')
+          .toString()
+          .trim(),
+      label: (map['title'] ?? map['label'] ?? '').toString().trim(),
+      status: _summaryStatus(map['status']),
+      importance: const <String>{'critical', 'important', 'general'}
+              .contains(rawImportance)
+          ? rawImportance
+          : 'important',
+      sourceMessageIds: _summaryMessageIds(map['sourceMessageIds']),
+      representativeMessageId:
+          (map['representativeMessageId'] ?? '').toString().trim(),
+      sourceSequences: _summarySequences(map['sourceSequences']),
+    );
+  }
+}
+
+class SnackChatUnreadSummarySection {
+  const SnackChatUnreadSummarySection({
+    required this.type,
+    required this.title,
+    required this.items,
+  });
+
+  final SnackChatSummarySectionType type;
+  final String title;
+  final List<SnackChatUnreadSummaryItem> items;
+
+  factory SnackChatUnreadSummarySection.fromMap(Map<String, dynamic> map) {
+    final rawItems = map['items'];
+    final items = rawItems is List
+        ? rawItems
+            .whereType<Map>()
+            .map((raw) => SnackChatUnreadSummaryItem.fromMap(
+                  Map<String, dynamic>.from(raw),
+                ))
+            .where((item) =>
+                item.content.isNotEmpty &&
+                (item.sourceSequences.isNotEmpty ||
+                    item.sourceMessageIds.isNotEmpty))
+            .take(3)
+            .toList(growable: false)
+        : const <SnackChatUnreadSummaryItem>[];
+    return SnackChatUnreadSummarySection(
+      type: _summarySectionType(map['type']),
+      title: (map['title'] ?? '').toString().trim(),
+      items: items,
+    );
+  }
+}
+
+class SnackChatUnreadSummaryResult {
+  const SnackChatUnreadSummaryResult({
+    required this.items,
+    required this.messageCount,
+    required this.rangeHash,
+    required this.cacheSource,
+    this.summarySource = 'gemini',
+    this.sections = const <SnackChatUnreadSummarySection>[],
+    this.summarySchemaVersion = 1,
+    this.summaryVersion = 1,
+    this.promptVersion = 1,
+    this.firstUnreadSequence = 0,
+    this.latestSequence = 0,
+    this.targetLanguage = '',
+    this.sourceStartedAt,
+    this.sourceEndedAt,
+    this.generatedAt,
+    this.overview = '',
+    this.otherConversationSummary = '',
+    this.rangeType = SnackChatSummaryRangeType.unread,
+    this.localDate = '',
+    this.firstSequence = 0,
+    this.isLegacy = false,
+  });
+
+  final List<SnackChatUnreadSummaryItem> items;
+  final int messageCount;
+  final String rangeHash;
+  final String cacheSource;
+  final String summarySource;
+  final List<SnackChatUnreadSummarySection> sections;
+  final int summarySchemaVersion;
+  final int summaryVersion;
+  final int promptVersion;
+  final int firstUnreadSequence;
+  final int latestSequence;
+  final String targetLanguage;
+  final DateTime? sourceStartedAt;
+  final DateTime? sourceEndedAt;
+  final DateTime? generatedAt;
+  final String overview;
+  final String otherConversationSummary;
+  final SnackChatSummaryRangeType rangeType;
+  final String localDate;
+  final int firstSequence;
+  final bool isLegacy;
+  bool get isFallback => summarySource == 'fallback';
+
+  factory SnackChatUnreadSummaryResult.fromMap(Map<String, dynamic> data) {
+    int integer(Object? raw, [int fallback = 0]) =>
+        raw is num ? raw.toInt().clamp(0, 1 << 30).toInt() : fallback;
+    final summarySchemaVersion = integer(data['summarySchemaVersion'], 1);
+    final rawSections = data['sections'];
+    var sections = rawSections is List
+        ? rawSections
+            .whereType<Map>()
+            .map((raw) => SnackChatUnreadSummarySection.fromMap(
+                  Map<String, dynamic>.from(raw),
+                ))
+            .where((section) => section.items.isNotEmpty)
+            .take(5)
+            .toList(growable: false)
+        : const <SnackChatUnreadSummarySection>[];
+    final rawItems = data['items'];
+    var items = rawItems is List
+        ? rawItems
+            .whereType<Map>()
+            .map((raw) => SnackChatUnreadSummaryItem.fromMap(
+                  Map<String, dynamic>.from(raw),
+                ))
+            .where((item) =>
+                item.content.isNotEmpty &&
+                (item.sourceSequences.isNotEmpty ||
+                    item.sourceMessageIds.isNotEmpty))
+            .take(12)
+            .toList(growable: false)
+        : const <SnackChatUnreadSummaryItem>[];
+    if (sections.isNotEmpty) {
+      items = sections
+          .expand((section) => section.items)
+          .take(12)
+          .toList(growable: false);
+    } else if (items.isNotEmpty && summarySchemaVersion < 3) {
+      sections = <SnackChatUnreadSummarySection>[
+        SnackChatUnreadSummarySection(
+          type: SnackChatSummarySectionType.mustKnow,
+          title: '',
+          items: items,
+        ),
+      ];
+    }
+    final overview = (data['overview'] ?? '').toString().trim();
+    return SnackChatUnreadSummaryResult(
+      items: items,
+      sections: sections,
+      messageCount: integer(
+        data['totalUnreadMessageCount'] ??
+            data['totalTodayMessageCount'] ??
+            data['messageCount'],
+      ).clamp(0, 10000).toInt(),
+      rangeHash: (data['sourceHash'] ?? data['rangeHash'] ?? '').toString(),
+      cacheSource: (data['cacheSource'] ?? 'server').toString(),
+      summarySource: (data['summarySource'] ?? 'gemini').toString(),
+      summarySchemaVersion: summarySchemaVersion,
+      summaryVersion: integer(data['summaryVersion'], 1),
+      promptVersion: integer(data['promptVersion'], 1),
+      firstUnreadSequence: integer(data['firstUnreadSequence']),
+      latestSequence: integer(data['latestSequence']),
+      targetLanguage: (data['targetLanguage'] ?? '').toString(),
+      sourceStartedAt: _summaryDate(data['sourceStartedAt']),
+      sourceEndedAt: _summaryDate(data['sourceEndedAt']),
+      generatedAt: _summaryDate(data['generatedAt']),
+      overview: overview,
+      otherConversationSummary:
+          (data['otherConversationSummary'] ?? '').toString().trim(),
+      rangeType: _summaryRangeType(data['rangeType']),
+      localDate: (data['localDate'] ?? '').toString().trim(),
+      firstSequence: integer(
+        data['firstSequence'] ?? data['firstUnreadSequence'],
+      ),
+      isLegacy:
+          summarySchemaVersion < 3 || (overview.isEmpty && sections.isEmpty),
+    );
+  }
+}
+
+class SnackChatSummaryNotEnoughContentException implements Exception {
+  const SnackChatSummaryNotEnoughContentException();
+}
+
+class SnackChatNoMessagesTodayException implements Exception {
+  const SnackChatNoMessagesTodayException();
+}
+
+class SnackChatTodaySearchResult {
+  const SnackChatTodaySearchResult({
+    required this.answer,
+    required this.found,
+    required this.messageCount,
+    this.sourceMessageIds = const <String>[],
+    this.representativeMessageId = '',
+    this.sourceSequences = const <int>[],
+  });
+
+  final String answer;
+  final bool found;
+  final int messageCount;
+  final List<String> sourceMessageIds;
+  final String representativeMessageId;
+  final List<int> sourceSequences;
+
+  factory SnackChatTodaySearchResult.fromMap(Map<String, dynamic> data) =>
+      SnackChatTodaySearchResult(
+        answer: (data['answer'] ?? '').toString().trim(),
+        found: data['found'] == true,
+        messageCount: data['messageCount'] is num
+            ? (data['messageCount'] as num).toInt().clamp(0, 10000)
+            : 0,
+        sourceMessageIds: _summaryMessageIds(data['sourceMessageIds']),
+        representativeMessageId:
+            (data['representativeMessageId'] ?? '').toString().trim(),
+        sourceSequences: _summarySequences(data['sourceSequences']),
+      );
+}
+
+class _SnackChatEntryCacheRecord {
+  const _SnackChatEntryCacheRecord({
+    required this.ownerUid,
+    required this.roomLastSequence,
+    required this.roomUnreadCount,
+    required this.fetchedAt,
+    required this.context,
+  });
+
+  final String ownerUid;
+  final int roomLastSequence;
+  final int roomUnreadCount;
+  final DateTime fetchedAt;
+  final SnackChatEntryContext context;
+}
+
+/// Bounds only the initial connection phase of a Firestore listener.
+///
+/// `Stream.timeout` is deliberately not used here because it would also fail a
+/// healthy listener that simply has no changes after its first snapshot. Once
+/// the first data event or error arrives, the watchdog is permanently removed.
+/// If the initial connection stalls, the upstream listener is cancelled and
+/// this stream closes after emitting a retryable timeout error.
+Stream<T> _withFirstEventDeadline<T>(
+  Stream<T> source, {
+  required String operation,
+  Duration deadline = _snackChatFirstEventDeadline,
+}) {
+  late final StreamController<T> controller;
+  StreamSubscription<T>? subscription;
+  Timer? watchdog;
+  var firstEventSettled = false;
+  var closing = false;
+
+  void settleFirstEvent() {
+    if (firstEventSettled) return;
+    firstEventSettled = true;
+    watchdog?.cancel();
+    watchdog = null;
+  }
+
+  Future<void> cancelAndClose() async {
+    if (closing) return;
+    closing = true;
+    watchdog?.cancel();
+    watchdog = null;
+    final active = subscription;
+    subscription = null;
+    try {
+      await active?.cancel();
+    } finally {
+      if (!controller.isClosed) await controller.close();
+    }
+  }
+
+  controller = StreamController<T>(
+    sync: true,
+    onListen: () {
+      watchdog = Timer(deadline, () {
+        if (firstEventSettled || closing || controller.isClosed) return;
+        firstEventSettled = true;
+        watchdog = null;
+        controller.addError(
+          TimeoutException('$operation initial response timed out', deadline),
+        );
+        unawaited(cancelAndClose());
+      });
+
+      final next = source.listen(
+        (event) {
+          settleFirstEvent();
+          if (!controller.isClosed) controller.add(event);
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          settleFirstEvent();
+          if (!controller.isClosed) controller.addError(error, stackTrace);
+        },
+        onDone: () {
+          settleFirstEvent();
+          subscription = null;
+          if (!controller.isClosed) unawaited(controller.close());
+        },
+      );
+      if (closing || controller.isClosed) {
+        unawaited(next.cancel());
+      } else {
+        subscription = next;
+      }
+    },
+    onPause: () => subscription?.pause(),
+    onResume: () => subscription?.resume(),
+    onCancel: () async {
+      settleFirstEvent();
+      final active = subscription;
+      subscription = null;
+      await active?.cancel();
+    },
+  );
+
+  return controller.stream;
+}
+
+class _SnackChatSummaryMemoryCacheRecord {
+  const _SnackChatSummaryMemoryCacheRecord({
+    required this.result,
+    required this.expiresAt,
+  });
+
+  final SnackChatUnreadSummaryResult result;
+  final DateTime expiresAt;
+}
 
 class SnackChatService {
+  /// Read fast path: advance the own member read cursor with a direct Firestore
+  /// write (Rules-validated) so other participants see the receipt after one
+  /// round trip; the read callable reconciles room.unreadCount afterwards.
+  static const bool directReadEnabled = bool.fromEnvironment(
+    'SNACK_CHAT_DIRECT_READ',
+    defaultValue: false,
+  );
+
+  /// Room list projection after an accepted direct read, keyed `uid::roomId`.
+  /// The server unreadCount stays stale until the reconcile callable runs.
+  final Map<String, int> _directReadProjection = <String, int>{};
+
+  /// Room entry fast path: call the entry-context callable first (the new
+  /// server repairs a missing member doc itself) instead of a serial
+  /// membership callable before it. `failed-precondition` falls back.
+  static const bool fastEntryEnabled = bool.fromEnvironment(
+    'SNACK_CHAT_FAST_ENTRY',
+    defaultValue: true,
+  );
+
+  static const bool secureTextSendEnabled = bool.fromEnvironment(
+    'SNACK_CHAT_SECURE_TEXT_SEND',
+    defaultValue: false,
+  );
+  static final SnackChatService _instance = SnackChatService._internal();
+
+  factory SnackChatService() => _instance;
+
+  SnackChatService._internal();
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFunctions _functions = AppFunctions.instance;
+  // Only authoritative rejections are terminal; timeouts remain uncertain.
+  final Set<String> _definitiveSendRejections = {};
+  bool wasSendRejected(String owner, String room, String id) =>
+      _definitiveSendRejections.contains('$owner::$room::$id');
   final UsersRepository _usersRepository = UsersRepository();
+  final SnackChatLocalCacheService _localCache = SnackChatLocalCacheService();
+  StreamController<List<SnackChat>>? _sharedMySnackChatsController;
+  StreamSubscription<List<SnackChat>>? _sharedMySnackChatsSubscription;
+  Timer? _sharedMySnackChatsReconnectTimer;
+  String? _sharedMySnackChatsUid;
+  int _sharedMySnackChatsConsumers = 0;
+  int _sharedMySnackChatsGeneration = 0;
+  List<SnackChat>? _latestMySnackChats;
+  final Map<String, _SnackChatEntryCacheRecord> _entryContextCache = {};
+  final Map<String, Future<SnackChatEntryContext>> _entryContextInFlight = {};
+  final Map<String, int> _messagePrefetchSequences = {};
+  final Map<String, Future<void>> _messagePrefetchInFlight = {};
+  final Map<String, Future<void>> _roomEntryPrefetchInFlight = {};
+  final Map<String, String> _roomEntryPrefetchTokens = {};
+  final Map<String, Future<void>> _participantIntegrityInFlight = {};
+  final Map<String, DateTime> _participantIntegrityRetryAfter = {};
+  final Map<String, Future<SnackChatUnreadSummaryResult>>
+      _unreadSummaryInFlight = {};
+  final Map<String, _SnackChatSummaryMemoryCacheRecord>
+      _unreadSummaryMemoryCache = {};
+  final Map<String, _SnackChatReadSyncState> _readSyncStates = {};
+  String? _entryCacheOwnerUid;
 
+  static const Duration _entryContextCacheLifetime = Duration(seconds: 30);
+  static const Duration _unreadSummaryMemoryCacheLifetime =
+      Duration(minutes: 1);
+  static const int _unreadSummaryMemoryCacheLimit = 24;
   String? get _uid => _auth.currentUser?.uid;
+
+  Future<SnackChatUnreadSummaryResult> summarizeUnreadRange({
+    required String snackChatId,
+    required int firstUnreadSequence,
+    required int latestSequence,
+    required String targetLanguage,
+  }) =>
+      _summarizeRange(
+        inFlightKeyParts: <Object>[
+          'unread',
+          snackChatId,
+          firstUnreadSequence,
+          latestSequence,
+          targetLanguage,
+        ],
+        payload: <String, dynamic>{
+          'snackChatId': snackChatId,
+          'summaryRangeType': 'unread',
+          'firstUnreadSequence': firstUnreadSequence,
+          'latestSequence': latestSequence,
+          'targetLanguage': targetLanguage,
+        },
+      );
+
+  Future<SnackChatUnreadSummaryResult> summarizeTodayRange({
+    required String snackChatId,
+    required int latestSequence,
+    required String targetLanguage,
+    DateTime? requestedAt,
+  }) {
+    final window = buildSnackChatTodaySummaryWindow(
+      requestedAt ?? DateTime.now(),
+    );
+    return _summarizeRange(
+      inFlightKeyParts: <Object>[
+        'today',
+        snackChatId,
+        window.localDate,
+        window.timezoneOffsetMinutes,
+        window.start.toUtc().toIso8601String(),
+        latestSequence,
+        targetLanguage,
+      ],
+      payload: <String, dynamic>{
+        'snackChatId': snackChatId,
+        'summaryRangeType': 'today',
+        'targetLanguage': targetLanguage,
+        'latestSequence': latestSequence,
+        'localDate': window.localDate,
+        'timezoneOffsetMinutes': window.timezoneOffsetMinutes,
+        'timezoneName': window.timezoneName,
+        'todayStartUtc': window.start.toUtc().toIso8601String(),
+        'tomorrowStartUtc': window.nextStart.toUtc().toIso8601String(),
+      },
+    );
+  }
+
+  Future<SnackChatTodaySearchResult> searchTodayMessages({
+    required String snackChatId,
+    required int latestSequence,
+    required String targetLanguage,
+    required String question,
+    DateTime? requestedAt,
+  }) async {
+    final cleanQuestion = question.trim();
+    if (cleanQuestion.isEmpty) throw ArgumentError('Question is required.');
+    final window = buildSnackChatTodaySummaryWindow(
+      requestedAt ?? DateTime.now(),
+    );
+    final response = await _functions
+        .httpsCallable('summarizeSnackChatUnread')
+        .call(<String, dynamic>{
+      'snackChatId': snackChatId,
+      'summaryRangeType': 'today',
+      'summaryMode': 'question',
+      'directQuestion': cleanQuestion,
+      'targetLanguage': targetLanguage,
+      'latestSequence': latestSequence,
+      'localDate': window.localDate,
+      'timezoneOffsetMinutes': window.timezoneOffsetMinutes,
+      'timezoneName': window.timezoneName,
+      'todayStartUtc': window.start.toUtc().toIso8601String(),
+      'tomorrowStartUtc': window.nextStart.toUtc().toIso8601String(),
+    }).timeout(const Duration(seconds: 65));
+    final data = response.data is Map
+        ? Map<String, dynamic>.from(response.data as Map)
+        : const <String, dynamic>{};
+    if (data['status'] == 'no_messages_today') {
+      throw const SnackChatNoMessagesTodayException();
+    }
+    final result = SnackChatTodaySearchResult.fromMap(data);
+    if (data['success'] != true || result.answer.isEmpty) {
+      throw StateError('The Snack Chat search response was empty.');
+    }
+    return result;
+  }
+
+  Future<SnackChatUnreadSummaryResult> _summarizeRange({
+    required List<Object> inFlightKeyParts,
+    required Map<String, dynamic> payload,
+  }) {
+    final uid = _uid;
+    if (uid == null || uid.isEmpty) {
+      return Future<SnackChatUnreadSummaryResult>.error(
+        StateError('Sign-in is required.'),
+      );
+    }
+    _ensureEntryCacheOwner(uid);
+    final key = <Object>[uid, ...inFlightKeyParts].join(':');
+    final now = DateTime.now();
+    _unreadSummaryMemoryCache.removeWhere(
+      (_, record) => !record.expiresAt.isAfter(now),
+    );
+    final cached = _unreadSummaryMemoryCache[key];
+    if (cached != null) {
+      return Future<SnackChatUnreadSummaryResult>.value(cached.result);
+    }
+    final active = _unreadSummaryInFlight[key];
+    if (active != null) return active;
+
+    final request = (() async {
+      final response = await _functions
+          .httpsCallable('summarizeSnackChatUnread')
+          .call(payload)
+          .timeout(const Duration(seconds: 65));
+      final data = response.data is Map
+          ? Map<String, dynamic>.from(response.data as Map)
+          : const <String, dynamic>{};
+      if (data['status'] == 'not_enough_content') {
+        throw const SnackChatSummaryNotEnoughContentException();
+      }
+      if (data['status'] == 'no_messages_today') {
+        throw const SnackChatNoMessagesTodayException();
+      }
+      final result = SnackChatUnreadSummaryResult.fromMap(data);
+      if (data['success'] != true || result.items.isEmpty || result.isLegacy) {
+        throw StateError('The Snack Chat summary response was empty.');
+      }
+      if (_entryCacheOwnerUid == uid) {
+        _unreadSummaryMemoryCache[key] = _SnackChatSummaryMemoryCacheRecord(
+          result: result,
+          expiresAt: DateTime.now().add(_unreadSummaryMemoryCacheLifetime),
+        );
+        while (
+            _unreadSummaryMemoryCache.length > _unreadSummaryMemoryCacheLimit) {
+          _unreadSummaryMemoryCache.remove(
+            _unreadSummaryMemoryCache.keys.first,
+          );
+        }
+      }
+      return result;
+    })();
+    _unreadSummaryInFlight[key] = request;
+    unawaited(
+      request.then<void>(
+        (_) => _unreadSummaryInFlight.remove(key),
+        onError: (Object _, StackTrace __) {
+          _unreadSummaryInFlight.remove(key);
+        },
+      ),
+    );
+    return request;
+  }
+
+  void _ensureEntryCacheOwner(String uid) {
+    if (_entryCacheOwnerUid == uid) return;
+    _entryCacheOwnerUid = uid;
+    _entryContextCache.clear();
+    _entryContextInFlight.clear();
+    _messagePrefetchSequences.clear();
+    _messagePrefetchInFlight.clear();
+    _roomEntryPrefetchInFlight.clear();
+    _roomEntryPrefetchTokens.clear();
+    _participantIntegrityInFlight.clear();
+    _participantIntegrityRetryAfter.clear();
+    _unreadSummaryInFlight.clear();
+    _unreadSummaryMemoryCache.clear();
+    _readSyncStates.removeWhere((key, _) => !key.startsWith('$uid::'));
+  }
+
+  SnackChat? _latestRoom(String snackChatId) {
+    final latest = _latestMySnackChats;
+    if (latest == null) return null;
+    for (final room in latest) {
+      if (room.id == snackChatId) return room;
+    }
+    return null;
+  }
 
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('snack_chats');
 
+  String createMessageId(String snackChatId) =>
+      _collection.doc(snackChatId).collection('messages').doc().id;
+
   Stream<List<SnackChat>> _watchMySnackChats() {
     final uid = _uid;
     if (uid == null) return Stream.value(const <SnackChat>[]);
+    final shared = _sharedMySnackChatEvents(uid);
+    final generation = _sharedMySnackChatsGeneration;
+    late final StreamController<List<SnackChat>> controller;
+    StreamSubscription<List<SnackChat>>? relay;
+    controller = StreamController<List<SnackChat>>(
+      onListen: () {
+        relay = shared.listen(
+          controller.add,
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+        _retainMySnackChatFeed(generation, uid);
+        final latest = _latestMySnackChats;
+        if (latest != null) controller.add(latest);
+      },
+      onPause: () => relay?.pause(),
+      onResume: () => relay?.resume(),
+      onCancel: () async {
+        await relay?.cancel();
+        _releaseMySnackChatFeed(generation);
+      },
+    );
+    return controller.stream;
+  }
 
+  Stream<List<SnackChat>> _sharedMySnackChatEvents(String uid) {
+    final current = _sharedMySnackChatsController;
+    if (_sharedMySnackChatsUid == uid && current != null && !current.isClosed) {
+      return current.stream;
+    }
+
+    _sharedMySnackChatsGeneration++;
+    _sharedMySnackChatsReconnectTimer?.cancel();
+    _sharedMySnackChatsReconnectTimer = null;
+    final previousSubscription = _sharedMySnackChatsSubscription;
+    _sharedMySnackChatsSubscription = null;
+    if (previousSubscription != null) {
+      unawaited(previousSubscription.cancel());
+    }
+    if (current != null && !current.isClosed) unawaited(current.close());
+    _sharedMySnackChatsUid = uid;
+    _sharedMySnackChatsConsumers = 0;
+    _latestMySnackChats = null;
+    final next = StreamController<List<SnackChat>>.broadcast();
+    _sharedMySnackChatsController = next;
+    return next.stream;
+  }
+
+  void _retainMySnackChatFeed(int generation, String uid) {
+    if (generation != _sharedMySnackChatsGeneration ||
+        uid != _sharedMySnackChatsUid) {
+      return;
+    }
+    _sharedMySnackChatsConsumers++;
+    _startMySnackChatFeed(generation, uid);
+  }
+
+  void _releaseMySnackChatFeed(int generation) {
+    if (generation != _sharedMySnackChatsGeneration) return;
+    _sharedMySnackChatsConsumers =
+        (_sharedMySnackChatsConsumers - 1).clamp(0, 1 << 20).toInt();
+    if (_sharedMySnackChatsConsumers != 0) return;
+    _sharedMySnackChatsReconnectTimer?.cancel();
+    _sharedMySnackChatsReconnectTimer = null;
+    final subscription = _sharedMySnackChatsSubscription;
+    _sharedMySnackChatsSubscription = null;
+    if (subscription != null) unawaited(subscription.cancel());
+  }
+
+  void _startMySnackChatFeed(int generation, String uid) {
+    if (generation != _sharedMySnackChatsGeneration ||
+        uid != _sharedMySnackChatsUid ||
+        _sharedMySnackChatsConsumers == 0 ||
+        _sharedMySnackChatsSubscription != null) {
+      return;
+    }
+    final controller = _sharedMySnackChatsController;
+    if (controller == null || controller.isClosed) return;
+    _sharedMySnackChatsSubscription = _createMySnackChatsStream(uid).listen(
+      (chats) {
+        if (generation != _sharedMySnackChatsGeneration ||
+            controller.isClosed) {
+          return;
+        }
+        _latestMySnackChats = chats;
+        controller.add(chats);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (generation == _sharedMySnackChatsGeneration &&
+            !controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
+      },
+      onDone: () {
+        if (generation != _sharedMySnackChatsGeneration) return;
+        _sharedMySnackChatsSubscription = null;
+        if (_sharedMySnackChatsConsumers == 0) return;
+        _sharedMySnackChatsReconnectTimer?.cancel();
+        _sharedMySnackChatsReconnectTimer = Timer(
+          const Duration(seconds: 2),
+          () => _startMySnackChatFeed(generation, uid),
+        );
+      },
+    );
+  }
+
+  Stream<List<SnackChat>> _createMySnackChatsStream(String uid) {
     // NOTE:
     // 기존 쿼리(다중 where + orderBy)는 복합 인덱스 누락 시 에러가 발생했고,
     // UI에서 빈 리스트로 보이면서 "잠깐 보였다가 사라짐"처럼 보일 수 있었다.
     // 우선 참여자 조건만 서버에서 걸고, 나머지 필터/정렬은 클라이언트에서 처리한다.
-    return _collection
-        .where('participantIds', arrayContains: uid)
-        .snapshots()
-        .map((snap) {
+    return _withFirstEventDeadline(
+      _collection.where('participantIds', arrayContains: uid).snapshots(),
+      operation: 'Snack Chat list',
+    ).map((snap) {
       final now = DateTime.now();
-      final items = snap.docs
-          .map((doc) => SnackChat.fromFirestore(doc))
-          .where((chat) {
-            if (chat.isHardExpired(now)) return false;
-            if (chat.isExpired(now) && !chat.isFavoritedBy(uid)) return false;
-            return true;
-          })
-          .toList();
-      items.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
-      return items;
-    }).handleError((e) {
-      Logger.error('Snack Chat 조회 실패: $e');
-      return <SnackChat>[];
-    });
-  }
+      final items = <SnackChat>[];
+      for (final doc in snap.docs) {
+        final rawCreatedAt = doc.data()['createdAt'];
+        if (rawCreatedAt is! Timestamp) {
+          // A missing/non-timestamp createdAt marks an unsupported legacy doc.
+          continue;
+        }
+        if (!isEligibleForCurrentSnackChatListPolicy(rawCreatedAt.toDate())) {
+          continue;
+        }
 
-  List<SnackChat> _filterByActiveWindow(List<SnackChat> items, {required bool active}) {
-    final now = DateTime.now();
-    if (active) {
-      return items.where((chat) => !chat.isExpired(now)).toList();
-    }
-    return items.where((chat) => chat.isExpired(now)).toList();
+        try {
+          final chat = SnackChat.fromFirestore(doc);
+          if (!chat.isHardExpired(now)) items.add(chat);
+        } catch (error, stackTrace) {
+          // One malformed room must never terminate both Today and All lists.
+          if (Logger.isVerboseEnabled)
+            Logger.warning(
+              '지원되지 않는 Snack Chat 문서를 건너뜁니다: ${doc.id} '
+              '($error)\n$stackTrace',
+            );
+        }
+      }
+      return orderSnackChatsForCurrentUser(
+        _projectDirectReads(items, uid),
+        currentUserId: uid,
+      );
+    }).transform(
+      StreamTransformer<List<SnackChat>, List<SnackChat>>.fromHandlers(
+        handleError: (error, stackTrace, sink) {
+          Logger.error('Snack Chat 조회 실패', error, stackTrace);
+          // Stream.handleError의 반환값은 event로 전달되지 않는다. 최초
+          // snapshot 자체가 실패해도 목록 화면이 무한 로딩되지 않게 실제
+          // fallback event를 보낸다.
+          if (_latestMySnackChats == null) {
+            sink.add(const <SnackChat>[]);
+          }
+          sink.addError(error, stackTrace);
+        },
+      ),
+    );
   }
 
   Stream<List<SnackChat>> getTodaySnackChats() {
-    return _watchMySnackChats()
-        .map((items) => _filterByActiveWindow(items, active: true));
+    return _watchListSection(SnackChatListSection.today);
   }
 
   Stream<List<SnackChat>> getAllSnackChats() {
-    return _watchMySnackChats()
-        .map((items) => _filterByActiveWindow(items, active: false));
+    return _watchListSection(SnackChatListSection.all);
+  }
+
+  /// 날짜 섹션을 나누지 않고 현재 사용자에게 보이는 방을 한 번에 제공한다.
+  /// Today/All 두 스트림을 동시에 구독하지 않아 조회 비용도 늘어나지 않는다.
+  Stream<List<SnackChat>> getSnackChats() {
+    return _watchListSection(SnackChatListSection.unified);
+  }
+
+  Stream<List<SnackChat>> _watchListSection(SnackChatListSection section) {
+    final uid = _uid;
+    if (uid == null) return Stream.value(const <SnackChat>[]);
+
+    late final StreamController<List<SnackChat>> controller;
+    StreamSubscription<List<SnackChat>>? subscription;
+    Timer? dateBoundaryTimer;
+    Timer? expirationTimer;
+    List<SnackChat>? latestChats;
+
+    void emitCurrentSection() {
+      final chats = latestChats;
+      if (chats == null || controller.isClosed) return;
+      controller.add(
+        filterSnackChatsBySection(
+          chats,
+          section: section,
+          currentUserId: uid,
+        ),
+      );
+    }
+
+    void scheduleExpirationRefresh() {
+      expirationTimer?.cancel();
+      final chats = latestChats;
+      if (chats == null) return;
+      final now = DateTime.now();
+      DateTime? nextExpiration;
+      for (final chat in chats) {
+        if (chat.hasNoExpiration || chat.isFavoritedBy(uid)) continue;
+        if (!chat.expiresAt.isAfter(now)) continue;
+        if (nextExpiration == null || chat.expiresAt.isBefore(nextExpiration)) {
+          nextExpiration = chat.expiresAt;
+        }
+      }
+      if (nextExpiration == null) return;
+      expirationTimer = Timer(
+        nextExpiration.difference(now) + const Duration(milliseconds: 100),
+        () {
+          emitCurrentSection();
+          scheduleExpirationRefresh();
+        },
+      );
+    }
+
+    void scheduleDateBoundaryRefresh() {
+      dateBoundaryTimer?.cancel();
+      final now = DateTime.now();
+      // A small guard ensures the callback runs on the new date even when the
+      // platform fires a timer a few milliseconds early.
+      final delay = durationUntilNextLocalCalendarDay(now) +
+          const Duration(milliseconds: 100);
+      dateBoundaryTimer = Timer(delay, () {
+        emitCurrentSection();
+        if (section != SnackChatListSection.unified) {
+          scheduleDateBoundaryRefresh();
+        }
+      });
+    }
+
+    controller = StreamController<List<SnackChat>>.broadcast(
+      onListen: () {
+        // Re-listening after tab navigation is valid for a broadcast stream.
+        // Reuse the last safe value until Firestore supplies a fresh snapshot.
+        emitCurrentSection();
+        subscription = _watchMySnackChats().listen(
+          (chats) {
+            latestChats = chats;
+            emitCurrentSection();
+            scheduleExpirationRefresh();
+          },
+          onError: controller.addError,
+          onDone: () {
+            dateBoundaryTimer?.cancel();
+            expirationTimer?.cancel();
+            if (!controller.isClosed) controller.close();
+          },
+        );
+        if (section != SnackChatListSection.unified) {
+          scheduleDateBoundaryRefresh();
+        }
+      },
+      onCancel: () {
+        dateBoundaryTimer?.cancel();
+        expirationTimer?.cancel();
+        final previousSubscription = subscription;
+        subscription = null;
+        if (previousSubscription != null) {
+          unawaited(previousSubscription.cancel());
+        }
+      },
+    );
+
+    return controller.stream;
   }
 
   Stream<List<SnackChat>> getFavoritedTodaySnackChats() {
     final uid = _uid;
     if (uid == null) return Stream.value(const <SnackChat>[]);
-    return _watchMySnackChats().map(
-      (items) => _filterByActiveWindow(items, active: true)
-          .where((c) => c.isFavoritedBy(uid))
-          .toList(),
+    return getTodaySnackChats().map(
+      (items) => items.where((c) => c.isFavoritedBy(uid)).toList(),
     );
   }
 
   Stream<List<SnackChat>> getFavoritedAllSnackChats() {
     final uid = _uid;
     if (uid == null) return Stream.value(const <SnackChat>[]);
-    return _watchMySnackChats().map(
-      (items) => _filterByActiveWindow(items, active: false)
-          .where((c) => c.isFavoritedBy(uid))
-          .toList(),
+    return getAllSnackChats().map(
+      (items) => items.where((c) => c.isFavoritedBy(uid)).toList(),
     );
   }
 
@@ -92,42 +1141,40 @@ class SnackChatService {
     final uid = _uid;
     if (uid == null) return null;
     if (title.trim().isEmpty) return null;
+    if (title.trim().runes.length > 40) {
+      throw StateError('Snack Chat 이름은 40자 이하여야 합니다.');
+    }
 
     final unique = <String>{uid, ...participantIds};
-    if (unique.length < 2 || unique.length > 6) {
-      throw StateError('Snack Chat 참여 인원은 2~6명이어야 합니다.');
+    if (unique.length < 2) {
+      throw StateError('Snack Chat에는 최소 2명이 필요합니다.');
     }
-    if (activeDurationHours != 24 && activeDurationHours != 48) {
-      throw StateError('Snack Chat 유지 시간은 24시간 또는 48시간이어야 합니다.');
+    if (unique.length > 50) {
+      throw StateError('Snack Chat 참여자는 최대 50명까지 선택할 수 있습니다.');
     }
-    // 방장은 반드시 초대 대상 모두와 친구여야 한다.
-    final myFriendIds = await _getMyFriendIdSet(uid);
-    final invitedOnly = unique.where((id) => id != uid).toSet();
-    final hasNonFriend = invitedOnly.any((id) => !myFriendIds.contains(id));
-    if (hasNonFriend) {
-      throw StateError('방장은 친구만 초대할 수 있습니다.');
+    if (activeDurationHours != 0 && activeDurationHours != 24) {
+      throw StateError('Snack Chat 유지 시간은 24시간 또는 종료 없음이어야 합니다.');
     }
-
-    final now = DateTime.now();
-    final expiresAt = now.add(Duration(hours: activeDurationHours));
-    final doc = _collection.doc();
-    final unread = <String, int>{for (final id in unique) id: 0};
-    await doc.set({
+    // Participant authorization cannot be enforced safely for up to 50 users
+    // with per-document Security Rules access-call limits.
+    // The callable revalidates every account and bilateral block state, then
+    // writes the room with Admin SDK.
+    final result = await _functions
+        .httpsCallable('createSnackChatSecure')
+        .call(<String, dynamic>{
       'title': title.trim(),
-      'creatorId': uid,
-      'participantIds': unique.toList(),
+      'participantIds': unique.toList(growable: false),
       'visibleToCategoryIds': visibleToCategoryIds,
-      'createdAt': Timestamp.fromDate(now),
       'activeDurationHours': activeDurationHours,
-      'expiresAt': Timestamp.fromDate(expiresAt),
-      'favoriteUserIds': <String>[],
-      'lastMessage': '',
-      'lastMessageTime': Timestamp.fromDate(now),
-      'lastMessageSenderId': uid,
-      'unreadCount': unread,
-      'updatedAt': Timestamp.fromDate(now),
-    });
-    return doc.id;
+      'notificationsHandledByServer': true,
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('Snack Chat을 만들지 못했습니다.');
+    }
+    final roomId = (data['snackChatId'] ?? '').toString().trim();
+    if (roomId.isEmpty) throw StateError('생성된 Snack Chat ID가 없습니다.');
+    return roomId;
   }
 
   Future<List<String>> inviteParticipants(
@@ -138,65 +1185,632 @@ class SnackChatService {
     if (uid == null) return <String>[];
     if (participantIds.isEmpty) return <String>[];
 
-    final roomRef = _collection.doc(snackChatId);
-    final roomDoc = await roomRef.get();
-    if (!roomDoc.exists) return <String>[];
-    final room = SnackChat.fromFirestore(roomDoc);
-
-    // 방장만 초대 가능
-    if (room.creatorId != uid) {
-      throw StateError('방장만 초대할 수 있습니다.');
+    final requested = participantIds.toSet()..remove(uid);
+    final result = await _functions
+        .httpsCallable('inviteSnackChatParticipants')
+        .call(<String, dynamic>{
+      'snackChatId': snackChatId,
+      'participantIds': requested.toList(growable: false),
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('참여자를 초대하지 못했습니다.');
     }
-
-    final current = room.participantIds.toSet();
-    final requestSet = participantIds.toSet();
-    requestSet.remove(uid);
-    final toAdd = requestSet.where((id) => !current.contains(id)).toSet();
-    if (toAdd.isEmpty) return <String>[];
-
-    // 방장은 초대 대상 모두와 친구 관계여야 함
-    final myFriendIds = await _getMyFriendIdSet(uid);
-    final hasNonFriend = toAdd.any((id) => !myFriendIds.contains(id));
-    if (hasNonFriend) {
-      throw StateError('방장은 친구만 초대할 수 있습니다.');
-    }
-
-    final nextParticipants = <String>{...current, ...toAdd};
-    if (nextParticipants.length > 6) {
-      throw StateError('참여자는 최대 6명(본인 포함)까지 가능합니다.');
-    }
-
-    final nextUnread = Map<String, int>.from(room.unreadCount);
-    for (final added in toAdd) {
-      nextUnread.putIfAbsent(added, () => 0);
-    }
-
-    await roomRef.update({
-      'participantIds': nextParticipants.toList(),
-      'unreadCount': nextUnread,
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
-    });
-    return toAdd.toList();
+    return (data['invitedUserIds'] as List? ?? const <Object>[])
+        .map((value) => value.toString())
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
   }
 
   Stream<SnackChat?> watchSnackChat(String snackChatId) {
-    return _collection.doc(snackChatId).snapshots().map((doc) {
+    return _withFirstEventDeadline(
+      _collection.doc(snackChatId).snapshots(),
+      operation: 'Snack Chat room',
+    ).map((doc) {
       if (!doc.exists) return null;
       return SnackChat.fromFirestore(doc);
     });
   }
 
-  /// 최신 메시지 30개를 실시간으로 수신 (신규 메시지 즉시 반영)
-  Stream<List<SnackChatMessage>> watchMessages(String snackChatId) {
-    return _collection
+  /// Confirms a null cached room snapshot against the server before the
+  /// screen treats it as terminal. This avoids mistaking an empty local cache
+  /// for a remotely deleted room during startup.
+  Future<SnackChat?> getSnackChatFromServer(String snackChatId) async {
+    final doc = await _collection
+        .doc(snackChatId)
+        .get(const GetOptions(source: Source.server))
+        .timeout(const Duration(seconds: 8));
+    return doc.exists ? SnackChat.fromFirestore(doc) : null;
+  }
+
+  /// Keeps one live query for the currently loaded contiguous message window.
+  /// The first subscription is capped at 30; after the screen knows its
+  /// oldest loaded cursor, [throughMessage] prevents new arrivals from
+  /// pushing older on-screen messages (and their reaction/poll aggregates)
+  /// out of the live window.
+  Stream<List<SnackChatMessage>> watchMessages(
+    String snackChatId, {
+    SnackChatMessage? throughMessage,
+  }) {
+    Query<Map<String, dynamic>> query = _collection
         .doc(snackChatId)
         .collection('messages')
         .orderBy('createdAt', descending: true)
-        .limit(30)
+        .orderBy(FieldPath.documentId, descending: true);
+    final hasConfirmedThroughMessage =
+        throughMessage != null && throughMessage.hasConfirmedServerTimestamp;
+    if (hasConfirmedThroughMessage) {
+      query = query.endAt(<Object>[
+        Timestamp.fromDate(throughMessage.createdAt),
+        throughMessage.id,
+      ]);
+    }
+    // Keep live updates bounded. Pages older than this window remain in the
+    // screen's static, already-fetched list instead of making one listener grow
+    // without limit during a long chat session.
+    query = query.limit(hasConfirmedThroughMessage ? 200 : 30);
+    final messagesById = <String, SnackChatMessage>{};
+    return _withFirstEventDeadline(
+      query.snapshots(),
+      operation: 'Snack Chat messages',
+    ).map((snapshot) {
+      // Firestore includes every document in snapshot.docs on each event, but
+      // only docChanges need reparsing. Reusing unchanged model instances lets
+      // the screen skip redundant merges and ordering work.
+      for (final change in snapshot.docChanges) {
+        switch (change.type) {
+          case DocumentChangeType.added:
+          case DocumentChangeType.modified:
+            messagesById[change.doc.id] =
+                SnackChatMessage.fromFirestore(change.doc);
+            break;
+          case DocumentChangeType.removed:
+            // A bounded query can evict its oldest document when a new one is
+            // added. The screen intentionally retains its already-loaded page;
+            // this cache only stops retaining the unused model instance.
+            messagesById.remove(change.doc.id);
+            break;
+        }
+      }
+      return snapshot.docs
+          .map((document) => messagesById.putIfAbsent(
+                document.id,
+                () => SnackChatMessage.fromFirestore(document),
+              ))
+          .toList(growable: false);
+    });
+  }
+
+  /// 목록에 보이는 소수의 방만 선조회한다. 최근 메시지는 기존 계정/방별
+  /// 로컬 캐시에 넣고, 진입 경계는 방의 sequence/unread가 바뀌지 않은 동안만
+  /// 재사용한다. 동일 방의 중복 호출은 아래 in-flight 맵에서 하나로 합쳐진다.
+  void prefetchRoomEntryData(
+    Iterable<SnackChat> rooms, {
+    int maxRooms = 10,
+  }) {
+    final uid = _uid;
+    if (uid == null || maxRooms <= 0) return;
+    _ensureEntryCacheOwner(uid);
+
+    final ordered = rooms.toSet().toList(growable: true)
+      ..sort((left, right) {
+        final leftUnread = left.getMyUnreadCount(uid) > 0 ? 1 : 0;
+        final rightUnread = right.getMyUnreadCount(uid) > 0 ? 1 : 0;
+        if (leftUnread != rightUnread) return rightUnread - leftUnread;
+        final leftFavorite = left.isFavoritedBy(uid) ? 1 : 0;
+        final rightFavorite = right.isFavoritedBy(uid) ? 1 : 0;
+        if (leftFavorite != rightFavorite) return rightFavorite - leftFavorite;
+        return right.updatedAt.compareTo(left.updatedAt);
+      });
+    final selected = ordered.take(maxRooms).toList(growable: false);
+    if (selected.isEmpty) return;
+
+    final profileIds = <String>{};
+    for (final room in selected) {
+      unawaited(_localCache.saveRoom(room.id, room));
+      unawaited(_prefetchRoomEntry(room, uid));
+      unawaited(ensureParticipantIntegrity(room));
+
+      final displayIds = room.participantIds.toSet().toList(growable: true)
+        ..sort((left, right) {
+          if (left == uid) return 1;
+          if (right == uid) return -1;
+          return 0;
+        });
+      profileIds.addAll(displayIds.take(4));
+    }
+    if (profileIds.isNotEmpty) {
+      unawaited(
+        _usersRepository
+            .getUserProfilesBatch(profileIds.take(20).toList(growable: false))
+            .then<void>((_) {})
+            .catchError((Object error) {
+          if (Logger.isVerboseEnabled)
+            Logger.warning('Snack Chat 참여자 프로필 선조회 실패: $error');
+        }),
+      );
+    }
+  }
+
+  /// Returns only a still-valid in-memory boundary. The list screen uses this
+  /// synchronously when opening a room so the first frame already knows
+  /// whether it should stay at the latest message or move to an unread anchor.
+  SnackChatEntryContext? peekEntryContext(String snackChatId) {
+    final uid = _uid;
+    if (uid == null) return null;
+    _ensureEntryCacheOwner(uid);
+    final cached = _entryContextCache['$uid::$snackChatId'];
+    final room = _latestRoom(snackChatId);
+    if (cached == null ||
+        cached.ownerUid != uid ||
+        DateTime.now().difference(cached.fetchedAt) >
+            _entryContextCacheLifetime ||
+        (room != null &&
+            (cached.roomLastSequence != room.lastMessageSequence ||
+                cached.roomUnreadCount != room.getMyUnreadCount(uid)))) {
+      return null;
+    }
+    return cached.context;
+  }
+
+  Future<void> _prefetchRoomEntry(SnackChat room, String uid) {
+    if (_uid != uid) return Future<void>.value();
+    final key = '$uid::${room.id}';
+    final token = '${room.lastMessageSequence}:${room.getMyUnreadCount(uid)}:'
+        '${room.participantCount}:${room.updatedAt.millisecondsSinceEpoch}';
+    if (_roomEntryPrefetchTokens[key] == token) return Future<void>.value();
+    final existing = _roomEntryPrefetchInFlight[key];
+    if (existing != null) return existing;
+
+    late final Future<void> operation;
+    operation = () async {
+      final entryFuture = getEntryContext(room.id);
+      final recentFuture = _prefetchRecentMessages(room, uid);
+      final entry = await entryFuture;
+      await recentFuture;
+      if (_uid != uid) return;
+      if (entry.hasUnreadAnchor) {
+        final cached = await _localCache.getMessages(room.id, limit: 400);
+        final hasAnchor = cached.any(
+          (message) => message.id == entry.firstUnreadMessageId,
+        );
+        if (!hasAnchor) {
+          final window = await fetchMessageWindowAroundSequence(
+            room.id,
+            messageId: entry.firstUnreadMessageId!,
+            sequence: entry.firstUnreadSequence!,
+          );
+          if (_uid == uid && window.isNotEmpty) {
+            await _localCache.upsertMessages(room.id, window);
+          }
+        }
+      }
+      if (_uid == uid) _roomEntryPrefetchTokens[key] = token;
+    }()
+        .catchError((Object error) {
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 진입 데이터 선조회 실패(${room.id}): $error');
+    }).whenComplete(() {
+      if (identical(_roomEntryPrefetchInFlight[key], operation)) {
+        _roomEntryPrefetchInFlight.remove(key);
+      }
+    });
+    _roomEntryPrefetchInFlight[key] = operation;
+    return operation;
+  }
+
+  Future<void> _prefetchRecentMessages(SnackChat room, String uid) {
+    if (_uid != uid) return Future<void>.value();
+    final key = '$uid::${room.id}';
+    final completedSequence = _messagePrefetchSequences[key];
+    if (completedSequence != null &&
+        completedSequence >= room.lastMessageSequence) {
+      return Future<void>.value();
+    }
+    final existing = _messagePrefetchInFlight[key];
+    if (existing != null) return existing;
+
+    late final Future<void> operation;
+    operation = fetchMessagesPage(room.id, pageSize: 20).then((messages) async {
+      if (_uid != uid) return;
+      await _localCache.upsertMessages(room.id, messages);
+      _messagePrefetchSequences[key] = room.lastMessageSequence;
+    }).catchError((Object error) {
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 최근 메시지 선조회 실패(${room.id}): $error');
+    }).whenComplete(() {
+      if (identical(_messagePrefetchInFlight[key], operation)) {
+        _messagePrefetchInFlight.remove(key);
+      }
+    });
+    _messagePrefetchInFlight[key] = operation;
+    return operation;
+  }
+
+  /// Captures the first unread message before the chat screen marks anything
+  /// as read. The callable is authoritative. The Firestore fallback uses the
+  /// same server-owned member cursor so clients already installed while the
+  /// callable rolls out still enter safely without guessing from list length.
+  Future<SnackChatEntryContext> getEntryContext(String snackChatId) {
+    final uid = _uid;
+    if (uid == null) return Future.error(StateError('로그인이 필요합니다.'));
+    _ensureEntryCacheOwner(uid);
+    final key = '$uid::$snackChatId';
+    final room = _latestRoom(snackChatId);
+    final cached = _entryContextCache[key];
+    if (cached != null &&
+        cached.ownerUid == uid &&
+        DateTime.now().difference(cached.fetchedAt) <=
+            _entryContextCacheLifetime &&
+        (room == null ||
+            (cached.roomLastSequence == room.lastMessageSequence &&
+                cached.roomUnreadCount == room.getMyUnreadCount(uid)))) {
+      return Future<SnackChatEntryContext>.value(cached.context);
+    }
+    final existing = _entryContextInFlight[key];
+    if (existing != null) return existing;
+
+    late final Future<SnackChatEntryContext> operation;
+    operation = _loadCachedOrRemoteEntryContext(
+      snackChatId,
+      uid: uid,
+      room: room,
+    ).then((context) {
+      if (_uid == uid) {
+        _entryContextCache[key] = _SnackChatEntryCacheRecord(
+          ownerUid: uid,
+          // 응답을 시작시킨 서버 경계를 저장한다. 요청 도중 새 메시지가
+          // 도착했다면 최신 목록의 sequence와 달라져 다음 진입 때 재조회된다.
+          roomLastSequence: context.roomLastSequence,
+          roomUnreadCount: context.roomUnreadCount,
+          fetchedAt: DateTime.now(),
+          context: context,
+        );
+        unawaited(
+          _localCache.saveEntryState(
+            snackChatId,
+            SnackChatCachedEntryState(
+              lastReadSequence: context.lastReadSequence,
+              roomLastSequence: context.roomLastSequence,
+              roomUnreadCount: context.roomUnreadCount,
+              canAdvanceReadCursor: context.canAdvanceReadCursor,
+              firstUnreadMessageId: context.firstUnreadMessageId,
+              firstUnreadSequence: context.firstUnreadSequence,
+              updatedAt: DateTime.now(),
+            ),
+          ),
+        );
+      }
+      return context;
+    }).whenComplete(() {
+      if (identical(_entryContextInFlight[key], operation)) {
+        _entryContextInFlight.remove(key);
+      }
+    });
+    _entryContextInFlight[key] = operation;
+    return operation;
+  }
+
+  Future<SnackChatEntryContext> _loadCachedOrRemoteEntryContext(
+    String snackChatId, {
+    required String uid,
+    required SnackChat? room,
+  }) async {
+    final local = await _localCache.getEntryState(snackChatId);
+    if (_uid == uid &&
+        room != null &&
+        local != null &&
+        DateTime.now().difference(local.updatedAt) <=
+            const Duration(minutes: 2) &&
+        local.roomLastSequence == room.lastMessageSequence &&
+        local.roomUnreadCount == room.getMyUnreadCount(uid)) {
+      return SnackChatEntryContext(
+        lastReadSequence: local.lastReadSequence,
+        roomLastSequence: local.roomLastSequence,
+        roomUnreadCount: local.roomUnreadCount,
+        canAdvanceReadCursor: local.canAdvanceReadCursor,
+        firstUnreadMessageId: local.firstUnreadMessageId,
+        firstUnreadSequence: local.firstUnreadSequence,
+      );
+    }
+    return _loadEntryContext(snackChatId);
+  }
+
+  Future<SnackChatEntryContext> _loadEntryContext(
+    String snackChatId,
+  ) async {
+    try {
+      final result = await _functions
+          .httpsCallable('getSnackChatEntryContext')
+          .call(<String, dynamic>{'snackChatId': snackChatId}).timeout(
+              const Duration(seconds: 12));
+      final data = result.data;
+      if (data is! Map) {
+        throw const FormatException('Invalid Snack Chat entry context.');
+      }
+      return _entryContextFromMap(Map<String, dynamic>.from(data));
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code != 'not-found' && error.code != 'unimplemented') {
+        rethrow;
+      }
+      if (Logger.isVerboseEnabled)
+        Logger.log(
+          'Snack Chat entry callable is not available yet; using server cursor fallback.',
+        );
+      return _getEntryContextFromFirestore(snackChatId);
+    }
+  }
+
+  SnackChatEntryContext _entryContextFromMap(Map<String, dynamic> data) {
+    int intValue(Object? value) => value is num
+        ? value.toInt().clamp(0, 1 << 31).toInt()
+        : int.tryParse((value ?? '').toString())?.clamp(0, 1 << 31).toInt() ??
+            0;
+    final anchorId = (data['firstUnreadMessageId'] ?? '').toString().trim();
+    final anchorSequence = intValue(data['firstUnreadSequence']);
+    return SnackChatEntryContext(
+      lastReadSequence: intValue(data['lastReadSequence']),
+      roomLastSequence: intValue(data['roomLastSequence']),
+      roomUnreadCount: intValue(data['roomUnreadCount']),
+      canAdvanceReadCursor: data['canAdvanceReadCursor'] == true,
+      firstUnreadMessageId: anchorId.isEmpty ? null : anchorId,
+      firstUnreadSequence: anchorSequence <= 0 ? null : anchorSequence,
+    );
+  }
+
+  bool _sequenceIsInMembership(
+    Map<String, dynamic> memberData,
+    int sequence,
+  ) {
+    final periods = (memberData['periods'] as List? ?? const <Object>[])
+        .map(SnackChatMembershipPeriod.fromMap)
+        .toList(growable: true);
+    if (periods.isEmpty && memberData.containsKey('joinedAfterSequence')) {
+      periods.add(
+        SnackChatMembershipPeriod.fromMap(<String, dynamic>{
+          'joinedAfterSequence': memberData['joinedAfterSequence'],
+          'leftAfterSequence': memberData['leftAfterSequence'],
+        }),
+      );
+    }
+    // Legacy member documents without a recorded boundary predate membership
+    // periods and are treated as continuously eligible, matching the server.
+    return periods.isEmpty ||
+        periods.any((period) => period.includes(sequence));
+  }
+
+  Future<SnackChatEntryContext> _getEntryContextFromFirestore(
+    String snackChatId,
+  ) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('로그인이 필요합니다.');
+    final roomRef = _collection.doc(snackChatId);
+    final results =
+        await Future.wait(<Future<DocumentSnapshot<Map<String, dynamic>>>>[
+      roomRef.get(const GetOptions(source: Source.server)),
+      roomRef
+          .collection('members')
+          .doc(uid)
+          .get(const GetOptions(source: Source.server)),
+    ]).timeout(const Duration(seconds: 12));
+    final room = results[0];
+    final member = results[1];
+    final roomData = room.data() ?? const <String, dynamic>{};
+    final memberData = member.data() ?? const <String, dynamic>{};
+    final participants = (roomData['participantIds'] as List? ?? const [])
+        .map((value) => value.toString())
+        .toSet();
+    if (!room.exists ||
+        !member.exists ||
+        !participants.contains(uid) ||
+        (memberData['status'] ?? '').toString() != 'active') {
+      throw StateError('Snack Chat 멤버십을 확인할 수 없습니다.');
+    }
+    int intValue(Object? value) => value is num
+        ? value.toInt().clamp(0, 1 << 31).toInt()
+        : int.tryParse((value ?? '').toString())?.clamp(0, 1 << 31).toInt() ??
+            0;
+    final lastRead = intValue(memberData['lastReadSequence']);
+    final roomLast = intValue(roomData['lastMessageSequence']);
+    final unreadMap = roomData['unreadCount'];
+    final unread = intValue(unreadMap is Map ? unreadMap[uid] : null);
+    if (unread == 0 || lastRead >= roomLast) {
+      return SnackChatEntryContext(
+        lastReadSequence: lastRead,
+        roomLastSequence: roomLast,
+        roomUnreadCount: unread,
+        canAdvanceReadCursor: true,
+      );
+    }
+
+    var cursor = lastRead;
+    for (var page = 0; page < 10 && cursor < roomLast; page++) {
+      final snapshot = await roomRef
+          .collection('messages')
+          .where('sequence', isGreaterThan: cursor)
+          .orderBy('sequence')
+          .limit(100)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 12));
+      if (snapshot.docs.isEmpty) break;
+      for (final document in snapshot.docs) {
+        final data = document.data();
+        final sequence = intValue(data['sequence']);
+        if (sequence > cursor) cursor = sequence;
+        if (sequence <= lastRead || sequence > roomLast) continue;
+        if ((data['senderId'] ?? '').toString() == uid ||
+            (data['type'] ?? '').toString() == 'system' ||
+            !_sequenceIsInMembership(memberData, sequence)) {
+          continue;
+        }
+        final delivered =
+            (data['deliveryRecipientIds'] as List? ?? const <Object>[])
+                .map((value) => value.toString())
+                .toSet();
+        // Modern messages use deliveryRecipientIds. Legacy messages did not;
+        // the positive canonical room unread count is the compatibility proof.
+        if (delivered.isNotEmpty && !delivered.contains(uid)) continue;
+        return SnackChatEntryContext(
+          lastReadSequence: lastRead,
+          roomLastSequence: roomLast,
+          roomUnreadCount: unread,
+          canAdvanceReadCursor: true,
+          firstUnreadMessageId: document.id,
+          firstUnreadSequence: sequence,
+        );
+      }
+      if (snapshot.docs.length < 100) break;
+    }
+    return SnackChatEntryContext(
+      lastReadSequence: lastRead,
+      roomLastSequence: roomLast,
+      roomUnreadCount: unread,
+      canAdvanceReadCursor: false,
+    );
+  }
+
+  /// Loads a small bounded context around the frozen unread anchor. This is a
+  /// one-shot fetch; the existing bounded latest listener remains responsible
+  /// for live messages and reaction/poll aggregate updates.
+  Future<List<SnackChatMessage>> fetchMessageWindowAroundSequence(
+    String snackChatId, {
+    required String messageId,
+    required int sequence,
+    int olderCount = 10,
+    int newerCount = 20,
+  }) async {
+    final messages = _collection.doc(snackChatId).collection('messages');
+    final results = await Future.wait([
+      messages
+          .where('sequence', isLessThan: sequence)
+          .orderBy('sequence', descending: true)
+          .limit(olderCount)
+          .get(const GetOptions(source: Source.server)),
+      messages.doc(messageId).get(const GetOptions(source: Source.server)),
+      messages
+          .where('sequence', isGreaterThan: sequence)
+          .orderBy('sequence')
+          .limit(newerCount)
+          .get(const GetOptions(source: Source.server)),
+    ]).timeout(const Duration(seconds: 12));
+    final byId = <String, SnackChatMessage>{};
+    for (final document
+        in (results[0] as QuerySnapshot<Map<String, dynamic>>).docs) {
+      byId[document.id] = SnackChatMessage.fromFirestore(document);
+    }
+    final anchor = results[1] as DocumentSnapshot<Map<String, dynamic>>;
+    if (anchor.exists) {
+      byId[anchor.id] = SnackChatMessage.fromFirestore(anchor);
+    }
+    for (final document
+        in (results[2] as QuerySnapshot<Map<String, dynamic>>).docs) {
+      byId[document.id] = SnackChatMessage.fromFirestore(document);
+    }
+    final window = byId.values.toList(growable: false)
+      ..sort((a, b) {
+        final bySequence = (b.sequence ?? 0).compareTo(a.sequence ?? 0);
+        if (bySequence != 0) return bySequence;
+        final byTime = b.createdAt.compareTo(a.createdAt);
+        return byTime != 0 ? byTime : b.id.compareTo(a.id);
+      });
+    return window;
+  }
+
+  /// Fetches only the missing canonical sequence interval between a local
+  /// cache and the bounded live window. The caller owns pagination and must
+  /// stop when this bounded page is empty or shorter than [pageSize].
+  Future<List<SnackChatMessage>> fetchMessagesSequenceRange(
+    String snackChatId, {
+    required int afterSequence,
+    required int beforeSequence,
+    int pageSize = 100,
+  }) async {
+    if (afterSequence < 0 || beforeSequence <= afterSequence + 1) {
+      return const <SnackChatMessage>[];
+    }
+    final boundedPageSize = pageSize.clamp(1, 100).toInt();
+    final snapshot = await _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .where('sequence', isGreaterThan: afterSequence)
+        .where('sequence', isLessThan: beforeSequence)
+        .orderBy('sequence')
+        .limit(boundedPageSize)
+        .get(const GetOptions(source: Source.server))
+        .timeout(const Duration(seconds: 12));
+    return snapshot.docs
+        .map(SnackChatMessage.fromFirestore)
+        .toList(growable: false);
+  }
+
+  Future<SnackChatMessage?> getMessage(
+    String snackChatId,
+    String messageId,
+  ) async {
+    final doc = await _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .doc(messageId)
+        .get()
+        .timeout(const Duration(seconds: 8));
+    return doc.exists ? SnackChatMessage.fromFirestore(doc) : null;
+  }
+
+  /// A destructive/local-cleanup decision must not be based on an empty
+  /// offline cache. This method either confirms the document against the
+  /// server or throws so the caller can keep the local retry state intact.
+  Future<SnackChatMessage?> getMessageFromServer(
+    String snackChatId,
+    String messageId,
+  ) async {
+    final doc = await _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .doc(messageId)
+        .get(const GetOptions(source: Source.server))
+        .timeout(const Duration(seconds: 8));
+    return doc.exists ? SnackChatMessage.fromFirestore(doc) : null;
+  }
+
+  Stream<List<SnackChatMember>> watchMembers(String snackChatId) {
+    return _collection.doc(snackChatId).collection('members').snapshots().map(
+        (snapshot) => snapshot.docs
+            .map(SnackChatMember.fromFirestore)
+            .toList(growable: false));
+  }
+
+  /// Only the current user's reactions are streamed. Aggregate counts are
+  /// maintained on each message by Cloud Functions, so a room does not open
+  /// an unbounded listener over every participant's reaction history.
+  Stream<List<SnackChatReaction>> watchMyReactions(String snackChatId) {
+    final uid = _uid;
+    if (uid == null) return Stream.value(const <SnackChatReaction>[]);
+    return _firestore
+        .collectionGroup('reactions')
+        .where('chatId', isEqualTo: snackChatId)
+        .where('userId', isEqualTo: uid)
         .snapshots()
-        .map((snap) => snap.docs
-            .map((doc) => SnackChatMessage.fromFirestore(doc))
-            .toList());
+        .map((snapshot) => snapshot.docs
+            .map(SnackChatReaction.fromFirestore)
+            .where((reaction) => reaction.messageId.isNotEmpty)
+            .toList(growable: false));
+  }
+
+  /// Vote documents are private (especially for anonymous polls). The UI only
+  /// listens to the signed-in user's choices and reads server aggregates from
+  /// the parent message.
+  Stream<List<SnackChatVote>> watchMyVotes(String snackChatId) {
+    final uid = _uid;
+    if (uid == null) return Stream.value(const <SnackChatVote>[]);
+    return _firestore
+        .collectionGroup('votes')
+        .where('chatId', isEqualTo: snackChatId)
+        .where('userId', isEqualTo: uid)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map(SnackChatVote.fromFirestore)
+            .where((vote) => vote.messageId.isNotEmpty)
+            .toList(growable: false));
   }
 
   /// 커서(DateTime) 이전의 오래된 메시지 한 페이지 조회 (무한스크롤용)
@@ -205,169 +1819,1292 @@ class SnackChatService {
   Future<List<SnackChatMessage>> fetchMessagesPage(
     String snackChatId, {
     DateTime? before,
+    SnackChatMessage? beforeMessage,
     int pageSize = 30,
   }) async {
+    Query<Map<String, dynamic>> query = _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .orderBy(FieldPath.documentId, descending: true);
+    final cursorMessage = beforeMessage?.hasConfirmedServerTimestamp == true
+        ? beforeMessage
+        : null;
+    if (cursorMessage != null) {
+      query = query.startAfter(<Object>[
+        Timestamp.fromDate(cursorMessage.createdAt),
+        cursorMessage.id,
+      ]);
+    } else if (before != null) {
+      // DateTime-only legacy callers have no deterministic document-id tie
+      // breaker. Query strictly older timestamps so equal-time documents are
+      // never duplicated with the previous page.
+      query = query.where(
+        'createdAt',
+        isLessThan: Timestamp.fromDate(before),
+      );
+    }
+    query = query.limit(pageSize);
     try {
-      var query = _collection
-          .doc(snackChatId)
-          .collection('messages')
-          .orderBy('createdAt', descending: true)
-          .limit(pageSize);
-      if (before != null) {
-        query = query.startAfter([Timestamp.fromDate(before)]);
-      }
-      final snap = await query.get();
+      final snap = await query.get().timeout(const Duration(seconds: 12));
       return snap.docs
           .map((doc) => SnackChatMessage.fromFirestore(doc))
-          .toList();
-    } catch (e) {
-      Logger.error('Snack Chat 메시지 페이지 조회 실패: $e');
-      return <SnackChatMessage>[];
+          .toList(growable: false);
+    } catch (error, stackTrace) {
+      Logger.error(
+        'Snack Chat 메시지 페이지 조회 실패',
+        error,
+        stackTrace,
+      );
+      // An error is not the end of the collection. Let the UI keep hasMore
+      // true and expose a retry action.
+      rethrow;
     }
   }
 
-  /// 방장이 아닌 참여자가 채팅방에서 나가기
+  /// 참여자가 채팅방에서 나가기.
+  /// 생성자가 나가면 남은 첫 참여자에게 관리 권한을 넘긴다.
   Future<void> leaveRoom(String snackChatId) async {
     final uid = _uid;
-    if (uid == null) return;
-
-    final roomRef = _collection.doc(snackChatId);
-    final roomDoc = await roomRef.get();
-    if (!roomDoc.exists) return;
-
-    final room = SnackChat.fromFirestore(roomDoc);
-    if (room.creatorId == uid) {
-      throw StateError('방장은 채팅방을 나갈 수 없습니다.');
+    if (uid == null) {
+      throw StateError('로그인된 사용자만 채팅방에서 나갈 수 있습니다.');
     }
-    if (!room.participantIds.contains(uid)) return;
 
-    final nextParticipants =
-        room.participantIds.where((id) => id != uid).toList();
-    final nextUnread = Map<String, int>.from(room.unreadCount)..remove(uid);
-
-    await roomRef.update({
-      'participantIds': nextParticipants,
-      'unreadCount': nextUnread,
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
-    });
+    try {
+      final result = await _functions
+          .httpsCallable('leaveSnackChatSecure')
+          .call(<String, dynamic>{'snackChatId': snackChatId}).timeout(
+              const Duration(seconds: 15));
+      final data = result.data;
+      if (data is! Map || data['success'] != true) {
+        throw StateError('Snack Chat에서 나가지 못했습니다.');
+      }
+    } catch (error, stackTrace) {
+      Logger.error(
+        'Snack Chat 나가기 실패: room=$snackChatId, uid=$uid',
+        error,
+        stackTrace,
+      );
+      rethrow;
+    }
   }
 
-  Future<bool> sendMessage(String snackChatId, String text) async {
+  /// 방장만 변경할 수 있으며, 변경 시스템 메시지는 서버 room trigger가 만든다.
+  Future<bool> updateSnackChatTitle(
+    String snackChatId,
+    String title,
+  ) async {
+    if (_uid == null) throw StateError('로그인이 필요합니다.');
+    final normalized = title.trim();
+    if (normalized.isEmpty || normalized.runes.length > 40) {
+      throw StateError('Snack Chat 이름은 1~40자여야 합니다.');
+    }
+    final result = await _functions
+        .httpsCallable('updateSnackChatTitleSecure')
+        .call(<String, dynamic>{
+      'snackChatId': snackChatId,
+      'title': normalized,
+    }).timeout(const Duration(seconds: 15));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('Snack Chat 이름을 변경하지 못했습니다.');
+    }
+    return data['changed'] == true;
+  }
+
+  /// 공지 재시도에서 동일 문서 ID를 사용할 수 있도록 UI가 먼저 생성한다.
+  String createAnnouncementEventId(String snackChatId) =>
+      createMessageId(snackChatId);
+
+  Future<String> createAnnouncement({
+    required String snackChatId,
+    required String text,
+    required String eventId,
+  }) async {
+    if (_uid == null) throw StateError('로그인이 필요합니다.');
+    final normalized = text.trim();
+    if (normalized.isEmpty || normalized.runes.length > 500) {
+      throw StateError('공지 내용은 1~500자여야 합니다.');
+    }
+    final result = await _functions
+        .httpsCallable('createSnackChatAnnouncementSecure')
+        .call(<String, dynamic>{
+      'snackChatId': snackChatId,
+      'eventId': eventId,
+      'text': normalized,
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('공지를 등록하지 못했습니다.');
+    }
+    final messageId = (data['messageId'] ?? '').toString().trim();
+    if (messageId.isEmpty) throw StateError('공지 메시지 ID가 없습니다.');
+    return messageId;
+  }
+
+  /// 모임장이 해당 모임에 연결된 Snack Chat을 한 번만 생성한다.
+  Future<String?> createMeetupSnackChat({
+    required String meetupId,
+    required String meetupTitle,
+    required List<String> visibleToCategoryIds,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return null;
+    if (meetupId.trim().isEmpty) return null;
+
+    // Keep the public method contract for existing screens, but the callable
+    // treats these display values only as backward-compatible hints. The
+    // canonical Meetup document is authoritative for title and audience.
+    final result = await _functions
+        .httpsCallable('createMeetupSnackChatSecure')
+        .call(<String, dynamic>{
+      'meetupId': meetupId.trim(),
+      'meetupTitle': meetupTitle.trim(),
+      'visibleToCategoryIds': visibleToCategoryIds,
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('Meetup Snack Chat을 만들지 못했습니다.');
+    }
+    final roomId = (data['snackChatId'] ?? '').toString().trim();
+    if (roomId.isEmpty) {
+      throw StateError('생성된 Meetup Snack Chat ID가 없습니다.');
+    }
+    return roomId;
+  }
+
+  /// 모임 상세에서 승인된 참여자가 연결 Snack Chat에 참가한다.
+  Future<bool> joinMeetupSnackChat({
+    required String snackChatId,
+    required String meetupId,
+  }) async {
+    if (_uid == null) return false;
+    final result = await _functions
+        .httpsCallable('joinMeetupSnackChatSecure')
+        .call(<String, dynamic>{
+      'snackChatId': snackChatId,
+      'meetupId': meetupId,
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    return data is Map && data['success'] == true && data['joined'] == true;
+  }
+
+  /// 포스트 작성자나 댓글 작성자가 포스트에 연결된 Snack Chat을 연다.
+  /// 이미 열린 방이 있으면 서버가 그 방에 참여시키고 같은 ID를 돌려준다.
+  /// 초대 알림은 만들지 않는다.
+  Future<String?> createPostSnackChat({required String postId}) async {
+    if (_uid == null) return null;
+    if (postId.trim().isEmpty) return null;
+    final result = await _functions
+        .httpsCallable('createPostSnackChatSecure')
+        .call(<String, dynamic>{
+      'postId': postId.trim(),
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('Post Snack Chat을 만들지 못했습니다.');
+    }
+    final roomId = (data['snackChatId'] ?? '').toString().trim();
+    if (roomId.isEmpty) {
+      throw StateError('생성된 Post Snack Chat ID가 없습니다.');
+    }
+    return roomId;
+  }
+
+  /// 포스트 상세에서 자격 있는 사용자가 연결 Snack Chat에 참가한다.
+  Future<bool> joinPostSnackChat({
+    required String snackChatId,
+    required String postId,
+  }) async {
+    if (_uid == null) return false;
+    final result = await _functions
+        .httpsCallable('joinPostSnackChatSecure')
+        .call(<String, dynamic>{
+      'snackChatId': snackChatId,
+      'postId': postId,
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    return data is Map && data['success'] == true && data['joined'] == true;
+  }
+
+  Future<bool> sendMessage(
+    String snackChatId,
+    String text, {
+    List<SnackChatMention> mentions = const [],
+    Future<List<String>?>? mentionTargetsPreparation,
+    String? messageId,
+    ReplyMessagePreview? replyPreview,
+    bool suppressLinkPreview = false,
+    void Function(SnackChatCommitAck ack)? onCommitted,
+  }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return false;
+    if (secureTextSendEnabled &&
+        mentions.isEmpty &&
+        mentionTargetsPreparation == null &&
+        replyPreview == null &&
+        messageId != null) {
+      final results = await sendTextMessagesSecure(
+        snackChatId,
+        <SnackChatTextSendRequest>[
+          SnackChatTextSendRequest(
+            messageId: messageId,
+            text: trimmed,
+            suppressLinkPreview: suppressLinkPreview,
+            onCommitted: onCommitted,
+          ),
+        ],
+      );
+      return results.length == 1 &&
+          results.first.status == SnackChatTextSendStatus.committed;
+    }
     return _sendMessageInternal(
       snackChatId: snackChatId,
+      mentions: mentions,
+      mentionTargetsPreparation: mentionTargetsPreparation,
+      messageId: messageId,
+      type: SnackChatMessageType.text,
       text: trimmed,
       imageUrl: null,
+      replyPreview: replyPreview,
+      suppressLinkPreview: suppressLinkPreview,
+      onCommitted: onCommitted,
     );
+  }
+
+  /// Calls the optional server-owned plain-text dispatcher. The endpoint
+  /// accepts up to five items, but this method does not wait to collect a
+  /// first message; callers may submit one immediately and batch only work
+  /// that accumulated while a previous request was in flight.
+  Future<List<SnackChatTextSendResult>> sendTextMessagesSecure(
+    String snackChatId,
+    List<SnackChatTextSendRequest> messages,
+  ) async {
+    final uid = _uid;
+    if (uid == null || messages.isEmpty || messages.length > 5) {
+      return const <SnackChatTextSendResult>[];
+    }
+    final normalized = messages
+        .map((message) => SnackChatTextSendRequest(
+              messageId: message.messageId.trim(),
+              text: message.text.trim(),
+              suppressLinkPreview: message.suppressLinkPreview,
+              onCommitted: message.onCommitted,
+            ))
+        .toList(growable: false);
+    if (normalized.any((message) =>
+        message.messageId.isEmpty ||
+        message.text.isEmpty ||
+        message.text.runes.length > 500)) {
+      return const <SnackChatTextSendResult>[];
+    }
+    final requestStopwatch = Stopwatch()..start();
+    try {
+      final response = await _functions
+          .httpsCallable('sendSnackChatTextMessagesSecure')
+          .call<Map<String, dynamic>>(<String, dynamic>{
+        'snackChatId': snackChatId,
+        'messages': normalized
+            .map((message) => <String, dynamic>{
+                  'messageId': message.messageId,
+                  'text': message.text,
+                  'suppressLinkPreview': message.suppressLinkPreview,
+                })
+            .toList(growable: false),
+      }).timeout(const Duration(seconds: 25));
+      if (_uid != uid) return const <SnackChatTextSendResult>[];
+      final rawResults = response.data['results'];
+      if (rawResults is! List) return const <SnackChatTextSendResult>[];
+      final requestsById = <String, SnackChatTextSendRequest>{
+        for (final message in normalized) message.messageId: message,
+      };
+      final results = <SnackChatTextSendResult>[];
+      for (final raw in rawResults) {
+        if (raw is! Map) continue;
+        final data = Map<String, dynamic>.from(raw);
+        final messageId = (data['messageId'] ?? '').toString();
+        final request = requestsById[messageId];
+        if (request == null) continue;
+        final status = switch ((data['status'] ?? '').toString()) {
+          'committed' => SnackChatTextSendStatus.committed,
+          'rejected' => SnackChatTextSendStatus.rejected,
+          'notAttempted' => SnackChatTextSendStatus.notAttempted,
+          _ => SnackChatTextSendStatus.uncertain,
+        };
+        final sequence =
+            data['sequence'] is num ? (data['sequence'] as num).toInt() : null;
+        final result = SnackChatTextSendResult(
+          messageId: messageId,
+          status: status,
+          sequence: sequence,
+          code: data['code']?.toString(),
+          transactionAttempts: data['transactionAttempts'] is num
+              ? (data['transactionAttempts'] as num).toInt()
+              : null,
+          serverDurationMs: data['serverDurationMs'] is num
+              ? (data['serverDurationMs'] as num).toInt()
+              : null,
+        );
+        results.add(result);
+        if (ChatTiming.enabled) {
+          ChatTiming.record(
+            '[SnackChatTiming] stage=secureTransactionResult '
+            'roomId=$snackChatId messageId=$messageId '
+            'status=${status.name} sequence=${sequence ?? 0} '
+            'attempts=${result.transactionAttempts ?? 0} '
+            'serverDurationMs=${result.serverDurationMs ?? -1} '
+            'requestDurationMs=${requestStopwatch.elapsedMilliseconds} '
+            'batchSize=${normalized.length}',
+          );
+        }
+        if (status == SnackChatTextSendStatus.rejected) {
+          _rememberDefinitiveSendRejection('$uid::$snackChatId::$messageId');
+        }
+        if (status == SnackChatTextSendStatus.committed &&
+            sequence != null &&
+            sequence > 0) {
+          try {
+            request.onCommitted?.call(SnackChatCommitAck(
+              messageId: messageId,
+              sequence: sequence,
+            ));
+          } catch (error, stackTrace) {
+            Logger.error(
+              'Snack Chat 서버 전송 ACK 화면 반영 실패',
+              error,
+              stackTrace,
+            );
+          }
+          if (!request.suppressLinkPreview) {
+            final firstUrl = _firstHttpUrl(request.text);
+            if (firstUrl != null) {
+              unawaited(_requestLinkPreview(
+                snackChatId: snackChatId,
+                messageId: messageId,
+                url: firstUrl,
+              ));
+            }
+          }
+        }
+      }
+      return results;
+    } on FirebaseFunctionsException catch (error) {
+      if (const <String>{
+        'permission-denied',
+        'invalid-argument',
+        'not-found',
+        'failed-precondition',
+        'unauthenticated',
+        'already-exists',
+      }.contains(error.code)) {
+        for (final message in normalized) {
+          _rememberDefinitiveSendRejection(
+            '$uid::$snackChatId::${message.messageId}',
+          );
+        }
+      }
+      return const <SnackChatTextSendResult>[];
+    } catch (error, stackTrace) {
+      Logger.error('Snack Chat 서버 텍스트 전송 실패', error, stackTrace);
+      return const <SnackChatTextSendResult>[];
+    }
   }
 
   Future<bool> sendImageMessage(
     String snackChatId, {
-    required String imageUrl,
+    String? imageUrl,
+    String? imagePath,
+    String? storageBucket,
     String text = '',
+    String? messageId,
+    ReplyMessagePreview? replyPreview,
+    int? imageWidth,
+    int? imageHeight,
+    void Function(SnackChatCommitAck ack)? onCommitted,
   }) async {
-    final normalized = imageUrl.trim();
-    if (normalized.isEmpty) return false;
+    final normalizedUrl = imageUrl?.trim() ?? '';
+    final normalizedPath = imagePath?.trim() ?? '';
+    if (normalizedUrl.isEmpty && normalizedPath.isEmpty) return false;
     return _sendMessageInternal(
       snackChatId: snackChatId,
+      messageId: messageId,
+      type: SnackChatMessageType.image,
       text: text.trim(),
-      imageUrl: normalized,
+      imageUrl: normalizedUrl.isEmpty ? null : normalizedUrl,
+      imagePath: normalizedPath.isEmpty ? null : normalizedPath,
+      storageBucket: normalizedPath.isEmpty ? null : storageBucket?.trim(),
+      imageWidth: imageWidth,
+      imageHeight: imageHeight,
+      replyPreview: replyPreview,
+      onCommitted: onCommitted,
+    );
+  }
+
+  Future<bool> sendPollMessage(
+    String snackChatId, {
+    required SnackChatPoll poll,
+    String? messageId,
+    void Function(SnackChatCommitAck ack)? onCommitted,
+  }) async {
+    if (poll.question.trim().isEmpty || poll.options.length < 2) return false;
+    return _sendMessageInternal(
+      snackChatId: snackChatId,
+      messageId: messageId,
+      type: SnackChatMessageType.poll,
+      text: poll.question.trim(),
+      imageUrl: null,
+      imagePath: null,
+      poll: poll,
+      onCommitted: onCommitted,
     );
   }
 
   Future<bool> _sendMessageInternal({
+    List<SnackChatMention> mentions = const [],
+    Future<List<String>?>? mentionTargetsPreparation,
     required String snackChatId,
+    String? messageId,
+    required SnackChatMessageType type,
     required String text,
     required String? imageUrl,
+    String? imagePath,
+    String? storageBucket,
+    int? imageWidth,
+    int? imageHeight,
+    ReplyMessagePreview? replyPreview,
+    SnackChatPoll? poll,
+    bool suppressLinkPreview = false,
+    void Function(SnackChatCommitAck ack)? onCommitted,
   }) async {
     final uid = _uid;
     if (uid == null) return false;
-    if (text.isEmpty && (imageUrl == null || imageUrl.isEmpty)) return false;
+    final hasImage =
+        (imageUrl?.isNotEmpty ?? false) || (imagePath?.isNotEmpty ?? false);
+    final hasImageDimensions = imageWidth != null &&
+        imageWidth > 0 &&
+        imageHeight != null &&
+        imageHeight > 0;
+    if (type != SnackChatMessageType.poll && text.isEmpty && !hasImage) {
+      return false;
+    }
 
     try {
       final roomRef = _collection.doc(snackChatId);
-      final roomDoc = await roomRef.get();
-      if (!roomDoc.exists) return false;
-      final room = SnackChat.fromFirestore(roomDoc);
-      if (!room.participantIds.contains(uid)) return false;
-
-      // 발신자 닉네임 조회 (메시지에 함께 저장)
-      String? senderName;
-      try {
-        final userDoc = await _firestore.collection('users').doc(uid).get();
-        if (userDoc.exists) {
-          final data = userDoc.data();
-          final nick = data?['nickname']?.toString().trim() ?? '';
-          if (nick.isNotEmpty) senderName = nick;
-        }
-      } catch (_) {
-        // 닉네임 조회 실패 시 null로 저장 (화면에서 fallback 처리)
+      final resolvedMessageId = messageId ?? createMessageId(snackChatId);
+      if (mentionTargetsPreparation == null) {
+        _definitiveSendRejections
+            .remove('$uid::$snackChatId::$resolvedMessageId');
+      }
+      final messageRef = roomRef.collection('messages').doc(resolvedMessageId);
+      List<String> mentionTargets = [];
+      if (mentions.isNotEmpty) {
+        final prepared = mentionTargetsPreparation ??
+            prepareMentionTargets(
+              snackChatId: snackChatId,
+              messageId: resolvedMessageId,
+              text: text,
+              mentions: mentions,
+            );
+        final targets = await prepared;
+        if (_uid != uid || targets == null) return false;
+        mentionTargets = targets;
+      }
+      final firestoreWriteStopwatch = Stopwatch()..start();
+      var transactionAttempt = 0;
+      var committedSequence = 0;
+      var immutableMessageMismatch = false;
+      var definitiveValidationRejected = false;
+      if (ChatTiming.enabled) {
+        ChatTiming.record(
+          '[SnackChatTiming] stage=firestoreWriteStartedAt '
+          'at=${DateTime.now().millisecondsSinceEpoch} roomId=$snackChatId '
+          'messageId=$resolvedMessageId sequence=0 '
+          'type=${snackChatMessageTypeWireName(type)}',
+        );
       }
 
-      final now = DateTime.now();
-      await roomRef.collection('messages').add({
-        'senderId': uid,
-        if (senderName != null) 'senderName': senderName,
-        'text': text,
-        'imageUrl': imageUrl,
-        'createdAt': Timestamp.fromDate(now),
-        'readBy': <String>[uid],
-      });
-
-      final previewText = imageUrl != null && imageUrl.isNotEmpty
+      final previewText = hasImage
           ? (text.isNotEmpty ? text : '[이미지]')
-          : text;
+          : type == SnackChatMessageType.poll
+              ? '📊 $text'
+              : text;
 
-      // 대화방 정보 업데이트 (마지막 메시지/시간)
-      // ⚠️ 중요: unreadCount 증감은 서버(Cloud Functions)가 단일 소스로 처리한다.
-      // 클라이언트는 발신자 본인의 unreadCount만 0으로 리셋한다.
-      final updateFields = <String, dynamic>{
-        'lastMessage': previewText,
-        'lastMessageTime': Timestamp.fromDate(now),
-        'lastMessageSenderId': uid,
-        'expiresAt': Timestamp.fromDate(
-          now.add(Duration(hours: room.activeDurationHours)),
-        ),
-        'unreadCount.$uid': 0,
-        'updatedAt': Timestamp.fromDate(now),
-      };
+      final committed = await _firestore.runTransaction<bool>(
+        (transaction) async {
+          transactionAttempt++;
+          immutableMessageMismatch = false;
+          definitiveValidationRejected = false;
+          if (ChatTiming.enabled) {
+            ChatTiming.record(
+              '[SnackChatTiming] stage=transactionStartedAt '
+              'at=${DateTime.now().millisecondsSinceEpoch} '
+              'roomId=$snackChatId messageId=$resolvedMessageId '
+              'sequence=0 attempt=$transactionAttempt '
+              'durationMs=${firestoreWriteStopwatch.elapsedMilliseconds}',
+            );
+          }
+          if (_uid != uid) return false;
+          final documents = await Future.wait([
+            transaction.get(roomRef),
+            transaction.get(messageRef),
+          ]);
+          if (_uid != uid) return false;
+          final roomDoc = documents[0];
+          if (!roomDoc.exists) {
+            definitiveValidationRejected = true;
+            return false;
+          }
+          final roomData = roomDoc.data()!;
+          final participants =
+              List<String>.from(roomData['participantIds'] ?? []);
+          if (!participants.contains(uid)) {
+            definitiveValidationRejected = true;
+            return false;
+          }
 
-      await roomRef.update(updateFields);
+          final existingMessage = documents[1];
+          if (existingMessage.exists) {
+            final existing = existingMessage.data() ?? <String, dynamic>{};
+            final existingSender = (existing['senderId'] ?? '').toString();
+            committedSequence = (existing['sequence'] as num?)?.toInt() ?? 0;
+            final samePlainText = type != SnackChatMessageType.text ||
+                mentions.isNotEmpty ||
+                replyPreview != null ||
+                (existing['type'] == 'text' &&
+                    existing['text'] == text &&
+                    existing['messageScope'] == 'snack_chat' &&
+                    existing['chatId'] == snackChatId &&
+                    existing['linkPreviewRemoved'] == suppressLinkPreview &&
+                    !existing.containsKey('imageUrl') &&
+                    !existing.containsKey('imagePath') &&
+                    !existing.containsKey('poll'));
+            final matches =
+                existingSender == uid && committedSequence > 0 && samePlainText;
+            immutableMessageMismatch = !matches;
+            return matches;
+          }
+
+          final sequence =
+              ((roomData['lastMessageSequence'] as num?)?.toInt() ?? 0) + 1;
+          committedSequence = sequence;
+          final recipients = participants
+              .where((participantId) => participantId != uid)
+              .toSet()
+              .toList(growable: false);
+          transaction.set(messageRef, <String, dynamic>{
+            'senderId': uid,
+            'messageScope': 'snack_chat',
+            'chatId': snackChatId,
+            'type': snackChatMessageTypeWireName(type),
+            'text': text,
+            if (mentions.isNotEmpty) ...{
+              'mentions': mentions.map((m) => m.toMap()).toList(),
+              'mentionTargetIds': mentionTargets,
+            },
+            // Private Snack Chat images are addressed by their authenticated
+            // Storage path. The upload URL remains local preview state only, so
+            if (imagePath != null && imagePath.isNotEmpty)
+              'imagePath': imagePath,
+            // Which bucket holds imagePath. Omitted for legacy readers that
+            // resolve paths against the default bucket.
+            if (imagePath != null &&
+                imagePath.isNotEmpty &&
+                storageBucket != null &&
+                storageBucket.isNotEmpty)
+              'storageBucket': storageBucket,
+            if (hasImageDimensions) ...<String, dynamic>{
+              'imageWidth': imageWidth,
+              'imageHeight': imageHeight,
+            },
+            'createdAt': FieldValue.serverTimestamp(),
+            'sequence': sequence,
+            'recipientIds': recipients,
+            'readBy': <String>[uid],
+            'isDeleted': false,
+            'linkPreviewRemoved': suppressLinkPreview,
+            'reactionCounts': <String, int>{},
+            if (replyPreview != null) ...<String, dynamic>{
+              'replyToMessageId': replyPreview.messageId,
+              'replyPreview': replyPreview.toMap(),
+            },
+            if (poll != null) 'poll': poll.toMap(),
+          });
+
+          final updateFields = <String, dynamic>{
+            'lastMessage': previewText,
+            'lastMessageId': resolvedMessageId,
+            'lastMessageTime': FieldValue.serverTimestamp(),
+            'lastMessageSenderId': uid,
+            'lastMessageType': snackChatMessageTypeWireName(type),
+            'lastMessageExpiresAt': FieldValue.delete(),
+            'lastMessageSequence': sequence,
+            'updatedAt': FieldValue.serverTimestamp(),
+          };
+          transaction.update(roomRef, updateFields);
+          return true;
+        },
+        maxAttempts: 8,
+      );
+
+      if (ChatTiming.enabled) {
+        ChatTiming.record(
+          '[SnackChatTiming] stage=transactionCommittedAt '
+          'at=${DateTime.now().millisecondsSinceEpoch} roomId=$snackChatId '
+          'messageId=$resolvedMessageId sequence=$committedSequence '
+          'committed=$committed '
+          'attempts=$transactionAttempt '
+          'durationMs=${firestoreWriteStopwatch.elapsedMilliseconds}',
+        );
+      }
+
+      if (!committed) {
+        if (immutableMessageMismatch || definitiveValidationRejected) {
+          _rememberDefinitiveSendRejection(
+            '$uid::$snackChatId::$resolvedMessageId',
+          );
+        }
+        return false;
+      }
+      if (_uid == uid && committedSequence > 0 && onCommitted != null) {
+        final ack = SnackChatCommitAck(
+          messageId: resolvedMessageId,
+          sequence: committedSequence,
+        );
+        try {
+          onCommitted(ack);
+        } catch (error, stackTrace) {
+          // UI acknowledgement is best-effort. The message is already stored
+          // and must not be reported as a failed send.
+          Logger.error(
+            'Snack Chat 저장 완료 화면 반영 실패',
+            error,
+            stackTrace,
+          );
+        }
+      }
+      if (type == SnackChatMessageType.text && !suppressLinkPreview) {
+        final firstUrl = _firstHttpUrl(text);
+        if (firstUrl != null) {
+          unawaited(_requestLinkPreview(
+            snackChatId: snackChatId,
+            messageId: resolvedMessageId,
+            url: firstUrl,
+          ));
+        }
+      }
       return true;
     } catch (e) {
+      if (messageId != null &&
+          e is FirebaseException &&
+          isDefinitiveSnackChatCommitErrorCode(e.code)) {
+        _rememberDefinitiveSendRejection('$uid::$snackChatId::$messageId');
+      }
       Logger.error('Snack Chat 메시지 전송 실패: $e');
       return false;
     }
   }
 
-  /// dot notation으로 원자적 쓰기 (CF의 increment와 충돌 방지)
-  Future<void> markAsRead(String snackChatId) async {
+  /// Starts mention authorization before the ordered Firestore commit reaches
+  /// the head of the room queue. The commit still awaits this exact result, so
+  /// consecutive text messages keep tap order while independent preparation
+  /// can overlap.
+  Future<List<String>?> prepareMentionTargets({
+    required String snackChatId,
+    required String messageId,
+    required String text,
+    required List<SnackChatMention> mentions,
+  }) async {
+    if (mentions.isEmpty) return const <String>[];
+    final owner = _uid;
+    if (owner == null) return null;
+    final rejectionKey = '$owner::$snackChatId::$messageId';
+    _definitiveSendRejections.remove(rejectionKey);
+    try {
+      final proof = await _functions
+          .httpsCallable('validateSnackChatMentions')
+          .call(<String, dynamic>{
+        'snackChatId': snackChatId,
+        'messageId': messageId,
+        'text': text,
+        'mentions': mentions.map((mention) => mention.toMap()).toList(),
+      }).timeout(const Duration(seconds: 20));
+      if (_uid != owner ||
+          proof.data is! Map ||
+          proof.data['success'] != true) {
+        _rememberDefinitiveSendRejection(rejectionKey);
+        return null;
+      }
+      return List<String>.from(proof.data['targetIds'] ?? const <String>[]);
+    } catch (error) {
+      // No message write has started, so the current attempt is definitively
+      // failed (and can be retried explicitly) rather than an uncertain commit.
+      _rememberDefinitiveSendRejection(rejectionKey);
+      Logger.error('Snack Chat 멘션 검증 실패: $error');
+      return null;
+    }
+  }
+
+  void _rememberDefinitiveSendRejection(String key) {
+    if (_definitiveSendRejections.length >= 200) {
+      _definitiveSendRejections.remove(_definitiveSendRejections.first);
+    }
+    _definitiveSendRejections.add(key);
+  }
+
+  String? _firstHttpUrl(String text) {
+    final match =
+        RegExp(r'https?://[^\s<>()]+', caseSensitive: false).firstMatch(text);
+    if (match == null) return null;
+    final raw = match.group(0);
+    if (raw == null) return null;
+    return raw.replaceFirst(RegExp(r'[.,!?;:]+$'), '');
+  }
+
+  Future<void> _requestLinkPreview({
+    required String snackChatId,
+    required String messageId,
+    required String url,
+  }) async {
+    try {
+      await _functions.httpsCallable('fetchSnackChatLinkPreview').call({
+        'snackChatId': snackChatId,
+        'messageId': messageId,
+        'url': url,
+      }).timeout(const Duration(seconds: 12));
+    } catch (error) {
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 링크 미리보기 생성 실패(메시지 유지): $error');
+    }
+  }
+
+  Future<void> removeLinkPreview(
+    String snackChatId,
+    String messageId,
+  ) async {
+    await _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .doc(messageId)
+        .update({
+      'linkPreview': FieldValue.delete(),
+      'linkPreviewRemoved': true,
+    }).timeout(const Duration(seconds: 10));
+  }
+
+  Future<void> ensureMyMembership(String snackChatId) async {
     final uid = _uid;
     if (uid == null) return;
+    final result = await _functions
+        .httpsCallable('ensureSnackChatMembershipSecure')
+        .call(<String, dynamic>{'snackChatId': snackChatId}).timeout(
+            const Duration(seconds: 12));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('Snack Chat 멤버십을 준비하지 못했습니다.');
+    }
+  }
 
+  /// Audits only legacy rooms that have never received the current participant
+  /// integrity projection. A successful audit is persisted on the room, while
+  /// in-flight merging and a retry cooldown prevent repeated callable costs.
+  Future<void> ensureParticipantIntegrity(SnackChat room) {
+    final uid = _uid;
+    if (uid == null ||
+        room.hasVerifiedParticipantIntegrity ||
+        !room.participantIds.contains(uid)) {
+      return Future<void>.value();
+    }
+    final key = '$uid::${room.id}';
+    final existing = _participantIntegrityInFlight[key];
+    if (existing != null) return existing;
+    final retryAfter = _participantIntegrityRetryAfter[key];
+    if (retryAfter != null && DateTime.now().isBefore(retryAfter)) {
+      return Future<void>.value();
+    }
+
+    late final Future<void> operation;
+    operation = () async {
+      final result = await _functions
+          .httpsCallable('reconcileSnackChatParticipantsSecure')
+          .call(<String, dynamic>{
+        'snackChatId': room.id,
+      }).timeout(const Duration(seconds: 12));
+      final data = result.data;
+      if (data is! Map || data['success'] != true) {
+        throw StateError('Snack Chat 참여자 정보를 확인하지 못했습니다.');
+      }
+      _participantIntegrityRetryAfter.remove(key);
+    }()
+        .catchError((Object error) {
+      _participantIntegrityRetryAfter[key] =
+          DateTime.now().add(const Duration(minutes: 1));
+      if (Logger.isVerboseEnabled)
+        Logger.warning('Snack Chat 참여자 정보 정리 실패: $error');
+    }).whenComplete(() {
+      if (identical(_participantIntegrityInFlight[key], operation)) {
+        _participantIntegrityInFlight.remove(key);
+      }
+    });
+    _participantIntegrityInFlight[key] = operation;
+    return operation;
+  }
+
+  /// Read fast path. Writes `members/{uid}.lastReadSequence` directly so other
+  /// participants' receipt counts update after one round trip.
+  ///
+  /// Returns the accepted sequence, or null when Rules rejected the write
+  /// (legacy member doc without the field, another device already ahead, or
+  /// the room's canonical sequence is behind the request). The caller then
+  /// falls back to the callable. Room `unreadCount` is NOT changed here; the
+  /// reconcile callable owns it. The local room list is projected to zero only
+  /// when the read covers the room's latest sequence.
+  Future<int?> advanceReadCursorDirect(
+    String snackChatId, {
+    required int throughSequence,
+  }) async {
+    final uid = _uid;
+    if (uid == null || throughSequence <= 0) return null;
+    final memberRef = _collection
+        .doc(snackChatId)
+        .collection('members')
+        .doc(uid);
     try {
-      print('📖 [SnackChat] markAsRead 호출:');
-      print('  - snackChatId: $snackChatId');
-      print('  - uid: $uid');
-      
-      await _collection.doc(snackChatId).update({
-        'unreadCount.$uid': 0,
-      });
-      
-      print('  ✅ markAsRead 완료');
+      await memberRef.update(<String, dynamic>{
+        'lastReadSequence': throughSequence,
+        'lastReadAt': FieldValue.serverTimestamp(),
+      }).timeout(const Duration(seconds: 15));
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied' ||
+          error.code == 'not-found' ||
+          error.code == 'failed-precondition') {
+        if (Logger.isVerboseEnabled) {
+          Logger.log(
+            '📖 [SnackChat] direct read rejected (${error.code}) '
+            'room=$snackChatId through=$throughSequence',
+          );
+        }
+        return null;
+      }
+      rethrow;
+    }
+    if (_uid != uid) return null;
+    final key = '$uid::$snackChatId';
+    if ((_directReadProjection[key] ?? 0) < throughSequence) {
+      _directReadProjection[key] = throughSequence;
+    }
+    // The entry boundary captured before this read is stale now.
+    _entryContextCache.remove(key);
+    unawaited(_localCache.clearEntryState(snackChatId));
+    _applyReadProjectionToCachedRooms(
+      snackChatId: snackChatId,
+      userId: uid,
+      unreadCount: 0,
+      readThroughSequence: throughSequence,
+    );
+    return throughSequence;
+  }
+
+  List<SnackChat> _projectDirectReads(List<SnackChat> rooms, String uid) {
+    if (_directReadProjection.isEmpty) return rooms;
+    return rooms.map((room) {
+      final key = '$uid::${room.id}';
+      final through = _directReadProjection[key];
+      if (through == null) return room;
+      if ((room.unreadCount[uid] ?? 0) == 0 &&
+          room.lastMessageSequence <= through) {
+        // The server caught up; the projection is no longer needed.
+        _directReadProjection.remove(key);
+        return room;
+      }
+      final projected = SnackChatReadPolicy.projectedUnread(
+        room: room,
+        userId: uid,
+        readThroughSequence: through,
+      );
+      if (projected == null) return room;
+      return room.copyWith(
+        unreadCount: Map<String, int>.from(room.unreadCount)
+          ..[uid] = projected,
+      );
+    }).toList(growable: false);
+  }
+
+  /// 화면이 활성 상태일 때 확보한 서버 확정 [throughSequence]까지만 읽는다.
+  ///
+  /// 최신 방 sequence를 클라이언트에서 다시 조회하지 않고 서버에 경계를
+  /// 전달하므로 화면 종료와 동시에 도착한 새 메시지는 읽음 처리되지 않는다.
+  Future<SnackChatReadResult> markAsRead(
+    String snackChatId, {
+    required int throughSequence,
+  }) {
+    final uid = _uid;
+    if (uid == null || throughSequence <= 0) {
+      return Future<SnackChatReadResult>.value(
+        const SnackChatReadResult(
+          clearedCount: 0,
+          unreadCount: 0,
+          readThroughSequence: 0,
+        ),
+      );
+    }
+
+    _ensureEntryCacheOwner(uid);
+    final key = '$uid::$snackChatId';
+    final state = _readSyncStates.putIfAbsent(
+      key,
+      _SnackChatReadSyncState.new,
+    );
+    if (throughSequence > state.pendingSequence) {
+      state.pendingSequence = throughSequence;
+      state.persistence = state.persistence.then(
+        (_) => _localCache.savePendingReadSequence(
+          uid,
+          snackChatId,
+          throughSequence,
+        ),
+      );
+    }
+    final active = state.inFlight;
+    if (active != null) return active;
+
+    late final Future<SnackChatReadResult> operation;
+    operation = _drainReadSync(
+      ownerUid: uid,
+      snackChatId: snackChatId,
+      state: state,
+    ).whenComplete(() {
+      if (identical(state.inFlight, operation)) state.inFlight = null;
+    });
+    state.inFlight = operation;
+    return operation;
+  }
+
+  Future<SnackChatReadResult> _drainReadSync({
+    required String ownerUid,
+    required String snackChatId,
+    required _SnackChatReadSyncState state,
+  }) async {
+    await state.persistence;
+    final saved = await _localCache.getPendingReadSequence(
+      ownerUid,
+      snackChatId,
+    );
+    if (saved > state.pendingSequence) state.pendingSequence = saved;
+
+    var totalCleared = 0;
+    var unreadCount = 0;
+    while (state.pendingSequence > state.confirmedSequence) {
+      if (_uid != ownerUid) {
+        throw StateError('Snack Chat read sync account changed.');
+      }
+      final target = state.pendingSequence;
+      final result = await _markAsReadOnce(
+        ownerUid: ownerUid,
+        snackChatId: snackChatId,
+        throughSequence: target,
+      );
+      totalCleared += result.clearedCount;
+      unreadCount = result.unreadCount;
+      if (result.readThroughSequence > state.confirmedSequence) {
+        state.confirmedSequence = result.readThroughSequence;
+      }
+      state.persistence = state.persistence.then(
+        (_) => _localCache.clearPendingReadSequenceThrough(
+          ownerUid,
+          snackChatId,
+          state.confirmedSequence,
+        ),
+      );
+      await state.persistence;
+
+      // A server-side clamp means the requested sequence was not canonical
+      // yet. Preserve it for the next existing recovery trigger without
+      // spinning or repeatedly querying the room.
+      if (state.confirmedSequence < target) break;
+    }
+
+    return SnackChatReadResult(
+      clearedCount: totalCleared,
+      unreadCount: unreadCount,
+      readThroughSequence: state.confirmedSequence,
+    );
+  }
+
+  Future<SnackChatReadResult> _markAsReadOnce({
+    required String ownerUid,
+    required String snackChatId,
+    required int throughSequence,
+  }) async {
+    try {
+      if (Logger.isVerboseEnabled) {
+        Logger.log(
+          '📖 [SnackChat] markAsRead: room=$snackChatId, '
+          'uid=$ownerUid, through=$throughSequence',
+        );
+      }
+      final result = await _functions
+          .httpsCallable('markSnackChatReadSecure')
+          .call(<String, dynamic>{
+        'snackChatId': snackChatId,
+        'throughSequence': throughSequence,
+      }).timeout(const Duration(seconds: 15));
+      final data = result.data;
+      if (data is! Map || data['success'] != true) {
+        throw StateError('Snack Chat 읽음 처리를 완료하지 못했습니다.');
+      }
+      final clearedRaw = data['clearedCount'];
+      final clearedCount =
+          clearedRaw is num ? clearedRaw.toInt().clamp(0, 1 << 31) : 0;
+      final unreadRaw = data['unreadCount'];
+      final unreadCount =
+          unreadRaw is num ? unreadRaw.toInt().clamp(0, 1 << 31) : 0;
+      final readThroughRaw = data['readThroughSequence'];
+      if (readThroughRaw is! num) {
+        throw const FormatException(
+          'Snack Chat read response has no confirmed sequence.',
+        );
+      }
+      final readThroughSequence =
+          readThroughRaw.toInt().clamp(0, 1 << 31).toInt();
+
+      if (_uid != ownerUid) {
+        throw StateError('Snack Chat read sync account changed.');
+      }
+
+      // The room list will publish the new unread aggregate shortly. Until
+      // then, never reuse the entry boundary captured before this read.
+      final projectionKey = '$ownerUid::$snackChatId';
+      if (readThroughSequence >= (_directReadProjection[projectionKey] ?? 0)) {
+        _directReadProjection.remove(projectionKey);
+      }
+      _entryContextCache.remove(projectionKey);
+      unawaited(_localCache.clearEntryState(snackChatId));
+      _applyReadProjectionToCachedRooms(
+        snackChatId: snackChatId,
+        userId: ownerUid,
+        unreadCount: unreadCount,
+        readThroughSequence: readThroughSequence,
+      );
+
+      if (Logger.isVerboseEnabled) Logger.log('✅ [SnackChat] markAsRead 완료');
+      return SnackChatReadResult(
+        clearedCount: clearedCount,
+        unreadCount: unreadCount,
+        readThroughSequence: readThroughSequence,
+      );
     } catch (e) {
       Logger.error('Snack Chat 읽음 처리 실패: $e');
+      rethrow;
     }
+  }
+
+  void _applyReadProjectionToCachedRooms({
+    required String snackChatId,
+    required String userId,
+    required int unreadCount,
+    required int readThroughSequence,
+  }) {
+    final current = _latestMySnackChats;
+    final controller = _sharedMySnackChatsController;
+    if (current == null || controller == null || controller.isClosed) return;
+
+    var changed = false;
+    final projected = current.map((room) {
+      if (room.id != snackChatId ||
+          room.lastMessageSequence > readThroughSequence) {
+        return room;
+      }
+      final previous = room.unreadCount[userId] ?? 0;
+      if (previous == unreadCount) return room;
+      final nextUnread = Map<String, int>.from(room.unreadCount)
+        ..[userId] = unreadCount;
+      changed = true;
+      return room.copyWith(unreadCount: nextUnread);
+    }).toList(growable: false);
+    if (!changed) return;
+    _latestMySnackChats = projected;
+    controller.add(projected);
+  }
+
+  Future<void> toggleReaction({
+    required String snackChatId,
+    required String messageId,
+    required String emoji,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return;
+    const allowed = <String>{'👍', '❤️', '😂', '😮', '😢', '🙏'};
+    if (!allowed.contains(emoji)) return;
+    final ref = _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .doc(messageId)
+        .collection('reactions')
+        .doc(uid);
+    await _firestore.runTransaction((transaction) async {
+      final existing = await transaction.get(ref);
+      if (existing.exists && existing.data()?['emoji'] == emoji) {
+        transaction.delete(ref);
+      } else {
+        transaction.set(ref, {
+          'chatId': snackChatId,
+          'messageId': messageId,
+          'userId': uid,
+          'emoji': emoji,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    });
+  }
+
+  /// Persist an explicit reaction target. Unlike toggle semantics this is
+  /// idempotent, so a serialized UI queue always converges to the latest tap.
+  Future<void> setReaction({
+    required String snackChatId,
+    required String messageId,
+    required String? emoji,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return;
+    const allowed = <String>{'👍', '❤️', '😂', '😮', '😢', '🙏'};
+    if (emoji != null && !allowed.contains(emoji)) return;
+    final ref = _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .doc(messageId)
+        .collection('reactions')
+        .doc(uid);
+    if (emoji == null) {
+      await ref.delete();
+      return;
+    }
+    await ref.set(<String, dynamic>{
+      'chatId': snackChatId,
+      'messageId': messageId,
+      'userId': uid,
+      'emoji': emoji,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<List<SnackChatReaction>> fetchMessageReactions({
+    required String snackChatId,
+    required String messageId,
+  }) async {
+    final snapshot = await _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .doc(messageId)
+        .collection('reactions')
+        .get()
+        .timeout(const Duration(seconds: 8));
+    return snapshot.docs
+        .map(SnackChatReaction.fromFirestore)
+        .toList(growable: false);
+  }
+
+  Future<void> castVote({
+    required String snackChatId,
+    required String messageId,
+    required List<String> optionIds,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final ref = _collection
+        .doc(snackChatId)
+        .collection('messages')
+        .doc(messageId)
+        .collection('votes')
+        .doc(uid);
+    final normalized = optionIds
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    // Security Rules validate the live poll, option IDs, multiplicity and
+    // close time atomically. A direct per-user write also preserves the local
+    // Firestore write order when rapid choices follow an offline timeout.
+    if (normalized.isEmpty) {
+      await ref.delete();
+      return;
+    }
+    await ref.set(<String, dynamic>{
+      'chatId': snackChatId,
+      'messageId': messageId,
+      'userId': uid,
+      'optionIds': normalized,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Stream<Set<String>> watchBlockedUserIds() {
+    final uid = _uid;
+    if (uid == null) return Stream.value(const <String>{});
+    late final StreamController<Set<String>> controller;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? blockedSub;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? blockedBySub;
+    var blocked = ContentFilterService.getBlockedUserIdsCached();
+    var blockedBy = ContentFilterService.getBlockedByUserIdsCached();
+    var blockedReady = false;
+    var blockedByReady = false;
+
+    void emitIfReady() {
+      if (!blockedReady || !blockedByReady || controller.isClosed) return;
+      controller.add(<String>{...blocked, ...blockedBy}..remove(uid));
+    }
+
+    controller = StreamController<Set<String>>(
+      onListen: () {
+        controller.add(<String>{...blocked, ...blockedBy}..remove(uid));
+        blockedSub = _firestore
+            .collection('blocks')
+            .where('blocker', isEqualTo: uid)
+            .snapshots()
+            .listen(
+          (snapshot) {
+            blocked = snapshot.docs
+                .map((doc) => (doc.data()['blocked'] ?? '').toString().trim())
+                .where((id) => id.isNotEmpty && id != uid)
+                .toSet();
+            ContentFilterService.setBlockedUserIds(blocked);
+            blockedReady = true;
+            emitIfReady();
+          },
+          onError: controller.addError,
+        );
+        blockedBySub = _firestore
+            .collection('blocks')
+            .where('blocked', isEqualTo: uid)
+            .snapshots()
+            .listen(
+          (snapshot) {
+            blockedBy = snapshot.docs
+                .map((doc) => (doc.data()['blocker'] ?? '').toString().trim())
+                .where((id) => id.isNotEmpty && id != uid)
+                .toSet();
+            ContentFilterService.setBlockedByUserIds(blockedBy);
+            blockedByReady = true;
+            emitIfReady();
+          },
+          onError: controller.addError,
+        );
+      },
+      onCancel: () async {
+        await Future.wait<void>([
+          if (blockedSub != null) blockedSub!.cancel(),
+          if (blockedBySub != null) blockedBySub!.cancel(),
+        ]);
+      },
+    );
+    return controller.stream;
   }
 
   Future<void> toggleFavorite(String snackChatId, bool value) async {
     final uid = _uid;
     if (uid == null) return;
     await _collection.doc(snackChatId).update({
-      'favoriteUserIds': value
-          ? FieldValue.arrayUnion([uid])
-          : FieldValue.arrayRemove([uid]),
+      'favoriteUserIds':
+          value ? FieldValue.arrayUnion([uid]) : FieldValue.arrayRemove([uid]),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -377,7 +3114,7 @@ class SnackChatService {
     final uid = _uid;
     if (uid == null) return;
     final userRef = _firestore.collection('users').doc(uid);
-    
+
     try {
       if (mute) {
         await userRef.update({
@@ -390,19 +3127,9 @@ class SnackChatService {
       }
     } catch (e) {
       Logger.error('SnackChat 뮤트 토글 실패', e);
-      // 필드가 없는 경우 생성 후 재시도
-      if (e.toString().contains('NOT_FOUND') || e.toString().contains('does not exist')) {
-        try {
-          await userRef.set({
-            'mutedSnackChatIds': mute ? [snackChatId] : <String>[],
-          }, SetOptions(merge: true));
-        } catch (retryError) {
-          Logger.error('SnackChat 뮤트 필드 생성 실패', retryError);
-          rethrow;
-        }
-      } else {
-        rethrow;
-      }
+      // 계정 삭제와 경합해 users 문서가 사라진 경우 주변 설정 변경이 빈
+      // 프로필을 다시 만들면 안 된다. 필드가 없어도 update는 정상 동작한다.
+      rethrow;
     }
   }
 
@@ -418,10 +3145,15 @@ class SnackChatService {
         return list.map((e) => e.toString()).toSet();
       }
       return const <String>{};
-    }).handleError((error) {
-      Logger.error('뮤트 목록 스트리밍 에러', error);
-      return const <String>{};
-    });
+    }).transform(
+      StreamTransformer<Set<String>, Set<String>>.fromHandlers(
+        handleError: (error, stackTrace, sink) {
+          Logger.error('뮤트 목록 스트리밍 에러', error, stackTrace);
+          sink.add(const <String>{});
+          sink.addError(error, stackTrace);
+        },
+      ),
+    );
   }
 
   /// 특정 스냅챗 뮤트 여부 (1회 조회)
@@ -443,18 +3175,52 @@ class SnackChatService {
     }
   }
 
-  /// 즐겨찾기 스냅챗의 총 안 읽은 수 (Groups탭 배지용)
-  Stream<int> getTotalUnreadCount() {
+  int _totalUnreadCount(
+    List<SnackChat> chats,
+    String uid, {
+    required bool excludeActiveRoom,
+  }) {
+    final activeRoomId = excludeActiveRoom
+        ? SnackChatActiveConversation.activeSnackChatId
+        : null;
+    var total = 0;
+    for (final chat in chats) {
+      if (chat.id == activeRoomId) continue;
+      if (chat.isExpired() && !chat.isFavoritedBy(uid)) continue;
+      final value = chat.unreadCount[uid];
+      if (value != null && value > 0) total += value;
+    }
+    return total < 0 ? 0 : total;
+  }
+
+  /// 이미 공유 중인 방 snapshot으로 계산할 수 있으면 추가 Firestore read 없이
+  /// 현재 총합을 반환합니다. BadgeService의 중복 participant query 방지용입니다.
+  int? getCachedTotalUnreadCount({bool excludeActiveRoom = false}) {
+    final uid = _uid;
+    final chats = _latestMySnackChats;
+    if (uid == null || chats == null) return null;
+    return _totalUnreadCount(
+      chats,
+      uid,
+      excludeActiveRoom: excludeActiveRoom,
+    );
+  }
+
+  /// 즐겨찾기 스낵챗의 총 안 읽은 수 (Groups탭/앱 배지용)
+  ///
+  /// 모든 소비자는 `_watchMySnackChats`의 단일 Firestore listener를 공유합니다.
+  Stream<int> getTotalUnreadCount({bool excludeActiveRoom = false}) {
     final uid = _uid;
     if (uid == null) return Stream.value(0);
-    return _watchMySnackChats().map((chats) {
-      int total = 0;
-      for (final chat in chats) {
-        final v = chat.unreadCount[uid];
-        if (v != null && v > 0) total += v;
-      }
-      return total < 0 ? 0 : total;
-    }).distinct();
+    return _watchMySnackChats()
+        .map(
+          (chats) => _totalUnreadCount(
+            chats,
+            uid,
+            excludeActiveRoom: excludeActiveRoom,
+          ),
+        )
+        .distinct();
   }
 
   /// 즐겨찾기된 스냅챗의 안 읽은 메시지 총 개수 스트림
@@ -473,9 +3239,79 @@ class SnackChatService {
       return total < 0 ? 0 : total;
     }).distinct();
   }
+}
 
-  Future<Set<String>> _getMyFriendIdSet(String uid) async {
-    final friends = await _usersRepository.getUserFriends(uid);
-    return friends.map((e) => e.uid).toSet();
+enum SnackChatListSection { today, all, unified }
+
+/// Orders a single room collection without extra reads or listeners.
+///
+/// Favorite membership is scoped to [currentUserId]. Within both the favorite
+/// and regular groups, only real message metadata controls recency. The room
+/// id is the final stable tie-breaker so unrelated snapshot updates cannot
+/// make equal rooms swap positions.
+List<SnackChat> orderSnackChatsForCurrentUser(
+  Iterable<SnackChat> chats, {
+  required String currentUserId,
+}) {
+  final uniqueByRoomId = <String, SnackChat>{};
+  for (final chat in chats) {
+    uniqueByRoomId[chat.id] = chat;
   }
+
+  final ordered = uniqueByRoomId.values.toList(growable: false);
+  ordered.sort((left, right) {
+    final leftFavorite = left.isFavoritedBy(currentUserId);
+    final rightFavorite = right.isFavoritedBy(currentUserId);
+    if (leftFavorite != rightFavorite) return leftFavorite ? -1 : 1;
+
+    final timeOrder = right.lastMessageTime.compareTo(left.lastMessageTime);
+    if (timeOrder != 0) return timeOrder;
+
+    final sequenceOrder =
+        right.lastMessageSequence.compareTo(left.lastMessageSequence);
+    if (sequenceOrder != 0) return sequenceOrder;
+
+    return left.id.compareTo(right.id);
+  });
+  return ordered;
+}
+
+List<SnackChat> filterSnackChatsBySection(
+  List<SnackChat> chats, {
+  required SnackChatListSection section,
+  DateTime? now,
+  String? currentUserId,
+}) {
+  final currentTime = now ?? DateTime.now();
+  final startOfToday = startOfLocalCalendarDay(currentTime);
+  final startOfTomorrow = startOfNextLocalCalendarDay(currentTime);
+
+  final visible = chats.where((chat) {
+    if (!isSnackChatVisibleForCurrentUser(
+      createdAt: chat.createdAt,
+      activeDurationHours: chat.activeDurationHours,
+      expiresAt: chat.expiresAt,
+      favoriteUserIds: chat.favoriteUserIds,
+      currentUserId: currentUserId ?? '',
+      now: currentTime,
+    )) {
+      return false;
+    }
+    if (section == SnackChatListSection.unified) return true;
+
+    final createdAt = chat.createdAt.toLocal();
+    final wasCreatedToday = !createdAt.isBefore(startOfToday) &&
+        createdAt.isBefore(startOfTomorrow);
+
+    if (section == SnackChatListSection.today) {
+      return wasCreatedToday;
+    }
+
+    final wasCreatedBeforeToday = createdAt.isBefore(startOfToday);
+    return wasCreatedBeforeToday;
+  });
+  return orderSnackChatsForCurrentUser(
+    visible,
+    currentUserId: currentUserId ?? '',
+  );
 }

@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../l10n/ui_locale.dart';
 
 class FullscreenFileImageViewer extends StatefulWidget {
   final List<File> imageFiles;
@@ -129,7 +130,7 @@ class _FullscreenFileImageViewerState extends State<FullscreenFileImageViewer>
   @override
   Widget build(BuildContext context) {
     final confirmLabel = widget.confirmLabel ??
-        (Localizations.localeOf(context).languageCode == 'ko' ? '이 사진으로 업로드' : 'Continue');
+        ((isChineseUi(context) ? '继续' : Localizations.localeOf(context).languageCode == 'ko' ? '이 사진으로 업로드' : 'Continue'));
 
     return Scaffold(
       backgroundColor: Colors.black,

@@ -85,35 +85,23 @@ flutter pub get
 ### 6. 실행
 
 ```bash
-# 디버그 모드
-fvm flutter run
-
-# 프로필 모드 (성능 테스트)
-fvm flutter run --profile
-
-# 릴리즈 모드
-fvm flutter run --release
+# Android 로컬 Debug 실행
+flutter run
 ```
 
 ---
 
 ## 📦 빌드
 
-### Android APK
-
-```bash
-# 단일 APK
-fvm flutter build apk --release
-
-# Split APK (권장)
-fvm flutter build apk --release --split-per-abi
-```
-
 ### Android App Bundle (Play Store)
 
 ```bash
-fvm flutter build appbundle --release
+# release 서명과 versionCode 검증은 Gradle release task가 자동 수행합니다.
+flutter build appbundle --release
 ```
+
+Play Store 업데이트 검증은 로컬 APK/AAB를 설치하지 않은 기기에서 진행하세요.
+배포 전 `pubspec.yaml`의 `versionCode`가 기존 Store 버전보다 높은지 확인하세요.
 
 ### iOS
 

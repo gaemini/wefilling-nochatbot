@@ -94,13 +94,11 @@ class CompactSearchBar extends StatelessWidget {
                         onChanged: onChanged,
                         enabled: enabled,
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          height:
-                              context.isLargeTextScale
-                                  ? 1.4
-                                  : 1.2, // 큰 텍스트 스케일 고려
+                          height: context.isLargeTextScale
+                              ? 1.4
+                              : 1.2, // 큰 텍스트 스케일 고려
                           color: AccessibilityUtils.ensureAccessibleColor(
-                            foreground:
-                                theme.textTheme.bodyMedium?.color ??
+                            foreground: theme.textTheme.bodyMedium?.color ??
                                 colorScheme.onSurface,
                             background: colorScheme.surfaceVariant,
                             fallbackForeground: colorScheme.onSurface,
@@ -110,8 +108,8 @@ class CompactSearchBar extends StatelessWidget {
                           hintText: hintText,
                           hintStyle: theme.textTheme.bodyMedium?.copyWith(
                             color: AccessibilityUtils.ensureAccessibleColor(
-                              foreground: colorScheme.onSurfaceVariant
-                                  .withOpacity(0.7),
+                              foreground:
+                                  colorScheme.onSurfaceVariant.withOpacity(0.7),
                               background: colorScheme.surfaceVariant,
                               fallbackForeground: colorScheme.onSurfaceVariant,
                             ),
@@ -225,26 +223,24 @@ class _CompactCategoryChipsState extends State<CompactCategoryChips> {
               scrollDirection: Axis.horizontal,
               padding: widget.padding,
               child: Row(
-                children:
-                    widget.categories.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final category = entry.value;
-                      final isSelected = category == widget.selectedCategory;
+                children: widget.categories.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final category = entry.value;
+                  final isSelected = category == widget.selectedCategory;
 
-                      return Padding(
-                        padding: EdgeInsets.only(
-                          right:
-                              index < widget.categories.length - 1
-                                  ? DesignTokens.s8
-                                  : 0,
-                        ),
-                        child: _CompactChip(
-                          label: category,
-                          isSelected: isSelected,
-                          onTap: () => widget.onCategoryChanged?.call(category),
-                        ),
-                      );
-                    }).toList(),
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      right: index < widget.categories.length - 1
+                          ? DesignTokens.s8
+                          : 0,
+                    ),
+                    child: _CompactChip(
+                      label: category,
+                      isSelected: isSelected,
+                      onTap: () => widget.onCategoryChanged?.call(category),
+                    ),
+                  );
+                }).toList(),
               ),
             ),
           ),
@@ -312,7 +308,7 @@ class _CompactChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     // 라벨 번역
     String displayLabel = _getLocalizedLabel(context, label);
 
@@ -326,10 +322,9 @@ class _CompactChip extends StatelessWidget {
     );
 
     // 접근성을 고려한 색상 선택 (그라데이션 적용)
-    final backgroundColor =
-        isSelected
-            ? null // 그라데이션 사용 시 null
-            : colorScheme.surfaceVariant.withOpacity(0.5);
+    final backgroundColor = isSelected
+        ? null // 그라데이션 사용 시 null
+        : colorScheme.surfaceVariant.withOpacity(0.5);
     final gradient = isSelected
         ? LinearGradient(
             colors: [
@@ -341,17 +336,20 @@ class _CompactChip extends StatelessWidget {
           )
         : null;
     final textColor = AccessibilityUtils.ensureAccessibleColor(
-      foreground:
-          isSelected ? Colors.white : colorScheme.onSurfaceVariant,
-      background: isSelected ? const Color(0xFF4A90E2) : (backgroundColor ?? colorScheme.surfaceVariant),
+      foreground: isSelected ? Colors.white : colorScheme.onSurfaceVariant,
+      background: isSelected
+          ? const Color(0xFF4A90E2)
+          : (backgroundColor ?? colorScheme.surfaceVariant),
       fallbackForeground: isSelected ? Colors.white : colorScheme.onSurface,
     );
 
     return Semantics(
-      label: '$displayLabel ${AppLocalizations.of(context)!.category}${isSelected ? ", ${AppLocalizations.of(context)!.selected}" : ""}',
+      label:
+          '$displayLabel ${AppLocalizations.of(context)!.category}${isSelected ? ", ${AppLocalizations.of(context)!.selected}" : ""}',
       button: true,
       selected: isSelected,
-      onTapHint: '${isSelected ? (AppLocalizations.of(context)!.cancel ?? "") : AppLocalizations.of(context)!.select}',
+      onTapHint:
+          '${isSelected ? (AppLocalizations.of(context)!.cancel ?? "") : AppLocalizations.of(context)!.select}',
       child: Container(
         decoration: BoxDecoration(
           color: backgroundColor,
@@ -362,23 +360,21 @@ class _CompactChip extends StatelessWidget {
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(12),
           child: InkWell(
-            onTap:
-                onTap != null
-                    ? () {
-                      context.accessibleFeedback(
-                        HapticFeedbackType.selectionClick,
-                      );
-                      onTap!();
-                    }
-                    : null,
+            onTap: onTap != null
+                ? () {
+                    context.accessibleFeedback(
+                      HapticFeedbackType.selectionClick,
+                    );
+                    onTap!();
+                  }
+                : null,
             borderRadius: BorderRadius.circular(12),
             splashColor: colorScheme.primary.withOpacity(0.12),
             highlightColor: colorScheme.primary.withOpacity(0.08),
             child: Container(
-              height:
-                  context.isLargeTextScale
-                      ? null
-                      : adjustedHeight, // 큰 텍스트에서는 유연한 높이
+              height: context.isLargeTextScale
+                  ? null
+                  : adjustedHeight, // 큰 텍스트에서는 유연한 높이
               constraints: BoxConstraints(minHeight: adjustedHeight),
               padding: adjustedPadding,
               child: Center(
@@ -427,8 +423,7 @@ class CompactCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final effectiveMargin =
-        margin ??
+    final effectiveMargin = margin ??
         const EdgeInsets.symmetric(
           horizontal: DesignTokens.s12,
           vertical: DesignTokens.s8, // 세로 마진 최소화
@@ -511,7 +506,7 @@ class CompactAppBar extends StatelessWidget implements PreferredSizeWidget {
 /// 카테고리 라벨을 번역하는 헬퍼 함수
 String _getLocalizedLabel(BuildContext context, String label) {
   final localizations = AppLocalizations.of(context)!;
-  
+
   switch (label) {
     case 'all':
       return localizations.all;
@@ -519,8 +514,10 @@ String _getLocalizedLabel(BuildContext context, String label) {
       return localizations.study;
     case 'meal':
       return localizations.meal;
-    case 'drink':
-      return localizations.drink;
+    case 'hangout':
+    case 'drink': // Legacy meetup data.
+    case 'drinks':
+      return localizations.hangout;
     case 'hobby':
       return localizations.hobby;
     case 'culture':

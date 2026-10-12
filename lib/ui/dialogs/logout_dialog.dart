@@ -8,6 +8,8 @@ import '../../design/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/login_screen.dart';
+import '../../utils/responsive_helper.dart';
+import '../../l10n/ui_locale.dart';
 
 Future<void> showLogoutConfirmDialog(
   BuildContext outerContext, {
@@ -15,10 +17,14 @@ Future<void> showLogoutConfirmDialog(
 }) {
   // 중요한 액션임을 알림
   HapticFeedback.mediumImpact();
+  // The opening page may disappear when authentication notifies its listeners.
+  // Keep navigation independent of that page's inherited-widget lookups.
+  final outerNavigator = Navigator.of(outerContext);
 
   return showDialog<void>(
     context: outerContext,
     barrierDismissible: false,
+    barrierColor: const Color(0x99000000),
     builder: (dialogContext) {
       return AnimatedBuilder(
         animation: authProvider,
@@ -26,164 +32,134 @@ Future<void> showLogoutConfirmDialog(
           final l10n = AppLocalizations.of(innerContext)!;
           final isLoading = authProvider.isLoading;
 
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          return Dialog(
             backgroundColor: Colors.white,
-            elevation: 8,
-            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-            actionsPadding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-            title: Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    // withOpacity는 정밀도 이슈로 deprecate됨 → withAlpha 사용
-                    color: BrandColors.error.withAlpha(26), // 0.1 * 255 ≈ 26
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.logout_rounded,
-                    color: BrandColors.error,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  l10n.logout,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ],
+            elevation: 0,
+            insetPadding: EdgeInsets.symmetric(
+              horizontal: innerContext.rs(28).clamp(20, 36).toDouble(),
             ),
-            content: isLoading
-                ? Row(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.3,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    innerContext.rs(22).clamp(20, 24).toDouble(),
+                    innerContext.rs(22).clamp(20, 24).toDouble(),
+                    innerContext.rs(16).clamp(12, 18).toDouble(),
+                    innerContext.rs(12).clamp(10, 14).toDouble(),
+                  ),
+                  child: _LogoutDialogContent(
+                      child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                      Text(
+                        l10n.logout,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(innerContext, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize:
+                              innerContext.rf(17).clamp(16, 18).toDouble(),
+                          fontWeight: FontWeight.w700,
+                          height: 1.3,
+                          color: const Color(0xFF111827),
+                        ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
+                      SizedBox(
+                        height: innerContext.rs(8).clamp(6, 10).toDouble(),
+                      ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
                         child: Text(
-                          l10n.loggingOut,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF6B7280),
-                            height: 1.4,
+                          isLoading ? l10n.loggingOut : l10n.logoutConfirm,
+                          key: ValueKey(isLoading),
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(innerContext, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: innerContext
+                                .rf(13.5)
+                                .clamp(13, 14.5)
+                                .toDouble(),
+                            fontWeight: FontWeight.w400,
+                            height: 1.5,
+                            color: const Color(0xFF667085),
                           ),
                         ),
                       ),
-                    ],
-                  )
-                : Text(
-                    l10n.logoutConfirm,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF374151),
-                      height: 1.5,
-                    ),
-                  ),
-            actions: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: isLoading
-                          ? null
-                          : () {
-                              HapticFeedback.lightImpact();
-                              Navigator.of(dialogContext).pop();
-                            },
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: Colors.grey.shade300, width: 1),
-                        ),
-                        backgroundColor: Colors.white,
+                      SizedBox(
+                        height: innerContext.rs(14).clamp(12, 18).toDouble(),
                       ),
-                      child: Text(
-                        l10n.cancel,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF6B7280),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: isLoading
-                          ? null
-                          : () async {
-                              // 중요한 액션 실행
-                              HapticFeedback.heavyImpact();
-
-                              try {
-                                await authProvider.signOut();
-                              } catch (_) {
-                                // signOut 내부에서 상태 정리됨 (best-effort)
-                              }
-
-                              if (!dialogContext.mounted) return;
-                              Navigator.of(dialogContext).pop();
-
-                              if (!outerContext.mounted) return;
-                              Navigator.of(outerContext).pushAndRemoveUntil(
-                                MaterialPageRoute(
-                                  builder: (_) => const LoginScreen(
-                                    showLogoutSuccess: true,
-                                  ),
-                                ),
-                                (route) => false,
-                              );
-                            },
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        backgroundColor: BrandColors.error,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        disabledBackgroundColor: const Color(0xFFE5E7EB),
-                      ),
-                      child: isLoading
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Wrap(
+                          spacing: 2,
+                          runSpacing: 2,
+                          alignment: WrapAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: isLoading
+                                  ? null
+                                  : () {
+                                      HapticFeedback.lightImpact();
+                                      Navigator.of(dialogContext).pop();
+                                    },
+                              style: _dialogActionStyle(
+                                const Color(0xFF667085),
                               ),
-                            )
-                          : Text(
-                              l10n.logout,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
+                              child: Text(
+                                l10n.cancel,
+                                style: TextStyle(
+                                  fontFamily:
+                                      uiFontFamily(innerContext, 'Inter'),
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                    ),
-                  ),
-                ],
+                            TextButton(
+                              onPressed: isLoading
+                                  ? null
+                                  : () => _performLogout(
+                                        dialogContext,
+                                        outerContext,
+                                        authProvider,
+                                        outerNavigator,
+                                      ),
+                              style: _dialogActionStyle(BrandColors.error),
+                              child: isLoading
+                                  ? const SizedBox.square(
+                                      dimension: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: BrandColors.error,
+                                      ),
+                                    )
+                                  : Text(
+                                      l10n.logout,
+                                      style: TextStyle(
+                                        fontFamily:
+                                            uiFontFamily(innerContext, 'Inter'),
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )),
+                ),
               ),
-            ],
+            ),
           );
         },
       );
@@ -191,3 +167,51 @@ Future<void> showLogoutConfirmDialog(
   );
 }
 
+class _LogoutDialogContent extends StatelessWidget {
+  const _LogoutDialogContent({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      isChineseUi(context) ? SingleChildScrollView(child: child) : child;
+}
+
+ButtonStyle _dialogActionStyle(Color foregroundColor) => TextButton.styleFrom(
+      foregroundColor: foregroundColor,
+      disabledForegroundColor: const Color(0xFF98A2B3),
+      minimumSize: const Size(64, 40),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+    );
+
+Future<void> _performLogout(
+  BuildContext dialogContext,
+  BuildContext outerContext,
+  AuthProvider authProvider,
+  NavigatorState outerNavigator,
+) async {
+  HapticFeedback.heavyImpact();
+  final dialogNavigator = Navigator.of(dialogContext);
+
+  try {
+    await authProvider.signOut();
+  } catch (_) {
+    // signOut 내부에서 상태 정리됨 (best-effort)
+  }
+
+  if (!dialogContext.mounted || !dialogNavigator.mounted) return;
+  dialogNavigator.pop();
+
+  if (!outerContext.mounted || !outerNavigator.mounted) return;
+  outerNavigator.pushAndRemoveUntil(
+    MaterialPageRoute(
+      builder: (_) => const LoginScreen(
+        showLogoutSuccess: true,
+      ),
+    ),
+    (route) => false,
+  );
+}

@@ -3,11 +3,16 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/post.dart';
+import '../models/post_category.dart';
 import '../services/post_service.dart';
+import '../ui/widgets/post_category_selector.dart';
+import '../l10n/ui_locale.dart';
 
 class EditPostScreen extends StatefulWidget {
   final Post post;
@@ -32,6 +37,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   bool _isSubmitting = false;
   bool _isResolvingSelectedImages = false;
   bool _canSubmit = false;
+  late final Set<PostCategory> _selectedPostTags;
 
   bool get _isPollLocked =>
       widget.post.type == 'poll' && (widget.post.pollTotalVotes > 0);
@@ -39,8 +45,12 @@ class _EditPostScreenState extends State<EditPostScreen> {
   @override
   void initState() {
     super.initState();
-    _keptImageUrls = List<String>.from(widget.post.imageUrls);
-    _contentController.text = widget.post.content;
+    // 영상 포스트의 썸네일(imageUrls[0])은 플레이어가 쓰므로 편집 목록에서 뺀다.
+    final videoThumbnail = widget.post.video?.thumbnailUrl.trim();
+    _keptImageUrls = List<String>.from(widget.post.imageUrls)
+      ..removeWhere((url) => videoThumbnail != null && url.trim() == videoThumbnail);
+    _selectedPostTags = widget.post.postCategories.toSet();
+    _contentController.text = widget.post.displayText;
     _contentController.addListener(_checkCanSubmit);
     _checkCanSubmit();
   }
@@ -54,10 +64,13 @@ class _EditPostScreenState extends State<EditPostScreen> {
 
   void _checkCanSubmit() {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
-    final hasAnyImage = _keptImageUrls.isNotEmpty || _selectedAssets.isNotEmpty;
+    final hasAnyImage = _keptImageUrls.isNotEmpty || _selectedImages.isNotEmpty;
 
-    final can =
-        !_isSubmitting && !_isResolvingSelectedImages && !_isPollLocked && (contentNotEmpty || hasAnyImage);
+    final can = !_isSubmitting &&
+        !_isResolvingSelectedImages &&
+        !_isPollLocked &&
+        _selectedPostTags.isNotEmpty &&
+        (contentNotEmpty || hasAnyImage);
     if (can != _canSubmit && mounted) {
       setState(() => _canSubmit = can);
     } else {
@@ -103,15 +116,42 @@ class _EditPostScreenState extends State<EditPostScreen> {
   }
 
   Future<void> _selectImages() async {
-    final remaining = (15 - _keptImageUrls.length).clamp(0, 15);
-    if (remaining <= 0) return;
+    final maxNewImages = (15 - _keptImageUrls.length).clamp(0, 15);
+    if (maxNewImages <= 0) return;
+
+    if (Platform.isAndroid) {
+      final remaining = maxNewImages - _selectedImages.length;
+      if (remaining <= 0) return;
+      final picker = ImagePicker();
+      final picked = remaining == 1
+          ? <XFile>[
+              if (await picker.pickImage(
+                source: ImageSource.gallery,
+                requestFullMetadata: false,
+              )
+                  case final image?)
+                image,
+            ]
+          : await picker.pickMultiImage(
+              limit: remaining,
+              requestFullMetadata: false,
+            );
+      if (!mounted || picked.isEmpty) return;
+      setState(() {
+        _selectedImages.addAll(
+          picked.take(remaining).map((image) => File(image.path)),
+        );
+      });
+      _checkCanSubmit();
+      return;
+    }
 
     final pickedAssets = await AssetPicker.pickAssets(
       context,
       pickerConfig: AssetPickerConfig(
         requestType: RequestType.image,
         selectedAssets: _selectedAssets,
-        maxAssets: remaining,
+        maxAssets: maxNewImages,
         dragToSelect: false,
       ),
     );
@@ -122,7 +162,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
     setState(() {
       _selectedAssets
         ..clear()
-        ..addAll(pickedAssets.take(remaining));
+        ..addAll(pickedAssets.take(maxNewImages));
     });
     await _syncSelectedImagesFromAssets();
   }
@@ -136,7 +176,12 @@ class _EditPostScreenState extends State<EditPostScreen> {
   }
 
   Future<void> _removeNewAsset(int index) async {
-    if (index < 0 || index >= _selectedAssets.length) return;
+    if (index < 0 || index >= _selectedImages.length) return;
+    if (Platform.isAndroid) {
+      setState(() => _selectedImages.removeAt(index));
+      _checkCanSubmit();
+      return;
+    }
     setState(() {
       _selectedAssets.removeAt(index);
     });
@@ -153,7 +198,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
 
     try {
       // 업로드 직전 파일 리스트 동기화(안전)
-      if (_selectedAssets.isNotEmpty && _selectedImages.length != _selectedAssets.length) {
+      if (_selectedAssets.isNotEmpty &&
+          _selectedImages.length != _selectedAssets.length) {
         await _syncSelectedImagesFromAssets();
       }
       if (!mounted) return;
@@ -161,8 +207,15 @@ class _EditPostScreenState extends State<EditPostScreen> {
       final updated = await _postService.updatePost(
         post: widget.post,
         content: _contentController.text.trim(),
-        keptImageUrls: List<String>.from(_keptImageUrls),
-        newImageFiles: _selectedImages.isNotEmpty ? List<File>.from(_selectedImages) : null,
+        categoryKeys:
+            _selectedPostTags.map((category) => category.key).toList(),
+        keptImageUrls: <String>[
+          if (widget.post.video case final video?) video.thumbnailUrl,
+          ..._keptImageUrls,
+        ],
+        newImageFiles: _selectedImages.isNotEmpty
+            ? List<File>.from(_selectedImages)
+            : null,
       );
 
       if (!mounted) return;
@@ -225,29 +278,31 @@ class _EditPostScreenState extends State<EditPostScreen> {
                         width: 96,
                         height: 96,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(color: const Color(0xFFF3F4F6)),
+                        placeholder: (_, __) =>
+                            Container(color: const Color(0xFFF3F4F6)),
                         errorWidget: (_, __, ___) => Container(
                           color: const Color(0xFFF3F4F6),
-                          child: const Center(child: Icon(Icons.broken_image_outlined)),
+                          child: const Center(
+                              child: Icon(Icons.broken_image_outlined)),
                         ),
                       ),
                     ),
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _isSubmitting ? null : () => _removeExistingUrl(index),
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: const BoxDecoration(
-                            color: Color(0xCC111827),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.close_rounded,
-                            color: Colors.white,
-                            size: 16,
+                      child: MotionPress(
+                        enabled: !_isSubmitting,
+                        pressedScale: .92,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _isSubmitting ? null : () => _removeExistingUrl(index),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: const BoxDecoration(
+                              color: Color(0xCC111827),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close_rounded, color: Colors.white, size: 16),
                           ),
                         ),
                       ),
@@ -263,7 +318,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   }
 
   Widget _buildNewImages() {
-    if (_selectedAssets.isEmpty) return const SizedBox.shrink();
+    if (_selectedImages.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -272,9 +327,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
           height: 112,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            itemCount: _selectedAssets.length,
+            itemCount: _selectedImages.length,
             itemBuilder: (context, index) {
-              final asset = _selectedAssets[index];
+              final image = _selectedImages[index];
               return Container(
                 margin: const EdgeInsets.only(right: 8),
                 width: 96,
@@ -287,12 +342,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(10),
-                      child: Image(
-                        image: AssetEntityImageProvider(
-                          asset,
-                          isOriginal: false,
-                          thumbnailSize: const ThumbnailSize.square(256),
-                        ),
+                      child: Image.file(
+                        image,
                         width: 96,
                         height: 96,
                         fit: BoxFit.cover,
@@ -301,19 +352,19 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     Positioned(
                       top: 6,
                       right: 6,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _isSubmitting ? null : () => _removeNewAsset(index),
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: const BoxDecoration(
-                            color: Color(0xCC111827),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.close_rounded,
-                            color: Colors.white,
-                            size: 16,
+                      child: MotionPress(
+                        enabled: !_isSubmitting,
+                        pressedScale: .92,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _isSubmitting ? null : () => _removeNewAsset(index),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: const BoxDecoration(
+                              color: Color(0xCC111827),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close_rounded, color: Colors.white, size: 16),
                           ),
                         ),
                       ),
@@ -343,8 +394,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
         ),
         title: Text(
           l10n.editPost,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -362,8 +414,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
                 : const Icon(Icons.check_rounded),
             label: Text(
               l10n.update,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -388,19 +441,33 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     border: Border.all(color: const Color(0xFFFDE68A)),
                   ),
                   child: Text(
-                    Localizations.localeOf(context).languageCode == 'ko'
+                    (isChineseUi(context) ? '投票开始后，无法编辑投票动态。' : Localizations.localeOf(context).languageCode == 'ko'
                         ? '투표가 진행된 게시글은 수정할 수 없어요.'
-                        : 'Poll posts cannot be edited after votes.',
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
+                        : 'Poll posts cannot be edited after votes.'),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF92400E),
-                      height: 1.25,
+                      height: isChineseUi(context) ? 1.3 : 1.25,
                     ),
                   ),
                 ),
               const SizedBox(height: 12),
+              PostCategorySelector(
+                selected: _selectedPostTags,
+                enabled: !_isSubmitting && !_isPollLocked,
+                onChanged: (tags) {
+                  setState(() {
+                    _selectedPostTags
+                      ..clear()
+                      ..addAll(tags);
+                  });
+                  _checkCanSubmit();
+                },
+              ),
+              const SizedBox(height: 16),
               Container(
                 height: 220,
                 decoration: BoxDecoration(
@@ -424,8 +491,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
                   ),
                   maxLines: null,
                   textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFF111827),
@@ -438,35 +506,42 @@ class _EditPostScreenState extends State<EditPostScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: (_isSubmitting || _isPollLocked) ? null : _selectImages,
+                      onPressed: (_isSubmitting || _isPollLocked)
+                          ? null
+                          : _selectImages,
                       icon: const Icon(Icons.image_outlined),
                       label: Text(
                         l10n.imageAttachment,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF111827),
                         side: const BorderSide(color: Color(0xFFE5E7EB)),
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12, horizontal: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(color: const Color(0xFFE5E7EB)),
                     ),
                     child: Text(
-                      '${(_keptImageUrls.length + _selectedAssets.length).clamp(0, 10)}/10',
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
+                      '${(_keptImageUrls.length + _selectedImages.length).clamp(0, 10)}/10',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF111827),
@@ -484,4 +559,3 @@ class _EditPostScreenState extends State<EditPostScreen> {
     );
   }
 }
-

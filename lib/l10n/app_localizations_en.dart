@@ -49,6 +49,84 @@ class AppLocalizationsEn extends AppLocalizations {
   String get resetPassword => 'Reset Password';
 
   @override
+  String get passwordResetDescription =>
+      'Enter your email to receive a 6-digit verification code.';
+
+  @override
+  String get emailAddress => 'Email address';
+
+  @override
+  String get sendCode => 'Send code';
+
+  @override
+  String get passwordResetCodeSent =>
+      'If an account exists for this email, a verification code has been sent.';
+
+  @override
+  String get verificationCodeHint => 'Enter the 6-digit code';
+
+  @override
+  String get newPassword => 'New password';
+
+  @override
+  String get resendCode => 'Resend code';
+
+  @override
+  String resendCodeIn(int seconds) {
+    return 'Resend code in ${seconds}s';
+  }
+
+  @override
+  String get passwordChangedSuccessfully => 'Password changed successfully.';
+
+  @override
+  String get signInWithNewPassword => 'Please sign in with your new password.';
+
+  @override
+  String get backToEmailLogin => 'Back to Email Login';
+
+  @override
+  String get invalidVerificationCode => 'The verification code is incorrect.';
+
+  @override
+  String get expiredVerificationCode =>
+      'The verification code has expired. Request a new code.';
+
+  @override
+  String get tooManyVerificationAttempts =>
+      'Too many attempts. Request a new code.';
+
+  @override
+  String get passwordResetRateLimited =>
+      'Please wait before requesting another code.';
+
+  @override
+  String get passwordResetGenericError =>
+      'We couldn\'t reset your password. Please try again shortly.';
+
+  @override
+  String get passwordResetNetworkError =>
+      'Check your internet connection and try again.';
+
+  @override
+  String get passwordResetRequestVerificationFailed =>
+      'We couldn\'t verify this request. Please try again.';
+
+  @override
+  String get currentPassword => 'Current password';
+
+  @override
+  String get currentPasswordHint => 'Enter your current password';
+
+  @override
+  String get emailReauthenticationDescription =>
+      'For security, confirm your current password before deleting your account.';
+
+  @override
+  String get reauthenticationFailedTryAgain =>
+      'We couldn\'t verify your identity. Please try again.';
+
+  @override
   String get sendResetEmail => 'Send Reset Email';
 
   @override
@@ -82,6 +160,24 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get myPage => 'My Page';
+
+  @override
+  String get snackChat => 'Snack Chat';
+
+  @override
+  String get snackChatTabSemantic => 'Snack Chat tab';
+
+  @override
+  String get groupsTabSemantic => 'Groups tab';
+
+  @override
+  String get groupNoFriendsSelected => 'Selected friends will appear here.';
+
+  @override
+  String get groupNoSearchResults => 'No friends found.';
+
+  @override
+  String get groupRemoveFriendHint => 'Double tap to remove from this group.';
 
   @override
   String get home => 'Home';
@@ -193,7 +289,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get todayPostsSectionTitle => 'Today\'s Posts';
 
   @override
-  String get todayNoMeetups => 'No meetups posted today.';
+  String get todayNoMeetups => 'No meetups created or scheduled for today.';
 
   @override
   String get todayNoPosts => 'No posts yet today.';
@@ -289,23 +385,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get snackChatRoomTitleHint => 'Enter a topic for the chat';
 
   @override
-  String get snackChatVisibilityDuration => 'Visibility Duration';
+  String get snackChatVisibilityDuration => 'Chat duration';
 
   @override
   String get snackChatVisibilityDurationHint =>
-      'The chat stays visible for 24 or 48 hours from the last message.';
+      'Choose whether the chat ends after 24 hours or stays open.';
 
   @override
   String get snackChatDuration24Hours => '24 hours';
 
   @override
-  String get snackChatDuration48Hours => '48 hours';
+  String get snackChatDurationNoEnd => 'No end';
 
   @override
   String get snackChatSelectParticipants => 'Select Participants';
 
   @override
-  String get snackChatParticipantLimit => 'You can invite up to 6 people';
+  String get snackChatParticipantLimit =>
+      'Invite any friends you want to include';
+
+  @override
+  String snackChatParticipantCount(int count) {
+    return '$count participants';
+  }
 
   @override
   String get snackChatMe => 'Me';
@@ -317,6 +419,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get snackChatInviteFriends => 'Invite Friends';
 
   @override
+  String get snackChatInviteStepTitle => 'Invite friends';
+
+  @override
+  String get snackChatInviteStepHint =>
+      'Choose at least one friend to join the chat.';
+
+  @override
+  String get snackChatSelectedFriends => 'Selected friends';
+
+  @override
+  String get snackChatNoFriendsSelected => 'Selected friends will appear here.';
+
+  @override
+  String get snackChatFriendList => 'Friends';
+
+  @override
+  String get snackChatDragForFriends => 'Drag to see more';
+
+  @override
   String snackChatSelectionComplete(int count) {
     return '$count selected';
   }
@@ -326,7 +447,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get snackChatMaxParticipants =>
-      'You can select up to 6 participants (including yourself).';
+      'Select the friends you want to invite.';
 
   @override
   String get snackChatEnterTitle => 'Please enter a Snack Chat title.';
@@ -351,7 +472,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get snackChatGuideDesc =>
-      'A casual social chat space\nfor up to 6 people.';
+      'A casual social chat space\nfor you and your friends.';
 
   @override
   String get editPost => 'Edit Post';
@@ -1223,11 +1344,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get categoryNameHint => 'e.g., University Friends';
 
   @override
-  String get createFirstCategory => 'Manage Friends with Groups';
+  String get createFirstCategory => 'Control visibility with friend groups';
 
   @override
   String get createFirstCategoryDescription =>
-      'Manage your friends with groups.\nCreate a group using the add button below.';
+      'Organize friends into groups, then easily choose\nwho can see your posts and meetups.';
 
   @override
   String get editAction => 'Edit';
@@ -1280,7 +1401,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String deleteCategoryConfirm(String name) {
-    return 'Are you sure you want to delete \'$name\' group?\n\nFriends in this group will be moved to other groups.';
+    return 'Are you sure you want to delete \'$name\' group?\n\nOnly the group is deleted. Its friends will not be moved to another group.';
   }
 
   @override
@@ -1406,6 +1527,40 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get viewRecommendedFriends => 'View Recommended Friends';
+
+  @override
+  String get userSearchIdleTitle => 'Search for users';
+
+  @override
+  String get userSearchIdleDescription =>
+      'Find new friends by nickname or name.';
+
+  @override
+  String get interestFriendDiscoveryTitle => 'Find friends by interest';
+
+  @override
+  String get interestFriendDiscoveryDescription =>
+      'Choose an interest to meet people who share it.';
+
+  @override
+  String interestPeopleTitle(String interest) {
+    return 'People interested in #$interest';
+  }
+
+  @override
+  String interestNoUsersTitle(String interest) {
+    return 'No one has added #$interest yet';
+  }
+
+  @override
+  String get interestNoUsersDescription =>
+      'Choose another interest to discover new friends.';
+
+  @override
+  String get interestSearchErrorTitle => 'Couldn’t load interest results';
+
+  @override
+  String get interestSearchErrorDescription => 'Please try again in a moment.';
 
   @override
   String get tryDifferentKeyword => 'Try a different search term';
@@ -1575,10 +1730,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String friendRequestAcceptedMessage(String name) {
+    return '$name accepted your friend request';
+  }
+
+  @override
   String get emailSignup => 'Email Sign Up';
 
   @override
-  String get emailLogin => 'Email Login';
+  String get emailLogin => 'Log in with Email';
 
   @override
   String get hanyangEmailOnly => 'Hanyang University Email Verification';
@@ -1684,18 +1844,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get welcomeTitle => 'Welcome!';
 
   @override
-  String get googleLoginDescription =>
-      'Sign in with your Google account\nand enjoy various features.';
+  String get googleLoginDescription => 'Choose a way to log in and continue.';
 
   @override
   String get googleLogin => 'Log in with Google';
 
   @override
-  String get loggingIn => 'Signing in...';
+  String get loggingIn => 'Logging in...';
 
   @override
   String get loginTermsNotice =>
-      'By signing in, you agree to our Terms of Service and Privacy Policy.';
+      'By logging in, you agree to our Terms of Service and Privacy Policy.';
 
   @override
   String get verificationSuccess => 'Verification Success';
@@ -2434,6 +2593,39 @@ class AppLocalizationsEn extends AppLocalizations {
   String get nicknameQuestion => 'What is your nickname?';
 
   @override
+  String get nicknamePolicyHelp =>
+      'Use 2–20 Korean or English letters. No numbers, spaces, or symbols.';
+
+  @override
+  String get nicknameChecking => 'Checking availability…';
+
+  @override
+  String get nicknameAvailable => 'This nickname is available.';
+
+  @override
+  String get nicknameTaken => 'This nickname is already in use.';
+
+  @override
+  String get nicknameInvalidCharacters =>
+      'Use only Korean or English letters. No numbers, spaces, or symbols.';
+
+  @override
+  String get nicknameLetterRequired =>
+      'Include at least one Korean or English letter.';
+
+  @override
+  String get nicknameReserved => 'This nickname is reserved.';
+
+  @override
+  String get nicknameCheckNetworkError =>
+      'Couldn’t check the nickname. Please try again.';
+
+  @override
+  String nicknameNormalizedPreview(String nickname) {
+    return 'Saved as: $nickname';
+  }
+
+  @override
   String get notification => 'Notification';
 
   @override
@@ -2454,7 +2646,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cafe => 'Cafe';
 
   @override
-  String get drink => 'Drinks';
+  String get trip => 'Trip';
+
+  @override
+  String get hangout => 'Hangout';
 
   @override
   String get friendsOnlyBadge => 'Friends Only';
@@ -2471,6 +2666,53 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get friendSelection => 'Friend Selection';
+
+  @override
+  String get dmRecipientSelectionTitle => 'New message';
+
+  @override
+  String get dmRecipientFriendsTab => 'Friends';
+
+  @override
+  String get dmRecipientIdSearchTab => 'ID search';
+
+  @override
+  String get dmRecipientFriendSearchHint => 'Search friend IDs';
+
+  @override
+  String get dmRecipientIdSearchHint => 'Search user IDs';
+
+  @override
+  String get dmRecipientNoFriendsTitle => 'No friends yet';
+
+  @override
+  String get dmRecipientNoFriendsDescription =>
+      'Use ID search to find someone to message.';
+
+  @override
+  String get dmRecipientSearchPromptTitle => 'Find someone by ID';
+
+  @override
+  String get dmRecipientSearchPromptDescription =>
+      'Enter part of an ID to find a user.';
+
+  @override
+  String get dmRecipientNoResultsDescription =>
+      'Check the ID spelling or try another search.';
+
+  @override
+  String get dmRecipientSearchFailedTitle => 'Could not search';
+
+  @override
+  String get dmRecipientSearchFailedDescription =>
+      'Check your connection and try again.';
+
+  @override
+  String get dmRecipientFriendsLoadFailedTitle => 'Could not load friends';
+
+  @override
+  String get dmRecipientFriendsLoadFailedDescription =>
+      'Please try again in a moment.';
 
   @override
   String get noFriendsInCategory => 'No friends yet';
@@ -2685,19 +2927,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileSetupWelcome => 'Welcome! Please set up your profile.';
 
   @override
-  String get signupCancelDialogTitle => 'Cancel sign up?';
-
-  @override
-  String get signupCancelDialogContent =>
-      'If you leave now, all your information will be deleted and you\'ll need to sign up again from the beginning.';
-
-  @override
-  String get signupCancelDialogContinue => 'Continue signing up';
-
-  @override
-  String get signupCancelDialogQuit => 'Cancel sign up';
-
-  @override
   String get profileSetupSuccess => 'Your profile has been set up.';
 
   @override
@@ -2725,11 +2954,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signUpMethodSelectionTitle => 'Choose Sign Up Method';
 
   @override
-  String get signUpMethodSelectionHeading => 'Choose how you want to sign up';
+  String get signUpMethodSelectionHeading => 'Choose a sign-up method';
 
   @override
   String get signUpMethodSelectionDescription =>
-      'Hanyang email verification is complete.\nPlease choose your preferred sign up method.';
+      'Select an account to continue.';
 
   @override
   String get signUpWithApple => 'Sign up with Apple';
@@ -2742,6 +2971,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get signUpWithId => 'Sign up with Email';
+
+  @override
+  String get generalEmailVerificationTitle => 'Email Verification';
+
+  @override
+  String get generalEmailVerificationHeading => 'Verify your email';
+
+  @override
+  String get generalEmailVerificationDescription =>
+      'Enter any email address. We’ll send a 4-digit verification code.';
+
+  @override
+  String get verifiedEmailLabel => 'Verified email';
+
+  @override
+  String get generalEmailPasswordDescription =>
+      'Create a password for this verified email.\nIt must be at least 8 characters.';
 
   @override
   String get appleSignupIosOnlyError =>
@@ -2936,13 +3182,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get postComposeVisibilityPrompt => 'Choose who can see this post.';
 
   @override
-  String get postVisibilityPublicTitle => 'Visible to everyone';
+  String get postVisibilityPublicTitle => 'Public';
 
   @override
   String get postVisibilityPublicDescription => 'All users can view this post';
 
   @override
-  String get postVisibilityGroupTitle => 'Select groups';
+  String get postVisibilityAnonymousTitle => 'Public anonymously';
+
+  @override
+  String get postVisibilityAnonymousDescription =>
+      'All users can view this post without your profile';
+
+  @override
+  String get postVisibilityGroupTitle => 'Group only';
 
   @override
   String get postVisibilityGroupDescription =>
@@ -3015,6 +3268,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Are you sure you want to exit?\nYour entered information will not be saved.';
 
   @override
+  String get exitMeetupEditing => 'Exit Meetup Editing';
+
+  @override
+  String get exitMeetupEditingMessage =>
+      'Are you sure you want to exit?\nYour changes will not be saved.';
+
+  @override
   String get exit => 'Exit';
 
   @override
@@ -3033,4 +3293,289 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get snackChatUnfavoriteMessage =>
       'Remove this Snack Chat from favorites?';
+
+  @override
+  String get postCategoriesTitle => 'Categories';
+
+  @override
+  String get postCategoriesSubtitle => 'Explore new stories by topic.';
+
+  @override
+  String get postCategorySelectTitle => 'Post category';
+
+  @override
+  String get postCategorySelectAction => 'Select category';
+
+  @override
+  String get postCategoryRequired => 'Please select a post category.';
+
+  @override
+  String postCategoryEmpty(String category) {
+    return 'There are no posts in $category yet.';
+  }
+
+  @override
+  String get postCategoryEmptySubtitle => 'Be the first to share something.';
+
+  @override
+  String get postCategoryCreateAction => 'Create post';
+
+  @override
+  String get postCategoryStyle => 'Style';
+
+  @override
+  String get postCategoryStyleDescription => 'Fashion, beauty & items';
+
+  @override
+  String get postCategoryCreate => 'Restaurant';
+
+  @override
+  String get postCategoryCreateDescription => 'Restaurants, dining & food';
+
+  @override
+  String get postCategoryPhoto => 'Photo';
+
+  @override
+  String get postCategoryPhotoDescription => 'Photos, video & cameras';
+
+  @override
+  String get postCategoryContent => 'Content';
+
+  @override
+  String get postCategoryContentDescription => 'Music, film & series';
+
+  @override
+  String get postCategoryCafe => 'Cafe';
+
+  @override
+  String get postCategoryCafeDescription => 'Cafes, desserts & spaces';
+
+  @override
+  String get postCategoryAcademicStudy => 'Academics & Study';
+
+  @override
+  String get postCategoryAcademicStudyDescription =>
+      'Classes, assignments, exams & study groups';
+
+  @override
+  String get postCategoryBooksWriting => 'Books & Writing';
+
+  @override
+  String get postCategoryBooksWritingDescription => 'Reading, writing & quotes';
+
+  @override
+  String get postCategoryTravelLocal => 'Travel & Local';
+
+  @override
+  String get postCategoryTravelLocalDescription =>
+      'Travel, neighborhoods & places';
+
+  @override
+  String get postCategoryGlobal => 'Global';
+
+  @override
+  String get postCategoryGlobalDescription => 'Languages, culture & students';
+
+  @override
+  String get postCategoryOther => 'Other';
+
+  @override
+  String get postCategoryOtherDescription =>
+      'Legacy posts and open conversation';
+
+  @override
+  String get meetupTabLabel => 'Meetup';
+
+  @override
+  String get meetupEmptyTitle => 'Do You Know\nWhat Wefilling Means?';
+
+  @override
+  String get meetupEmptyDescription =>
+      'A combination of \"We\" and \"filling\",\nit means filling the space between people.';
+
+  @override
+  String get postSubmitAction => 'Register';
+
+  @override
+  String get chatReactionAdd => 'Add reaction';
+
+  @override
+  String get chatReactionRemove => 'Remove reaction';
+
+  @override
+  String get chatReactionPeople => 'People who reacted';
+
+  @override
+  String get chatReactionSaveFailed => 'Could not save reaction.';
+
+  @override
+  String get chatReply => 'Reply';
+
+  @override
+  String get chatReportMessage => 'Report message';
+
+  @override
+  String get chatTranslationTranslating => 'Translating';
+
+  @override
+  String get chatTranslationTranslated => 'Translated';
+
+  @override
+  String get chatTranslationRetry => 'Retry translation';
+
+  @override
+  String semesterGuideTitleById(String guideId) {
+    String _temp0 = intl.Intl.selectLogic(
+      guideId,
+      {
+        'check_enrollment': 'Check your course enrollment',
+        'exchange_orientation': 'Check exchange student orientation',
+        'campus_welcome_meetup': 'Explore welcome meetups',
+        'check_syllabus': 'Review syllabi and grading policies',
+        'course_change_period': 'Check the course add/drop period',
+        'club_fair': 'Explore clubs and student activities',
+        'academic_calendar': 'Save key academic dates',
+        'arc_documents': 'Check residence card documents',
+        'language_exchange': 'Join a language exchange',
+        'campus_services': 'Learn about campus support services',
+        'dorm_rules': 'Review dormitory rules',
+        'buddy_program': 'Explore a buddy program',
+        'assignment_check': 'Check assignments and attendance',
+        'study_meetup': 'Find a study meetup',
+        'midterm_schedule': 'Organize your midterm schedule',
+        'library_space': 'Find a focused study spot',
+        'midterm_readiness': 'Review your midterm readiness',
+        'study_break': 'Take a short social break',
+        'midterm_followup': 'Reset your course plan after midterms',
+        'wellbeing_check': 'Check in on your wellbeing',
+        'festival_events': 'Check upcoming campus events',
+        'exchange_culture_event': 'Join a cultural exchange event',
+        'grade_progress': 'Review your progress in each course',
+        'academic_advising': 'Book academic advising if needed',
+        'final_projects': 'Check final projects and team deadlines',
+        'career_program': 'Explore career programs',
+        'next_term_notice': 'Check key dates for next semester',
+        'exchange_departure_plan': 'Review pre-departure procedures',
+        'final_schedule': 'Confirm your final exam schedule',
+        'semester_memory': 'Plan an end-of-semester meetup',
+        'final_readiness': 'Review your final exam readiness',
+        'return_items': 'Check return dates for borrowed items',
+        'final_submissions': 'Confirm all final submissions',
+        'semester_reflection': 'Reflect on your semester',
+        'stay_connected': 'Stay connected with friends',
+        'semester_wrap_up': 'Complete your semester wrap-up',
+        'next_semester_plan': 'Plan for next semester',
+        'other': '',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String semesterGuideDescriptionById(String guideId) {
+    String _temp0 = intl.Intl.selectLogic(
+      guideId,
+      {
+        'check_enrollment':
+            'Review your class times and rooms in the student portal.',
+        'exchange_orientation':
+            'Check the international office schedule and what to bring.',
+        'campus_welcome_meetup':
+            'Find a casual meetup and meet students with similar interests.',
+        'check_syllabus':
+            'Add assignments, exams, and attendance rules to your schedule.',
+        'course_change_period': 'Make any needed changes before the deadline.',
+        'club_fair': 'Find one activity you might enjoy this semester.',
+        'academic_calendar': 'Save exams, holidays, and withdrawal deadlines.',
+        'arc_documents':
+            'If applicable, review the international office guide and documents.',
+        'language_exchange':
+            'Meet someone to share languages and cultures with.',
+        'campus_services':
+            'Check how to use health, counseling, and academic support services.',
+        'dorm_rules':
+            'If you live on campus, review access, recycling, and facility rules.',
+        'buddy_program':
+            'Check programs that connect exchange and Korean students.',
+        'assignment_check': 'Make sure nothing is missing for each course.',
+        'study_meetup':
+            'Study together for a course that is difficult to prepare for alone.',
+        'midterm_schedule':
+            'Collect exam dates, coverage, and assignment deadlines in one place.',
+        'library_space': 'Try the library or another campus study space.',
+        'midterm_readiness':
+            'Check the remaining material and study time for each course.',
+        'study_break': 'Recharge with a meal or walk between study sessions.',
+        'midterm_followup':
+            'Adjust your plan using feedback and the remaining assessments.',
+        'wellbeing_check':
+            'Review sleep, meals, and stress, and seek support if needed.',
+        'festival_events':
+            'Save festivals, performances, or exhibitions that interest you.',
+        'exchange_culture_event':
+            'Connect naturally with students from different backgrounds.',
+        'grade_progress':
+            'Check your current results and remaining assessment weights.',
+        'academic_advising':
+            'Contact the appropriate office if you have course or credit concerns.',
+        'final_projects':
+            'Confirm roles, milestones, and submission formats early.',
+        'career_program':
+            'Look for advising, talks, or recruiting events relevant to you.',
+        'next_term_notice':
+            'Review dates for leave, return, housing, and course registration.',
+        'exchange_departure_plan':
+            'Check transcript, housing checkout, and immigration guidance.',
+        'final_schedule':
+            'Confirm exam dates, rooms, coverage, and submission deadlines.',
+        'semester_memory':
+            'Wrap up the semester with friends you met along the way.',
+        'final_readiness':
+            'Check remaining study material and submissions for each course.',
+        'return_items':
+            'Review due dates for library books and campus rentals.',
+        'final_submissions':
+            'Do one final check that every submission was received correctly.',
+        'semester_reflection':
+            'Note what went well and what you want to continue next semester.',
+        'stay_connected':
+            'Make a plan to stay in touch with people you met this semester.',
+        'semester_wrap_up':
+            'Check grade dates, borrowed items, and any remaining administration.',
+        'next_semester_plan':
+            'Reflect on this semester and set goals to carry into the next one.',
+        'other': '',
+      },
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String postViewCountMeta(int count) {
+    return '$count views';
+  }
+
+  @override
+  String postSnackChatTalking(int count) {
+    return '$count people talking';
+  }
+
+  @override
+  String get postSnackChatContinue => 'Continue in Snack Chat';
+
+  @override
+  String get postSnackChatOpen => 'Open Snack Chat';
+
+  @override
+  String get postSnackChatSheetSubtitle => 'This post stays pinned at the top';
+
+  @override
+  String get postSnackChatNoInvite =>
+      'People who commented won\'t be invited. They\'ll just see that a Snack Chat is open and can join if they want.';
+
+  @override
+  String get commentLikeAction => 'Like';
+
+  @override
+  String get commentUnlikeAction => 'Unlike';
 }

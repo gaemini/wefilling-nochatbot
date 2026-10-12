@@ -9,6 +9,15 @@ if (keystorePropertiesFile.exists()) {
     logger.warn("WARNING: android/key.properties not found. Release signing will fail.")
 }
 
+val releaseVersionFile = rootProject.file("release-version.properties")
+val releaseVersionProperties = Properties().apply {
+    if (releaseVersionFile.exists()) {
+        releaseVersionFile.inputStream().use { load(it) }
+    }
+}
+val lastUsedReleaseVersionCode =
+    releaseVersionProperties.getProperty("lastUsedVersionCode")?.toIntOrNull() ?: 0
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -64,6 +73,7 @@ android {
 
     defaultConfig {
         applicationId = "com.wefilling.app"
+        manifestPlaceholders["appLabel"] = "Wefilling"
         minSdkVersion(24)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -89,4 +99,47 @@ flutter {
     source = "../.."
 }
 
+val validateReleaseVersion = tasks.register("validateReleaseVersion") {
+    group = "release"
+    description = "Rejects a release AAB whose versionCode is lower than the latest local release candidate."
 
+    doLast {
+        val currentVersionCode = flutter.versionCode
+        if (currentVersionCode < lastUsedReleaseVersionCode) {
+            throw GradleException(
+                "versionCode $currentVersionCode is lower than the latest local release candidate " +
+                    "$lastUsedReleaseVersionCode."
+            )
+        }
+        logger.lifecycle(
+            "Release: versionName=${flutter.versionName}, " +
+                "versionCode=$currentVersionCode, applicationId=com.wefilling.app"
+        )
+    }
+}
+
+val validateReleaseArtifactInputs = tasks.register<Exec>("validateReleaseArtifactInputs") {
+    group = "release"
+    description = "Runs the fail-closed Wefilling production Release Guard."
+    workingDir(rootProject.projectDir.parentFile)
+    commandLine(
+        "python3",
+        rootProject.file("../scripts/release_guard.py").absolutePath,
+        "--platform",
+        "android",
+        "--strict-signing"
+    )
+}
+
+tasks.configureEach {
+    if (name == "bundleRelease") {
+        dependsOn(validateReleaseVersion)
+        dependsOn(validateReleaseArtifactInputs)
+        doLast {
+            releaseVersionFile.writeText(
+                "lastUsedVersionName=${flutter.versionName}\n" +
+                    "lastUsedVersionCode=${flutter.versionCode}\n"
+            )
+        }
+    }
+}

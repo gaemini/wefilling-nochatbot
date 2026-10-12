@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../constants/app_constants.dart';
+import '../../l10n/ui_locale.dart';
 
 /// 시간대별 다이나믹 컬러 적용 위젯
 /// 
@@ -177,10 +178,10 @@ class _TimeInfoWidget extends StatelessWidget {
         children: [
           Text(
             currentTime,
-            style: AppTheme.labelMedium.copyWith(
+            style: uiTextStyle(context, AppTheme.labelMedium.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w600,
-            ),
+            )),
           ),
           const SizedBox(height: 4),
           Container(
@@ -311,10 +312,10 @@ class DynamicColorFab extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 label!,
-                style: AppTheme.labelLarge.copyWith(
+                style: uiTextStyle(context, AppTheme.labelLarge.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w700,
-                ),
+                )),
               ),
             ],
           ),
@@ -370,10 +371,10 @@ class DynamicColorAppBar extends StatelessWidget implements PreferredSizeWidget 
       child: AppBar(
         title: Text(
           title,
-          style: AppTheme.headlineMedium.copyWith(
+          style: uiTextStyle(context, AppTheme.headlineMedium.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.w800,
-          ),
+          )),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -422,15 +423,15 @@ class _DynamicColorToggleState extends State<DynamicColorToggle> {
       ),
       title: Text(
         '다이나믹 컬러',
-        style: AppTheme.titleMedium,
+        style: uiTextStyle(context, AppTheme.titleMedium),
       ),
       subtitle: Text(
         _isDynamicEnabled 
             ? '시간대별 자동 색상 변화 (${AppTheme.getCurrentTimeLabel()})'
             : '고정 색상 사용',
-        style: AppTheme.bodyMedium.copyWith(
+        style: uiTextStyle(context, AppTheme.bodyMedium.copyWith(
           color: AppTheme.textSecondary,
-        ),
+        )),
       ),
       trailing: Switch(
         value: _isDynamicEnabled,
@@ -464,7 +465,7 @@ class TimeColorPreview extends StatelessWidget {
         children: [
           Text(
             '시간대별 컬러 프리뷰',
-            style: AppTheme.titleLarge,
+            style: uiTextStyle(context, AppTheme.titleLarge),
           ),
           const SizedBox(height: 16),
           

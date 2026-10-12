@@ -17,7 +17,7 @@ class AppTheme {
   static const Color _primaryLight = AppColors.primaryLight; // Indigo-400
   static const Color _primaryDark = AppColors.primaryDark; // Indigo-600
 
-  // Modern Secondary Colors (Pink-Orange Gradient) 
+  // Modern Secondary Colors (Pink-Orange Gradient)
   static const Color _secondaryColor = AppColors.secondaryMain; // Pink-500
   static const Color _secondaryLight = AppColors.secondaryLight; // Pink-400
 
@@ -32,7 +32,8 @@ class AppTheme {
 
   // Dark mode backgrounds (Future Dusk Enhanced)
   static const Color _darkBackgroundPrimary = AppColors.darkBackgroundPrimary;
-  static const Color _darkBackgroundSecondary = AppColors.darkBackgroundSecondary;
+  static const Color _darkBackgroundSecondary =
+      AppColors.darkBackgroundSecondary;
   static const Color _darkBackgroundTertiary = AppColors.darkBackgroundTertiary;
 
   // High contrast colors (WCAG compliance)
@@ -42,23 +43,27 @@ class AppTheme {
   static const Color _mediumContrastDark = Color(0xFFE0E0E0); // Light gray
 
   /// 라이트 모드 테마 (2024-2025 트렌드 적용)
-  static ThemeData light() {
+  static ThemeData light({Locale? locale}) {
     final cs = ColorScheme.fromSeed(
       seedColor: _primaryColor, // Modern Indigo primary
       brightness: Brightness.light,
     );
 
-    return ThemeData(
+    final theme = ThemeData(
       useMaterial3: true,
+      fontFamily: 'Inter',
+      fontFamilyFallback: const ['NotoSansKR'],
       colorScheme: cs,
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF171717),
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
         ),
         contentTextStyle: const TextStyle(
-          fontFamily: 'Pretendard',
+          fontFamily: 'Inter',
+          fontFamilyFallback: const ['NotoSansKR'],
           fontSize: 15,
           fontWeight: FontWeight.w700,
           height: 1.25,
@@ -76,6 +81,33 @@ class AppTheme {
       floatingActionButtonTheme: _fabTheme(cs),
       bottomNavigationBarTheme: _bottomNavTheme(cs),
       chipTheme: _chipTheme(cs),
+    );
+    if (locale?.languageCode != 'zh') return theme;
+
+    TextStyle? chineseStyle(TextStyle? style) => style?.copyWith(
+      fontFamily: 'NotoSansSC',
+      height: style.height == null || style.height! < 1.3 ? 1.3 : style.height,
+    );
+    ButtonStyle? chineseButton(ButtonStyle? style) => style?.copyWith(
+      textStyle: WidgetStateProperty.resolveWith(
+        (states) => chineseStyle(style.textStyle?.resolve(states)),
+      ),
+    );
+    return theme.copyWith(
+      textTheme: theme.textTheme.apply(fontFamily: 'NotoSansSC'),
+      primaryTextTheme: theme.primaryTextTheme.apply(fontFamily: 'NotoSansSC'),
+      snackBarTheme: theme.snackBarTheme.copyWith(
+        contentTextStyle: chineseStyle(theme.snackBarTheme.contentTextStyle),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: chineseButton(theme.elevatedButtonTheme.style),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: chineseButton(theme.filledButtonTheme.style),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: chineseButton(theme.outlinedButtonTheme.style),
+      ),
     );
   }
 
@@ -114,7 +146,8 @@ class AppTheme {
             vertical: DesignTokens.s12,
           ),
           textStyle: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w700,
             height: 1.2,
@@ -134,7 +167,8 @@ class AppTheme {
             vertical: DesignTokens.s12,
           ),
           textStyle: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w700,
             height: 1.2,
@@ -154,7 +188,8 @@ class AppTheme {
             vertical: DesignTokens.s12,
           ),
           textStyle: const TextStyle(
-            fontFamily: 'Pretendard',
+            fontFamily: 'Inter',
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 16,
             fontWeight: FontWeight.w700,
             height: 1.2,
@@ -199,10 +234,10 @@ class AppTheme {
       );
 
   static ChipThemeData _chipTheme(ColorScheme cs) => ChipThemeData(
-    selectedColor: cs.primaryContainer,
-    side: BorderSide(color: cs.outline),
-    labelStyle: TextStyle(color: cs.onSurface),
-    padding: const EdgeInsets.all(8),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-  );
+        selectedColor: cs.primaryContainer,
+        side: BorderSide(color: cs.outline),
+        labelStyle: TextStyle(color: cs.onSurface),
+        padding: const EdgeInsets.all(8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      );
 }

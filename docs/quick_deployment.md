@@ -291,9 +291,17 @@ flutter run
 5. **프로덕션 트랙**
    - AAB 파일 업로드
    ```bash
-   flutter build appbundle --release
-   # 파일 위치: build/app/outputs/bundle/release/app-release.aab
+   # versionName/versionCode와 이전 배포 이력을 먼저 검사
+   scripts/android_release.sh check
+
+   # 검증된 production AAB 생성
+   scripts/android_release.sh build
+   # 업로드 파일: dist/android/wefilling-<versionName>-<versionCode>.aab
    ```
+   - Google Play의 **업데이트** 버튼은 새 AAB의 `versionCode`가 설치된 앱보다
+     클 때만 표시됩니다. `pubspec.yaml`의 `+숫자`를 배포마다 반드시 증가시키세요.
+   - `build/app` 아래의 임시 AAB나 일반 `flutter build appbundle` 결과를
+     업로드하지 말고, 위 스크립트가 만든 이름 있는 production AAB만 사용하세요.
 
 6. **검토 제출**
 
@@ -435,7 +443,6 @@ flutter run
 **작성일**: 2025-11-26  
 **예상 소요 시간**: 30-60분  
 **난이도**: 중급
-
 
 
 

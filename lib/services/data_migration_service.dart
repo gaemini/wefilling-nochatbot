@@ -11,17 +11,17 @@ class DataMigrationService {
   /// 모든 모임 데이터에 viewCount, commentCount 필드 추가
   Future<bool> migrateMeetupStatistics() async {
     try {
-      Logger.log('🔄 모임 통계 필드 마이그레이션 시작...');
+      if (Logger.isVerboseEnabled) Logger.log('🔄 모임 통계 필드 마이그레이션 시작...');
       
       // 모든 모임 문서 가져오기
       final QuerySnapshot meetupsSnapshot = await _firestore
           .collection('meetups')
           .get();
       
-      Logger.log('📊 총 ${meetupsSnapshot.docs.length}개의 모임 발견');
+      if (Logger.isVerboseEnabled) Logger.log('📊 총 ${meetupsSnapshot.docs.length}개의 모임 발견');
       
       if (meetupsSnapshot.docs.isEmpty) {
-        Logger.log('⚠️ 마이그레이션할 모임이 없습니다');
+        if (Logger.isVerboseEnabled) Logger.log('⚠️ 마이그레이션할 모임이 없습니다');
         return true;
       }
 
@@ -49,7 +49,7 @@ class DataMigrationService {
           final commentCount = await _calculateCommentCount(doc.id);
           updates['commentCount'] = commentCount;
           needsUpdate = true;
-          Logger.log('📝 ${doc.id}: 댓글 ${commentCount}개 발견');
+          if (Logger.isVerboseEnabled) Logger.log('📝 ${doc.id}: 댓글 ${commentCount}개 발견');
         }
         
         if (needsUpdate) {
@@ -57,13 +57,13 @@ class DataMigrationService {
           batch.update(doc.reference, updates);
           updateCount++;
           
-          Logger.log('✏️ ${doc.id} (${data['title'] ?? 'Unknown'}) 업데이트 예정');
+          if (Logger.isVerboseEnabled) Logger.log('✏️ ${doc.id} (${data['title'] ?? 'Unknown'}) 업데이트 예정');
         }
         
         // 배치 크기 제한 (Firestore 배치는 최대 500개)
         batchCount++;
         if (batchCount >= 400) {
-          Logger.log('📦 배치 실행 중... (${updateCount}개 업데이트)');
+          if (Logger.isVerboseEnabled) Logger.log('📦 배치 실행 중... (${updateCount}개 업데이트)');
           await batch.commit();
           batch = _firestore.batch();
           batchCount = 0;
@@ -72,12 +72,12 @@ class DataMigrationService {
       
       // 남은 배치 실행
       if (batchCount > 0) {
-        Logger.log('📦 최종 배치 실행 중... (${updateCount}개 업데이트)');
+        if (Logger.isVerboseEnabled) Logger.log('📦 최종 배치 실행 중... (${updateCount}개 업데이트)');
         await batch.commit();
       }
       
-      Logger.log('✅ 모임 통계 필드 마이그레이션 완료!');
-      Logger.log('📈 총 ${updateCount}개 모임이 업데이트되었습니다');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 모임 통계 필드 마이그레이션 완료!');
+      if (Logger.isVerboseEnabled) Logger.log('📈 총 ${updateCount}개 모임이 업데이트되었습니다');
       
       return true;
       
@@ -105,7 +105,7 @@ class DataMigrationService {
   /// 마이그레이션 상태 확인
   Future<Map<String, dynamic>> checkMigrationStatus() async {
     try {
-      Logger.log('🔍 마이그레이션 상태 확인 중...');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 마이그레이션 상태 확인 중...');
       
       final QuerySnapshot meetupsSnapshot = await _firestore
           .collection('meetups')
@@ -138,11 +138,11 @@ class DataMigrationService {
         'needsMigration': withViewCount < totalCount || withCommentCount < totalCount,
       };
       
-      Logger.log('📊 마이그레이션 상태:');
-      Logger.log('   - 샘플 모임 수: ${status['totalSampled']}');
-      Logger.log('   - viewCount 있음: ${status['withViewCount']} (${status['viewCountPercentage']}%)');
-      Logger.log('   - commentCount 있음: ${status['withCommentCount']} (${status['commentCountPercentage']}%)');
-      Logger.log('   - 마이그레이션 필요: ${status['needsMigration']}');
+      if (Logger.isVerboseEnabled) Logger.log('📊 마이그레이션 상태:');
+      if (Logger.isVerboseEnabled) Logger.log('   - 샘플 모임 수: ${status['totalSampled']}');
+      if (Logger.isVerboseEnabled) Logger.log('   - viewCount 있음: ${status['withViewCount']} (${status['viewCountPercentage']}%)');
+      if (Logger.isVerboseEnabled) Logger.log('   - commentCount 있음: ${status['withCommentCount']} (${status['commentCountPercentage']}%)');
+      if (Logger.isVerboseEnabled) Logger.log('   - 마이그레이션 필요: ${status['needsMigration']}');
       
       return status;
       
@@ -158,7 +158,7 @@ class DataMigrationService {
   /// 특정 모임 하나만 테스트 업데이트
   Future<bool> testUpdateSingleMeetup(String meetupId) async {
     try {
-      Logger.log('🧪 테스트 업데이트 시작: $meetupId');
+      if (Logger.isVerboseEnabled) Logger.log('🧪 테스트 업데이트 시작: $meetupId');
       
       final DocumentSnapshot doc = await _firestore
           .collection('meetups')
@@ -186,10 +186,10 @@ class DataMigrationService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       
-      Logger.log('✅ 테스트 업데이트 완료: $meetupId');
-      Logger.log('   - 제목: ${data['title']}');
-      Logger.log('   - 조회수: ${data['viewCount'] ?? 0}');
-      Logger.log('   - 댓글수: $commentCount');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 테스트 업데이트 완료: $meetupId');
+      if (Logger.isVerboseEnabled) Logger.log('   - 제목: ${data['title']}');
+      if (Logger.isVerboseEnabled) Logger.log('   - 조회수: ${data['viewCount'] ?? 0}');
+      if (Logger.isVerboseEnabled) Logger.log('   - 댓글수: $commentCount');
       
       return true;
       

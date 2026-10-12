@@ -3,6 +3,8 @@
 
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../l10n/ui_locale.dart';
+import '../l10n/chinese_terms.dart';
 
 class TermsScreen extends StatelessWidget {
   const TermsScreen({Key? key}) : super(key: key);
@@ -22,8 +24,9 @@ class TermsScreen extends StatelessWidget {
         ),
         title: Text(
           AppLocalizations.of(context)!.termsOfService ?? "",
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: const ['NotoSansKR'],
             fontSize: 18,
             fontWeight: FontWeight.w600,
             color: Color(0xFF111827),
@@ -40,7 +43,10 @@ class TermsScreen extends StatelessWidget {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: isKo ? _buildKoreanTerms() : _buildEnglishTerms(),
+          children: isChineseUi(context)
+              ? [for (final section in chineseTerms)
+                  _buildSection(section.$1, section.$2, chinese: true)]
+              : isKo ? _buildKoreanTerms() : _buildEnglishTerms(),
         ),
       ),
     );
@@ -205,7 +211,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               '부칙',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF111827),
@@ -215,7 +222,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               '이 약관은 2025년 11월 25일부터 적용됩니다.',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
                 height: 1.5,
@@ -225,7 +233,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               '문의: wefilling@gmail.com',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
               ),
@@ -395,7 +404,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               'Supplementary Provisions',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF111827),
@@ -405,7 +415,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               'These Terms become effective from November 25, 2025.',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
                 height: 1.5,
@@ -415,7 +426,8 @@ class TermsScreen extends StatelessWidget {
             const Text(
               'Contact: wefilling@gmail.com',
               style: TextStyle(
-                fontFamily: 'Pretendard',
+                fontFamily: 'Inter',
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 color: Color(0xFF6B7280),
               ),
@@ -426,7 +438,7 @@ class TermsScreen extends StatelessWidget {
     ];
   }
 
-  Widget _buildSection(String title, String content) {
+  Widget _buildSection(String title, String content, {bool chinese = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 32),
       child: Column(
@@ -434,8 +446,9 @@ class TermsScreen extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+            style: TextStyle(
+              fontFamily: chinese ? 'NotoSansSC' : 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
@@ -445,8 +458,9 @@ class TermsScreen extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             content,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+            style: TextStyle(
+              fontFamily: chinese ? 'NotoSansSC' : 'Inter',
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 15,
               height: 1.7,
               color: Color(0xFF374151),

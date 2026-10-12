@@ -12,6 +12,7 @@ class MeetupParticipant {
   final String userEmail;
   final String? userProfileImage;
   final String? userCountry; // 사용자 국가 정보
+  final bool isDeletedAccount;
   final DateTime joinedAt;
   final String status; // 'pending', 'approved', 'rejected'
   final String? message; // 참여 신청 시 메시지
@@ -24,6 +25,7 @@ class MeetupParticipant {
     required this.userEmail,
     this.userProfileImage,
     this.userCountry,
+    this.isDeletedAccount = false,
     required this.joinedAt,
     this.status = 'pending',
     this.message,
@@ -38,6 +40,7 @@ class MeetupParticipant {
       userEmail: json['userEmail'] ?? '',
       userProfileImage: json['userProfileImage'],
       userCountry: json['userCountry'],
+      isDeletedAccount: json['isDeletedAccount'] == true,
       joinedAt: json['joinedAt']?.toDate() ?? DateTime.now(),
       status: json['status'] ?? 'pending',
       message: json['message'],
@@ -53,10 +56,22 @@ class MeetupParticipant {
       'userEmail': userEmail,
       'userProfileImage': userProfileImage,
       'userCountry': userCountry,
+      'isDeletedAccount': isDeletedAccount,
       'joinedAt': joinedAt,
       'status': status,
       'message': message,
     };
+  }
+
+  /// 실제 사용자 프로필로 이동할 수 있는 참여자인지 확인합니다.
+  /// 탈퇴 사용자와 호스트 정보가 없는 레거시 자리표시자는 제외합니다.
+  bool get hasViewableProfile {
+    final normalizedUserId = userId.trim();
+    return normalizedUserId.isNotEmpty &&
+        normalizedUserId != 'host' &&
+        normalizedUserId != 'deleted' &&
+        !isDeletedAccount &&
+        userName != 'DELETED_ACCOUNT';
   }
 
   // 포맷된 참여 일시 반환
@@ -79,6 +94,13 @@ class MeetupParticipant {
 
   // 상태 텍스트 반환 (로케일 대응)
   String getStatusTextLocalized(String languageCode) {
+    if (languageCode == 'zh') {
+      return switch (status) {
+        'approved' => '已通过',
+        'rejected' => '已拒绝',
+        _ => '待审核',
+      };
+    }
     if (languageCode == 'en') {
       switch (status) {
         case 'approved':
@@ -110,6 +132,7 @@ class MeetupParticipant {
     String? userEmail,
     String? userProfileImage,
     String? userCountry,
+    bool? isDeletedAccount,
     DateTime? joinedAt,
     String? status,
     String? message,
@@ -122,6 +145,7 @@ class MeetupParticipant {
       userEmail: userEmail ?? this.userEmail,
       userProfileImage: userProfileImage ?? this.userProfileImage,
       userCountry: userCountry ?? this.userCountry,
+      isDeletedAccount: isDeletedAccount ?? this.isDeletedAccount,
       joinedAt: joinedAt ?? this.joinedAt,
       status: status ?? this.status,
       message: message ?? this.message,

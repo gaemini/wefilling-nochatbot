@@ -4,10 +4,12 @@
 // 사용자 프로필 정보 저장 및 검색
 // 닉네임 업데이트 기능
 
-import 'dart:io' show Platform;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'fcm_service.dart';
@@ -18,6 +20,8 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions =
+      AppFunctions.instance;
 
   // 현재 로그인된 사용자
   User? get currentUser => _auth.currentUser;
@@ -128,12 +132,20 @@ class AuthService {
   //   }
   // }
 
-  // 닉네임 업데이트
+  // 닉네임 업데이트는 nicknameClaims 트랜잭션을 우회하지 않는다.
   Future<void> updateNickname(String nickname) async {
-    if (currentUser != null) {
-      await _firestore.collection('users').doc(currentUser!.uid).update({
-        'nickname': nickname,
-      });
+    if (currentUser == null) {
+      throw FirebaseAuthException(
+        code: 'unauthenticated',
+        message: '로그인이 필요합니다.',
+      );
+    }
+    final response = await _functions
+        .httpsCallable('updateMyNicknameSecure')
+        .call(<String, dynamic>{'nickname': nickname.trim()});
+    final data = response.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('닉네임을 저장하지 못했습니다.');
     }
   }
 
@@ -185,7 +197,7 @@ class AuthService {
         
         // 5분 초과 시 재인증 요구
         if (timeSinceLogin.inMinutes > 5) {
-          Logger.warning('재인증 필요: ${timeSinceLogin.inMinutes}분 경과');
+          if (Logger.isVerboseEnabled) Logger.warning('재인증 필요: ${timeSinceLogin.inMinutes}분 경과');
           throw FirebaseAuthException(
             code: 'requires-recent-login',
             message: '계정 삭제를 위해 다시 로그인해주세요',
@@ -451,8 +463,17 @@ class AuthService {
 
   /// Storage의 사용자 파일 삭제
   Future<void> _deleteStorageFiles(String userId) async {
+    // 사용자 객체는 레거시 버킷과 현재 업로드 버킷 어디에나 있을 수 있다.
+    for (final storage in AppStorage.allKnown) {
+      await _deleteStorageFilesIn(storage, userId);
+    }
+  }
+
+  Future<void> _deleteStorageFilesIn(
+    FirebaseStorage storage,
+    String userId,
+  ) async {
     try {
-      final storage = FirebaseStorage.instance;
 
       // 프로필 이미지 삭제
       try {

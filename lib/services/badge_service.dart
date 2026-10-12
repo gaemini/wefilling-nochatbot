@@ -1,14 +1,20 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/app_notification.dart';
+import '../utils/notification_unread_counter_policy.dart';
 import 'content_filter_service.dart';
-import 'snack_chat_active_conversation.dart';
+import 'snack_chat_service.dart';
 import '../utils/logger.dart';
 
 /// iOS/Android 앱 아이콘 배지 동기화 서비스 (이벤트 기반)
@@ -17,223 +23,267 @@ import '../utils/logger.dart';
 class BadgeService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-  
-  static StreamSubscription<DocumentSnapshot>? _userDocSubscription;
-  static StreamSubscription<QuerySnapshot>? _notificationsSubscription;
-  static StreamSubscription<QuerySnapshot>? _snackChatsSubscription;
-  
+  static final FirebaseFunctions _functions = AppFunctions.instance;
+
+  static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _userDocSubscription;
+  static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _notificationsSubscription;
+  static StreamSubscription<int>? _snackChatsSubscription;
+
+  static String? _activeUserId;
+  static String? _invalidatedUserId;
+  static int _sessionGeneration = 0;
   static int? _currentBadgeCount;
-  
+
   static Timer? _updateDebounceTimer;
-  static int _debugBadgeUpdateLogs = 0;
-  
+  static DocumentSnapshot<Map<String, dynamic>>? _latestUserSnapshot;
+  static QuerySnapshot<Map<String, dynamic>>? _latestNotificationsSnapshot;
+  static int? _latestSnackChatUnreadCount;
+  static Future<void>? _badgeUpdateInFlight;
+  static Future<void>? _notificationReconcileInFlight;
+  static bool _badgeUpdateRequested = false;
+  static String? _pendingBadgeUserId;
+  static int? _pendingBadgeGeneration;
+
+  static const int _dmUnreadCounterVersion = 2;
+
   /// 실시간 배지 리스너 시작
   static Future<void> startRealtimeBadgeSync() async {
+    // Account switches must invalidate every callback and in-flight recount
+    // from the previous user before the new session starts.
+    await stopRealtimeBadgeSync();
+
     final user = _auth.currentUser;
     if (user == null) {
       await _setBadge(0);
+      _currentBadgeCount = 0;
       return;
     }
-    
-    // 기존 구독 정리
-    await stopRealtimeBadgeSync();
-    
-    if (!(Platform.isIOS || Platform.isAndroid)) return;
-    
-    final supported = await AppBadgePlus.isSupported();
-    if (!supported) return;
-    
-    try {
-      // 서버 카운터 동기화 (앱 시작 시 1회)
-      await _syncServerCounters(user.uid);
-      
-      // 즉시 정확한 배지로 초기화
-      await _updateBadge();
-      
-      // 1) users 문서 리스닝 (dmUnreadTotal 변경 감지)
-      _userDocSubscription = _firestore
-          .collection('users')
-          .doc(user.uid)
-          .snapshots()
-          .listen(
-            (snapshot) => _onDataChanged(),
-            onError: (e) => Logger.error('users 문서 리스닝 실패', e),
-          );
-      
-      // 2) 알림 컬렉션 리스닝 (안 읽은 알림 변경 감지)
-      _notificationsSubscription = _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: user.uid)
-          .where('isRead', isEqualTo: false)
-          .snapshots()
-          .listen(
-            (snapshot) => _onDataChanged(),
-            onError: (e) => Logger.error('알림 컬렉션 리스닝 실패', e),
-          );
 
-      // 3) snack_chats 컬렉션 리스닝 (SC 미읽음 변경 감지)
-      _snackChatsSubscription = _firestore
-          .collection('snack_chats')
-          .where('participantIds', arrayContains: user.uid)
-          .snapshots()
+    final userId = user.uid;
+    final generation = _sessionGeneration;
+    _activeUserId = userId;
+    _invalidatedUserId = null;
+
+    // Never display the previous account's cached value while the new
+    // account is being recounted.
+    await _setBadge(0);
+    _currentBadgeCount = 0;
+
+    if (!(Platform.isIOS || Platform.isAndroid)) return;
+
+    final supported = await AppBadgePlus.isSupported();
+    if (!supported || !_isActiveSession(userId, generation)) return;
+
+    try {
+      // 서버 카운터 점검 (구버전 계정만 trusted callable로 1회 마이그레이션)
+      await _syncServerCounters(userId);
+      if (!_isActiveSession(userId, generation)) return;
+
+      // 즉시 정확한 배지로 초기화
+      await _updateBadge(
+        expectedUserId: userId,
+        expectedGeneration: generation,
+      );
+      if (!_isActiveSession(userId, generation)) return;
+
+      // 1) users 문서 리스닝 (신뢰 가능한 알림/DM aggregate 변경 감지)
+      _userDocSubscription =
+          _firestore.collection('users').doc(userId).snapshots().listen(
+        (snapshot) {
+          _latestUserSnapshot = snapshot;
+          unawaited(_configureNotificationCounterPath(
+            snapshot,
+            userId,
+            generation,
+          ));
+          _onDataChanged(userId, generation);
+        },
+        onError: (e) => Logger.error('users 문서 리스닝 실패', e),
+      );
+
+      // 2) Snack Chat 목록/하단 탭과 동일한 공유 stream을 사용한다.
+      // 배지를 위해 participant room query를 하나 더 열지 않는다.
+      _snackChatsSubscription = SnackChatService()
+          .getTotalUnreadCount(excludeActiveRoom: true)
           .listen(
-            (snapshot) => _onDataChanged(),
-            onError: (e) => Logger.error('snack_chats 리스닝 실패', e),
-          );
+        (unreadTotal) {
+          if (!_isActiveSession(userId, generation)) return;
+          _latestSnackChatUnreadCount = unreadTotal;
+          _onDataChanged(userId, generation);
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          Logger.error('Snack Chat 배지 스트림 실패', error, stackTrace);
+        },
+      );
     } catch (e) {
       Logger.error('실시간 배지 동기화 시작 실패', e);
-      // 실패 시에도 배지를 0으로 초기화
-      await _setBadge(0);
+      if (_isActiveSession(userId, generation)) {
+        await _setBadge(0);
+        _currentBadgeCount = 0;
+      }
     }
   }
-  
-  /// 서버 카운터를 실제 값으로 동기화 (앱 시작 시 1회)
+
+  static bool _isActiveSession(String userId, int generation) {
+    return _sessionGeneration == generation &&
+        _activeUserId == userId &&
+        _auth.currentUser?.uid == userId;
+  }
+
+  /// 실시간 listener가 아직 시작되지 않은 push 진입에서도 수동 갱신은
+  /// 허용하되, logout으로 무효화됐거나 이전 generation인 작업은 차단한다.
+  static bool _isCurrentAccountContext(String userId, int generation) {
+    return isBadgeAccountContextCurrent(
+      authenticatedUserId: _auth.currentUser?.uid,
+      activeUserId: _activeUserId,
+      invalidatedUserId: _invalidatedUserId,
+      currentGeneration: _sessionGeneration,
+      expectedUserId: userId,
+      expectedGeneration: generation,
+    );
+  }
+
+  /// 서버 카운터를 실제 값으로 동기화 (구버전 계정만 앱 시작 시 1회)
   static Future<void> _syncServerCounters(String userId) async {
     // 최대 3번 재시도
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
-        final actualNotificationCount = await _getVisibleUnreadNotificationCount(
-          userId: userId,
-        );
+        final userRef = _firestore.collection('users').doc(userId);
+        final userSnapshot =
+            await userRef.get().timeout(const Duration(seconds: 5));
+        if (!userSnapshot.exists) {
+          throw StateError('배지 카운터를 동기화할 사용자 문서가 없습니다.');
+        }
 
-        // DM 안 읽은 수 계산 (✅ "카운터 신뢰"가 아니라 실제 메시지 기반으로 재계산)
-        final actualDmUnreadCount = await _recountAndRepairDmUnread(userId: userId);
+        final userData = userSnapshot.data();
+        var notificationCount = trustedNotificationUnreadTotal(userData);
+        if (notificationUnreadCounterNeedsReconciliation(userData)) {
+          final result = await _reconcileNotificationUnreadTotal();
+          if (result.trusted) notificationCount = result.total;
+        }
 
-        // users 문서의 카운터를 실제 값으로 업데이트
-        // ⚠️ merge set은 문서를 "부분 필드만 가진 상태로 생성"할 수 있으므로 update만 허용한다.
-        await _firestore.collection('users').doc(userId).update({
-          'notificationUnreadTotal': actualNotificationCount,
-          'dmUnreadTotal': actualDmUnreadCount,
-        });
+        final rawDmTotal = userData?['dmUnreadTotal'];
+        final storedDmTotal =
+            rawDmTotal is num && rawDmTotal >= 0 ? rawDmTotal.toInt() : null;
+        final storedVersion = userData?['dmUnreadCounterVersion'];
+        final hasTrustedDmTotal = storedDmTotal != null &&
+            storedVersion is num &&
+            storedVersion.toInt() == _dmUnreadCounterVersion;
+        final actualDmUnreadCount =
+            hasTrustedDmTotal ? storedDmTotal : await _reconcileDmUnreadTotal();
 
-        Logger.log('✅ 서버 카운터 동기화 완료: 알림=$actualNotificationCount, DM=$actualDmUnreadCount');
+        if (Logger.isVerboseEnabled) {
+          Logger.log(
+            '✅ 서버 카운터 동기화 완료: '
+            '알림=${notificationCount ?? '문서 fallback'}, '
+            'DM=$actualDmUnreadCount',
+          );
+        }
         return; // 성공하면 즉시 리턴
       } catch (e) {
-        Logger.error('서버 카운터 동기화 실패 (시도 ${attempt + 1}/3)', e);
-        
         // 마지막 시도가 아니면 재시도
         if (attempt < 2) {
+          if (Logger.isVerboseEnabled) Logger.warning('서버 카운터 동기화 재시도 예정');
           await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
           continue;
         }
-        
-        // 모든 재시도 실패 시 카운터를 0으로 설정
-        try {
-          // 문서가 없는 경우는 생성하지 않는다(가입 흐름/스키마 일관성 유지)
-          await _firestore.collection('users').doc(userId).update({
-            'notificationUnreadTotal': 0,
-            'dmUnreadTotal': 0,
-          });
-          Logger.log('⚠️ 서버 카운터 동기화 실패 - 0으로 초기화');
-        } catch (_) {
-          Logger.error('❌ 서버 카운터 초기화도 실패', _);
-        }
+
+        // 일시적인 네트워크/권한 실패를 "미읽음 0개"로 해석하면 실제
+        // 카운터를 잃는다. 마지막 정상 값을 유지하고 다음 기회에 재시도한다.
+        Logger.error('❌ 서버 카운터 동기화 최종 실패 - 기존 값 유지', e);
       }
     }
   }
 
-  /// DM unread를 실제 메시지(isRead=false)로 재계산하고, conversations.unreadCount[userId]도 함께 복구한다.
-  ///
-  /// 왜 필요한가?
-  /// - 과거 버그/중복 participants/경쟁 조건으로 `conversations.unreadCount` 또는 `users.dmUnreadTotal`이 드리프트하면
-  ///   앱 아이콘 배지가 "0이 아닌 값"으로 고정될 수 있다.
-  /// - 앱 시작 시 1회 "진짜 값"으로 되돌려 배지/카운터를 안정화한다.
-  static Future<int> _recountAndRepairDmUnread({required String userId}) async {
-    // conversations 스캔 (타임아웃 포함)
-    final convSnap = await _firestore
-        .collection('conversations')
-        .where('participants', arrayContains: userId)
-        .get()
-        .timeout(const Duration(seconds: 15));
+  static Future<int> _reconcileDmUnreadTotal() async {
+    final response = await _functions
+        .httpsCallable('reconcileDMUnreadTotalSecure')
+        .call()
+        .timeout(const Duration(seconds: 60));
+    final data = response.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('DM 미읽음 총합을 마이그레이션하지 못했습니다.');
+    }
+    final value = data['dmUnreadTotal'];
+    return value is num && value >= 0 ? value.toInt() : 0;
+  }
 
-    int total = 0;
-    final List<Future<void>> repairs = [];
+  static Future<_NotificationCounterReconcileResult>
+      _reconcileNotificationUnreadTotal() async {
+    final response = await _functions
+        .httpsCallable('reconcileNotificationUnreadTotalSecure')
+        .call()
+        .timeout(const Duration(seconds: 60));
+    final data = response.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('알림 미읽음 총합을 마이그레이션하지 못했습니다.');
+    }
+    final rawTotal = data['notificationUnreadTotal'];
+    return _NotificationCounterReconcileResult(
+      total: rawTotal is num && rawTotal >= 0 ? rawTotal.toInt() : 0,
+      trusted: data['trusted'] == true,
+    );
+  }
 
-    for (final doc in convSnap.docs) {
+  static Future<void> _configureNotificationCounterPath(
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+    String userId,
+    int generation,
+  ) async {
+    if (!_isActiveSession(userId, generation)) return;
+    final data = snapshot.data();
+    if (trustedNotificationUnreadTotal(data) != null) {
+      final fallback = _notificationsSubscription;
+      _notificationsSubscription = null;
+      _latestNotificationsSnapshot = null;
+      await fallback?.cancel();
+      return;
+    }
+
+    // Block-policy accounts and migration/network failures retain the exact
+    // historical document path. It is a compatibility fallback, not the
+    // normal badge path.
+    _notificationsSubscription ??= _firestore
+        .collection('notifications')
+        .where('userId', isEqualTo: userId)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen(
+      (fallbackSnapshot) {
+        if (!_isActiveSession(userId, generation)) return;
+        _latestNotificationsSnapshot = fallbackSnapshot;
+        _onDataChanged(userId, generation);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        Logger.error('알림 fallback 리스닝 실패', error, stackTrace);
+      },
+    );
+
+    if (!notificationUnreadCounterNeedsReconciliation(data) ||
+        _notificationReconcileInFlight != null) {
+      return;
+    }
+    late final Future<void> request;
+    request = (() async {
       try {
-        final data = doc.data();
-
-        final archivedBy = List<String>.from(data['archivedBy'] ?? []);
-        if (archivedBy.contains(userId)) continue;
-
-        // DM 목록/배지 정책과 일치: 내가 나간 뒤 새 메시지 없으면 제외
-        final userLeftAt = (data['userLeftAt'] as Map?) ?? const {};
-        final lastMessageTime = data['lastMessageTime'];
-        if (userLeftAt[userId] != null && lastMessageTime is Timestamp) {
-          final left = (userLeftAt[userId] as Timestamp).toDate();
-          final last = lastMessageTime.toDate();
-          if (!last.isAfter(left)) {
-            continue;
-          }
+        await _reconcileNotificationUnreadTotal();
+      } catch (error) {
+        Logger.error('알림 aggregate 보정 실패 - 문서 fallback 유지', error);
+      } finally {
+        if (identical(_notificationReconcileInFlight, request)) {
+          _notificationReconcileInFlight = null;
         }
-
-        // 익명 방에서 모든 상대방이 나간 경우(목록에서 숨김) 제외
-        final participants = (data['participants'] as List?)
-                ?.map((e) => e.toString())
-                .where((s) => s.isNotEmpty)
-                .toSet() ??
-            <String>{};
-        if (doc.id.startsWith('anon_') && participants.isNotEmpty) {
-          final others = participants.where((id) => id != userId).toSet();
-          if (others.isNotEmpty) {
-            final allOthersLeft = others.every((otherId) => userLeftAt[otherId] != null);
-            if (allOthersLeft) continue;
-          }
-        }
-
-        final unreadMap = (data['unreadCount'] as Map?) ?? const {};
-        final rawClaimed = unreadMap[userId];
-        final claimed = rawClaimed is int ? rawClaimed : (rawClaimed is num ? rawClaimed.toInt() : 0);
-
-        // 음수인 경우: 반드시 복구해야 하므로 메시지 스캔 필요
-        // 0인 경우: 스캔 생략 가능
-        if (claimed == 0) {
-          continue;
-        }
-
-        // claimed < 0이면 반드시 스캔, claimed > 0이면 기존 로직대로 스캔
-        final unreadSnap = await doc.reference
-            .collection('messages')
-            .where('isRead', isEqualTo: false)
-            .limit(200)
-            .get()
-            .timeout(const Duration(seconds: 10));
-
-        int actual = 0;
-        for (final m in unreadSnap.docs) {
-          final md = m.data();
-          final senderId = (md['senderId'] ?? '').toString();
-          if (senderId.isNotEmpty && senderId != userId) {
-            actual++;
-          }
-        }
-
-        total += actual;
-
-        if (actual != claimed) {
-          repairs.add(doc.reference.set({
-            'unreadCount': {userId: actual},
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true)));
-          Logger.log('🔧 [BadgeService] unreadCount 복구: ${doc.id} claimed=$claimed → actual=$actual');
-        }
-      } catch (_) {
-        // best-effort: 개별 대화방 오류는 전체 동기화를 막지 않음
-        continue;
       }
-    }
-
-    // repairs는 best-effort 병렬 처리 (과도 동시성 방지: 10개씩)
-    for (var i = 0; i < repairs.length; i += 10) {
-      final batch = repairs.sublist(i, (i + 10).clamp(0, repairs.length));
-      await Future.wait(batch);
-    }
-
-    return total < 0 ? 0 : total;
+    })();
+    _notificationReconcileInFlight = request;
   }
-  
+
   /// 실시간 배지 리스너 중지
   static Future<void> stopRealtimeBadgeSync() async {
+    _sessionGeneration++;
+    _activeUserId = null;
     await _userDocSubscription?.cancel();
     await _notificationsSubscription?.cancel();
     await _snackChatsSubscription?.cancel();
@@ -242,83 +292,157 @@ class BadgeService {
     _snackChatsSubscription = null;
     _updateDebounceTimer?.cancel();
     _updateDebounceTimer = null;
+    _notificationReconcileInFlight = null;
+    _latestUserSnapshot = null;
+    _latestNotificationsSnapshot = null;
+    _latestSnackChatUnreadCount = null;
+    _badgeUpdateRequested = false;
+    _pendingBadgeUserId = null;
+    _pendingBadgeGeneration = null;
   }
 
   /// 로그아웃 시 배지를 즉시 제거한다.
   /// - 이전 계정의 배지 숫자가 다음 세션까지 남지 않도록 강제 초기화
   static Future<void> clearBadgeOnSignOut() async {
     try {
+      _invalidatedUserId = _auth.currentUser?.uid;
       await stopRealtimeBadgeSync();
       await _setBadge(0);
+      // Account isolation is the only place where a global tray clear is
+      // intentional. Normal room reads cancel only that room in FCMService.
+      await _clearAndroidNotificationTray();
       _currentBadgeCount = 0;
-      Logger.log('✅ 로그아웃 배지 초기화 완료');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 로그아웃 배지 초기화 완료');
     } catch (e) {
       Logger.error('⚠️ 로그아웃 배지 초기화 실패(계속 진행): $e');
     }
   }
-  
+
   /// 데이터 변경 감지 시 호출 (디바운싱 적용)
-  static void _onDataChanged() {
+  static void _onDataChanged(String userId, int generation) {
+    if (!_isActiveSession(userId, generation)) return;
     // 짧은 시간 내 여러 변경이 발생하면 마지막 것만 처리
     _updateDebounceTimer?.cancel();
     _updateDebounceTimer = Timer(const Duration(milliseconds: 100), () {
-      _updateBadge();
+      _updateBadge(
+        expectedUserId: userId,
+        expectedGeneration: generation,
+      );
     });
   }
-  
+
   /// 배지 업데이트 (내부 메서드)
-  static Future<void> _updateBadge() async {
+  static Future<void> _updateBadge({
+    String? expectedUserId,
+    int? expectedGeneration,
+  }) {
+    _badgeUpdateRequested = true;
+    _pendingBadgeUserId = expectedUserId;
+    _pendingBadgeGeneration = expectedGeneration;
+    final inFlight = _badgeUpdateInFlight;
+    if (inFlight != null) return inFlight;
+
+    final completer = Completer<void>();
+    _badgeUpdateInFlight = completer.future;
+    unawaited(_drainBadgeUpdates(completer));
+    return completer.future;
+  }
+
+  static Future<void> _drainBadgeUpdates(Completer<void> completer) async {
+    try {
+      while (_badgeUpdateRequested) {
+        _badgeUpdateRequested = false;
+        final userId = _pendingBadgeUserId;
+        final generation = _pendingBadgeGeneration;
+        await _performBadgeUpdate(
+          expectedUserId: userId,
+          expectedGeneration: generation,
+        );
+      }
+      if (!completer.isCompleted) completer.complete();
+    } catch (error, stackTrace) {
+      if (!completer.isCompleted) completer.completeError(error, stackTrace);
+    } finally {
+      if (identical(_badgeUpdateInFlight, completer.future)) {
+        _badgeUpdateInFlight = null;
+      }
+      // 완료 직전에 새 요청이 들어온 극단적인 경우에도 갱신을 잃지 않는다.
+      if (_badgeUpdateRequested && _badgeUpdateInFlight == null) {
+        unawaited(_updateBadge(
+          expectedUserId: _pendingBadgeUserId,
+          expectedGeneration: _pendingBadgeGeneration,
+        ));
+      }
+    }
+  }
+
+  static Future<void> _performBadgeUpdate({
+    String? expectedUserId,
+    int? expectedGeneration,
+  }) async {
     final user = _auth.currentUser;
     if (user == null) {
       await _setBadge(0);
+      _currentBadgeCount = 0;
       return;
     }
-    
+
+    final userId = expectedUserId ?? user.uid;
+    bool isCurrentRequest() {
+      if (_auth.currentUser?.uid != userId) return false;
+      if (expectedGeneration == null) return true;
+      return _isCurrentAccountContext(userId, expectedGeneration);
+    }
+
+    if (!isCurrentRequest()) return;
+
     // 최대 3번 재시도
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
-        final notificationCount = await _getVisibleUnreadNotificationCount(
-          userId: user.uid,
-        );
-
-        // 2) DM 안 읽은 수 (users.dmUnreadTotal 우선)
-        final dmUnreadCount = await _getDmUnreadCount(userId: user.uid);
-
-        // 3) SnackChat 안 읽은 수 (활성 대화방 제외)
-        final scUnreadCount = await _getSnackChatUnreadCount(userId: user.uid);
+        // 서로 독립적인 세 카운트를 병렬로 읽어 느린 네트워크에서 배지
+        // 확정 시간을 줄인다. 위 coordinator가 중복 갱신은 직렬화한다.
+        final counts = await Future.wait<int>([
+          _getVisibleUnreadNotificationCount(userId: userId),
+          _getDmUnreadCount(userId: userId),
+          _getSnackChatUnreadCount(userId: userId),
+        ]);
+        if (!isCurrentRequest()) return;
+        final notificationCount = counts[0];
+        final dmUnreadCount = counts[1];
+        final scUnreadCount = counts[2];
 
         final totalBadge = notificationCount + dmUnreadCount + scUnreadCount;
 
         if (_currentBadgeCount != totalBadge) {
           await _setBadge(totalBadge);
           _currentBadgeCount = totalBadge;
-          if (_debugBadgeUpdateLogs < 10) {
-            _debugBadgeUpdateLogs++;
-            Logger.log('✅ 배지 업데이트: $totalBadge (알림: $notificationCount, DM: $dmUnreadCount, SC: $scUnreadCount)');
-          }
         }
-        
+
         // 성공하면 즉시 리턴
         return;
       } catch (e) {
-        Logger.error('배지 업데이트 실패 (시도 ${attempt + 1}/3)', e);
-        
+        if (!isCurrentRequest()) return;
         // 마지막 시도가 아니면 재시도
         if (attempt < 2) {
+          if (Logger.isVerboseEnabled) Logger.warning('배지 업데이트 재시도 예정');
           await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
           continue;
         }
-        
-        // 모든 재시도 실패 시 0으로 초기화
-        await _setBadge(0);
-        _currentBadgeCount = 0;
-        Logger.error('❌ 배지 업데이트 완전 실패 - 0으로 초기화', e);
+
+        // 조회 실패는 미읽음 0개를 의미하지 않는다. 이전 정상 배지를
+        // 유지해야 네트워크 단절 때 아이콘 숫자가 거짓으로 사라지지 않는다.
+        Logger.error('❌ 배지 업데이트 최종 실패 - 마지막 정상 값 유지', e);
       }
     }
   }
-  
+
   /// DM 안 읽은 수 가져오기 (users.dmUnreadTotal 우선, conversations fallback)
   static Future<int> _getDmUnreadCount({required String userId}) async {
+    if (_activeUserId == userId && _latestUserSnapshot?.exists == true) {
+      final cached = _latestUserSnapshot?.data()?['dmUnreadTotal'];
+      if (cached is num && cached >= 0) return cached.toInt();
+    }
+
     // users.dmUnreadTotal 읽기 (최대 3번 재시도)
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
@@ -327,29 +451,33 @@ class BadgeService {
             .doc(userId)
             .get()
             .timeout(const Duration(seconds: 5));
-        
+
         final data = userDoc.data();
         final v = data?['dmUnreadTotal'];
-        
+
         if (v is int && v >= 0) {
           return v;
         } else if (v is num && v >= 0) {
           return v.toInt();
         }
-        
+
         // 값이 없으면 fallback으로 진행
         break;
       } catch (e) {
-        Logger.error('dmUnreadTotal 조회 실패 (시도 ${attempt + 1}/3)', e);
-        
         // 마지막 시도가 아니면 재시도
         if (attempt < 2) {
+          if (Logger.isVerboseEnabled) {
+            Logger.warning('dmUnreadTotal 조회 재시도 예정');
+          }
           await Future.delayed(Duration(milliseconds: 300 * (attempt + 1)));
           continue;
         }
+        if (Logger.isVerboseEnabled) {
+          Logger.warning('dmUnreadTotal 조회 실패 - 대화방 합산으로 전환');
+        }
       }
     }
-    
+
     // fallback: conversations 기반 계산 (최대 2번 재시도)
     for (int attempt = 0; attempt < 2; attempt++) {
       try {
@@ -376,25 +504,41 @@ class BadgeService {
         }
         return convSum;
       } catch (e) {
-        Logger.error('conversations 조회 실패 (시도 ${attempt + 1}/2)', e);
-        
         // 마지막 시도가 아니면 재시도
         if (attempt < 1) {
+          if (Logger.isVerboseEnabled) Logger.warning('대화방 미읽음 합산 재시도 예정');
           await Future.delayed(const Duration(milliseconds: 500));
           continue;
         }
+        Logger.error('대화방 미읽음 합산 최종 실패', e);
       }
     }
-    
-    // 모든 시도 실패 시 0 반환
-    Logger.error('❌ DM 안 읽은 수 계산 완전 실패 - 0 반환');
-    return 0;
+
+    // 네트워크 실패는 미읽음 0을 의미하지 않는다. 상위 coordinator가
+    // 마지막 정상 배지를 유지하도록 오류를 전달한다.
+    throw StateError('DM 안 읽은 수 계산에 실패했습니다.');
   }
 
   static Future<int> _getVisibleUnreadNotificationCount({
     required String userId,
   }) async {
-    final snapshot =
+    Map<String, dynamic>? userData;
+    if (_activeUserId == userId && _latestUserSnapshot?.exists == true) {
+      userData = _latestUserSnapshot?.data();
+    } else {
+      final user = await _firestore
+          .collection('users')
+          .doc(userId)
+          .get()
+          .timeout(const Duration(seconds: 5));
+      userData = user.data();
+    }
+    final aggregate = trustedNotificationUnreadTotal(userData);
+    if (aggregate != null) return aggregate;
+
+    final cached =
+        _activeUserId == userId ? _latestNotificationsSnapshot : null;
+    final snapshot = cached ??
         await _firestore
             .collection('notifications')
             .where('userId', isEqualTo: userId)
@@ -402,104 +546,183 @@ class BadgeService {
             .get()
             .timeout(const Duration(seconds: 10));
 
-    final notifications =
-        snapshot.docs
-            .map((doc) => AppNotification.fromFirestore(doc))
-            .where((notification) => notification.type != 'dm_received')
-            .toList();
+    final notifications = snapshot.docs
+        .map((doc) => AppNotification.fromFirestore(doc))
+        .where((notification) => notification.type != 'dm_received')
+        .toList();
 
     if (notifications.isEmpty) return 0;
 
     final blockedUserIds = await ContentFilterService.getBlockedUserIds();
     final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
 
-    final visibleCount =
-        notifications.where((notification) {
-          final actorId = ContentFilterService.extractNotificationActorId({
-            'actorId': notification.actorId,
-            'data': notification.data,
-          });
-          return !ContentFilterService.isUserIdExcluded(
-            actorId,
-            blockedUserIds: blockedUserIds,
-            blockedByUserIds: blockedByUserIds,
-          );
-        }).length;
+    final visibleCount = notifications.where((notification) {
+      final actorId = ContentFilterService.extractNotificationActorId({
+        'actorId': notification.actorId,
+        'data': notification.data,
+      });
+      return !ContentFilterService.isUserIdExcluded(
+        actorId,
+        blockedUserIds: blockedUserIds,
+        blockedByUserIds: blockedByUserIds,
+      );
+    }).length;
 
     return visibleCount < 0 ? 0 : visibleCount;
   }
 
   /// 수동 배지 동기화 (레거시 호환용, 실시간 리스너가 없을 때 대비)
   static Future<void> syncNotificationBadge() async {
-    // 실시간 리스너가 활성화되어 있으면 수동 동기화 불필요
-    if (_userDocSubscription != null && _notificationsSubscription != null) {
+    final userId = _auth.currentUser?.uid;
+    final generation = _sessionGeneration;
+    if (userId == null || !_isCurrentAccountContext(userId, generation)) {
       return;
     }
-    
+
+    // 실시간 리스너가 활성화되어 있으면 수동 동기화 불필요
+    if (_userDocSubscription != null && _snackChatsSubscription != null) {
+      return;
+    }
+
     // 실시간 리스너가 없으면 한 번 업데이트
-    await _updateBadge();
+    await _updateBadge(
+      expectedUserId: userId,
+      expectedGeneration: generation,
+    );
   }
+
+  /// 읽음 트랜잭션 직후 리스너 전달 순서와 무관하게 아이콘 배지를 다시 계산한다.
+  /// [fresh]: re-read users/{uid} from the server first. Right after a read
+  /// callable the realtime user listener may not have delivered the lowered
+  /// counters yet, and recomputing from the cached snapshot kept the old
+  /// badge on the icon.
+  static Future<void> refreshNow({bool fresh = false}) async {
+    final userId = _auth.currentUser?.uid;
+    final generation = _sessionGeneration;
+    if (userId == null || !_isCurrentAccountContext(userId, generation)) {
+      return;
+    }
+    if (fresh) {
+      try {
+        final snapshot = await _firestore
+            .collection('users')
+            .doc(userId)
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 5));
+        if (_isCurrentAccountContext(userId, generation) &&
+            _activeUserId == userId &&
+            snapshot.exists) {
+          _latestUserSnapshot = snapshot;
+        }
+      } catch (error) {
+        if (Logger.isVerboseEnabled) {
+          Logger.warning('배지 서버 재조회 실패, 캐시 사용: $error');
+        }
+      }
+    }
+    await _updateBadge(
+      expectedUserId: userId,
+      expectedGeneration: generation,
+    );
+  }
+
+  /// DM 서버 트랜잭션이 반환한 정확한 총합을 사용해 Firestore user listener가
+  /// 도착하기 전에도 앱 아이콘을 즉시 수렴시킨다.
+  static Future<void> syncAfterDmRead(int dmUnreadTotal) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+    final generation = _sessionGeneration;
+    if (!_isCurrentAccountContext(userId, generation)) return;
+    try {
+      final counts = await Future.wait<int>([
+        _getVisibleUnreadNotificationCount(userId: userId),
+        _getSnackChatUnreadCount(userId: userId),
+      ]);
+      if (!_isCurrentAccountContext(userId, generation)) return;
+      final total = counts[0] + mathMaxZero(dmUnreadTotal) + counts[1];
+      await _setBadge(total);
+      if (!_isCurrentAccountContext(userId, generation)) return;
+      _currentBadgeCount = total;
+    } catch (error) {
+      if (!_isCurrentAccountContext(userId, generation)) return;
+      Logger.error('DM 읽음 후 배지 즉시 동기화 실패', error);
+      await refreshNow();
+    }
+  }
+
+  static int mathMaxZero(int value) => value < 0 ? 0 : value;
 
   static Future<void> _setBadge(int count) async {
     try {
       final safeCount = count < 0 ? 0 : count;
       await AppBadgePlus.updateBadge(safeCount);
-      if (Platform.isAndroid && safeCount == 0) {
-        await _clearAndroidNotificationTray();
-      }
     } catch (e) {
       Logger.error('배지 적용 실패', e);
     }
   }
 
   static Future<void> _clearAndroidNotificationTray() async {
-    if (!Platform.isAndroid) return;
+    // Delivered cards of the previous account must not survive a logout on
+    // either platform (iOS: removeAllDeliveredNotifications via the plugin).
+    if (kIsWeb) return;
     try {
       final plugin = FlutterLocalNotificationsPlugin();
       await plugin.cancelAll();
     } catch (e) {
-      Logger.error('Android 알림 트레이 정리 실패', e);
+      Logger.error('알림 트레이 정리 실패', e);
     }
   }
 
   /// SnackChat 안 읽은 수 (활성 대화방 제외)
   static Future<int> _getSnackChatUnreadCount({required String userId}) async {
-    try {
-      final snap = await _firestore
-          .collection('snack_chats')
-          .where('participantIds', arrayContains: userId)
-          .get()
-          .timeout(const Duration(seconds: 10));
-
-      final activeId = SnackChatActiveConversation.activeSnackChatId;
-      int total = 0;
-      for (final doc in snap.docs) {
-        if (doc.id == activeId) continue;
-        final data = doc.data();
-        final unreadMap = (data['unreadCount'] as Map?) ?? const {};
-        final raw = unreadMap[userId];
-        final v = raw is int ? raw : (raw is num ? raw.toInt() : 0);
-        if (v > 0) total += v;
-      }
-      return total;
-    } catch (e) {
-      Logger.error('SnackChat 안 읽은 수 조회 실패', e);
-      return 0;
+    final service = SnackChatService();
+    if (_activeUserId == userId && _latestSnackChatUnreadCount != null) {
+      return service.getCachedTotalUnreadCount(excludeActiveRoom: true) ??
+          _latestSnackChatUnreadCount!;
     }
+    final cached = service.getCachedTotalUnreadCount(excludeActiveRoom: true);
+    if (cached != null) return cached;
+    return service
+        .getTotalUnreadCount(excludeActiveRoom: true)
+        .first
+        .timeout(const Duration(seconds: 12));
   }
 
   /// FCM push 수신 시 payload의 badge 값을 즉시 적용
-  static Future<void> applyBadgeFromPush(int count) async {
+  static Future<void> applyBadgeFromPush(
+    int count, {
+    required String recipientUserId,
+  }) async {
+    final generation = _sessionGeneration;
+    if (recipientUserId.isEmpty ||
+        !_isCurrentAccountContext(recipientUserId, generation)) {
+      if (Logger.isVerboseEnabled) Logger.log('⏭️ 다른 계정 또는 계정 미지정 푸시 배지 무시');
+      return;
+    }
     final safeCount = count < 0 ? 0 : count;
     if (_currentBadgeCount == safeCount) return;
-    _currentBadgeCount = safeCount;
     await _setBadge(safeCount);
+    if (!_isCurrentAccountContext(recipientUserId, generation)) return;
+    _currentBadgeCount = safeCount;
   }
 
   /// 앱 포그라운드 진입 시 Android 배지를 실제 값으로 강제 동기화
+  /// Resume hook for every platform. iOS keeps the system badge off while
+  /// the app is in the foreground, so the app itself must recompute the icon
+  /// number when it comes back; reads made on another device are only
+  /// visible after this server-fresh recount.
   static Future<void> syncAndroidBadgeOnResume() async {
-    if (!Platform.isAndroid) return;
-    await _updateBadge();
+    if (kIsWeb) return;
+    await refreshNow(fresh: true);
   }
 }
 
+class _NotificationCounterReconcileResult {
+  const _NotificationCounterReconcileResult({
+    required this.total,
+    required this.trusted,
+  });
+
+  final int total;
+  final bool trusted;
+}

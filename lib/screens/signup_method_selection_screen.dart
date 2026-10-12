@@ -1,31 +1,34 @@
-// lib/screens/signup_method_selection_screen.dart
-// 회원가입 방식 선택 화면 (Apple / Google)
-// ✅ 한양메일 인증 제거 - 모든 사용자 공통 플로우
+// 한양메일 인증 후 회원가입 방식 선택 화면
 
 import 'dart:io' show Platform;
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
+import '../models/pending_signup_session.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/signup_flow_widgets.dart';
+import 'hanyang_email_verification_screen.dart';
 import 'nickname_setup_screen.dart';
-import 'terms_screen.dart';
 import 'privacy_policy_screen.dart';
+import 'terms_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class SignUpMethodSelectionScreen extends StatefulWidget {
-  // ⚠️ Deprecated: 하위 호환성을 위해 남겨둠 (사용 안 함)
-  final String? verifiedHanyangEmail;
-  final bool skipHanyangVerification;
-
   const SignUpMethodSelectionScreen({
-    Key? key,
+    super.key,
     this.verifiedHanyangEmail,
-    this.skipHanyangVerification = true, // ✅ 기본값 true (항상 한양메일 건너뛰기)
-  }) : super(key: key);
+    this.hanyangEmailVerificationToken,
+    this.skipHanyangVerification = false,
+    this.unverifiedSignupLanguage = 'en',
+  });
+
+  final String? verifiedHanyangEmail;
+  final String? hanyangEmailVerificationToken;
+  final bool skipHanyangVerification;
+  final String unverifiedSignupLanguage;
 
   @override
   State<SignUpMethodSelectionScreen> createState() =>
@@ -38,18 +41,26 @@ class _SignUpMethodSelectionScreenState
   String? _errorMessage;
   bool _agreedTerms = false;
 
-  Future<bool> _blockIfExistingAccount({
+  bool get _isUnverifiedHanyangSignup => widget.skipHanyangVerification;
+  bool get _isEnglishUnverifiedSignup =>
+      widget.unverifiedSignupLanguage.toLowerCase().startsWith('en');
+
+  String get _verifiedHanyangEmail => widget.verifiedHanyangEmail?.trim() ?? '';
+  String get _hanyangVerificationToken =>
+      widget.hanyangEmailVerificationToken?.trim() ?? '';
+
+  Future<bool> _blockIfCompletedAccount({
     required String providerLabel,
   }) async {
     final l10n = AppLocalizations.of(context)!;
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final uid = authProvider.user?.uid;
-    if (uid == null) return false;
+    final authProvider = context.read<AuthProvider>();
+    final registrationState =
+        await authProvider.getCurrentAccountRegistrationState();
 
-    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    if (!doc.exists) return false;
+    // 문서가 없거나 프로필 입력 전인 계정은 기존 계정으로 차단하지 않고
+    // 멱등적인 이메일 확정 처리 후 닉네임 설정부터 이어갑니다.
+    if (registrationState != AccountRegistrationState.complete) return false;
 
-    // 이미 Firestore 사용자 문서가 있으면 "기존 계정"으로 간주 → 회원가입 진행 차단
     try {
       await authProvider.signOut();
     } catch (_) {}
@@ -70,59 +81,65 @@ class _SignUpMethodSelectionScreenState
     });
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-      // ✅ 가입 흐름: forSignup: true → 신규 사용자도 Auth 유지
-      final loginSuccess = await authProvider.signInWithGoogle(forSignup: true);
+      final authProvider = context.read<AuthProvider>();
+      final loginSuccess =
+          await authProvider.signInWithGoogle(skipEmailVerifiedCheck: true);
       if (!mounted) return;
 
       if (!loginSuccess) {
+        if (authProvider.lastGoogleSignInWasCancelled) {
+          setState(() {
+            _errorMessage = null;
+            _isLoading = false;
+          });
+          return;
+        }
         setState(() {
           _errorMessage = l10n.googleSignupLoginFailed;
           _isLoading = false;
         });
         return;
       }
-
-      // ✅ 기존 계정이면 회원가입 진행 차단
-      if (await _blockIfExistingAccount(providerLabel: 'Google')) {
-        return;
-      }
-
-      bool completed = false;
-      try {
-        // ✅ 한국어/영어 모두 동일하게 일반 소셜 가입 (한양메일 인증 없음)
-        completed = await authProvider.finalizeEnglishSocialSignup(
-          signupLanguage: Localizations.localeOf(context).languageCode,
-        );
-      } on FirebaseFunctionsException catch (e) {
-        setState(() {
-          _errorMessage = e.code == 'already-exists'
-              ? l10n.hanyangEmailAlreadyUsed
-              : '${l10n.error}: ${e.message ?? e.code}';
-          _isLoading = false;
-        });
-        return;
-      }
-
+      if (await _blockIfCompletedAccount(providerLabel: 'Google')) return;
       if (!mounted) return;
 
-      if (!completed) {
+      if (!_isUnverifiedHanyangSignup &&
+          (_verifiedHanyangEmail.isEmpty ||
+              _hanyangVerificationToken.isEmpty)) {
         setState(() {
           _errorMessage = l10n.signupProcessError;
           _isLoading = false;
         });
         return;
       }
-
+      await authProvider.ensureRegistrationProgress(
+        signupLanguage: widget.unverifiedSignupLanguage,
+        verifiedEmail: _isUnverifiedHanyangSignup ? '' : _verifiedHanyangEmail,
+        verificationToken:
+            _isUnverifiedHanyangSignup ? '' : _hanyangVerificationToken,
+      );
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
+        MaterialPageRoute(
+          builder: (_) => NicknameSetupScreen(
+            pendingSignup: PendingSignupSession(
+              kind: _isUnverifiedHanyangSignup
+                  ? (_isEnglishUnverifiedSignup
+                      ? PendingSignupKind.englishSocial
+                      : PendingSignupKind.generalSocial)
+                  : PendingSignupKind.hanyangSocial,
+              signupLanguage: widget.unverifiedSignupLanguage,
+              verifiedEmail: _verifiedHanyangEmail,
+              verificationToken: _hanyangVerificationToken,
+            ),
+          ),
+        ),
       );
-    } catch (e) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = l10n.googleSignupFailedWithError(e.toString());
+        _errorMessage = l10n.signupProcessError;
         _isLoading = false;
       });
     }
@@ -130,11 +147,8 @@ class _SignUpMethodSelectionScreenState
 
   Future<void> _signUpWithApple() async {
     final l10n = AppLocalizations.of(context)!;
-    // Apple Sign In은 iOS/macOS에서만 허용
     if (!Platform.isIOS && !Platform.isMacOS) {
-      setState(() {
-        _errorMessage = l10n.appleSignupIosOnlyError;
-      });
+      setState(() => _errorMessage = l10n.appleSignupIosOnlyError);
       return;
     }
 
@@ -144,10 +158,9 @@ class _SignUpMethodSelectionScreenState
     });
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-      // ✅ 가입 흐름: forSignup: true → 신규 사용자도 Auth 유지
-      final loginSuccess = await authProvider.signInWithApple(forSignup: true);
+      final authProvider = context.read<AuthProvider>();
+      final loginSuccess =
+          await authProvider.signInWithApple(skipEmailVerifiedCheck: true);
       if (!mounted) return;
 
       if (!loginSuccess) {
@@ -157,339 +170,398 @@ class _SignUpMethodSelectionScreenState
         });
         return;
       }
-
-      // ✅ 기존 계정이면 회원가입 진행 차단
-      if (await _blockIfExistingAccount(providerLabel: 'Apple')) {
-        return;
-      }
-
-      bool completed = false;
-      try {
-        // ✅ 한국어/영어 모두 동일하게 일반 소셜 가입 (한양메일 인증 없음)
-        completed = await authProvider.finalizeEnglishSocialSignup(
-          signupLanguage: Localizations.localeOf(context).languageCode,
-        );
-      } on FirebaseFunctionsException catch (e) {
-        setState(() {
-          _errorMessage = e.code == 'already-exists'
-              ? l10n.hanyangEmailAlreadyUsed
-              : '${l10n.error}: ${e.message ?? e.code}';
-          _isLoading = false;
-        });
-        return;
-      }
-
+      if (await _blockIfCompletedAccount(providerLabel: 'Apple')) return;
       if (!mounted) return;
 
-      if (!completed) {
+      if (!_isUnverifiedHanyangSignup &&
+          (_verifiedHanyangEmail.isEmpty ||
+              _hanyangVerificationToken.isEmpty)) {
         setState(() {
           _errorMessage = l10n.signupProcessError;
           _isLoading = false;
         });
         return;
       }
-
+      await authProvider.ensureRegistrationProgress(
+        signupLanguage: widget.unverifiedSignupLanguage,
+        verifiedEmail: _isUnverifiedHanyangSignup ? '' : _verifiedHanyangEmail,
+        verificationToken:
+            _isUnverifiedHanyangSignup ? '' : _hanyangVerificationToken,
+      );
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
+        MaterialPageRoute(
+          builder: (_) => NicknameSetupScreen(
+            pendingSignup: PendingSignupSession(
+              kind: _isUnverifiedHanyangSignup
+                  ? (_isEnglishUnverifiedSignup
+                      ? PendingSignupKind.englishSocial
+                      : PendingSignupKind.generalSocial)
+                  : PendingSignupKind.hanyangSocial,
+              signupLanguage: widget.unverifiedSignupLanguage,
+              verifiedEmail: _verifiedHanyangEmail,
+              verificationToken: _hanyangVerificationToken,
+            ),
+          ),
+        ),
       );
-    } catch (e) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = l10n.appleSignupFailedWithError(e.toString());
+        _errorMessage = l10n.signupProcessError;
         _isLoading = false;
       });
     }
   }
 
-  // ✅ 이메일/비밀번호 가입은 더 이상 지원하지 않음
-  // (소셜 로그인만 사용)
+  void _startEmailSignUp() {
+    if (_isLoading || !_agreedTerms) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HanyangEmailVerificationScreen.general(
+          signupLanguage: widget.unverifiedSignupLanguage,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _leaveSignup() async {
+    if (_isLoading || !await showSignupExitConfirmation(context) || !mounted) {
+      return;
+    }
+    setState(() => _isLoading = true);
+    final authProvider = context.read<AuthProvider>();
+    // Keep the server-side progress document. A later login resumes the same
+    // uid instead of deleting and recreating an Auth account.
+    try {
+      if (authProvider.user != null) {
+        await authProvider.signOut();
+      }
+    } catch (_) {
+      // Navigation remains available; persisted progress is server-owned.
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+    if (!mounted) return;
+    Navigator.pop(context);
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final isAppleSupported = Platform.isIOS || Platform.isMacOS;
+    final showApple = Platform.isIOS;
+    final showEmail = _isUnverifiedHanyangSignup;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFDEEFFF),
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _leaveSignup();
+      },
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
-          onPressed: _isLoading ? null : () => Navigator.pop(context),
-        ),
-        title: Text(
-          l10n.signUpMethodSelectionTitle,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1E293B),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Color(0xFF0F172A),
+              size: 22,
+            ),
+            onPressed: _isLoading ? null : _leaveSignup,
+          ),
+          title: Text(
+            l10n.signUpMethodSelectionTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF0F172A),
+              letterSpacing: -0.3,
+            ),
           ),
         ),
-        centerTitle: true,
-      ),
-      body: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 20),
+        body: SafeArea(
+          top: false,
+          bottom: true,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final horizontalPadding =
+                  constraints.maxWidth < 360 ? 18.0 : 24.0;
+              const verticalPadding = 20.0;
+              final availableHeight =
+                  constraints.maxHeight - (verticalPadding * 2);
 
-            // 헤더
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.pointColor,
-                    AppColors.pointColor.withOpacity(0.8),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+              return SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  verticalPadding,
+                  horizontalPadding,
+                  verticalPadding,
                 ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.pointColor.withOpacity(0.3),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      shape: BoxShape.circle,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: 480,
+                      minHeight: availableHeight > 0 ? availableHeight : 0,
                     ),
-                    child: const Icon(
-                      Icons.how_to_reg_outlined,
-                      size: 48,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    l10n.signUpMethodSelectionHeading,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      letterSpacing: -0.5,
-                      height: 1.3,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    l10n.signUpMethodSelectionDescription,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w400,
-                      color: Colors.white.withOpacity(0.95),
-                      height: 1.7,
-                      letterSpacing: -0.2,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // ✅ 한양메일 인증 경로는 더 이상 사용 안 함
-            // (모든 사용자가 skipHanyangVerification: true로 진입)
-
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Checkbox(
-                        value: _agreedTerms,
-                        onChanged: _isLoading
-                            ? null
-                            : (v) => setState(() => _agreedTerms = v ?? false),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Text(
-                            AppLocalizations.of(context)!.loginTermsNotice,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 13,
-                              color: Color(0xFF334155),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SignupPageIntro(
+                            icon: Icons.how_to_reg_outlined,
+                            title: l10n.signUpMethodSelectionHeading,
+                            description: l10n.signUpMethodSelectionDescription,
+                          ),
+                          SizedBox(
+                            height: constraints.maxHeight < 620 ? 24 : 34,
+                          ),
+                          Align(
+                            alignment: Alignment.center,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 400),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Checkbox(
+                                        value: _agreedTerms,
+                                        activeColor: AppColors.pointColor,
+                                        visualDensity: VisualDensity.compact,
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        onChanged: _isLoading
+                                            ? null
+                                            : (value) => setState(
+                                                  () => _agreedTerms =
+                                                      value ?? false,
+                                                ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 8),
+                                          child: Text(
+                                            l10n.loginTermsNotice,
+                                            textAlign: TextAlign.left,
+                                            style: TextStyle(
+                                              fontFamily: uiFontFamily(context, 'Inter'),
+                                              fontFamilyFallback: const [
+                                                'NotoSansKR'
+                                              ],
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w400,
+                                              color: Color(0xFF475569),
+                                              height: 1.45,
+                                              letterSpacing: -0.15,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  Wrap(
+                                    alignment: WrapAlignment.center,
+                                    spacing: 8,
+                                    children: [
+                                      _PolicyLink(
+                                        label: l10n.termsOfService,
+                                        onPressed: () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => const TermsScreen(),
+                                          ),
+                                        ),
+                                      ),
+                                      _PolicyLink(
+                                        label: l10n.privacyPolicy,
+                                        onPressed: () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const PrivacyPolicyScreen(),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 22),
+                                  if (showApple) ...[
+                                    _SocialSignupButton(
+                                      label: l10n.signUpWithApple,
+                                      onPressed: _isLoading || !_agreedTerms
+                                          ? null
+                                          : _signUpWithApple,
+                                      icon: const Icon(
+                                        Icons.apple,
+                                        size: 22,
+                                        color: Colors.white,
+                                      ),
+                                      backgroundColor: const Color(0xFF0F172A),
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    const SizedBox(height: 10),
+                                  ],
+                                  _SocialSignupButton(
+                                    label: l10n.signUpWithGoogle,
+                                    onPressed: _isLoading || !_agreedTerms
+                                        ? null
+                                        : _signUpWithGoogle,
+                                    icon: Image.asset(
+                                      'assets/icons/google_logo.png',
+                                      width: 20,
+                                      height: 20,
+                                    ),
+                                    backgroundColor: const Color(0xFFF1F5F9),
+                                    foregroundColor: const Color(0xFF0F172A),
+                                  ),
+                                  if (showEmail) ...[
+                                    const SizedBox(height: 10),
+                                    _SocialSignupButton(
+                                      label: l10n.signUpWithId,
+                                      onPressed: _isLoading || !_agreedTerms
+                                          ? null
+                                          : _startEmailSignUp,
+                                      icon: const Icon(
+                                        Icons.mail_outline_rounded,
+                                        size: 21,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                      backgroundColor: const Color(0xFFF1F5F9),
+                                      foregroundColor: const Color(0xFF0F172A),
+                                    ),
+                                  ],
+                                  if (_isLoading) ...[
+                                    const SizedBox(height: 16),
+                                    const Center(
+                                      child: SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (_errorMessage != null) ...[
+                                    const SizedBox(height: 16),
+                                    SignupInlineError(message: _errorMessage!),
+                                  ],
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const TermsScreen()),
-                          );
-                        },
-                        child: Text(AppLocalizations.of(context)!.termsOfService),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
-                          );
-                        },
-                        child: Text(AppLocalizations.of(context)!.privacyPolicy),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Apple
-            SizedBox(
-              height: 56,
-              child: OutlinedButton.icon(
-                onPressed: _isLoading || !isAppleSupported || !_agreedTerms
-                    ? null
-                    : _signUpWithApple,
-                icon: const Icon(Icons.apple, size: 20),
-                label: Text(
-                  isAppleSupported
-                      ? l10n.signUpWithApple
-                      : l10n.signUpWithAppleIosOnly,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF0F172A),
-                  side: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
-                  backgroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Google
-            SizedBox(
-              height: 56,
-              child: OutlinedButton.icon(
-                onPressed: _isLoading || !_agreedTerms ? null : _signUpWithGoogle,
-                icon: Image.asset(
-                  'assets/icons/google_logo.png',
-                  width: 20,
-                  height: 20,
-                ),
-                label: Text(
-                  l10n.signUpWithGoogle,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF0F172A),
-                  side: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
-                  backgroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-            ),
-
-            // ✅ 이메일/비밀번호 가입 버튼 제거
-            // 모든 사용자는 소셜 로그인(Google/Apple)만 사용
-
-            const SizedBox(height: 16),
-
-            if (_isLoading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: CircularProgressIndicator(),
-                ),
-              ),
-
-            // 에러 메시지
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF2F2),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: const Color(0xFFFECACA),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      color: Color(0xFFDC2626),
-                      size: 22,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _errorMessage!,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF991B1B),
-                          height: 1.5,
-                          letterSpacing: -0.2,
-                        ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          ],
-        ),
+              );
+            },
+          ),
         ),
       ),
     );
   }
 }
 
+class _PolicyLink extends StatelessWidget {
+  const _PolicyLink({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: const Color(0xFF475569),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        minimumSize: const Size(48, 42),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _SocialSignupButton extends StatelessWidget {
+  const _SocialSignupButton({
+    required this.label,
+    required this.onPressed,
+    required this.icon,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final isEnabled = onPressed != null;
+    return SizedBox(
+      height: 52,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          disabledBackgroundColor: const Color(0xFFF1F5F9),
+          disabledForegroundColor: const Color(0xFF94A3B8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Opacity(opacity: isEnabled ? 1 : 0.45, child: icon),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

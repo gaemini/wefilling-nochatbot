@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -12,13 +13,22 @@ import '../services/user_info_cache_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
+import 'dm_recipient_selection_screen.dart';
+import 'friend_profile_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
-import '../constants/app_constants.dart';
 import '../ui/widgets/user_avatar.dart';
+import '../ui/widgets/app_fab.dart';
+import '../l10n/ui_locale.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_selectable.dart';
+import '../l10n/relationship_strings.dart';
+import '../models/first_response_request.dart';
+import '../services/first_response_request_service.dart';
+import 'first_response_requests_screen.dart';
 
 // DM 목록 필터: 친구 / 익명
-enum DMFilter { friends, anonymous }
+enum DMFilter { friends, anonymous, requests }
 
 class DMListScreen extends StatefulWidget {
   const DMListScreen({super.key});
@@ -28,6 +38,11 @@ class DMListScreen extends StatefulWidget {
 }
 
 class _DMListScreenState extends State<DMListScreen> {
+  // DM 탭이 상위 네비게이션 변경 등으로 다시 만들어져도 마지막으로 표시한
+  // 목록을 즉시 그린다. 서버 스트림은 뒤에서 최신 상태로 교체한다.
+  // 사용자별로 분리해 로그아웃/계정 전환 시 다른 계정의 목록이 노출되지 않는다.
+  static final Map<String, List<Conversation>> _sessionConversationCache = {};
+
   final DMService _dmService = DMService();
   final RelationshipService _relationshipService = RelationshipService();
   final UserInfoCacheService _userInfoCacheService = UserInfoCacheService();
@@ -176,6 +191,13 @@ class _DMListScreenState extends State<DMListScreen> {
   @override
   void initState() {
     super.initState();
+    FirstResponseRequestService.instance.ensureStarted();
+    final currentUserId = _currentUser?.uid;
+    if (currentUserId != null) {
+      _lastNonEmptyConversations = List<Conversation>.unmodifiable(
+        _sessionConversationCache[currentUserId] ?? const <Conversation>[],
+      );
+    }
     // ✅ build()마다 새 스트림 생성/재구독 방지(깜빡임 감소)
     _conversationsStream = _dmService.getMyConversationsWithMeta();
     _loadHiddenConversations();
@@ -200,6 +222,7 @@ class _DMListScreenState extends State<DMListScreen> {
   Future<void> _loadHiddenConversations() async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('hidden_conversations') ?? <String>[];
+    if (!mounted) return;
     setState(() {
       _hiddenConversationIds = list.toSet();
     });
@@ -220,11 +243,19 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// FloatingActionButton 빌드
   Widget? _buildFloatingActionButtons() {
+    if (_filter == DMFilter.requests) return null;
     if (_filter == DMFilter.friends) {
-      return FloatingActionButton(
-        onPressed: _showFriendSelectionSheet,
-        backgroundColor: AppColors.pointColor,
-        child: const Icon(Icons.add, color: Colors.white),
+      return SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: AppFab.extended(
+          onPressed: _openRecipientSelection,
+          icon: Icons.add_rounded,
+          label: AppLocalizations.of(context)!.newMessage,
+          semanticLabel: AppLocalizations.of(context)!.newMessage,
+          tooltip: AppLocalizations.of(context)!.newMessage,
+          heroTag: 'create_dm_fab',
+        ),
       );
     }
 
@@ -253,6 +284,13 @@ class _DMListScreenState extends State<DMListScreen> {
     return Column(
       children: [
         _buildFilterBanners(),
+        if (_filter == DMFilter.requests)
+          Expanded(
+            child: FirstResponseInboxView(
+              bottomPadding: MediaQuery.paddingOf(context).bottom + 24,
+            ),
+          )
+        else
         Expanded(
           child: StreamBuilder<
               ({
@@ -261,8 +299,19 @@ class _DMListScreenState extends State<DMListScreen> {
                 bool hasPendingWrites
               })>(
             stream: _conversationsStream,
+            initialData: _lastNonEmptyConversations.isEmpty
+                ? null
+                : (
+                    conversations: _lastNonEmptyConversations,
+                    isFromCache: true,
+                    hasPendingWrites: false,
+                  ),
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              // 첫 실행에 보여줄 목록이 전혀 없을 때만 스켈레톤을 사용한다.
+              // 탭 재진입/재생성 시에는 직전 목록을 유지하고 백그라운드로 동기화한다.
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData &&
+                  _lastNonEmptyConversations.isEmpty) {
                 return _buildListSkeleton();
               }
 
@@ -273,9 +322,9 @@ class _DMListScreenState extends State<DMListScreen> {
                 final errorMessage = snapshot.error.toString();
                 if (errorMessage.contains('permission-denied')) {
                   return _buildErrorState(
-                    Localizations.localeOf(context).languageCode == 'ko'
+                    (isChineseUi(context) ? 'Firebase安全规则尚未部署，或你没有访问权限。\n\n请重新启动应用。' : Localizations.localeOf(context).languageCode == 'ko'
                         ? 'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.'
-                        : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.',
+                        : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.'),
                   );
                 }
 
@@ -300,7 +349,14 @@ class _DMListScreenState extends State<DMListScreen> {
 
               // 캐시(empty) 이벤트가 순간적으로 들어오면, 직전 목록을 유지해 깜빡임을 줄인다.
               if (conversations.isNotEmpty) {
-                _lastNonEmptyConversations = conversations;
+                _lastNonEmptyConversations =
+                    List<Conversation>.unmodifiable(conversations);
+                _sessionConversationCache[_currentUser.uid] =
+                    _lastNonEmptyConversations;
+              } else if (!isFromCache && payload != null) {
+                // 서버가 빈 목록을 확정했을 때만 이전 표시 캐시를 비운다.
+                _lastNonEmptyConversations = const <Conversation>[];
+                _sessionConversationCache.remove(_currentUser.uid);
               } else if (isFromCache && _lastNonEmptyConversations.isNotEmpty) {
                 // UI에는 직전 값을 사용하고, 실제 empty 여부는 서버 스냅샷에서 확정한다.
                 // (필터/숨김 처리 등은 아래 로직에서 동일하게 적용됨)
@@ -376,27 +432,44 @@ class _DMListScreenState extends State<DMListScreen> {
                 );
               }
 
-              return ListView.builder(
-                padding: EdgeInsets.zero,
-                // ✅ 목록 아이템 높이는 항상 76으로 고정(카드 컨테이너)되어 있어
-                // 레이아웃 계산 비용을 줄이기 위해 itemExtent를 지정한다.
-                // (최신 대화가 상단으로 재정렬되어도 스크롤/렌더가 더 안정적)
-                itemExtent: 76,
-                itemCount: filtered.length,
-                itemBuilder: (context, index) {
-                  final conversation = filtered[index];
-                  final preferLatestSkeleton =
-                      isFromCache && !_serverSnapshotSeen;
-                  // ✅ 중요: 정렬 변경(최신 대화 상단 이동) 시에도
-                  // 각 Row의 Stream/Future 상태가 다른 대화로 섞이지 않도록 고유 Key를 부여한다.
-                  return KeyedSubtree(
-                    key: ValueKey<String>('dm_conv_${conversation.id}'),
-                    child: _buildConversationCard(
-                      conversation,
-                      preferLatestSkeleton: preferLatestSkeleton,
+              final isRefreshing =
+                  snapshot.connectionState == ConnectionState.waiting ||
+                      (isFromCache && !_serverSnapshotSeen);
+
+              return Stack(
+                children: [
+                  ListView.builder(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.paddingOf(context).bottom + 88,
                     ),
-                  );
-                },
+                    // ✅ 목록 아이템 높이는 항상 72로 고정되어 있어
+                    // 레이아웃 계산 비용을 줄이기 위해 itemExtent를 지정한다.
+                    itemExtent: 72,
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final conversation = filtered[index];
+                      // ✅ 중요: 정렬 변경(최신 대화 상단 이동) 시에도
+                      // 각 Row의 Stream 상태가 다른 대화로 섞이지 않도록 고유 Key를 부여한다.
+                      return KeyedSubtree(
+                        key: ValueKey<String>('dm_conv_${conversation.id}'),
+                        child: _buildConversationCard(conversation),
+                      );
+                    },
+                  ),
+                  // 기존 카드를 감추지 않고 상단의 얇은 진행선만으로
+                  // 서버 동기화 중임을 알린다.
+                  if (isRefreshing)
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      child: LinearProgressIndicator(
+                        minHeight: 1.5,
+                        color: Color(0xFF344054),
+                        backgroundColor: Colors.transparent,
+                      ),
+                    ),
+                ],
               );
             },
           ),
@@ -410,13 +483,13 @@ class _DMListScreenState extends State<DMListScreen> {
     // 상단 필터 배너 아래에 자연스럽게 보이도록 리스트 형태로 렌더링
     return ListView.builder(
       padding: EdgeInsets.zero,
-      itemExtent: 76,
+      itemExtent: 72,
       itemCount: 8,
       itemBuilder: (context, index) {
         final base = Colors.grey.shade200;
         final base2 = Colors.grey.shade100;
         return Container(
-          height: 76,
+          height: 72,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: const BoxDecoration(
             border: Border(
@@ -426,8 +499,8 @@ class _DMListScreenState extends State<DMListScreen> {
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: base,
                   shape: BoxShape.circle,
@@ -490,19 +563,27 @@ class _DMListScreenState extends State<DMListScreen> {
     );
   }
 
-  /// 상단 필터 탭(친구 / 익명) - 밑줄 인디케이터 스타일
+  /// 상단 필터 탭(친구 / 익명 / 요청) - 밑줄 인디케이터 스타일
   Widget _buildFilterBanners() {
-    const activeColor = AppColors.pointColor;
-    const inactiveColor = Color(0xFF9CA3AF);
+    const activeColor = Color(0xFF111827);
+    const inactiveColor = Color(0xFF98A2B3);
+    final l10n = AppLocalizations.of(context)!;
+    final relationshipStrings = RelationshipStrings.of(context);
+    final tabs = <(DMFilter, String)>[
+      (DMFilter.friends, l10n.friends),
+      (DMFilter.anonymous, l10n.anonymous),
+      (DMFilter.requests, relationshipStrings.requestsTab),
+    ];
 
     return Container(
       color: Colors.white,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final tabWidth = constraints.maxWidth / 2;
-          final indicatorWidth = 42.0;
-          final leftForFriends = (tabWidth - indicatorWidth) / 2;
-          final leftForAnonymous = tabWidth + (tabWidth - indicatorWidth) / 2;
+          final compact = constraints.maxWidth < 360;
+          final tabWidth = constraints.maxWidth / tabs.length;
+          final indicatorWidth = compact ? 36.0 : 42.0;
+          final selectedIndex =
+              tabs.indexWhere((tab) => tab.$1 == _filter).clamp(0, tabs.length - 1);
 
           return Stack(
             children: [
@@ -517,68 +598,65 @@ class _DMListScreenState extends State<DMListScreen> {
               // 탭 텍스트 영역
               Row(
                 children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () {
-                        if (_filter != DMFilter.friends)
-                          setState(() => _filter = DMFilter.friends);
-                      },
-                      child: Container(
-                        height: 48,
-                        alignment: Alignment.center,
-                        child: Text(
-                          AppLocalizations.of(context)!.friends,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: _filter == DMFilter.friends
-                                ? activeColor
-                                : inactiveColor,
+                  for (final tab in tabs)
+                    Expanded(
+                      child: MotionSelectable(
+                        selected: _filter == tab.$1,
+                        pressedScale: MotionSelectable.segmentScale,
+                        child: InkWell(
+                          onTap: () {
+                            if (_filter != tab.$1) {
+                              setState(() => _filter = tab.$1);
+                            }
+                          },
+                          child: Container(
+                            height: compact ? 44 : 48,
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AnimatedDefaultTextStyle(
+                                  duration: MotionTokens.of(
+                                      context, MotionTokens.state),
+                                  curve: MotionTokens.curve,
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize: compact ? 14 : 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: _filter == tab.$1
+                                        ? activeColor
+                                        : inactiveColor,
+                                  ),
+                                  child: Text(tab.$2),
+                                ),
+                                if (tab.$1 == DMFilter.requests)
+                                  _FirstResponseCountBadge(
+                                    selected: _filter == tab.$1,
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () {
-                        if (_filter != DMFilter.anonymous)
-                          setState(() => _filter = DMFilter.anonymous);
-                      },
-                      child: Container(
-                        height: 48,
-                        alignment: Alignment.center,
-                        child: Text(
-                          AppLocalizations.of(context)!.anonymous,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: _filter == DMFilter.anonymous
-                                ? activeColor
-                                : inactiveColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
 
               // 인디케이터
               AnimatedPositioned(
-                duration: const Duration(milliseconds: 220),
+                duration: MotionTokens.of(
+                  context,
+                  const Duration(milliseconds: 220),
+                ),
                 curve: Curves.easeOut,
-                left: _filter == DMFilter.friends
-                    ? leftForFriends
-                    : leftForAnonymous,
+                left: tabWidth * selectedIndex + (tabWidth - indicatorWidth) / 2,
                 bottom: 0,
                 child: Container(
                   width: indicatorWidth,
                   height: 2.5,
                   decoration: BoxDecoration(
-                    color: activeColor,
+                    color: const Color(0xFF344054),
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
@@ -591,10 +669,7 @@ class _DMListScreenState extends State<DMListScreen> {
   }
 
   /// 대화방 카드 빌드 (실시간 조회)
-  Widget _buildConversationCard(
-    Conversation conversation, {
-    required bool preferLatestSkeleton,
-  }) {
+  Widget _buildConversationCard(Conversation conversation) {
     final otherUserId = conversation.getOtherUserId(_currentUser!.uid);
     final isAnonymous = conversation.isOtherUserAnonymous(_currentUser!.uid);
     final timeString = TimeFormatter.formatConversationTime(
@@ -606,10 +681,10 @@ class _DMListScreenState extends State<DMListScreen> {
 
     // 🔍 디버그: 익명 대화방 데이터 확인
     if (isAnonymous && kDebugMode) {
-      Logger.log('🔍 익명 대화방 데이터:');
-      Logger.log('  - ID: ${conversation.id.substring(0, 20)}...');
-      Logger.log('  - dmContent: ${dmContent ?? "null"}');
-      Logger.log('  - lastMessage: ${conversation.lastMessage}');
+      if (Logger.isVerboseEnabled) Logger.log('🔍 익명 대화방 데이터:');
+      if (Logger.isVerboseEnabled) Logger.log('  - ID: ${conversation.id.substring(0, 20)}...');
+      if (Logger.isVerboseEnabled) Logger.log('  - dmContent: ${dmContent ?? "null"}');
+      if (Logger.isVerboseEnabled) Logger.log('  - lastMessage: ${conversation.lastMessage}');
     }
 
     // 🎯 익명 대화방이고 게시글 기반인 경우 (dmContent가 있으면)
@@ -630,9 +705,9 @@ class _DMListScreenState extends State<DMListScreen> {
           ? _truncate(existing)
           : (cached.isNotEmpty
               ? _truncate(cached)
-              : (Localizations.localeOf(context).languageCode == 'ko'
+              : ((isChineseUi(context) ? '匿名动态' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '익명 게시글'
-                  : 'Anonymous post'));
+                  : 'Anonymous post')));
 
       return _buildConversationCardContent(
         conversation: conversation,
@@ -644,7 +719,6 @@ class _DMListScreenState extends State<DMListScreen> {
         timeString: timeString,
         unreadCount: myUnread,
         hideProfile: true,
-        isLatestPreviewLoading: preferLatestSkeleton,
       );
     }
 
@@ -674,14 +748,12 @@ class _DMListScreenState extends State<DMListScreen> {
         timeString: timeString,
         unreadCount: myUnread,
         hideProfile: false,
-        isLatestPreviewLoading: preferLatestSkeleton,
       );
     }
 
-    // ✅ 권장 방식:
-    // - 상대방 users/{uid} 문서를 실시간 구독해 변경을 즉시 반영한다.
-    // - Firestore fromCache 스냅샷(오래된 로컬 캐시)에서는 "옛 닉/사진"을 보여주지 않고
-    //   서버에서 확인된 값(fromCache=false)부터 렌더링하여 DM 목록 플리커를 제거한다.
+    // 상대방 users/{uid} 문서는 계속 실시간 구독한다. 다만 서버 응답 전에도
+    // conversation/user cache의 마지막 정상 값을 그대로 보여주고, 최신 값이 오면
+    // 같은 카드 안에서 교체해 목록 전체가 깜빡이지 않도록 한다.
     if (isAnonymous) {
       return _buildConversationCardContent(
         conversation: conversation,
@@ -694,11 +766,14 @@ class _DMListScreenState extends State<DMListScreen> {
         unreadCount: myUnread,
         hideProfile: true,
         isTitleLoading: false,
-        isLatestPreviewLoading: preferLatestSkeleton,
       );
     }
 
     final initial = _userInfoCacheService.getCachedUserInfo(otherUserId);
+    final fallbackPhoto = conversation.getOtherUserPhoto(_currentUser.uid);
+    final hasUsableFallbackName = cachedName.trim().isNotEmpty &&
+        cachedName != 'DELETED_ACCOUNT' &&
+        cachedName != deletedLabel;
 
     return StreamBuilder<DMUserInfo?>(
       stream: _userInfoCacheService.watchUserInfo(otherUserId),
@@ -706,46 +781,48 @@ class _DMListScreenState extends State<DMListScreen> {
       builder: (context, snap) {
         final info = snap.data;
 
-        // 문서가 없으면(탈퇴 등) 삭제 계정으로 표시
+        // 첫 스트림 응답을 기다리는 동안에는 conversation에 저장된
+        // 이름/사진을 유지한다. 로딩 시점에 탈퇴 계정이나 스켈레톤으로
+        // 바뀐 뒤 다시 복구되는 깜빡임을 막는다.
         if (info == null) {
+          final waitingForFirstUserSnapshot =
+              snap.connectionState == ConnectionState.waiting;
           return _buildConversationCardContent(
             conversation: conversation,
-            displayName: deletedLabel,
+            displayName: waitingForFirstUserSnapshot && hasUsableFallbackName
+                ? cachedName
+                : deletedLabel,
             otherUserId: otherUserId,
-            otherUserPhoto: '',
+            otherUserPhoto: waitingForFirstUserSnapshot ? fallbackPhoto : '',
             otherUserPhotoVersion: 0,
             isAnonymous: false,
             timeString: timeString,
             unreadCount: myUnread,
             hideProfile: false,
-            isTitleLoading: false,
-            isLatestPreviewLoading: preferLatestSkeleton,
+            isTitleLoading:
+                waitingForFirstUserSnapshot && !hasUsableFallbackName,
           );
         }
 
-        final isServerFresh = info.isFromCache == false;
-
-        // fromCache 단계에서는 옛 정보가 보이지 않도록 타이틀은 스켈레톤 처리
-        final showTitleSkeleton = preferLatestSkeleton || !isServerFresh;
-
         final resolvedName = (info.nickname).trim();
         final displayName =
-            (resolvedName.isEmpty || resolvedName == 'DELETED_ACCOUNT')
-                ? deletedLabel
-                : resolvedName;
+            resolvedName.isNotEmpty && resolvedName != 'DELETED_ACCOUNT'
+                ? resolvedName
+                : (hasUsableFallbackName ? cachedName : deletedLabel);
+        final resolvedPhoto =
+            info.photoURL.trim().isNotEmpty ? info.photoURL : fallbackPhoto;
 
         return _buildConversationCardContent(
           conversation: conversation,
           displayName: displayName,
           otherUserId: otherUserId,
-          otherUserPhoto: isServerFresh ? info.photoURL : '',
-          otherUserPhotoVersion: isServerFresh ? info.photoVersion : 0,
+          otherUserPhoto: resolvedPhoto,
+          otherUserPhotoVersion: info.photoVersion,
           isAnonymous: false,
           timeString: timeString,
           unreadCount: myUnread,
           hideProfile: false,
-          isTitleLoading: showTitleSkeleton,
-          isLatestPreviewLoading: preferLatestSkeleton,
+          isTitleLoading: false,
         );
       },
     );
@@ -765,13 +842,25 @@ class _DMListScreenState extends State<DMListScreen> {
     bool isTitleLoading = false, // 최신 사용자 정보 로딩 중(플리커 방지)
     bool isLatestPreviewLoading = false, // 마지막 메시지/시간 등 최신 정보 로딩 중
   }) {
+    final deletedLabel =
+        AppLocalizations.of(context)!.deletedAccount ?? 'Deleted Account';
+    final canOpenProfile = !isAnonymous &&
+        !hideProfile &&
+        !isTitleLoading &&
+        otherUserId.trim().isNotEmpty &&
+        displayName.trim().isNotEmpty &&
+        displayName != 'DELETED_ACCOUNT' &&
+        displayName != deletedLabel;
     return Material(
       color: Colors.white,
       child: InkWell(
         onTap: () => _openConversation(conversation),
         child: Container(
-          height: 76,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          height: 72,
+          padding: EdgeInsets.symmetric(
+            horizontal: MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+            vertical: 8,
+          ),
           decoration: const BoxDecoration(
             border: Border(
               bottom: BorderSide(
@@ -784,13 +873,33 @@ class _DMListScreenState extends State<DMListScreen> {
             children: [
               // 프로필 이미지 (hideProfile이 false일 때만 표시)
               if (!hideProfile) ...[
-                UserAvatar(
-                  uid: otherUserId,
-                  photoUrl: otherUserPhoto,
-                  photoVersion: otherUserPhotoVersion,
-                  isAnonymous: isAnonymous,
-                  size: 48,
-                  placeholderIconSize: 24,
+                Semantics(
+                  button: canOpenProfile,
+                  label: canOpenProfile
+                      ? AppLocalizations.of(context)!.viewProfile
+                      : null,
+                  child: MotionPress(
+                    enabled: canOpenProfile,
+                    pressedScale: .99,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: canOpenProfile
+                          ? () => _openUserProfile(
+                              userId: otherUserId,
+                              nickname: displayName,
+                              photoURL: otherUserPhoto,
+                            )
+                          : null,
+                      child: UserAvatar(
+                        uid: otherUserId,
+                        photoUrl: otherUserPhoto,
+                        photoVersion: otherUserPhotoVersion,
+                        isAnonymous: isAnonymous,
+                        size: 44,
+                        placeholderIconSize: 22,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
               ],
@@ -818,8 +927,9 @@ class _DMListScreenState extends State<DMListScreen> {
                                   )
                                 : Text(
                                     displayName,
-                                    style: const TextStyle(
-                                      fontFamily: 'Pretendard',
+                                    style: TextStyle(
+                                      fontFamily: uiFontFamily(context, 'Inter'),
+                                      fontFamilyFallback: const ['NotoSansKR'],
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
                                       color: Color(0xFF111827),
@@ -832,7 +942,7 @@ class _DMListScreenState extends State<DMListScreen> {
                       ],
                     ),
 
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
 
                     // 마지막 메시지 (캐시→서버 전환/최신 정보 로딩 중에는 스켈레톤으로 부드럽게)
                     AnimatedSwitcher(
@@ -860,8 +970,9 @@ class _DMListScreenState extends State<DMListScreen> {
                                 'dm_last_${conversation.id}_${conversation.lastMessage}',
                               ),
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
+                                fontFamily: uiFontFamily(context, 'Inter'),
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize: 13,
                                 color: const Color(0xFF6B7280),
                                 fontWeight: unreadCount > 0
                                     ? FontWeight.w600
@@ -902,8 +1013,9 @@ class _DMListScreenState extends State<DMListScreen> {
                             key: ValueKey<String>(
                               'dm_time_${conversation.id}_$timeString',
                             ),
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
                               fontSize: 12,
                               fontWeight: FontWeight.w400,
                               color: Color(0xFF9CA3AF),
@@ -911,7 +1023,7 @@ class _DMListScreenState extends State<DMListScreen> {
                           ),
                   ),
 
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
 
                   // 읽지 않은 메시지 배지 (하단)
                   if (unreadCount > 0)
@@ -921,13 +1033,14 @@ class _DMListScreenState extends State<DMListScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEF4444),
+                        color: const Color(0xFF344054),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         unreadCount > 99 ? '99+' : unreadCount.toString(),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
                           color: Colors.white,
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -956,14 +1069,15 @@ class _DMListScreenState extends State<DMListScreen> {
         children: [
           Icon(
             icon,
-            size: 80,
+            size: 44,
             color: const Color(0xFFD1D5DB),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             title,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: Color(0xFF6B7280),
@@ -973,8 +1087,9 @@ class _DMListScreenState extends State<DMListScreen> {
             const SizedBox(height: 8),
             Text(
               subtitle,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF9CA3AF),
@@ -992,12 +1107,13 @@ class _DMListScreenState extends State<DMListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(color: AppColors.pointColor),
+          const CircularProgressIndicator(color: Color(0xFF344054)),
           const SizedBox(height: 16),
           Text(
             AppLocalizations.of(context)!.loadingMessages,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 14,
               fontWeight: FontWeight.w500,
               color: Color(0xFF6B7280),
@@ -1022,8 +1138,9 @@ class _DMListScreenState extends State<DMListScreen> {
           const SizedBox(height: 16),
           Text(
             AppLocalizations.of(context)!.error,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: Color(0xFFEF4444),
@@ -1034,8 +1151,9 @@ class _DMListScreenState extends State<DMListScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               error,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF6B7280),
@@ -1048,18 +1166,37 @@ class _DMListScreenState extends State<DMListScreen> {
     );
   }
 
+  void _openUserProfile({
+    required String userId,
+    required String nickname,
+    required String photoURL,
+  }) {
+    if (userId.trim().isEmpty) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: userId,
+          nickname: nickname,
+          photoURL: photoURL,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
+  }
+
   /// 대화방 열기
   void _openConversation(Conversation conversation) {
-    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    Logger.log('🔍 [FCM 진단 2단계] DM 채팅 화면 열기 시도');
-    Logger.log('  - conversationId: ${conversation.id}');
-    Logger.log('  - otherUserId: ${conversation.getOtherUserId(_currentUser!.uid)}');
-    
+    if (Logger.isVerboseEnabled) Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    if (Logger.isVerboseEnabled) Logger.log('🔍 [FCM 진단 2단계] DM 채팅 화면 열기 시도');
+    if (Logger.isVerboseEnabled) Logger.log('  - conversationId: ${conversation.id}');
+    if (Logger.isVerboseEnabled) Logger.log(
+        '  - otherUserId: ${conversation.getOtherUserId(_currentUser!.uid)}');
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) {
-          Logger.log('📱 [FCM 진단 2단계] DMChatScreen 생성됨');
+          if (Logger.isVerboseEnabled) Logger.log('📱 [FCM 진단 2단계] DMChatScreen 생성됨');
           return DMChatScreen(
             conversationId: conversation.id,
             otherUserId: conversation.getOtherUserId(_currentUser!.uid),
@@ -1067,241 +1204,40 @@ class _DMListScreenState extends State<DMListScreen> {
         },
       ),
     ).then((value) {
-      Logger.log('🔙 [FCM 진단 2단계] DM 채팅 화면에서 돌아옴');
+      if (Logger.isVerboseEnabled) Logger.log('🔙 [FCM 진단 2단계] DM 채팅 화면에서 돌아옴');
     });
   }
 
-  /// 친구 선택 바텀시트 표시
-  void _showFriendSelectionSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.9,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // 핸들 바
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD1D5DB),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+  /// 바텀시트 대신 독립된 전체 화면에서 DM 대상을 선택한다.
+  Future<void> _openRecipientSelection() async {
+    final currentUser = _currentUser;
+    if (currentUser == null) return;
 
-              // 헤더
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                child: Row(
-                  children: [
-                    Text(
-                      AppLocalizations.of(context)!.friendSelection,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF111827),
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
-                      onPressed: () => Navigator.pop(context),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-              ),
-
-              const Divider(height: 1, color: Color(0xFFE5E7EB)),
-
-              // 친구 목록
-              Expanded(
-                child: StreamBuilder<List<UserProfile>>(
-                  stream: _relationshipService.getFriends(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.pointColor),
-                      );
-                    }
-
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Text(
-                          Localizations.localeOf(context).languageCode == 'ko'
-                              ? '친구 목록을 불러올 수 없습니다'
-                              : 'Unable to load friend list',
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            color: Color(0xFF6B7280),
-                          ),
-                        ),
-                      );
-                    }
-
-                    final friends = snapshot.data ?? [];
-
-                    if (friends.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.people_outline,
-                              size: 64,
-                              color: Color(0xFFD1D5DB),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              Localizations.localeOf(context).languageCode ==
-                                      'ko'
-                                  ? '친구가 없습니다'
-                                  : 'No friends yet',
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF6B7280),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    final bottomInset = MediaQuery.of(context).padding.bottom;
-
-                    return ListView.builder(
-                      controller: scrollController,
-                      padding: EdgeInsets.fromLTRB(
-                        0,
-                        8,
-                        0,
-                        8 + bottomInset + 12,
-                      ),
-                      itemCount: friends.length,
-                      itemBuilder: (context, index) {
-                        final friend = friends[index];
-                        return _buildFriendSelectionCard(friend);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+    final recipient = await Navigator.of(context).push<UserProfile>(
+      MaterialPageRoute<UserProfile>(
+        builder: (_) => DmRecipientSelectionScreen(
+          cacheOwnerId: currentUser.uid,
+          friendsStream: _relationshipService.getFriends(),
+          searchUsers: (query) =>
+              _relationshipService.searchUsers(query, limit: 40),
         ),
       ),
     );
+    if (!mounted || recipient == null) return;
+    await _startConversationWithUser(recipient);
   }
 
-  /// 친구 선택 카드
-  Widget _buildFriendSelectionCard(UserProfile friend) {
-    return InkWell(
-      onTap: () {
-        Navigator.pop(context); // 바텀시트 닫기
-        _startConversationWithFriend(friend);
-      },
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
-        ),
-        child: Row(
-          children: [
-            // 프로필 이미지
-            Container(
-              width: 48,
-              height: 48,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFFE5E7EB),
-              ),
-              child: friend.hasProfileImage
-                  ? ClipOval(
-                      child: Image.network(
-                        friend.photoURL!,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.person,
-                          size: 24,
-                          color: Color(0xFF6B7280),
-                        ),
-                      ),
-                    )
-                  : const Icon(
-                      Icons.person,
-                      size: 24,
-                      color: Color(0xFF6B7280),
-                    ),
-            ),
-
-            const SizedBox(width: 12),
-
-            // 사용자 정보
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    friend.displayNameOrNickname,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF111827),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-
-            // 화살표 아이콘
-            const Icon(
-              Icons.chevron_right,
-              color: Color(0xFF9CA3AF),
-              size: 20,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 친구와 대화 시작
-  Future<void> _startConversationWithFriend(UserProfile friend) async {
+  /// 선택한 사용자와 대화 시작
+  Future<void> _startConversationWithUser(UserProfile friend) async {
     try {
-      Logger.log(
-          '🚀 친구와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
+      if (Logger.isVerboseEnabled) Logger.log(
+          '🚀 사용자와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
 
-      final conversationId = await _dmService.getOrCreateConversation(
-        friend.uid,
-        isOtherUserAnonymous: false,
-      );
+      // 방은 첫 메시지를 보낼 때 만들어진다(빈 방 방지).
+      final conversationId =
+          await _dmService.prepareConversationForOpen(friend.uid);
 
-      Logger.log('✅ 대화방 ID: $conversationId');
+      if (Logger.isVerboseEnabled) Logger.log('✅ 대화방 ID: $conversationId');
 
       if (conversationId != null && mounted) {
         // 대화방으로 이동
@@ -1315,13 +1251,13 @@ class _DMListScreenState extends State<DMListScreen> {
           ),
         );
       } else {
-        Logger.log('❌ 대화방 ID가 null입니다');
+        if (Logger.isVerboseEnabled) Logger.log('❌ 대화방 ID가 null입니다');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(Localizations.localeOf(context).languageCode == 'ko'
+              content: Text((isChineseUi(context) ? '无法创建对话' : Localizations.localeOf(context).languageCode == 'ko'
                   ? '대화방을 만들 수 없습니다'
-                  : 'Cannot create conversation'),
+                  : 'Cannot create conversation')),
               backgroundColor: const Color(0xFFEF4444),
             ),
           );
@@ -1332,13 +1268,55 @@ class _DMListScreenState extends State<DMListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(Localizations.localeOf(context).languageCode == 'ko'
+            content: Text((isChineseUi(context) ? '无法开始对话' : Localizations.localeOf(context).languageCode == 'ko'
                 ? '대화를 시작할 수 없습니다'
-                : 'Cannot start conversation'),
+                : 'Cannot start conversation')),
             backgroundColor: const Color(0xFFEF4444),
           ),
         );
       }
     }
+  }
+}
+
+
+/// 요청 탭 라벨 옆의 작은 수 표식. 사람을 점수화하지 않도록 대기 중인
+/// 요청이 있을 때만 조용히 보인다.
+class _FirstResponseCountBadge extends StatelessWidget {
+  const _FirstResponseCountBadge({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<FirstResponseRequest>>(
+      stream: FirstResponseRequestService.instance.watchIncomingPending(),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.length ?? 0;
+        if (count <= 0) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(left: 5),
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 18),
+            height: 18,
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xFF344054) : const Color(0xFFD0D5DD),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text(
+              count > 99 ? '99+' : '$count',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                height: 1,
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

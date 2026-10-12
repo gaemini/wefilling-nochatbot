@@ -1,0 +1,170 @@
+import 'dart:collection';
+import 'dart:math' as math;
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+
+import '../../services/cache/app_image_cache_manager.dart';
+
+/// 원본 비율을 사용하되 소셜 피드에서 과도하게 크거나 납작해지지 않도록
+/// 4:5~1.91:1 범위와 화면 기준 최대 높이를 적용한다.
+class AdaptivePostImageFrame extends StatefulWidget {
+  static const int defaultCacheWidth = 800;
+
+  const AdaptivePostImageFrame({
+    super.key,
+    required this.imageUrl,
+    required this.child,
+    this.cacheWidth = defaultCacheWidth,
+    this.knownAspectRatio,
+  });
+
+  final String imageUrl;
+  final Widget child;
+  final int cacheWidth;
+
+  /// 비율을 이미 알 때(영상 메타데이터) 이미지를 디코드하지 않고 바로 쓴다.
+  /// null이면 [imageUrl]을 읽어 비율을 구한다(기존 동작).
+  final double? knownAspectRatio;
+
+  @override
+  State<AdaptivePostImageFrame> createState() => _AdaptivePostImageFrameState();
+}
+
+class _AdaptivePostImageFrameState extends State<AdaptivePostImageFrame> {
+  static const double _fallbackAspectRatio = 4 / 3;
+  static const double _minimumAspectRatio = 4 / 5;
+  static const double _maximumAspectRatio = 1.91;
+  static const double _absoluteMaximumHeight = 480;
+  static const int _maximumCachedRatios = 300;
+  // Feed images use the same provider size as their visible child. Resolving
+  // the original image here would create a second full-resolution decode just
+  // to discover its aspect ratio.
+  static final LinkedHashMap<String, double> _aspectRatioCache =
+      LinkedHashMap<String, double>();
+
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageStreamListener;
+  double? _sourceAspectRatio;
+  String? _resolvedUrl;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolveAspectRatio();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdaptivePostImageFrame oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrl != widget.imageUrl) {
+      _stopListening();
+      _sourceAspectRatio = null;
+      _resolvedUrl = null;
+      _resolveAspectRatio();
+    }
+  }
+
+  void _resolveAspectRatio() {
+    if (widget.knownAspectRatio != null) return;
+    final url = widget.imageUrl.trim();
+    if (url.isEmpty || _resolvedUrl == url) return;
+    _resolvedUrl = url;
+
+    final cachedRatio = _aspectRatioCache.remove(url);
+    if (cachedRatio != null) {
+      _aspectRatioCache[url] = cachedRatio;
+      _sourceAspectRatio = cachedRatio;
+      return;
+    }
+
+    final provider = ResizeImage.resizeIfNeeded(
+      widget.cacheWidth,
+      null,
+      CachedNetworkImageProvider(
+        url,
+        cacheManager: AppImageCacheManager.instance,
+      ),
+    );
+    final stream = provider.resolve(createLocalImageConfiguration(context));
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (imageInfo, synchronousCall) {
+        final width = imageInfo.image.width;
+        final height = imageInfo.image.height;
+        if (width <= 0 || height <= 0) return;
+        final ratio = width / height;
+        _rememberAspectRatio(url, ratio);
+        _stopListening();
+        if (!mounted || _resolvedUrl != url) return;
+        if (synchronousCall) {
+          _sourceAspectRatio = ratio;
+        } else {
+          setState(() => _sourceAspectRatio = ratio);
+        }
+      },
+      onError: (_, __) => _stopListening(),
+    );
+    _imageStream = stream;
+    _imageStreamListener = listener;
+    stream.addListener(listener);
+  }
+
+  static void _rememberAspectRatio(String url, double ratio) {
+    _aspectRatioCache.remove(url);
+    _aspectRatioCache[url] = ratio;
+    while (_aspectRatioCache.length > _maximumCachedRatios) {
+      _aspectRatioCache.remove(_aspectRatioCache.keys.first);
+    }
+  }
+
+  void _stopListening() {
+    final stream = _imageStream;
+    final listener = _imageStreamListener;
+    if (stream != null && listener != null) {
+      stream.removeListener(listener);
+    }
+    _imageStream = null;
+    _imageStreamListener = null;
+  }
+
+  @override
+  void dispose() {
+    _stopListening();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final aspectRatio = (widget.knownAspectRatio ??
+                _sourceAspectRatio ??
+                _fallbackAspectRatio)
+            .clamp(
+          _minimumAspectRatio,
+          _maximumAspectRatio,
+        );
+        final screenHeight = MediaQuery.sizeOf(context).height;
+        final maximumHeight = math.min(
+          _absoluteMaximumHeight,
+          screenHeight * 0.56,
+        );
+        final desiredHeight = availableWidth / aspectRatio;
+        final height = math.min(desiredHeight, maximumHeight);
+
+        // AnimatedSize relaid out the surrounding sliver on every animation
+        // frame as multiple image ratios arrived. A single size update keeps
+        // the scroll position stable and avoids repeated feed layout work.
+        return SizedBox(
+          width: double.infinity,
+          height: height,
+          child: widget.child,
+        );
+      },
+    );
+  }
+}

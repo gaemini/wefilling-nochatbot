@@ -47,14 +47,14 @@ C=KR
 ### 1. Keystore 파일 생성 ✅
 - 위치: `~/wefilling-upload-key.jks`
 - 크기: 2,243 bytes
-- 비밀번호: `wefilling1234!`
+- 비밀번호: `(로컬 비밀 보관소에만 보관, 저장소에 기록 금지)`
 
 ### 2. key.properties 파일 생성 ✅
 - 위치: `android/key.properties`
 - 내용:
 ```properties
-storePassword=wefilling1234!
-keyPassword=wefilling1234!
+storePassword=<로컬 android/key.properties 참조>
+keyPassword=<로컬 android/key.properties 참조>
 keyAlias=upload
 storeFile=/Users/chajaemin/wefilling-upload-key.jks
 ```
@@ -109,7 +109,7 @@ Firebase Console에 SHA-1 지문을 등록해야 합니다:
    ```
 
 2. **비밀번호 안전 보관**
-   - 비밀번호: `wefilling1234!`
+   - 비밀번호: `(로컬 비밀 보관소에만 보관, 저장소에 기록 금지)`
    - 비밀번호 관리자에 저장 권장
    - 절대 Git에 커밋하지 말 것
 

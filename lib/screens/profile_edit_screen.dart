@@ -2,11 +2,15 @@
 // 사용자 프로필 편집 화면
 // 닉네임 및 국적 정보 수정 기능 제공
 
+import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../providers/auth_provider.dart';
 import '../services/storage_service.dart';
 import '../services/post_service.dart';
@@ -15,6 +19,12 @@ import '../utils/country_flag_helper.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/profile_photo_policy.dart';
+import '../utils/nickname_policy.dart';
+import '../models/social_profile_data.dart';
+import '../models/student_type.dart';
+import '../widgets/social_profile_fields.dart';
+import 'hanyang_email_verification_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({Key? key}) : super(key: key);
@@ -27,7 +37,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nicknameController = TextEditingController();
   final _bioController = TextEditingController();
+  final _conversationController = TextEditingController();
+  final _friendshipController = TextEditingController();
+  final _departmentController = TextEditingController();
+  final _gradeController = TextEditingController();
   String? _bio; // 한 줄 소개
+  List<String> _interests = <String>[];
+  List<String> _preferredActivities = <String>[];
+  bool _showDepartment = false;
+  bool _showGrade = false;
+  StudentType? _studentType;
   String _selectedNationality = '한국'; // 기본값 (한글 이름)
   final ImagePicker _imagePicker = ImagePicker();
   final StorageService _storageService = StorageService();
@@ -36,11 +55,102 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   bool _useDefaultImage = false; // 기본 이미지 사용 여부
 
   bool _isSubmitting = false;
+  Timer? _nicknameDebounce;
+  int _nicknameCheckGeneration = 0;
+  String? _lastNicknameText;
+  TextRange? _lastNicknameComposition;
+
+  bool get _isComposingNickname =>
+      _nicknameController.value.composing.isValid &&
+      !_nicknameController.value.composing.isCollapsed;
+
+  void _onNicknameEditingChanged() {
+    final value = _nicknameController.value;
+    if (_lastNicknameText == value.text &&
+        _lastNicknameComposition == value.composing) {
+      return;
+    }
+    _lastNicknameText = value.text;
+    _lastNicknameComposition = value.composing;
+    _onNicknameChanged(value.text);
+  }
+  bool _isCheckingNickname = false;
+  bool? _isNicknameAvailable;
+  String? _nicknameCheckedKey;
+  String? _nicknameAvailabilityError;
   bool _isForceUpdating = false;
   bool _nicknameLocked = false;
   bool _nationalityLocked = false;
   int? _nicknameRemainingDays;
   int? _nationalityRemainingDays;
+  String _initialProfileState = '';
+  bool _allowPop = false;
+
+  String? get _nationalityDropdownValue =>
+      CountryFlagHelper.normalizeForDropdown(_selectedNationality);
+
+  String _profileStateSignature() => jsonEncode(<String, dynamic>{
+        'nickname': _nicknameController.text.trim(),
+        'bio': _bioController.text.trim(),
+        'nationality': _nationalityDropdownValue ?? '',
+        'interests': _interests,
+        'preferredActivities': _preferredActivities,
+        'conversationStarter': _conversationController.text.trim(),
+        'friendshipPrompt': _friendshipController.text.trim(),
+        'department': _departmentController.text.trim(),
+        'grade': _gradeController.text.trim(),
+        'showDepartment': _showDepartment,
+        'showGrade': _showGrade,
+        'studentType': _studentType?.value,
+        'selectedImage': _selectedImage?.path ?? '',
+        'useDefaultImage': _useDefaultImage,
+      });
+
+  Future<void> _openHanyangVerification() async {
+    FocusScope.of(context).unfocus();
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => const HanyangEmailVerificationScreen.profile(),
+      ),
+    );
+    if (!mounted) return;
+    await context.read<AuthProvider>().refreshHanyangVerificationStatus();
+  }
+
+  Future<bool> _confirmDiscardChanges() async {
+    if (_allowPop ||
+        _initialProfileState.isEmpty ||
+        _profileStateSignature() == _initialProfileState) {
+      return true;
+    }
+
+    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text((isChineseUi(context) ? '尚未保存' : isKorean ? '저장하지 않은 변경사항' : 'Unsaved changes')),
+        content: Text(
+          (isChineseUi(context) ? '离开后，资料修改将不会保存。' : isKorean
+              ? '저장하지 않고 나가면 수정한 내용이 사라져요.'
+              : 'Your profile edits will be lost if you leave now.'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text((isChineseUi(context) ? '继续编辑' : isKorean ? '계속 수정' : 'Keep editing')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              (isChineseUi(context) ? '放弃修改' : isKorean ? '저장 안 함' : 'Discard'),
+              style: const TextStyle(color: Color(0xFFDC2626)),
+            ),
+          ),
+        ],
+      ),
+    );
+    return discard == true;
+  }
 
   DateTime? _timestampToDateTime(dynamic value) {
     if (value is Timestamp) return value.toDate();
@@ -62,9 +172,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   @override
   void initState() {
     super.initState();
+    _nicknameController.addListener(_onNicknameEditingChanged);
     // 초기 데이터 설정
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.refreshHanyangVerificationStatus();
+      if (!mounted) return;
       if (authProvider.userData != null) {
         // 닉네임 설정
         final currentNickname = authProvider.userData!['nickname'];
@@ -79,24 +192,40 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           _bio = _bioController.text.trim();
         }
 
-        // 국적 설정
-        final currentNationality = authProvider.userData!['nationality'];
-        if (currentNationality != null) {
-          setState(() {
-            _selectedNationality = currentNationality;
-          });
-        }
+        final social = SocialProfileData.fromMap(authProvider.userData);
+        _interests = List<String>.of(social.interests);
+        _preferredActivities = List<String>.of(social.preferredActivities);
+        _conversationController.text = social.conversationStarter;
+        _friendshipController.text = social.friendshipPrompt;
+        _departmentController.text = social.department;
+        _gradeController.text = social.grade;
+        _showDepartment = social.showDepartment;
+        _showGrade = social.showGrade;
+        _studentType =
+            StudentType.tryParse(authProvider.userData!['studentType']);
+
+        // 국적 설정: 빈 값/영문명/ISO/알 수 없는 레거시 값이
+        // DropdownButton의 선택값 assertion을 발생시키지 않도록 정규화한다.
+        _selectedNationality = CountryFlagHelper.normalizeForDropdown(
+              authProvider.userData!['nationality'],
+            ) ??
+            '';
 
         // 3일 제한(닉네임/국적) 잠금 상태 계산
-        final lastNick = _timestampToDateTime(authProvider.userData!['nicknameUpdatedAt']);
-        final lastNat = _timestampToDateTime(authProvider.userData!['nationalityUpdatedAt']);
-        final nickRem = lastNick != null ? _remainingDaysForCooldown(lastNick) : 0;
+        final lastNick =
+            _timestampToDateTime(authProvider.userData!['nicknameUpdatedAt']);
+        final lastNat = _timestampToDateTime(
+            authProvider.userData!['nationalityUpdatedAt']);
+        final nickRem =
+            lastNick != null ? _remainingDaysForCooldown(lastNick) : 0;
         final natRem = lastNat != null ? _remainingDaysForCooldown(lastNat) : 0;
         setState(() {
           _nicknameLocked = nickRem > 0;
-          _nationalityLocked = natRem > 0;
+          // 잘못된 레거시 값은 사용자가 바로 고칠 수 있어야 한다.
+          _nationalityLocked = natRem > 0 && _nationalityDropdownValue != null;
           _nicknameRemainingDays = nickRem > 0 ? nickRem : null;
           _nationalityRemainingDays = natRem > 0 ? natRem : null;
+          _initialProfileState = _profileStateSignature();
         });
       }
     });
@@ -104,9 +233,146 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   @override
   void dispose() {
+    _nicknameController.removeListener(_onNicknameEditingChanged);
+    _nicknameDebounce?.cancel();
     _nicknameController.dispose();
     _bioController.dispose();
+    _conversationController.dispose();
+    _friendshipController.dispose();
+    _departmentController.dispose();
+    _gradeController.dispose();
     super.dispose();
+  }
+
+  void _onNicknameChanged(String raw) {
+    _nicknameDebounce?.cancel();
+    final generation = ++_nicknameCheckGeneration;
+    if (_isComposingNickname) {
+      setState(() {
+        _isNicknameAvailable = null;
+        _nicknameCheckedKey = null;
+        _nicknameAvailabilityError = null;
+        _isCheckingNickname = false;
+      });
+      return;
+    }
+    final current = (context.read<AuthProvider>().userData?['nickname'] ?? '')
+        .toString()
+        .trim();
+    final unchanged = raw.trim() == current;
+    final identity = NicknamePolicy.identityOrNull(raw);
+    final localError = raw.isEmpty ? null : _nicknameValidationMessage(raw);
+    setState(() {
+      _isCheckingNickname = false;
+      _isNicknameAvailable = unchanged ? true : null;
+      _nicknameCheckedKey =
+          unchanged ? NicknamePolicy.canonicalKey(current) : null;
+      _nicknameAvailabilityError = unchanged ? null : localError;
+    });
+    if (identity == null || unchanged) return;
+    _nicknameDebounce = Timer(const Duration(milliseconds: 300), () {
+      _checkNickname(raw, generation: generation);
+    });
+  }
+
+  String? _nicknameValidationMessage(String? raw) {
+    if (_isComposingNickname) return null;
+    final current = (context.read<AuthProvider>().userData?['nickname'] ?? '')
+        .toString()
+        .trim();
+    // A legacy nickname containing a dot remains displayable and must not
+    // block saving unrelated profile fields until the user changes it.
+    if ((raw ?? '').trim() == current && current.isNotEmpty) return null;
+    final l10n = AppLocalizations.of(context)!;
+    return switch (NicknamePolicy.validate(raw)) {
+      null => null,
+      NicknameValidationIssue.empty => l10n.nicknameRequired,
+      NicknameValidationIssue.length => l10n.nicknameLengthHint,
+      NicknameValidationIssue.invalidCharacters =>
+        l10n.nicknameInvalidCharacters,
+      NicknameValidationIssue.letterRequired => l10n.nicknameLetterRequired,
+      NicknameValidationIssue.reserved => l10n.nicknameReserved,
+    };
+  }
+
+  String _nicknameHelperText() {
+    final l10n = AppLocalizations.of(context)!;
+    if (_nicknameAvailabilityError != null) {
+      return _nicknameAvailabilityError!;
+    }
+    if (_isCheckingNickname) return l10n.nicknameChecking;
+    if (_isNicknameAvailable == true) return l10n.nicknameAvailable;
+    if (_isNicknameAvailable == false) return l10n.nicknameTaken;
+    final raw = _nicknameController.text;
+    final normalized = NicknamePolicy.normalizePreview(raw);
+    if (raw.trim().isNotEmpty && normalized != raw.trim()) {
+      return l10n.nicknameNormalizedPreview(normalized);
+    }
+    return l10n.nicknamePolicyHelp;
+  }
+
+  Future<bool> _checkNickname(
+    String raw, {
+    required int generation,
+  }) async {
+    final input = raw;
+    final inputIdentity = NicknamePolicy.identityOrNull(input);
+    if (generation != _nicknameCheckGeneration ||
+        inputIdentity == null ||
+        inputIdentity.nicknameKey !=
+            NicknamePolicy.canonicalKey(_nicknameController.text)) {
+      return false;
+    }
+    setState(() {
+      _isCheckingNickname = true;
+      _nicknameAvailabilityError = null;
+    });
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final requestUid = authProvider.user?.uid;
+      final result = await authProvider.checkNicknameAvailability(input);
+      if (!mounted ||
+          context.read<AuthProvider>().user?.uid != requestUid ||
+          generation != _nicknameCheckGeneration ||
+          result.nicknameKey !=
+              NicknamePolicy.canonicalKey(_nicknameController.text)) {
+        return false;
+      }
+      setState(() {
+        _isCheckingNickname = false;
+        _isNicknameAvailable = result.available;
+        _nicknameCheckedKey = result.nicknameKey;
+      });
+      return result.available;
+    } on NicknameAvailabilityException catch (_) {
+      if (mounted &&
+          generation == _nicknameCheckGeneration &&
+          inputIdentity.nicknameKey ==
+              NicknamePolicy.canonicalKey(_nicknameController.text)) {
+        setState(() {
+          _isCheckingNickname = false;
+          _isNicknameAvailable = null;
+          _nicknameCheckedKey = null;
+          _nicknameAvailabilityError =
+              AppLocalizations.of(context)!.nicknameCheckNetworkError;
+        });
+      }
+      return false;
+    } catch (_) {
+      if (mounted &&
+          generation == _nicknameCheckGeneration &&
+          inputIdentity.nicknameKey ==
+              NicknamePolicy.canonicalKey(_nicknameController.text)) {
+        setState(() {
+          _isCheckingNickname = false;
+          _isNicknameAvailable = null;
+          _nicknameCheckedKey = null;
+          _nicknameAvailabilityError =
+              AppLocalizations.of(context)!.nicknameCheckNetworkError;
+        });
+      }
+      return false;
+    }
   }
 
   // 이미지 선택
@@ -118,7 +384,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         maxHeight: 1024,
         imageQuality: 85,
       );
-      
+
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
@@ -144,7 +410,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         maxHeight: 1024,
         imageQuality: 85,
       );
-      
+
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
@@ -210,7 +476,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   // 프로필 업데이트
   Future<void> _updateProfile() async {
+    if (_isSubmitting || _isComposingNickname) return;
     if (_formKey.currentState?.validate() ?? false) {
+      final selectedNationality = _nationalityDropdownValue;
+      if (selectedNationality == null) return;
       setState(() {
         _isSubmitting = true;
       });
@@ -218,21 +487,93 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         ProfileUpdateResult? result;
+        final requestedRawNickname = _nicknameController.text;
+        final currentNickname =
+            (authProvider.userData?['nickname'] ?? '').toString().trim();
+        final nicknameChanged = requestedRawNickname.trim() != currentNickname;
+        final requestedIdentity =
+            NicknamePolicy.identityOrNull(requestedRawNickname);
+        final requestedNickname =
+            nicknameChanged ? requestedIdentity!.nickname : currentNickname;
+        final requestedNicknameKey = requestedIdentity?.nicknameKey ??
+            NicknamePolicy.canonicalKey(currentNickname);
+        if (nicknameChanged) {
+          if (_isNicknameAvailable == false &&
+              _nicknameAvailabilityError == null &&
+              _nicknameCheckedKey == requestedNicknameKey) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(AppLocalizations.of(context)!.nicknameTaken),
+              ),
+            );
+            return;
+          }
+          if (_isNicknameAvailable != true ||
+              _nicknameCheckedKey != requestedNicknameKey) {
+            _nicknameDebounce?.cancel();
+            final generation = ++_nicknameCheckGeneration;
+            final available = await _checkNickname(
+              requestedRawNickname,
+              generation: generation,
+            );
+            if (!available || !mounted) return;
+          }
+          // Do not repeat the UX availability call on Save. The secure server
+          // transaction below is the final uniqueness check.
+          _nicknameDebounce?.cancel();
+          ++_nicknameCheckGeneration;
+          _isCheckingNickname = false;
+        }
+        final social = SocialProfileData(
+          bio: _bioController.text.trim(),
+          interests: _interests,
+          preferredActivities: _preferredActivities,
+          conversationStarter: _conversationController.text.trim(),
+          friendshipPrompt: _friendshipController.text.trim(),
+          department: _departmentController.text.trim(),
+          grade: _gradeController.text.trim(),
+          showDepartment: _showDepartment,
+          showGrade: _showGrade,
+        );
+        final currentPhotoUrl =
+            (authProvider.userData?['photoURL'] ?? '').toString();
+        final hasExistingProfilePhoto =
+            ProfilePhotoPolicy.isAllowedProfilePhotoUrl(currentPhotoUrl);
 
         // 기본 이미지로 변경하는 경우
         if (_useDefaultImage) {
-          Logger.log("🗑️ 기본 이미지로 변경 요청");
-          
+          if (Logger.isVerboseEnabled) Logger.log("🗑️ 기본 이미지로 변경 요청");
+
+          // 기본 이미지 초기화는 즉시 Firestore/Storage를 변경하므로, 닉네임
+          // 충돌이 있다면 그보다 먼저 서버의 최종 claim transaction에서
+          // 거절한다. 성공 전에는 기존 사진과 프로필 캐시도 그대로 유지된다.
+          if (nicknameChanged) {
+            await authProvider.saveUniqueNickname(requestedNickname);
+          }
+
           // resetProfilePhotoToDefault를 호출하여 Storage 이미지 삭제 및 과거 콘텐츠 업데이트
           final success = await authProvider.resetProfilePhotoToDefault();
-          
+
           if (success && mounted) {
             // 닉네임과 국적도 함께 업데이트 (photoURL은 이미 처리됨)
             result = await authProvider.updateUserProfile(
-              nickname: _nicknameController.text.trim(),
-              nationality: _selectedNationality,
+              nickname: requestedNickname,
+              nationality: selectedNationality,
               photoURL: '', // 빈 문자열로 유지
-              bio: _bio,
+              bio: social.bio,
+              interests: social.interests,
+              preferredActivities: social.preferredActivities,
+              conversationStarter: social.conversationStarter,
+              friendshipPrompt: social.friendshipPrompt,
+              department: social.department,
+              grade: social.grade,
+              showDepartment: social.showDepartment,
+              showGrade: social.showGrade,
+              profileCompletion: social.completionFor(
+                hasProfilePhoto: false,
+              ),
+              studentType: _studentType?.value,
+              todoOnboardingCompleted: _studentType != null,
             );
           }
         }
@@ -241,40 +582,68 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           setState(() {
             _isUploadingImage = true;
           });
-          
+
           final userId = authProvider.user?.uid;
           if (userId == null) {
-            throw Exception(AppLocalizations.of(context)!.loginRequired ?? '로그인이 필요합니다.');
+            throw Exception(
+                AppLocalizations.of(context)!.loginRequired ?? '로그인이 필요합니다.');
           }
 
           final upload = await _storageService.uploadProfileImage(
             _selectedImage!,
             userId: userId,
           );
-          
+
           setState(() {
             _isUploadingImage = false;
           });
-          
+
           if (upload == null) {
-            throw Exception(AppLocalizations.of(context)!.imageUploadFailed ?? '이미지 업로드에 실패했습니다.');
+            throw Exception(AppLocalizations.of(context)!.imageUploadFailed ??
+                '이미지 업로드에 실패했습니다.');
           }
-          
+
           // 프로필 업데이트 수행 (닉네임, 국적, photoURL 모두 포함)
           result = await authProvider.updateUserProfile(
-            nickname: _nicknameController.text.trim(),
-            nationality: _selectedNationality,
+            nickname: requestedNickname,
+            nationality: selectedNationality,
             photoURL: upload.downloadUrl, // ✅ 새 토큰 포함 URL
             photoPath: upload.path, // ✅ 유저 폴더 내 실제 저장 경로
-            bio: _bio,
+            bio: social.bio,
+            interests: social.interests,
+            preferredActivities: social.preferredActivities,
+            conversationStarter: social.conversationStarter,
+            friendshipPrompt: social.friendshipPrompt,
+            department: social.department,
+            grade: social.grade,
+            showDepartment: social.showDepartment,
+            showGrade: social.showGrade,
+            profileCompletion: social.completionFor(
+              hasProfilePhoto: true,
+            ),
+            studentType: _studentType?.value,
+            todoOnboardingCompleted: _studentType != null,
           );
         }
         // 이미지 변경 없이 닉네임/국적만 업데이트
         else {
           result = await authProvider.updateUserProfile(
-            nickname: _nicknameController.text.trim(),
-            nationality: _selectedNationality,
-            bio: _bio,
+            nickname: requestedNickname,
+            nationality: selectedNationality,
+            bio: social.bio,
+            interests: social.interests,
+            preferredActivities: social.preferredActivities,
+            conversationStarter: social.conversationStarter,
+            friendshipPrompt: social.friendshipPrompt,
+            department: social.department,
+            grade: social.grade,
+            showDepartment: social.showDepartment,
+            showGrade: social.showGrade,
+            profileCompletion: social.completionFor(
+              hasProfilePhoto: hasExistingProfilePhoto,
+            ),
+            studentType: _studentType?.value,
+            todoOnboardingCompleted: _studentType != null,
           );
         }
 
@@ -282,11 +651,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           final l10n = AppLocalizations.of(context);
           if (result!.hasRestrictedFields) {
             final messages = <String>[];
-            if (!result.nicknameApplied && (result.nicknameDaysRemaining ?? 0) > 0) {
-              messages.add(l10n?.nicknameChangeLimited(result.nicknameDaysRemaining!) ?? '');
+            if (!result.nicknameApplied &&
+                (result.nicknameDaysRemaining ?? 0) > 0) {
+              messages.add(
+                  l10n?.nicknameChangeLimited(result.nicknameDaysRemaining!) ??
+                      '');
             }
-            if (!result.nationalityApplied && (result.nationalityDaysRemaining ?? 0) > 0) {
-              messages.add(l10n?.nationalityChangeLimited(result.nationalityDaysRemaining!) ?? '');
+            if (!result.nationalityApplied &&
+                (result.nationalityDaysRemaining ?? 0) > 0) {
+              messages.add(l10n?.nationalityChangeLimited(
+                      result.nationalityDaysRemaining!) ??
+                  '');
             }
             final text = messages.where((m) => m.trim().isNotEmpty).join('\n');
             if (text.isNotEmpty) {
@@ -299,15 +674,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             }
           }
           // 프로필 업데이트 성공
-          // 참고: 과거 게시글/댓글은 authProvider.updateUserProfile 또는 
+          // 참고: 과거 게시글/댓글은 authProvider.updateUserProfile 또는
           // resetProfilePhotoToDefault 내부에서 이미 업데이트됨
-          
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(AppLocalizations.of(context)!.updating),
               backgroundColor: AppTheme.accentEmerald,
             ),
           );
+          _allowPop = true;
           Navigator.of(context).pop(); // 편집 화면 닫기
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -319,9 +695,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
+          final nicknameTaken =
+              e is FirebaseFunctionsException && e.code == 'already-exists';
+          final networkError = e is TimeoutException ||
+              (e is FirebaseFunctionsException &&
+                  (e.code == 'unavailable' || e.code == 'deadline-exceeded'));
+          final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+          final message = nicknameTaken
+              ? AppLocalizations.of(context)!.nicknameTaken
+              : networkError
+                  ? ((isChineseUi(context) ? '请检查网络连接。' : isKorean
+                      ? '인터넷 연결을 확인해 주세요.'
+                      : 'Check your internet connection.'))
+                  : ((isChineseUi(context) ? '资料保存失败，请稍后重试。' : isKorean
+                      ? '프로필을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
+                      : 'Could not save your profile. Please try again shortly.'));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
         }
       } finally {
         if (mounted) {
@@ -353,7 +744,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
             ),
-            child: Text(AppLocalizations.of(context)!.update, style: const TextStyle(color: Colors.white)),
+            child: Text(AppLocalizations.of(context)!.update,
+                style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -368,22 +760,26 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final user = authProvider.user;
-      
+
       if (user == null) {
-        throw Exception(AppLocalizations.of(context)!.loginRequired ?? '로그인이 필요합니다.');
+        throw Exception(
+            AppLocalizations.of(context)!.loginRequired ?? '로그인이 필요합니다.');
       }
 
       // 현재 프로필 정보 가져오기
       final userData = authProvider.userData;
       final nickname = userData?['nickname'] ?? '익명';
       final photoURL = userData?['photoURL'];
-      
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🔥 수동 게시물 업데이트 시작');
-      Logger.log('   - User ID: ${user.uid}');
-      Logger.log('   - Nickname: $nickname');
-      Logger.log('   - PhotoURL: ${photoURL ?? "없음"}');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('🔥 수동 게시물 업데이트 시작');
+      if (Logger.isVerboseEnabled) Logger.log('   - User ID: ${user.uid}');
+      if (Logger.isVerboseEnabled) Logger.log('   - Nickname: $nickname');
+      if (Logger.isVerboseEnabled)
+        Logger.log('   - PhotoURL: ${photoURL ?? "없음"}');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // 1단계: users 컬렉션의 displayName을 nickname과 동기화
       try {
@@ -393,7 +789,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             .update({
           'displayName': nickname,
         });
-        Logger.log('✅ users 컬렉션의 displayName 동기화 완료: $nickname');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ users 컬렉션의 displayName 동기화 완료: $nickname');
       } catch (e) {
         Logger.error('⚠️ displayName 동기화 실패: $e');
       }
@@ -410,7 +807,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         if (postsSuccess) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.applyProfileToAllPosts),
+              content:
+                  Text(AppLocalizations.of(context)!.applyProfileToAllPosts),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 3),
             ),
@@ -427,8 +825,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       }
     } catch (e, stackTrace) {
       Logger.error('❌ 수동 업데이트 오류: $e');
-      Logger.log('스택 트레이스: $stackTrace');
-      
+      if (Logger.isVerboseEnabled) Logger.log('스택 트레이스: $stackTrace');
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -449,376 +847,718 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: false,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          AppLocalizations.of(context)!.profileEdit ?? "",
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
-          ),
-        ),
-        actions: [
-          // 저장 버튼
-          _isSubmitting
-              ? const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.pointColor,
-                  ),
-                ),
-              )
-              : TextButton(
-                onPressed: _updateProfile,
-                child: Text(
-                  AppLocalizations.of(context)!.save,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16, 
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.pointColor,
-                  ),
-                ),
+    return WillPopScope(
+        onWillPop: _confirmDiscardChanges,
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            centerTitle: true,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                  size: 22, color: Color(0xFF111827)),
+              onPressed: () => Navigator.maybePop(context),
+            ),
+            title: Text(
+              AppLocalizations.of(context)!.profileEdit ?? "",
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111827),
               ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 프로필 이미지 편집
-              Center(
-                child: Column(
-                  children: [
-                    Text(
-                      AppLocalizations.of(context)!.profileImage,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontWeight: FontWeight.w600, 
-                        fontSize: 16, 
-                        color: Color(0xFF111827),
+            ),
+            actions: [
+              // 저장 버튼
+              _isSubmitting
+                  ? const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.pointColor,
+                        ),
+                      ),
+                    )
+                  : MotionPress(
+                      pressedScale: .975,
+                      child: TextButton(
+                        onPressed: _updateProfile,
+                        child: Text(
+                          AppLocalizations.of(context)!.save,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.pointColor,
+                          ),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    GestureDetector(
-                      onTap: _showImagePickerOptions,
-                      child: Stack(
-                        children: [
-                          Container(
-                            width: 120,
-                            height: 120,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: AppColors.pointColor, // Wefilling 브랜드 색상
-                                width: 3,
-                              ),
-                              // boxShadow 제거
-                            ),
-                            child: ClipOval(
-                              child: _useDefaultImage
-                                  ? Container(
-                                      color: Colors.grey[200],
-                                      child: Icon(
-                                        Icons.person,
-                                        size: 40,
-                                        color: AppColors.pointColor, // Wefilling 브랜드 색상
+            ],
+          ),
+          body: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              32 + MediaQuery.paddingOf(context).bottom,
+            ),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 프로필 이미지 편집
+                  Center(
+                    child: Column(
+                      children: [
+                        Text(
+                          AppLocalizations.of(context)!.profileImage,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            color: Color(0xFF111827),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        MotionPress(
+                          pressedScale: .985,
+                          child: GestureDetector(
+                            onTap: _showImagePickerOptions,
+                            child: Stack(
+                              children: [
+                                Container(
+                                  width: 120,
+                                  height: 120,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: const Color(0xFFF1F5F9),
+                                  ),
+                                  child: ClipOval(
+                                    child: _useDefaultImage
+                                        ? Container(
+                                            color: Colors.grey[200],
+                                            child: Icon(
+                                              Icons.person,
+                                              size: 40,
+                                              color: AppColors.pointColor, // Wefilling 브랜드 색상
+                                            ),
+                                          )
+                                        : _selectedImage != null
+                                        ? Image.file(_selectedImage!, fit: BoxFit.cover)
+                                        : Consumer<AuthProvider>(
+                                            builder: (context, authProvider, child) {
+                                              final raw = (authProvider.userData?['photoURL'] ?? '')
+                                                  .toString();
+                                              final url =
+                                                  ProfilePhotoPolicy.isAllowedProfilePhotoUrl(raw)
+                                                  ? raw
+                                                  : '';
+                                              return url.isNotEmpty
+                                                  ? Image.network(
+                                                      url,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (context, error, stackTrace) {
+                                                        return Container(
+                                                          color: Colors.grey[200],
+                                                          child: Icon(
+                                                            Icons.person,
+                                                            size: 40,
+                                                            color: AppColors
+                                                                .pointColor, // Wefilling 브랜드 색상
+                                                          ),
+                                                        );
+                                                      },
+                                                    )
+                                                  : Container(
+                                                      color: Colors.grey[200],
+                                                      child: Icon(
+                                                        Icons.person,
+                                                        size: 40,
+                                                        color:
+                                                            AppColors.pointColor, // Wefilling 브랜드 색상
+                                                      ),
+                                                    );
+                                            },
+                                          ),
+                                  ),
+                                ),
+                                if (_isUploadingImage)
+                                  Positioned.fill(
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.black54,
                                       ),
-                                    )
-                                  : _selectedImage != null
-                                      ? Image.file(
-                                          _selectedImage!,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : Consumer<AuthProvider>(
-                                          builder: (context, authProvider, child) {
-                                            final raw = (authProvider.userData?['photoURL'] ?? '').toString();
-                                            final url = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(raw) ? raw : '';
-                                            return url.isNotEmpty
-                                                ? Image.network(
-                                                    url,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (context, error, stackTrace) {
-                                                      return Container(
-                                                        color: Colors.grey[200],
-                                                        child: Icon(
-                                                          Icons.person,
-                                                          size: 40,
-                                                          color: AppColors.pointColor, // Wefilling 브랜드 색상
-                                                        ),
-                                                      );
-                                                    },
-                                                  )
-                                                : Container(
-                                                    color: Colors.grey[200],
-                                                    child: Icon(
-                                                      Icons.person,
-                                                      size: 40,
-                                                      color: AppColors.pointColor, // Wefilling 브랜드 색상
-                                                    ),
-                                                  );
-                                          },
+                                      child: Center(
+                                        child: CircularProgressIndicator(
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                         ),
+                                      ),
+                                    ),
+                                  ),
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.pointColor,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 2),
+                                    ),
+                                    child: Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          if (_isUploadingImage)
-                            Positioned.fill(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.black54,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          AppLocalizations.of(context)!.tapToChangeImage,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            color: AppColors.pointColor,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // 닉네임 입력
+                  Text(
+                    AppLocalizations.of(context)!.nicknameQuestion ??
+                        'What is your nickname?',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _nicknameController,
+                    enabled: !_nicknameLocked,
+                    decoration: socialProfileInputDecoration(context: context,
+                      hintText: '닉네임을 입력하세요',
+                      helperText: _nicknameHelperText(),
+                    ),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF111827),
+                    ),
+                    validator: _nicknameValidationMessage,
+                  ),
+                  if (_nicknameLocked && (_nicknameRemainingDays ?? 0) > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      AppLocalizations.of(context)!
+                          .nicknameChangeLimited(_nicknameRemainingDays!),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 12,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+
+                  // 한 줄 소개 입력 (선택)
+                   Text(
+                    'Bio',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _bioController,
+                    maxLength: 60, // 영어/한국어 모두 안전한 길이
+                    decoration: socialProfileInputDecoration(context: context,
+                      hintText: AppLocalizations.of(context)!.bioPlaceholder,
+                      helperText:
+                          (isChineseUi(context) ? '用一句话介绍自己。' : Localizations.localeOf(context).languageCode == 'ko'
+                              ? '나의 분위기가 느껴지는 한 문장을 적어보세요.'
+                              : 'Write one line that feels like you.'),
+                    ),
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF111827),
+                    ),
+                    onChanged: (value) {
+                      _bio = value.trim();
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 국적 선택
+                   Text(
+                    'Where are you from?',
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey<String>(
+                      'profile_nationality_${_nationalityDropdownValue ?? 'unselected'}',
+                    ),
+                    decoration: socialProfileInputDecoration(context: context,
+                      hintText:
+                          (isChineseUi(context) ? '国家或地区' : Localizations.localeOf(context).languageCode == 'ko'
+                              ? '국가'
+                              : 'Country'),
+                    ),
+                    initialValue: _nationalityDropdownValue,
+                    isExpanded: true, // 긴 텍스트 표시를 위해
+                    menuMaxHeight: MediaQuery.sizeOf(context).height * 0.5,
+                    items: CountryFlagHelper.dropdownCountries.map((country) {
+                      final currentLanguage =
+                          Localizations.localeOf(context).languageCode;
+                      return DropdownMenuItem(
+                        value: country.korean, // 내부적으로는 한글 이름 저장
+                        child: Text(
+                          country.getLocalizedName(
+                              currentLanguage), // 현재 언어에 맞게 표시
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF111827),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(growable: false),
+                    validator: (value) {
+                      if (value != null) return null;
+                      return (isChineseUi(context) ? '请选择国籍。' : Localizations.localeOf(context).languageCode ==
+                              'ko'
+                          ? '국적을 선택해 주세요.'
+                          : 'Please choose your nationality.');
+                    },
+                    onChanged: _nationalityLocked
+                        ? null
+                        : (value) {
+                            if (value != null) {
+                              setState(() {
+                                _selectedNationality = value;
+                              });
+                            }
+                          },
+                  ),
+                  if (_nationalityLocked &&
+                      (_nationalityRemainingDays ?? 0) > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      AppLocalizations.of(context)!
+                          .nationalityChangeLimited(_nationalityRemainingDays!),
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 12,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 28),
+                  ProfileSectionHeading(
+                    title: (isChineseUi(context) ? '学生类型' : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '학생 유형'
+                        : 'Student type'),
+                    description: (isChineseUi(context) ? '用于个性化学期待办和推荐内容。' : Localizations.localeOf(context).languageCode ==
+                            'ko'
+                        ? '학기별 To-do와 추천을 개인화해요.'
+                        : 'Personalizes your semester To-do and recommendations.'),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: StudentType.values.map((type) {
+                      final selected = _studentType == type;
+                      return Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            right: type == StudentType.exchange ? 6 : 0,
+                            left: type == StudentType.korean ? 6 : 0,
+                          ),
+                          child: InkWell(
+                            onTap: () => setState(() => _studentType = type),
+                            borderRadius: BorderRadius.circular(10),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? AppColors.pointColor
+                                    : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                type.title(context),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: selected
+                                      ? Colors.white
+                                      : const Color(0xFF475569),
                                 ),
-                                child: Center(
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(growable: false),
+                  ),
+                  const SizedBox(height: 36),
+                  const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                  const SizedBox(height: 30),
+                  ProfileSectionHeading(
+                    title: (isChineseUi(context) ? '最近感兴趣' : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '요즘 관심 있는 것'
+                        : 'Into these days'),
+                    description: (isChineseUi(context) ? '让同好更容易找到你，最多选5项' : Localizations.localeOf(context).languageCode ==
+                            'ko'
+                        ? '비슷한 관심사를 가진 친구들이 더 쉽게 다가올 수 있어요. 최대 5개'
+                        : 'Help people with similar interests find you. Up to 5'),
+                  ),
+                  const SizedBox(height: 16),
+                  SocialProfileTagSelector(
+                    options: SocialProfileCatalog.interests,
+                    selectedIds: _interests,
+                    onChanged: (value) => setState(() => _interests = value),
+                  ),
+                  const SizedBox(height: 32),
+                  ProfileSectionHeading(
+                    title: (isChineseUi(context) ? '想一起做' : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '같이 하고 싶은 것'
+                        : 'Let\'s do together'),
+                    description: (isChineseUi(context) ? '选择想和朋友一起做的事，最多选5项' : Localizations.localeOf(context).languageCode ==
+                            'ko'
+                        ? '다른 친구와 실제로 함께하고 싶은 활동을 골라보세요. 최대 5개'
+                        : 'Choose activities you would actually like to share. Up to 5'),
+                  ),
+                  const SizedBox(height: 16),
+                  SocialProfileTagSelector(
+                    options: SocialProfileCatalog.activities,
+                    selectedIds: _preferredActivities,
+                    onChanged: (value) =>
+                        setState(() => _preferredActivities = value),
+                  ),
+                  const SizedBox(height: 36),
+                  const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                  const SizedBox(height: 30),
+                  SocialProfilePromptField(
+                    controller: _conversationController,
+                    suggestions: SocialProfileCatalog.conversationStarters,
+                    title: (isChineseUi(context) ? '聊天话题' : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '대화 시작 질문'
+                        : 'Conversation starter'),
+                    description:
+                        (isChineseUi(context) ? '新朋友可以先问你什么？' : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '친구들이 어떤 말로 대화를 시작하면 좋을까요?'
+                            : 'What could a new friend ask you first?'),
+                    hintText:
+                        (isChineseUi(context) ? '也可以自己写一个问题。' : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '질문을 직접 적어보세요.'
+                            : 'Write your own question.'),
+                  ),
+                  const SizedBox(height: 28),
+                  SocialProfilePromptField(
+                    controller: _friendshipController,
+                    suggestions: SocialProfileCatalog.friendshipPrompts,
+                    title: (isChineseUi(context) ? '如何和我成为朋友' : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '나와 친해지는 방법'
+                        : 'How to become friends with me'),
+                    description:
+                        (isChineseUi(context) ? '分享一个轻松又让人记住你的特点。' : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '나의 성격을 부담 없이 보여주는 한 문장을 골라보세요.'
+                            : 'Share a light, memorable clue about you.'),
+                    hintText:
+                        (isChineseUi(context) ? '也可以自己填写。' : Localizations.localeOf(context).languageCode == 'ko'
+                            ? '직접 적어도 좋아요.'
+                            : 'Or write your own.'),
+                  ),
+                  const SizedBox(height: 36),
+                  const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                  const SizedBox(height: 30),
+                  ProfileSectionHeading(
+                    title: (isChineseUi(context) ? '学校信息' : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '학교 정보'
+                        : 'School information'),
+                    description: (isChineseUi(context) ? '学校邮箱不会公开，院系和年级为选填。' : Localizations.localeOf(context).languageCode ==
+                            'ko'
+                        ? '학교 이메일은 공개되지 않아요. 학과와 학년만 선택적으로 표시할 수 있어요.'
+                        : 'Your school email stays private. Department and year are optional.'),
+                  ),
+                  const SizedBox(height: 14),
+                  Consumer<AuthProvider>(
+                    builder: (context, authProvider, _) {
+                      final status = authProvider.hanyangVerificationStatus;
+                      final verified = authProvider.isHanyangEmailVerified;
+                      final checking = !verified &&
+                          (status == HanyangVerificationStatus.unknown ||
+                              status == HanyangVerificationStatus.checking);
+                      final isKorean =
+                          Localizations.localeOf(context).languageCode == 'ko';
+                      final school = (authProvider.userData?['university'] ??
+                              authProvider.userData?['schoolName'] ??
+                              'Hanyang University')
+                          .toString();
+                      final String statusTitle;
+                      final String? statusDescription;
+                      if (checking) {
+                        statusTitle = (isChineseUi(context) ? '正在检查汉阳邮箱验证状态' : isKorean
+                            ? '한양메일 인증 상태 확인 중'
+                            : 'Checking Hanyang email verification');
+                        statusDescription = null;
+                      } else if (verified) {
+                        statusTitle =
+                            '$school · ${(isChineseUi(context) ? '已验证' : isKorean ? '인증됨' : 'Verified')}';
+                        statusDescription =
+                            authProvider.maskedHanyangEmail.isEmpty
+                                ? null
+                                : authProvider.maskedHanyangEmail;
+                      } else if (status ==
+                          HanyangVerificationStatus.unavailable) {
+                        statusTitle = (isChineseUi(context) ? '无法获取验证状态' : isKorean
+                            ? '인증 상태를 확인하지 못했어요'
+                            : 'Could not check verification status');
+                        statusDescription = (isChineseUi(context) ? '请检查网络后重试。' : isKorean
+                            ? '네트워크 연결을 확인한 뒤 다시 시도해주세요.'
+                            : 'Check your connection and try again.');
+                      } else if (status == HanyangVerificationStatus.conflict) {
+                        statusTitle = (isChineseUi(context) ? '学校认证需要审核' : isKorean
+                            ? '학교 인증 정보를 확인할 수 없어요'
+                            : 'School verification needs review');
+                        statusDescription = (isChineseUi(context) ? '请联系客服。' : isKorean
+                            ? '고객 지원이 필요한 상태입니다.'
+                            : 'Please contact customer support.');
+                      } else {
+                        statusTitle = (isChineseUi(context) ? '汉阳邮箱未验证' : isKorean
+                            ? '한양메일 미인증'
+                            : 'Hanyang email not verified');
+                        statusDescription = (isChineseUi(context) ? '验证汉阳大学邮箱后，即可使用学校信息。' : isKorean
+                            ? '학교 정보를 사용하려면 한양메일 인증이 필요해요.'
+                            : 'Verify your Hanyang email to use school information.');
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (checking)
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
                                   child: CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    strokeWidth: 2,
+                                    color: AppColors.pointColor,
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  verified
+                                      ? Icons.verified_rounded
+                                      : Icons.school_outlined,
+                                  size: 20,
+                                  color: verified
+                                      ? AppColors.pointColor
+                                      : const Color(0xFF94A3B8),
+                                ),
+                              const SizedBox(width: 9),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      statusTitle,
+                                      style: TextStyle(
+                                        fontFamily: uiFontFamily(context, 'Inter'),
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF475569),
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                    if (statusDescription != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        statusDescription,
+                                        style: TextStyle(
+                                          fontFamily: uiFontFamily(context, 'Inter'),
+                                          fontFamilyFallback: const [
+                                            'NotoSansKR'
+                                          ],
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w400,
+                                          color: Color(0xFF64748B),
+                                          height: 1.45,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (!verified &&
+                              (status == HanyangVerificationStatus.unverified ||
+                                  status ==
+                                      HanyangVerificationStatus
+                                          .unavailable)) ...[
+                            const SizedBox(height: 14),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: status ==
+                                        HanyangVerificationStatus.unavailable
+                                    ? () => authProvider
+                                        .refreshHanyangVerificationStatus()
+                                    : _openHanyangVerification,
+                                icon: Icon(
+                                  status ==
+                                          HanyangVerificationStatus.unavailable
+                                      ? Icons.refresh_rounded
+                                      : Icons.mark_email_read_outlined,
+                                  size: 19,
+                                ),
+                                label: Text(
+                                  status ==
+                                          HanyangVerificationStatus.unavailable
+                                      ? ((isChineseUi(context) ? '重新检查' : isKorean ? '다시 확인' : 'Check again'))
+                                      : ((isChineseUi(context) ? '验证汉阳邮箱' : isKorean
+                                          ? '한양메일 인증하기'
+                                          : 'Verify Hanyang email')),
+                                ),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppColors.pointColor,
+                                  minimumSize: const Size(48, 48),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 0,
+                                    vertical: 10,
+                                  ),
+                                  textStyle: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
                             ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: AppColors.pointColor,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.camera_alt,
-                                color: Colors.white,
-                                size: 18,
+                          ],
+                          if (verified) ...[
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: _departmentController,
+                              maxLength: 40,
+                              decoration: socialProfileInputDecoration(context: context,
+                                hintText: (isChineseUi(context) ? '院系' : isKorean ? '학과' : 'Department'),
                               ),
                             ),
-                          ),
+                            SwitchListTile.adaptive(
+                              contentPadding: EdgeInsets.zero,
+                              title:
+                                  Text((isChineseUi(context) ? '显示院系' : isKorean ? '학과 공개' : 'Show department')),
+                              value: _showDepartment,
+                              activeColor: AppColors.pointColor,
+                              onChanged: (value) =>
+                                  setState(() => _showDepartment = value),
+                            ),
+                            TextFormField(
+                              controller: _gradeController,
+                              maxLength: 20,
+                              decoration: socialProfileInputDecoration(context: context,
+                                hintText: (isChineseUi(context) ? '年级' : isKorean ? '학년' : 'Year'),
+                              ),
+                            ),
+                            SwitchListTile.adaptive(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text((isChineseUi(context) ? '显示年级' : isKorean ? '학년 공개' : 'Show year')),
+                              value: _showGrade,
+                              activeColor: AppColors.pointColor,
+                              onChanged: (value) =>
+                                  setState(() => _showGrade = value),
+                            ),
+                          ],
                         ],
-                      ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 36),
+                  const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                  const SizedBox(height: 30),
+                  ProfileSectionHeading(
+                    title: (isChineseUi(context) ? '公开资料预览' : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '공개 프로필 미리보기'
+                        : 'Public profile preview'),
+                  ),
+                  const SizedBox(height: 18),
+                  AnimatedBuilder(
+                    animation: Listenable.merge([
+                      _nicknameController,
+                      _bioController,
+                      _conversationController,
+                      _friendshipController,
+                    ]),
+                    builder: (context, _) => SocialProfilePreview(
+                      nickname: _nicknameController.text,
+                      bio: _bioController.text,
+                      interests: _interests,
+                      activities: _preferredActivities,
+                      conversationStarter: _conversationController.text,
+                      friendshipPrompt: _friendshipController.text,
+                      avatar: _selectedImage == null
+                          ? null
+                          : FileImage(_selectedImage!),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      AppLocalizations.of(context)!.tapToChangeImage,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        color: AppColors.pointColor,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 40),
+                ],
               ),
-              const SizedBox(height: 32),
-
-              // 닉네임 입력
-              Text(
-                AppLocalizations.of(context)!.nicknameQuestion ?? 'What is your nickname?',
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontWeight: FontWeight.w600, 
-                  fontSize: 16,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _nicknameController,
-                enabled: !_nicknameLocked,
-                decoration: InputDecoration(
-                  hintText: '닉네임을 입력하세요',
-                  hintStyle: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                    color: Color(0xFF9CA3AF),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF111827),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return '닉네임을 입력해주세요';
-                  }
-                  if (value.length < 2 || value.length > 20) {
-                    return '닉네임은 2~20자 사이로 입력해주세요';
-                  }
-                  return null;
-                },
-              ),
-              if (_nicknameLocked && (_nicknameRemainingDays ?? 0) > 0) ...[
-                const SizedBox(height: 8),
-                Text(
-                  AppLocalizations.of(context)!.nicknameChangeLimited(_nicknameRemainingDays!),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 12,
-                    color: Color(0xFF6B7280),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 24),
-
-  // 한 줄 소개 입력 (선택)
-  const Text(
-    'Bio',
-    style: TextStyle(
-      fontFamily: 'Pretendard',
-      fontWeight: FontWeight.w600, 
-      fontSize: 16,
-      color: Color(0xFF111827),
-    ),
-  ),
-  const SizedBox(height: 8),
-  TextFormField(
-    controller: _bioController,
-    maxLength: 60, // 영어/한국어 모두 안전한 길이
-    decoration: InputDecoration(
-      hintText: AppLocalizations.of(context)!.bioPlaceholder,
-      hintStyle: const TextStyle(
-        fontFamily: 'Pretendard',
-        fontSize: 16,
-        fontWeight: FontWeight.w400,
-        color: Color(0xFF9CA3AF),
-      ),
-      counterText: '', // 카운터 숨김
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-      ),
-      filled: true,
-      fillColor: Colors.white,
-    ),
-    style: const TextStyle(
-      fontFamily: 'Pretendard',
-      fontSize: 16,
-      fontWeight: FontWeight.w500,
-      color: Color(0xFF111827),
-    ),
-    onChanged: (value) {
-      _bio = value.trim();
-    },
-  ),
-  const SizedBox(height: 24),
-
-              // 국적 선택
-              const Text(
-                'Where are you from?',
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontWeight: FontWeight.w600, 
-                  fontSize: 16,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                value: _selectedNationality,
-                isExpanded: true, // 긴 텍스트 표시를 위해
-                items: CountryFlagHelper.allCountries.map((country) {
-                  final currentLanguage = Localizations.localeOf(context).languageCode;
-                  return DropdownMenuItem(
-                    value: country.korean, // 내부적으로는 한글 이름 저장
-                    child: Text(
-                      country.getLocalizedName(currentLanguage), // 현재 언어에 맞게 표시
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF111827),
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  );
-                }).toList(),
-                onChanged: _nationalityLocked
-                    ? null
-                    : (value) {
-                        if (value != null) {
-                          setState(() {
-                            _selectedNationality = value;
-                          });
-                        }
-                      },
-              ),
-              if (_nationalityLocked && (_nationalityRemainingDays ?? 0) > 0) ...[
-                const SizedBox(height: 8),
-                Text(
-                  AppLocalizations.of(context)!.nationalityChangeLimited(_nationalityRemainingDays!),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 12,
-                    color: Color(0xFF6B7280),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 24),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
+        ));
   }
 }

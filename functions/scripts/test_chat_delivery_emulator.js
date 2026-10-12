@@ -1,0 +1,515 @@
+#!/usr/bin/env node
+// LOCAL ONLY. Exercises actual Rules plus the stable-ID transaction protocol.
+const assert = require('node:assert/strict');
+const admin = require('firebase-admin');
+const host = process.env.FIRESTORE_EMULATOR_HOST || '';
+if (!/^127\.0\.0\.1:\d+$/.test(host)) throw Error('Local emulator required');
+const projectId = 'demo-chat-delivery';
+process.env.FIREBASE_CONFIG = JSON.stringify({projectId});
+const index = require('../lib/index'); // production module owns initializeApp
+const db = admin.firestore();
+const ft = require('firebase-functions-test')();
+const dm = require('../lib/dm_chat');
+const alice = 'chatAlice01234567890123';
+const bob = 'chatBob0123456789012345';
+const room = `${alice}_${bob}`;
+const ref = db.collection('conversations').doc(room);
+const root = `projects/${projectId}/databases/(default)/documents`;
+const base = `http://${host}/v1/${root}`;
+const enc = (v) => Buffer.from(JSON.stringify(v)).toString('base64url');
+function token(uid) {
+  return `${enc({alg: 'none', typ: 'JWT'})}.${enc({sub: uid, user_id: uid,
+    aud: projectId, iss: `https://securetoken.google.com/${projectId}`,
+    iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000)+3600,
+    firebase: {sign_in_provider: 'password'}})}.`;
+}
+async function request(url, body, uid = alice, method = 'POST') {
+  const response = await fetch(url, {method, signal: AbortSignal.timeout(15000),
+    headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token(uid)}`},
+    ...(body ? {body: JSON.stringify(body)} : {})});
+  const data = await response.json();
+  if (!response.ok) throw Object.assign(Error(data.error?.message), {code: data.error?.status});
+  return data;
+}
+const timestamp = (fieldPath) => ({fieldPath, setToServerValue: 'REQUEST_TIME'});
+function writes(id, text, invalidRoomUpdate = false) {
+  return [{
+    update: {name: `${root}/conversations/${room}/messages/${id}`, fields: {
+      senderId: {stringValue: alice}, text: {stringValue: text}, isRead: {booleanValue: false},
+    }}, currentDocument: {exists: false}, updateTransforms: [timestamp('createdAt')],
+  }, {
+    update: {name: `${root}/conversations/${room}`, fields: {
+      lastMessage: {stringValue: text}, lastMessageSenderId: {stringValue: alice},
+      lastMessageId: {stringValue: id},
+      ...(invalidRoomUpdate ? {unreadCount: {mapValue: {fields: {}}}} : {}),
+    }}, updateMask: {fieldPaths: ['lastMessage', 'lastMessageSenderId', 'lastMessageId',
+      ...(invalidRoomUpdate ? ['unreadCount'] : [])]},
+    updateTransforms: [timestamp('lastMessageTime'), timestamp('updatedAt')],
+  }];
+}
+function fileWrites(id, overrides = {}) {
+  const batch = writes(id, `📎 ${id}.pdf`);
+  Object.assign(batch[0].update.fields, {
+    type: {stringValue: 'file'},
+    fileName: {stringValue: `${id}.pdf`},
+    fileExtension: {stringValue: 'pdf'},
+    fileMimeType: {stringValue: 'application/pdf'},
+    fileSize: {integerValue: '2048'},
+    fileStoragePath: {stringValue: `dm_files/${alice}/${room}/${id}/file.pdf`},
+  }, overrides);
+  return batch;
+}
+function replyWrites(id, targetId, targetSenderId, targetText, targetImageUrl) {
+  const batch = writes(id, `reply ${id}`);
+  Object.assign(batch[0].update.fields, {
+    replyToMessageId: {stringValue: targetId},
+    replyToSenderId: {stringValue: targetSenderId},
+    ...(targetText == null ? {} : {replyToText: {stringValue: targetText}}),
+    ...(targetImageUrl == null ? {} : {replyToImageUrl: {stringValue: targetImageUrl}}),
+  });
+  return batch;
+}
+async function send(id, text = id) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    // REST emulator cannot decode a bytes transaction query parameter. An
+    // updateTime precondition supplies the same optimistic compare-and-swap.
+    const roomDoc = await request(`${base}/conversations/${room}`, null, alice, 'GET');
+    const existing = await request(`${base}/conversations/${room}/messages/${id}`,
+      null, alice, 'GET').catch((e) => {if (e.code === 'NOT_FOUND') return null; throw e;});
+    if (existing) {
+      assert.equal(existing.fields.senderId.stringValue, alice);
+      return;
+    }
+    try {
+      const batch = writes(id, text);
+      batch[1].currentDocument = {updateTime: roomDoc.updateTime};
+      await request(`${base}:commit`, {writes: batch});
+      return;
+    } catch (e) {
+      if (!['ABORTED', 'ALREADY_EXISTS', 'FAILED_PRECONDITION'].includes(e.code)) throw e;
+    }
+  }
+  throw Error('Retry limit');
+}
+
+async function snackChecks() {
+  const snackId = 'delivery-test';
+  const roomRef = db.collection('snack_chats').doc(snackId);
+  await roomRef.set({participantIds: [alice, bob], lastMessageSequence: 0,
+    lastMessage: '', unreadCount: {[alice]: 0, [bob]: 0},
+    createdAt: admin.firestore.Timestamp.now(),
+    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now()+86400000)});
+  for (const uid of [alice, bob]) await roomRef.collection('members').doc(uid).set({
+    joinedAfterSequence: 0, lastReadSequence: 0});
+  const value = (v) => typeof v === 'string' ? {stringValue: v}
+    : typeof v === 'boolean' ? {booleanValue: v}
+    : typeof v === 'number' ? {integerValue: String(v)}
+    : Array.isArray(v) ? {arrayValue: {values: v.map(value)}}
+    : {mapValue: {fields: Object.fromEntries(Object.entries(v).map(([k,v]) => [k,value(v)]))}};
+  async function snackSend(id, uid, overrides = {}) {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const current = await request(`${base}/snack_chats/${snackId}`, null, uid, 'GET');
+      const sequence = Number(current.fields.lastMessageSequence.integerValue)+1;
+      const message = {senderId: uid, messageScope: 'snack_chat', chatId: snackId,
+        type: 'text', text: id, sequence, recipientIds: [uid === alice ? bob : alice],
+        readBy: [uid], isDeleted: false, linkPreviewRemoved: false, reactionCounts: {},
+        ...overrides};
+      // Room preview must mirror what Rules derive from the message
+      // (validClientMessageMetadataUpdate): '[이미지]' for captionless images.
+      const lastMessage = message.type === 'image'
+        ? (message.text.length > 0 ? message.text : '[이미지]')
+        : message.type === 'poll' ? `📊 ${message.text}` : message.text;
+      const preview = {lastMessage, lastMessageId: id, lastMessageSenderId: uid,
+        lastMessageType: message.type, lastMessageSequence: sequence};
+      try {
+        await request(`${base}:commit`, {writes: [
+          {update: {name: `${root}/snack_chats/${snackId}/messages/${id}`,
+            fields: value(message).mapValue.fields}, currentDocument: {exists: false},
+            updateTransforms: [timestamp('createdAt')]},
+          {update: {name: `${root}/snack_chats/${snackId}`,
+            fields: value(preview).mapValue.fields},
+            updateMask: {fieldPaths: Object.keys(preview)},
+            currentDocument: {updateTime: current.updateTime},
+            updateTransforms: [timestamp('lastMessageTime'), timestamp('updatedAt')]},
+        ]}, uid);
+        return;
+      } catch (e) {
+        if (e.code === 'PERMISSION_DENIED') {
+          const latest = await roomRef.get();
+          if (latest.get('lastMessageSequence') !== sequence - 1) continue;
+        }
+        if (!['ABORTED', 'ALREADY_EXISTS', 'FAILED_PRECONDITION'].includes(e.code)) throw e;
+      }
+    }
+    throw Error('Snack contention retry limit');
+  }
+  for (let i = 0; i < 4; i++) await snackSend(`snack-${i}`, i % 2 ? alice : bob);
+  await Promise.all(Array.from({length: 4}, (_, i) => snackSend(`concurrent-${i}`, i % 2 ? alice : bob)));
+  const messages = (await roomRef.collection('messages').orderBy('sequence').get()).docs;
+  assert.deepEqual(messages.map(m => m.get('sequence')), [1,2,3,4,5,6,7,8]);
+  const created = ft.wrap(require('../lib/snack_chat').onSnackChatMessageCreatedSecure);
+  await Promise.all(messages.map(m => created(m, {eventId: m.id,
+    params: {snackChatId: snackId, messageId: m.id}})));
+  const count = (await roomRef.get()).get('unreadCount');
+  assert.equal(count[alice] + count[bob], 8);
+  await created(messages[0], {eventId: messages[0].id,
+    params: {snackChatId: snackId, messageId: messages[0].id}});
+  assert.deepEqual((await roomRef.get()).get('unreadCount'), count);
+  // A trusted read cursor wins against delayed create deliveries.
+  await roomRef.collection('members').doc(bob).update({lastReadSequence: 100});
+  await roomRef.update({[`unreadCount.${bob}`]: 0});
+  await snackSend('late-read', alice);
+  const late = await roomRef.collection('messages').doc('late-read').get();
+  await created(late, {eventId: late.id, params: {snackChatId: snackId, messageId: late.id}});
+  assert.equal((await roomRef.get()).get(`unreadCount.${bob}`), 0);
+  // A re-entry barrier must reject an old delayed create while allowing the
+  // next message before the member projection reopens its period.
+  const reentryBoundary = (await roomRef.get()).get('lastMessageSequence');
+  await roomRef.update({unreadStartSequenceBy: {[alice]: reentryBoundary}});
+  await roomRef.collection('members').doc(alice).update({
+    leftAfterSequence: reentryBoundary - 1,
+  });
+  const delayedRef = roomRef.collection('messages').doc('pre-reentry-delayed');
+  await delayedRef.set({senderId: bob, messageScope: 'snack_chat',
+    chatId: snackId, type: 'text', text: 'old',
+    sequence: reentryBoundary - 1, recipientIds: [alice], readBy: [bob],
+    createdAt: admin.firestore.Timestamp.now()});
+  await created(await delayedRef.get(), {eventId: delayedRef.id,
+    params: {snackChatId: snackId, messageId: delayedRef.id}});
+  const beforeFresh = (await roomRef.get()).get(`unreadCount.${alice}`);
+  await snackSend('after-reentry', bob);
+  const fresh = await roomRef.collection('messages').doc('after-reentry').get();
+  await created(fresh, {eventId: fresh.id,
+    params: {snackChatId: snackId, messageId: fresh.id}});
+  assert.equal((await roomRef.get()).get(`unreadCount.${alice}`), beforeFresh + 1);
+  const goodToken = 'snack-good-token';
+  const retryToken = 'snack-retry-token';
+  await db.collection('users').doc(alice).update({fcmTokens: [goodToken, retryToken]});
+  await db.collection('fcm_tokens').doc(goodToken).set({userId: alice});
+  await db.collection('fcm_tokens').doc(retryToken).set({userId: alice});
+  await snackSend('push-retry', bob);
+  const retryMessage = await roomRef.collection('messages').doc('push-retry').get();
+  const beforePush = (await roomRef.get()).get(`unreadCount.${alice}`);
+  const messaging = admin.messaging();
+  const originalSend = messaging.sendEachForMulticast;
+  const sentBatches = [];
+  messaging.sendEachForMulticast = async (payload) => {
+    sentBatches.push([...payload.tokens]);
+    return sentBatches.length === 1 ? {
+      successCount: 1, failureCount: 1,
+      responses: payload.tokens.map((token) => token === goodToken ?
+        {success: true} :
+        {success: false, error: {code: 'messaging/server-unavailable'}}),
+    } : {
+      successCount: payload.tokens.length, failureCount: 0,
+      responses: payload.tokens.map(() => ({success: true})),
+    };
+  };
+  try {
+    const retryContext = {eventId: retryMessage.id,
+      params: {snackChatId: snackId, messageId: retryMessage.id}};
+    await assert.rejects(created(retryMessage, retryContext));
+    assert.equal((await roomRef.get()).get(`unreadCount.${alice}`), beforePush + 1);
+    await created(retryMessage, retryContext);
+    assert.equal((await roomRef.get()).get(`unreadCount.${alice}`), beforePush + 1);
+    assert.deepEqual(sentBatches, [[goodToken, retryToken], [retryToken]]);
+    await created(retryMessage, retryContext);
+    assert.equal(sentBatches.length, 2);
+  } finally {
+    messaging.sendEachForMulticast = originalSend;
+  }
+  await snackDirectReadChecks(roomRef, snackId, snackSend, created);
+  await snackImageBucketRulesChecks(roomRef, snackId, snackSend);
+  console.log('PASS: Snack concurrent Rules commits preserve sequence/audience; duplicate and late unread delivery is idempotent');
+}
+
+// Read fast path (SNACK_CHAT_DIRECT_READ): a client advances its own
+// members/{uid}.lastReadSequence directly; the callable reconciles unreadCount
+// from a separate floor using the trigger's unreadRecipientIds stamp.
+async function snackDirectReadChecks(roomRef, snackId, snackSend, created) {
+  const members = roomRef.collection('members');
+  const markRead = ft.wrap(require('../lib/snack_chat').markSnackChatReadSecure);
+  const readAs = (uid, throughSequence) => markRead(
+    {snackChatId: snackId, throughSequence}, {auth: {uid, token: {}}});
+  const directRead = (uid, sequence, fields = {}, mask = [], asUid = uid) =>
+    request(`${base}:commit`, {writes: [{
+      update: {name: `${root}/snack_chats/${snackId}/members/${uid}`,
+        fields: {lastReadSequence: {integerValue: String(sequence)}, ...fields}},
+      updateMask: {fieldPaths: ['lastReadSequence', ...mask]},
+      updateTransforms: [timestamp('lastReadAt')],
+    }]}, asUid);
+  const trigger = (snap) => created(snap,
+    {eventId: snap.id, params: {snackChatId: snackId, messageId: snap.id}});
+  const message = (id) => roomRef.collection('messages').doc(id).get();
+  const unread = async (uid) => (await roomRef.get()).get(`unreadCount.${uid}`);
+  const S0 = (await roomRef.get()).get('lastMessageSequence');
+  // Server-created member docs carry userId/status (the Rules self-write needs them).
+  await members.doc(bob).set({userId: bob, status: 'active', joinedAfterSequence: 0,
+    lastReadSequence: S0, unreadReconciledThroughSequence: S0});
+  await roomRef.update({[`unreadCount.${bob}`]: 0});
+
+  // C -> T -> K: Bob reads direct-1 before its trigger runs. The trigger
+  // delivers but does not increment; the stamp records that exactly.
+  await snackSend('direct-1', alice);
+  await directRead(bob, S0 + 1);
+  await trigger(await message('direct-1'));
+  const m1 = await message('direct-1');
+  assert.deepEqual(m1.get('deliveryRecipientIds'), [bob]);
+  assert.deepEqual(m1.get('unreadRecipientIds'), []);
+  assert.equal(await unread(bob), 0);
+  // T -> C -> K for direct-2 and direct-3.
+  await snackSend('direct-2', alice);
+  await trigger(await message('direct-2'));
+  await snackSend('direct-3', alice);
+  await trigger(await message('direct-3'));
+  assert.deepEqual((await message('direct-2')).get('unreadRecipientIds'), [bob]);
+  assert.equal(await unread(bob), 2);
+  // Partial direct read through direct-2, then reconcile: only direct-2 counts
+  // (direct-1 was never incremented, so the old delivered-based count would
+  // have over-decremented to 0 here).
+  await directRead(bob, S0 + 2);
+  assert.equal((await members.doc(bob).get()).get('lastReadSequence'), S0 + 2);
+  const partial = await readAs(bob, S0 + 2);
+  assert.equal(partial.clearedCount, 1);
+  assert.equal(partial.unreadCount, 1);
+  assert.equal(partial.readThroughSequence, S0 + 2);
+  assert.equal(await unread(bob), 1);
+  let bobMember = await members.doc(bob).get();
+  assert.equal(bobMember.get('lastReadSequence'), S0 + 2);
+  assert.equal(bobMember.get('unreadReconciledThroughSequence'), S0 + 2);
+  // Reading to the end clears to zero; a repeated reconcile is a no-op.
+  await directRead(bob, S0 + 3);
+  const full = await readAs(bob, S0 + 3);
+  assert.equal(full.clearedCount, 1);
+  assert.equal(full.unreadCount, 0);
+  assert.equal(await unread(bob), 0);
+  bobMember = await members.doc(bob).get();
+  assert.equal(bobMember.get('unreadReconciledThroughSequence'), S0 + 3);
+  const again = await readAs(bob, S0 + 3);
+  assert.equal(again.clearedCount, 0);
+  assert.equal(again.readThroughSequence, S0 + 3);
+  // C -> K -> T: direct read and reconcile land before the trigger. The late
+  // trigger must not increment for a cursor already past the message.
+  await snackSend('direct-4', alice);
+  await directRead(bob, S0 + 4);
+  const early = await readAs(bob, S0 + 4);
+  assert.equal(early.clearedCount, 0);
+  assert.equal(await unread(bob), 0);
+  await trigger(await message('direct-4'));
+  assert.deepEqual((await message('direct-4')).get('unreadRecipientIds'), []);
+  assert.equal(await unread(bob), 0);
+  // Rules: backwards, beyond the canonical sequence, extra keys, and another
+  // user's cursor are all rejected.
+  await assert.rejects(directRead(bob, S0 + 1), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(directRead(bob, S0 + 99), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(directRead(bob, S0 + 4,
+    {unreadReconciledThroughSequence: {integerValue: '0'}},
+    ['unreadReconciledThroughSequence']), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(directRead(bob, S0 + 4, {}, [], alice), {code: 'PERMISSION_DENIED'});
+  // Legacy lockstep: without the stamp the callable derives the floor from the
+  // previous lastReadSequence exactly as before, then stamps the member doc.
+  await members.doc(bob).update({
+    unreadReconciledThroughSequence: admin.firestore.FieldValue.delete()});
+  await snackSend('legacy-1', alice);
+  await trigger(await message('legacy-1'));
+  await snackSend('legacy-2', alice);
+  await trigger(await message('legacy-2'));
+  assert.equal(await unread(bob), 2);
+  const legacy = await readAs(bob, S0 + 5);
+  assert.equal(legacy.clearedCount, 1);
+  assert.equal(legacy.unreadCount, 1);
+  bobMember = await members.doc(bob).get();
+  assert.equal(bobMember.get('lastReadSequence'), S0 + 5);
+  assert.equal(bobMember.get('unreadReconciledThroughSequence'), S0 + 5);
+  console.log('PASS: Snack direct read cursor fast path (C/T/K orders, Rules, legacy floor)');
+}
+
+/**
+ * Image messages may record which Storage bucket holds imagePath (Seoul
+ * migration). Rules must accept the legacy and the Seoul bucket, reject any
+ * other bucket, and reject the field on non-image messages. A regression here
+ * makes the client's image send fail on every retry.
+ */
+async function snackImageBucketRulesChecks(roomRef, snackId, snackSend) {
+  const imagePath = (uid) => `snack_chat_images/${uid}/${snackId}/img.jpg`;
+  const step = async (name, run) => {
+    try { await run(); } catch (e) { console.error(`[image-bucket-rules] step "${name}" failed: ${e.message}`); throw e; }
+  };
+  await step('img-legacy', () => snackSend('img-legacy', alice, {type: 'image', text: '', imagePath: imagePath(alice)}));
+  await step('img-seoul', () => snackSend('img-seoul', alice, {type: 'image', text: '', imagePath: imagePath(alice),
+    storageBucket: 'flutterproject3-af322-kr', imageWidth: 800, imageHeight: 600}));
+  await step('img-us', () => snackSend('img-us', bob, {type: 'image', text: '', imagePath: imagePath(bob),
+    storageBucket: 'flutterproject3-af322.firebasestorage.app'}));
+  assert.equal((await roomRef.collection('messages').doc('img-seoul').get()).get('storageBucket'),
+    'flutterproject3-af322-kr');
+  await assert.rejects(snackSend('img-foreign', alice, {type: 'image', text: '',
+    imagePath: imagePath(alice), storageBucket: 'evil-bucket'}), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(snackSend('img-bucket-type', alice, {type: 'image', text: '',
+    imagePath: imagePath(alice), storageBucket: 7}), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(snackSend('text-bucket', alice, {storageBucket: 'flutterproject3-af322-kr'}),
+    {code: 'PERMISSION_DENIED'});
+  for (const id of ['img-foreign', 'img-bucket-type', 'text-bucket']) {
+    assert.equal((await roomRef.collection('messages').doc(id).get()).exists, false);
+  }
+  console.log('PASS: Snack image storageBucket Rules (legacy/Seoul accepted, foreign and non-image rejected)');
+}
+
+async function main() {
+  // Only clears the explicitly named disposable demo emulator project.
+  await fetch(`http://${host}/emulator/v1/projects/${projectId}/databases/(default)/documents`, {method: 'DELETE'});
+  for (const uid of [alice, bob]) await db.collection('users').doc(uid).set({
+    nickname: uid, registrationStatus: 'complete', dmUnreadTotal: 0,
+  });
+  await ref.set({participants: [alice, bob], participantNames: {keep: 'metadata'},
+    lastMessage: '', lastMessageTime: admin.firestore.Timestamp.now(),
+    unreadCount: {[alice]: 0, [bob]: 0}, archivedBy: []});
+  await Promise.all(Array.from({length: 4}, () => send('same-id', 'immutable')));
+  const forged = writes('forged-clock', 'invalid');
+  forged[0].updateTransforms = [timestamp('createdAt')];
+  forged[0].update.fields.receiptCreatedAt = {timestampValue: '2000-01-01T00:00:00Z'};
+  await assert.rejects(request(`${base}:commit`, {writes: forged}),
+    (error) => error.code === 'PERMISSION_DENIED');
+  assert.equal((await ref.collection('messages').get()).size, 1);
+  await ref.collection('messages').doc('same-id').update({isRead: true});
+  await send('same-id', 'MUST NOT OVERWRITE');
+  assert.equal((await ref.collection('messages').doc('same-id').get()).get('text'), 'immutable');
+  assert.equal((await ref.collection('messages').doc('same-id').get()).get('isRead'), true);
+  for (let i = 0; i < 8; i++) await send(`ordered-${i}`);
+  await send('same-id'); // delayed response-loss retry cannot regress preview
+  assert.equal((await ref.get()).get('lastMessageId'), 'ordered-7');
+  assert.equal((await ref.get()).get('participantNames.keep'), 'metadata');
+  await request(`${base}:commit`, {writes: replyWrites(
+    'valid-reply', 'ordered-7', alice, 'ordered-7', null)});
+  assert.equal((await ref.collection('messages').doc('valid-reply').get())
+    .get('replyToMessageId'), 'ordered-7');
+  await assert.rejects(request(`${base}:commit`, {writes: replyWrites(
+    'forged-reply-sender', 'ordered-7', bob, 'ordered-7', null)}),
+  {code: 'PERMISSION_DENIED'});
+  await assert.rejects(request(`${base}:commit`, {writes: replyWrites(
+    'forged-reply-text', 'ordered-7', alice, 'forged', null)}),
+  {code: 'PERMISSION_DENIED'});
+  await assert.rejects(request(`${base}:commit`, {writes: replyWrites(
+    'missing-reply-target', 'does-not-exist', alice, 'missing', null)}),
+  {code: 'PERMISSION_DENIED'});
+  const replyImageUrl = 'https://firebasestorage.googleapis.com/v0/b/demo-chat-delivery/o/dm.jpg';
+  await ref.collection('messages').doc('reply-image-source').set({
+    senderId: bob, text: '', imageUrl: replyImageUrl, isRead: false,
+    createdAt: admin.firestore.Timestamp.now(),
+  });
+  await request(`${base}:commit`, {writes: replyWrites(
+    'valid-image-reply', 'reply-image-source', bob, null, replyImageUrl)});
+  assert.equal((await ref.collection('messages').doc('valid-image-reply').get())
+    .get('replyToImageUrl'), replyImageUrl);
+  await assert.rejects(request(`${base}:commit`, {writes: writes('rollback', 'no partial save', true)}), {code: 'PERMISSION_DENIED'});
+  assert.equal((await ref.collection('messages').doc('rollback').get()).exists, false);
+  await assert.rejects(request(`${base}:commit`, {writes: writes('stranger', 'forged')}, 'outsider'), {code: 'PERMISSION_DENIED'});
+  await request(`${base}:commit`, {writes: fileWrites('valid-file')});
+  assert.equal((await ref.collection('messages').doc('valid-file').get()).get('text'), '📎 valid-file.pdf');
+  await assert.rejects(request(`${base}:commit`, {writes: fileWrites('wrong-file-path', {
+    fileStoragePath: {stringValue: `dm_files/${alice}/another-room/wrong-file-path/file.pdf`},
+  })}), {code: 'PERMISSION_DENIED'});
+  await assert.rejects(request(`${base}:commit`, {writes: fileWrites('wrong-file-mime', {
+    fileMimeType: {stringValue: 'application/x-msdownload'},
+  })}), {code: 'PERMISSION_DENIED'});
+  await db.collection('blocks').doc(`${bob}_${alice}`).set({blocker: bob, blocked: alice});
+  await assert.rejects(send('blocked'), {code: 'PERMISSION_DENIED'});
+  await db.collection('blocks').doc(`${bob}_${alice}`).delete();
+  await db.collection('users').doc(bob).update({disabled: true});
+  await assert.rejects(send('disabled-peer'), {code: 'PERMISSION_DENIED'});
+  await db.collection('users').doc(bob).update({disabled: false,
+    registrationStatus: '', emailVerified: true});
+  const legacy = writes('legacy-client', 'legacy display name / device timestamp');
+  delete legacy[1].update.fields.lastMessageId;
+  legacy[1].updateMask.fieldPaths = legacy[1].updateMask.fieldPaths.filter(f => f !== 'lastMessageId');
+  legacy[0].update.fields.createdAt = {timestampValue: new Date().toISOString()};
+  delete legacy[0].updateTransforms;
+  await request(`${base}:commit`, {writes: legacy});
+  assert.equal((await ref.collection('messages').doc('legacy-client').get()).exists, true);
+  await db.collection('users').doc(bob).update({registrationStatus: 'complete'});
+  const exact = admin.firestore.Timestamp.fromMillis(1700000000000);
+  for (let i = 0; i < 7; i++) await ref.collection('messages').doc(`same-time-${i}`).set({
+    senderId: alice, text: 'legacy same-time', createdAt: exact, isRead: false});
+  const query = ref.collection('messages').where('createdAt', '==', exact)
+    .orderBy('createdAt', 'desc').orderBy(admin.firestore.FieldPath.documentId(), 'desc');
+  const page1 = await query.limit(3).get();
+  const last = page1.docs.at(-1);
+  const page2 = await query.startAfter(last.get('createdAt'), last.id).limit(4).get();
+  assert.equal(new Set([...page1.docs, ...page2.docs].map(d => d.id)).size, 7);
+
+  const markRead = ft.wrap(dm.markDMConversationReadSecure);
+  const cleanup = ft.wrap(dm.onDMReceiptCleanupRequested);
+  const onCreate = ft.wrap(index.onDMMessageCreated);
+  const onRead = ft.wrap(index.onDMMessageRead);
+  const before = await ref.get();
+  const result = await markRead({conversationId: room, deferReceipts: true}, {auth: {uid: bob, token: {}}});
+  assert.equal(result.receiptsUpdated, 0); // callable did not scan per-message receipts
+  const after = await ref.get();
+  const messageBefore = await ref.collection('messages').doc('ordered-7').get();
+  await cleanup({before, after});
+  const messageAfter = await messageBefore.ref.get();
+  assert.equal(messageAfter.get('isRead'), true);
+  const context = {eventId: 'repeated-create', params: {conversationId: room, messageId: 'ordered-7'}};
+  await onCreate(messageBefore, context); // delayed create after read watermark
+  await onCreate(messageBefore, context);
+  await onRead({before: messageBefore, after: messageAfter}, {...context, eventId: 'repeated-read'});
+  await onRead({before: messageBefore, after: messageAfter}, {...context, eventId: 'repeated-read'});
+  assert.equal((await ref.get()).get(`unreadCount.${bob}`), 0);
+  assert.equal((await db.collection('users').doc(bob).get()).get('dmUnreadTotal'), 0);
+  await request(`${base}:commit`, {writes: fileWrites('file-unread')});
+  const unreadFile = await ref.collection('messages').doc('file-unread').get();
+  const fileContext = {eventId: 'file-unread-create',
+    params: {conversationId: room, messageId: 'file-unread'}};
+  await onCreate(unreadFile, fileContext);
+  await onCreate(unreadFile, fileContext);
+  assert.equal((await ref.get()).get(`unreadCount.${bob}`), 1);
+  assert.equal((await db.collection('users').doc(bob).get()).get('dmUnreadTotal'), 1);
+  await unreadFile.ref.update({isRead: true, readAt: admin.firestore.FieldValue.serverTimestamp()});
+  const readFile = await unreadFile.ref.get();
+  await onRead({before: unreadFile, after: readFile}, {...fileContext, eventId: 'file-unread-read'});
+  await onRead({before: unreadFile, after: readFile}, {...fileContext, eventId: 'file-unread-read'});
+  assert.equal((await ref.get()).get(`unreadCount.${bob}`), 0);
+  assert.equal((await db.collection('users').doc(bob).get()).get('dmUnreadTotal'), 0);
+  // A stale cleanup event must not rewind the newest watermark/cursor.
+  await markRead({conversationId: room, deferReceipts: true}, {auth: {uid: bob, token: {}}});
+  const latest = (await ref.get()).get(`lastReadAtBy.${bob}`);
+  await cleanup({before, after});
+  assert.equal((await ref.get()).get(`lastReadAtBy.${bob}`).toMillis(), latest.toMillis());
+  // Rules now bind a conversation ID to its two participants (sorted uids,
+  // or anon_<a>_<b>_<suffix>), exactly what dm_service generates. Use the
+  // anonymous form so this synthetic room keeps a valid ID.
+  const securityRoom = `anon_${room}_security`;
+  const createRoom = (aliceUnread) => ({writes: [{
+    update: {name: `${root}/conversations/${securityRoom}`, fields: {
+      participants: {arrayValue: {values: [alice, bob].map(stringValue => ({stringValue}))}},
+      unreadCount: {mapValue: {fields: {
+        [alice]: {integerValue: String(aliceUnread)}, [bob]: {integerValue: '0'},
+      }}},
+      archivedBy: {arrayValue: {values: []}},
+      lastMessage: {stringValue: ''},
+    }}, currentDocument: {exists: false},
+  }]});
+  await assert.rejects(request(`${base}:commit`, createRoom(7)),
+    {code: 'PERMISSION_DENIED'});
+  await request(`${base}:commit`, createRoom(0));
+  const personalUpdate = (fieldPath, fields) => ({writes: [{
+    update: {name: `${root}/conversations/${room}`,
+      fields: {[fieldPath]: fields}},
+    updateMask: {fieldPaths: [fieldPath]},
+  }]});
+  const leftAt = {timestampValue: new Date().toISOString()};
+  await assert.rejects(request(`${base}:commit`, personalUpdate(
+    'userLeftAt', {mapValue: {fields: {[bob]: leftAt}}})),
+  {code: 'PERMISSION_DENIED'});
+  await request(`${base}:commit`, personalUpdate(
+    'userLeftAt', {mapValue: {fields: {[alice]: leftAt}}}));
+  await assert.rejects(request(`${base}:commit`, personalUpdate(
+    'archivedBy', {arrayValue: {values: [{stringValue: bob}]}})),
+  {code: 'PERMISSION_DENIED'});
+  await request(`${base}:commit`, personalUpdate(
+    'archivedBy', {arrayValue: {values: [{stringValue: alice}]}}));
+  console.log('PASS: concurrent stable IDs, rapid ordered sends, lost-response retry, atomic rollback, Rules/blocks, same-time pagination, deferred receipts, duplicate/delayed events');
+  await snackChecks();
+  ft.cleanup();
+  await admin.app().delete();
+}
+main().catch(e => {console.error(e); process.exitCode = 1;});

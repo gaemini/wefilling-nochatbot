@@ -1,21 +1,24 @@
 // lib/screens/category_detail_screen.dart
-// 카테고리 상세 화면 - 전체 친구 목록에서 포함/미포함을 체크로 편집 후 저장
+// 카테고리 상세 화면 - 전체 친구 목록에서 그룹 포함 여부를 편집 후 저장
 
 import 'package:flutter/material.dart';
+import '../ui/widgets/motion_press.dart';
 import '../models/friend_category.dart';
 import '../models/user_profile.dart';
 import '../design/tokens.dart';
-import '../ui/widgets/empty_state.dart';
-import 'friend_profile_screen.dart';
 import '../l10n/app_localizations.dart';
-import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
 import '../constants/app_constants.dart';
 import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/friend_category_service.dart';
+import '../ui/widgets/category_create_shortcut_bar.dart';
 import '../ui/widgets/shape_icon.dart';
+import 'create_meetup_screen.dart';
+import 'create_post_screen.dart';
+import 'create_snack_chat_screen.dart';
+import '../l10n/ui_locale.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
   final FriendCategory category;
@@ -58,7 +61,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     super.dispose();
   }
 
-  bool get _hasChanges => _selectedFriendIds.length != _originalFriendIds.length ||
+  bool get _hasChanges =>
+      _selectedFriendIds.length != _originalFriendIds.length ||
       !_selectedFriendIds.containsAll(_originalFriendIds);
 
   void _ensureFriendsLoaded() {
@@ -69,7 +73,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
       // loadFriends()는 stream 구독만 걸고 즉시 반환될 수 있으므로,
       // 이 화면은 provider를 구독(Consumer)해서 데이터 도착 시 자동 리빌드되도록 한다.
-      if (relationshipProvider.friends.isEmpty && !relationshipProvider.isLoading) {
+      if (relationshipProvider.friends.isEmpty &&
+          !relationshipProvider.isLoading) {
         relationshipProvider.loadFriends();
       }
     } catch (e) {
@@ -135,6 +140,53 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     }
   }
 
+  void _openCreatePost() {
+    final savedCategory = _savedCategory;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => CreatePostScreen(
+          initialAudienceCategory: savedCategory,
+          onPostCreated: () {
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openCreateMeetup() {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final savedCategory = _savedCategory;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => CreateMeetupScreen(
+          initialDayIndex: (today.weekday - 1).clamp(0, 6),
+          initialDate: today,
+          initialAudienceCategory: savedCategory,
+          onCreateMeetup: (_, __) {
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openCreateSnackChat() {
+    final savedCategory = _savedCategory;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => CreateSnackChatScreen(
+          initialAudienceCategory: savedCategory,
+        ),
+      ),
+    );
+  }
+
+  FriendCategory get _savedCategory => widget.category.copyWith(
+        friendIds: _originalFriendIds.toList(growable: false),
+      );
+
   @override
   Widget build(BuildContext context) {
     // 색상 안전하게 파싱 (null 체크 포함)
@@ -147,23 +199,29 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: false,
+        toolbarHeight: 56,
+        leadingWidth: 52,
+        titleSpacing: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          iconSize: 22,
+          padding: const EdgeInsets.all(12),
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF111827)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             // 배경/테두리 없이 도형 아이콘만 표시
-            ShapeIcon(iconName: iconName, color: color, size: 28),
-            const SizedBox(width: 12),
+            ShapeIcon(iconName: iconName, color: color, size: 24),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 widget.category.name,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
                   color: Color(0xFF111827),
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: FontWeight.w600,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -174,6 +232,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         actions: [
           TextButton(
             onPressed: (_hasChanges && !_isSaving) ? _save : null,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              minimumSize: const Size(0, 40),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             child: _isSaving
                 ? const SizedBox(
                     width: 16,
@@ -183,7 +246,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 : Text(
                     AppLocalizations.of(context)!.save,
                     style: TextStyle(
-                      fontFamily: 'Pretendard',
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: (_hasChanges && !_isSaving)
                           ? AppColors.pointColor
@@ -193,358 +258,365 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           ),
         ],
       ),
-      body: Consumer<RelationshipProvider>(
-        builder: (context, relationshipProvider, _) {
-          final friends = List<UserProfile>.from(relationshipProvider.friends);
-          final filteredFriends = _computeFilteredFriends(friends);
-
-          // 저장 전에는 섹션 기준을 "원본 포함 여부"로 고정한다.
-          // 즉, 체크 상태는 바뀌어도(대기 상태) 섹션 위치는 저장 전까지 유지된다.
-          final displayFriends = List<UserProfile>.from(filteredFriends)
-            ..sort((a, b) => a.displayNameOrNickname.compareTo(b.displayNameOrNickname));
-          final includedFriends = displayFriends
-              .where((f) => _originalFriendIds.contains(f.uid))
-              .toList();
-          final unincludedFriends = displayFriends
-              .where((f) => !_originalFriendIds.contains(f.uid))
-              .toList();
-
-          if (relationshipProvider.isLoading && friends.isEmpty) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppColors.pointColor),
-            );
-          }
-
-          if (friends.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 48.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      AppLocalizations.of(context)!.noFriendsInCategory,
-                      style: TypographyStyles.headlineMedium.copyWith(
-                        color: BrandColors.textPrimary,
-                      ),
-                      textAlign: TextAlign.center,
+      body: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          children: [
+          _buildCreateShortcuts(),
+          Expanded(
+            child: Consumer<RelationshipProvider>(
+              builder: (context, relationshipProvider, _) {
+                final friends =
+                    List<UserProfile>.from(relationshipProvider.friends);
+                final filteredFriends = _computeFilteredFriends(friends);
+                final displayFriends = List<UserProfile>.from(filteredFriends)
+                  ..sort(
+                    (a, b) => a.displayNameOrNickname.compareTo(
+                      b.displayNameOrNickname,
                     ),
-                    const SizedBox(height: DesignTokens.s12),
-                    Text(
-                      AppLocalizations.of(context)!.addFriendsToCategory,
-                      style: TypographyStyles.bodyLarge.copyWith(
-                        color: BrandColors.textSecondary,
-                        height: 1.5,
+                  );
+                final allSortedFriends = List<UserProfile>.from(friends)
+                  ..sort(
+                    (a, b) => a.displayNameOrNickname.compareTo(
+                      b.displayNameOrNickname,
+                    ),
+                  );
+                final selectedFriends = allSortedFriends
+                    .where(
+                      (friend) => _selectedFriendIds.contains(friend.uid),
+                    )
+                    .toList(growable: false);
+
+                if (relationshipProvider.isLoading && friends.isEmpty) {
+                  return const Center(
+                    child:
+                        CircularProgressIndicator(color: AppColors.pointColor),
+                  );
+                }
+
+                if (friends.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32.0,
+                        vertical: 48.0,
                       ),
-                      textAlign: TextAlign.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            AppLocalizations.of(context)!.noFriendsInCategory,
+                            style: uiTextStyle(context, TypographyStyles.headlineMedium.copyWith(
+                              color: BrandColors.textPrimary,
+                            )),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: DesignTokens.s12),
+                          Text(
+                            AppLocalizations.of(context)!.addFriendsToCategory,
+                            style: uiTextStyle(context, TypographyStyles.bodyLarge.copyWith(
+                              color: BrandColors.textSecondary,
+                              height: 1.5,
+                            )),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                      child: SizedBox(
+                        height: 76,
+                        child: selectedFriends.isEmpty
+                            ? Align(
+                                alignment: Alignment.topLeft,
+                                child: Text(
+                                  AppLocalizations.of(context)!
+                                      .groupNoFriendsSelected,
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: selectedFriends.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 10),
+                                itemBuilder: (_, index) =>
+                                    _buildSelectedFriendSlot(
+                                  selectedFriends[index],
+                                ),
+                              ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      child: SizedBox(
+                        height: 44,
+                        child: TextField(
+                          controller: _searchController,
+                          textInputAction: TextInputAction.search,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: 14,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: AppLocalizations.of(context)!
+                                .searchByFriendName,
+                            hintStyle: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 14,
+                              color: Color(0xFF6B7280),
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.search_rounded,
+                              size: 20,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 44,
+                              minHeight: 44,
+                            ),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    iconSize: 18,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 44,
+                                      height: 44,
+                                    ),
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                  )
+                                : null,
+                            suffixIconConstraints: const BoxConstraints(
+                              minWidth: 44,
+                              minHeight: 44,
+                            ),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 11,
+                            ),
+                          ),
+                          onChanged: (value) =>
+                              setState(() => _searchQuery = value),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(
+                        AppLocalizations.of(context)!.friends,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Expanded(
+                      child: displayFriends.isEmpty
+                          ? Center(
+                              child: Text(
+                                AppLocalizations.of(context)!
+                                    .groupNoSearchResults,
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
+                                  fontFamilyFallback: const ['NotoSansKR'],
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              padding: const EdgeInsets.fromLTRB(8, 0, 8, 20),
+                              itemCount: displayFriends.length,
+                              itemBuilder: (_, index) {
+                                final friend = displayFriends[index];
+                                return _buildFriendSelectionTile(
+                                  friend,
+                                  isSelected:
+                                      _selectedFriendIds.contains(friend.uid),
+                                );
+                              },
+                            ),
                     ),
                   ],
-                ),
-              ),
-            );
-          }
-
-          return Column(
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                color: const Color(0xFFF9FAFB),
-                child: Text(
-                  // 저장 전에는 "현재 저장된 포함 인원"을 표시
-                  AppLocalizations.of(context)!.friendsInGroup(_originalFriendIds.length),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    color: Color(0xFF6B7280),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-
-              // 검색바
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)!.searchByFriendName,
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(25),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[100],
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  ),
-                  onChanged: (v) => setState(() => _searchQuery = v),
-                ),
-              ),
-
-              Expanded(
-                child: Builder(
-                  builder: (context) {
-                    final bottomPadding = MediaQuery.of(context).padding.bottom;
-                    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-                    final hasIncluded = includedFriends.isNotEmpty;
-                    final hasUnincluded = unincludedFriends.isNotEmpty;
-                    final totalCount =
-                        (hasIncluded ? 1 + includedFriends.length : 0) +
-                        (hasUnincluded ? 1 + unincludedFriends.length : 0);
-
-                    if (totalCount == 0) {
-                      return Center(
-                        child: Text(
-                          isKo ? '검색 결과가 없습니다' : 'No results found',
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF6B7280),
-                          ),
-                        ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      padding: EdgeInsets.only(
-                        top: 8,
-                        bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
-                      ),
-                      itemCount: totalCount,
-                      itemBuilder: (context, index) {
-                        var cursor = 0;
-
-                        if (hasIncluded) {
-                          if (index == cursor) {
-                            return Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    isKo ? '포함됨' : 'Included',
-                                    style: const TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF111827),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '(${includedFriends.length})',
-                                    style: const TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF6B7280),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                          cursor += 1;
-
-                          if (index < cursor + includedFriends.length) {
-                            final friend = includedFriends[index - cursor];
-                            return _buildFriendRow(
-                              friend: friend,
-                              categoryColor: color,
-                              isSelected: _selectedFriendIds.contains(friend.uid),
-                            );
-                          }
-                          cursor += includedFriends.length;
-                        }
-
-                        if (hasUnincluded) {
-                          if (index == cursor) {
-                            return Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    isKo ? '미포함 친구' : 'Not included',
-                                    style: const TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF111827),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '(${unincludedFriends.length})',
-                                    style: const TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF6B7280),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                          cursor += 1;
-
-                          final friend = unincludedFriends[index - cursor];
-                          return _buildFriendRow(
-                            friend: friend,
-                            categoryColor: color,
-                            isSelected: _selectedFriendIds.contains(friend.uid),
-                          );
-                        }
-
-                        return const SizedBox.shrink();
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
-        },
+                );
+              },
+            ),
+          ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildFriendRow({
-    required UserProfile friend,
-    required Color categoryColor,
+  Widget _buildCreateShortcuts() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return CategoryCreateShortcutBar(
+      postLabel: l10n.post,
+      meetupLabel: l10n.meetup,
+      snackChatLabel: l10n.snackChat,
+      createPostLabel: l10n.createPost,
+      createMeetupLabel: l10n.createMeetup,
+      createSnackChatLabel: l10n.createSnackChat,
+      onCreatePost: _openCreatePost,
+      onCreateMeetup: _openCreateMeetup,
+      onCreateSnackChat: _openCreateSnackChat,
+    );
+  }
+
+  Widget _buildFriendSelectionTile(
+    UserProfile friend, {
     required bool isSelected,
   }) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
-      ),
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            if (isSelected) {
-              _selectedFriendIds.remove(friend.uid);
-            } else {
-              _selectedFriendIds.add(friend.uid);
-            }
-          });
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Checkbox(
-                value: isSelected,
-                activeColor: AppColors.pointColor,
-                onChanged: (v) {
-                  setState(() {
-                    if (v == true) {
-                      _selectedFriendIds.add(friend.uid);
-                    } else {
-                      _selectedFriendIds.remove(friend.uid);
-                    }
-                  });
-                },
-              ),
-
-              // 프로필 이미지
-              Container(
-                width: 48,
-                height: 48,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Color(0xFFE5E7EB),
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: friend.displayNameOrNickname,
+      onTap: () => _toggleFriend(friend.uid),
+      excludeSemantics: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey('group_friend_${friend.uid}'),
+          onTap: () => _toggleFriend(friend.uid),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            child: Row(
+              children: [
+                _buildAvatar(
+                  size: 44,
+                  photoUrl: friend.photoURL,
+                  fallbackLabel: friend.displayNameOrNickname,
                 ),
-                child: friend.hasProfileImage
-                    ? ClipOval(
-                        child: Image.network(
-                          friend.photoURL!,
-                          width: 48,
-                          height: 48,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.person,
-                            size: 24,
-                            color: Color(0xFF6B7280),
-                          ),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.person,
-                        size: 24,
-                        color: Color(0xFF6B7280),
-                      ),
-              ),
-
-              const SizedBox(width: 12),
-
-              // 사용자 정보
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      friend.displayNameOrNickname,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF111827),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    friend.displayNameOrNickname,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF111827),
                     ),
-                    if (friend.nationality != null &&
-                        friend.nationality!.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.flag_outlined,
-                            size: 13,
-                            color: Color(0xFF9CA3AF),
-                          ),
-                          const SizedBox(width: 3),
-                          Flexible(
-                            child: Text(
-                              CountryFlagHelper.getCountryInfo(friend.nationality!)?.getLocalizedName(
-                                Localizations.localeOf(context).languageCode
-                              ) ?? friend.nationality!,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w400,
-                                color: Color(0xFF9CA3AF),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 140),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color:
+                        isSelected ? AppColors.pointColor : Colors.transparent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.pointColor
+                          : const Color(0xFFB8C0CC),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: isSelected
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 15,
+                          color: Colors.white,
+                        )
+                      : null,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-              IconButton(
-                icon: const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF)),
-                onPressed: () => _navigateToProfile(friend),
+  Widget _buildSelectedFriendSlot(UserProfile friend) {
+    return Semantics(
+      button: true,
+      label: friend.displayNameOrNickname,
+      hint: AppLocalizations.of(context)!.groupRemoveFriendHint,
+      onTap: () => _toggleFriend(friend.uid),
+      excludeSemantics: true,
+      child: MotionPress(
+        pressedScale: .99,
+        child: GestureDetector(
+          onTap: () => _toggleFriend(friend.uid),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _buildAvatar(
+                    size: 52,
+                    photoUrl: friend.photoURL,
+                    fallbackLabel: friend.displayNameOrNickname,
+                  ),
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF111827),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.25),
+                      ),
+                      child: const Icon(Icons.close, size: 10, color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              SizedBox(
+                width: 62,
+                child: Text(
+                  friend.displayNameOrNickname,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontFamilyFallback: const ['NotoSansKR'],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF374151),
+                  ),
+                ),
               ),
             ],
           ),
@@ -553,16 +625,50 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     );
   }
 
-  void _navigateToProfile(UserProfile friend) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => FriendProfileScreen(
-          userId: friend.uid,
-          nickname: friend.displayNameOrNickname,
-          photoURL: friend.photoURL,
-          email: friend.email,
-          university: friend.university,
+  void _toggleFriend(String uid) {
+    setState(() {
+      if (_selectedFriendIds.contains(uid)) {
+        _selectedFriendIds.remove(uid);
+      } else {
+        _selectedFriendIds.add(uid);
+      }
+    });
+  }
+
+  Widget _buildAvatar({
+    required double size,
+    required String? photoUrl,
+    required String fallbackLabel,
+  }) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE5E7EB),
+        borderRadius: BorderRadius.circular(size * 0.28),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: (photoUrl != null && photoUrl.trim().isNotEmpty)
+          ? Image.network(
+              photoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  _avatarFallback(fallbackLabel, size),
+            )
+          : _avatarFallback(fallbackLabel, size),
+    );
+  }
+
+  Widget _avatarFallback(String label, double avatarSize) {
+    return Center(
+      child: Text(
+        label.isEmpty ? '?' : label[0],
+        style: TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: avatarSize * 0.34,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF6B7280),
         ),
       ),
     );
@@ -657,10 +763,3 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     return icon ?? Icons.group;
   }
 }
-
-
-
-
-
-
-

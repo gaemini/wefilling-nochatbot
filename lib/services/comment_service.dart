@@ -4,18 +4,25 @@
 // 댓글 수 관리
 
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import '../config/app_backend.dart';
 import '../models/comment.dart';
+import '../models/snapshot.dart' show isValidSnapshotCommentGifHeader;
 import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'content_hide_service.dart';
 import 'report_service.dart';
 import 'cache/comment_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
+import 'firebase_app_check_service.dart';
+import 'comment_gif_upload.dart';
 import 'meetup_service.dart';
 import '../utils/logger.dart';
 import '../utils/profile_photo_policy.dart';
+import '../utils/comment_gif_input.dart';
 
 class CommentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -24,21 +31,92 @@ class CommentService {
   final CommentCacheManager _cache = CommentCacheManager();
   final MeetupService _meetupService = MeetupService();
 
+  bool _isValidCommentTargetId(String postId) {
+    final normalized = postId.trim();
+    return normalized.isNotEmpty &&
+        normalized.length <= 1500 &&
+        !normalized.contains('/');
+  }
+
+  String _commentReadErrorCode(Object error) {
+    if (error is ArgumentError) return 'invalidPostId';
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'permission-denied':
+          return 'permissionDenied';
+        case 'unavailable':
+        case 'deadline-exceeded':
+        case 'cancelled':
+        case 'network-request-failed':
+          return 'networkError';
+      }
+    }
+    if (error is TimeoutException) return 'networkError';
+    return 'queryError';
+  }
+
+  /// 정상 댓글 조회에는 추가 read를 만들지 않는다. 실제 query 오류가 발생한
+  /// 경우에만 원본 존재 여부와 사용되지 않는 구형 subcollection 경로를 한 번
+  /// 확인해 동일 postId의 권한/경로 문제를 구분한다.
+  Future<void> _diagnoseCommentReadFailure(
+    String postId,
+    Object error,
+    StackTrace stackTrace,
+  ) async {
+    var code = _commentReadErrorCode(error);
+    if (code != 'invalidPostId') {
+      try {
+        final post = await _firestore.collection('posts').doc(postId).get();
+        final meetup = post.exists
+            ? null
+            : await _firestore.collection('meetups').doc(postId).get();
+        if (!post.exists && meetup?.exists != true) {
+          code = 'postNotFound';
+        } else if (post.exists) {
+          final legacy =
+              await post.reference.collection('comments').limit(1).get();
+          if (legacy.docs.isNotEmpty) code = 'legacyCommentPath';
+        }
+      } catch (_) {
+        // 원래 Firestore 오류 분류를 유지한다. 진단 실패가 댓글 흐름에 새로운
+        // 오류나 재시도 요청을 추가해서는 안 된다.
+      }
+    }
+    Logger.error(
+      'commentReadFailure code=$code postId=$postId',
+      error,
+      stackTrace,
+    );
+  }
+
   // 댓글 추가 (원댓글 또는 대댓글)
   Future<bool> addComment(
     String postId,
     String content, {
     String? parentCommentId,
+    String? replyToCommentId,
     String? replyToUserId,
     String? replyToUserNickname,
     // 리뷰 댓글 지원을 위한 선택 파라미터
     String? reviewOwnerUserId, // users/{userId}/posts/{postId} 경로의 ownerId
     String? reviewTitle, // 알림용 제목 (예: meetupTitle)
+    Uint8List? gifBytes,
+    String? gifCommentId,
   }) async {
     try {
       final user = _auth.currentUser;
       if (user == null) {
         Logger.error('댓글 작성 실패: 로그인이 필요합니다.');
+        return false;
+      }
+      if (content.trim().isEmpty && gifBytes == null) return false;
+      if (gifBytes != null &&
+          (gifCommentId == null ||
+              gifCommentId.isEmpty ||
+              gifCommentId.contains('/') ||
+              gifBytes.length > maxCommentGifBytes ||
+              gifBytes.length < 10 ||
+              !isValidSnapshotCommentGifHeader(gifBytes))) {
         return false;
       }
 
@@ -54,9 +132,9 @@ class CommentService {
           postAuthorId = postDoc.data()!['userId'];
         }
       } catch (_) {}
-      
+
       postAuthorId ??= reviewOwnerUserId;
-      
+
       // 게시글 작성자와 차단 관계 확인
       if (postAuthorId != null && postAuthorId != user.uid) {
         // 네트워크 지연으로 전송이 무한 대기처럼 보이지 않도록 병렬 + 타임아웃 처리
@@ -75,7 +153,7 @@ class CommentService {
           // 차단 체크 실패는 "차단 아님"으로 처리(기존 정책: 조회 실패 시 빈 Set 반환과 동일)
           Logger.error('차단 관계 확인 실패(무시): $e');
         }
-        
+
         if (isBlocked || isBlockedBy) {
           Logger.error('댓글 작성 실패: 차단된 사용자의 게시글입니다.');
           throw Exception('차단된 사용자의 게시글에는 댓글을 작성할 수 없습니다.');
@@ -103,25 +181,74 @@ class CommentService {
         'authorNickname': nickname,
         'authorPhotoUrl': photoUrl,
         'content': content,
+        if (gifBytes != null)
+          'gifStoragePath': 'post_comment_gifs/$postId/$gifCommentId.gif',
+        if (gifBytes != null) 'storageBucket': AppStorage.uploadBucketName,
         'createdAt': FieldValue.serverTimestamp(),
         'parentCommentId': parentCommentId,
         'depth': parentCommentId != null ? 1 : 0,
+        'replyToCommentId': replyToCommentId,
         'replyToUserId': replyToUserId,
         'replyToUserNickname': replyToUserNickname,
         'likeCount': 0,
         'likedBy': [],
+        'isDeleted': false,
       };
 
       // Firestore에 저장
-      await _firestore
-          .collection('comments')
-          .add(commentData)
-          .timeout(const Duration(seconds: 10));
+      if (gifBytes == null) {
+        await _firestore
+            .collection('comments')
+            .add(commentData)
+            .timeout(const Duration(seconds: 10));
+      } else {
+        await FirebaseAppCheckService.instance.ensureReady();
+        final gifPath = commentData['gifStoragePath']! as String;
+        final gifRef = AppStorage.uploads.ref(gifPath);
+        Future<bool> matchesExistingGif() async {
+          final metadata = await gifRef.getMetadata();
+          final custom = metadata.customMetadata ?? const <String, String>{};
+          return custom['ownerUid'] == user.uid &&
+              custom['postId'] == postId &&
+              custom['commentId'] == gifCommentId &&
+              metadata.contentType == 'image/gif';
+        }
+        final upload = gifRef.putData(gifBytes, SettableMetadata(
+          contentType: 'image/gif',
+          customMetadata: {
+            'ownerUid': user.uid,
+            'postId': postId,
+            'commentId': gifCommentId!,
+          },
+        ));
+        try {
+          await uploadImmutableCommentGif(
+            upload: () async => upload.timeout(const Duration(minutes: 2)),
+            existingMatches: matchesExistingGif,
+          );
+        } catch (_) {
+          await upload.cancel().catchError((_) => false);
+          rethrow;
+        }
+        if (_auth.currentUser?.uid != user.uid) return false;
+        final commentRef = _firestore.collection('comments').doc(gifCommentId);
+        await _firestore.runTransaction((transaction) async {
+          final existing = await transaction.get(commentRef);
+          if (existing.exists) {
+            if (existing.data()?['userId'] != user.uid ||
+                existing.data()?['gifStoragePath'] != gifPath) {
+              throw StateError('comment-gif-id-conflict');
+            }
+            return;
+          }
+          transaction.set(commentRef, commentData);
+        }).timeout(const Duration(seconds: 10));
+      }
 
       // 캐시 무효화 (새 댓글이 추가되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
         _cache.invalidatePostComments(postId);
-        Logger.log('💾 댓글 캐시 무효화 (새 댓글 추가)');
+        if (Logger.isVerboseEnabled) Logger.log('💾 댓글 캐시 무효화 (새 댓글 추가)');
       }
 
       // 게시글 정보 가져오기 (게시글 또는 리뷰 모두 지원)
@@ -133,6 +260,7 @@ class CommentService {
         if (t.isEmpty) return '';
         return t.length <= max ? t : '${t.substring(0, max)}...';
       }
+
       try {
         final postDoc = await _firestore.collection('posts').doc(postId).get();
         if (postDoc.exists && postDoc.data() != null) {
@@ -164,7 +292,8 @@ class CommentService {
       // 댓글 수 정합성 보정:
       // - posts/meetups의 commentCount는 Cloud Functions 트리거가 담당 (rules 이슈/중복 방지)
       // - 리뷰 프로필(users/{uid}/posts/{postId}) commentCount만 클라이언트에서 보정
-      unawaited(_updateCommentCount(postId, reviewOwnerUserId: reviewOwnerUserId));
+      unawaited(
+          _updateCommentCount(postId, reviewOwnerUserId: reviewOwnerUserId));
 
       return true;
     } on FirebaseException catch (e) {
@@ -180,16 +309,18 @@ class CommentService {
   }
 
   // 게시글의 댓글 수 업데이트
-  Future<void> _updateCommentCount(String postId, {String? reviewOwnerUserId}) async {
+  Future<void> _updateCommentCount(String postId,
+      {String? reviewOwnerUserId}) async {
     try {
       // 해당 게시글의 댓글 수 계산
-      final querySnapshot =
-          await _firestore
-              .collection('comments')
-              .where('postId', isEqualTo: postId)
-              .get();
+      final querySnapshot = await _firestore
+          .collection('comments')
+          .where('postId', isEqualTo: postId)
+          .get();
 
-      final commentCount = querySnapshot.docs.length;
+      final commentCount = querySnapshot.docs
+          .where((doc) => doc.data()['isDeleted'] != true)
+          .length;
 
       // 리뷰 프로필 문서(users/{uid}/posts/{postId}) 업데이트 (권한 실패 시 무시)
       if (reviewOwnerUserId != null && reviewOwnerUserId.isNotEmpty) {
@@ -213,14 +344,15 @@ class CommentService {
   Future<void> _updateMeetupCommentCount(String postId) async {
     try {
       // postId가 모임 ID인지 확인 (meetups 컬렉션에 해당 문서가 있는지 확인)
-      final meetupDoc = await _firestore.collection('meetups').doc(postId).get();
+      final meetupDoc =
+          await _firestore.collection('meetups').doc(postId).get();
       if (meetupDoc.exists) {
         // 모임이 존재하면 댓글수 업데이트
         await _meetupService.updateCommentCount(postId);
       }
     } catch (e) {
       // 모임 댓글수 업데이트 실패는 무시 (일반 게시글일 수 있음)
-      Logger.log('모임 댓글수 업데이트 시도 (실패 무시): $e');
+      if (Logger.isVerboseEnabled) Logger.log('모임 댓글수 업데이트 시도 (실패 무시): $e');
     }
   }
 
@@ -232,7 +364,7 @@ class CommentService {
     if (!CacheFeatureFlags.isCommentCacheEnabled) {
       return [];
     }
-    
+
     try {
       return await _cache.getComments(postId);
     } catch (e) {
@@ -243,39 +375,101 @@ class CommentService {
 
   /// 여러 게시글의 댓글 수를 한 번에 조회합니다. (수동 새로고침용)
   /// - Firestore whereIn(최대 10개) 제한 때문에 내부에서 청크 처리합니다.
+  /// - 상세 화면과 동일하게 삭제된 댓글과 부모가 없는 대댓글은 집계하지 않습니다.
   /// - 반환: { postId: count }
-  Future<Map<String, int>> fetchCommentCountsForPostIds(List<String> postIds) async {
+  Future<Map<String, int>> fetchCommentCountsForPostIds(
+      List<String> postIds) async {
     final ids = postIds.where((e) => e.trim().isNotEmpty).toSet().toList();
     if (ids.isEmpty) return {};
 
     const chunkSize = 10;
-    final result = <String, int>{};
+    const queryTimeout = Duration(seconds: 5);
+    final chunks = <List<String>>[];
 
     for (int i = 0; i < ids.length; i += chunkSize) {
-      final chunk = ids.sublist(i, i + chunkSize > ids.length ? ids.length : i + chunkSize);
+      chunks.add(ids.sublist(
+        i,
+        i + chunkSize > ids.length ? ids.length : i + chunkSize,
+      ));
+    }
+
+    Future<Map<String, int>> fetchChunk(List<String> chunk) async {
+      final counts = <String, int>{};
       try {
         final snap = await _firestore
             .collection('comments')
             .where('postId', whereIn: chunk)
-            .get();
+            .get()
+            .timeout(queryTimeout);
 
+        final commentsByPost = <String, List<Comment>>{
+          for (final postId in chunk) postId: <Comment>[],
+        };
         for (final doc in snap.docs) {
-          final data = doc.data();
-          final postId = data['postId']?.toString();
-          if (postId == null || postId.isEmpty) continue;
-          result[postId] = (result[postId] ?? 0) + 1;
+          final comment = Comment.fromFirestore(doc);
+          final postComments = commentsByPost[comment.postId];
+          if (postComments == null) continue;
+          if (ContentHideService.shouldHideComment(
+            commentId: comment.id,
+            userId: comment.userId,
+          )) {
+            continue;
+          }
+          postComments.add(comment);
         }
 
-        // whereIn 대상이지만 댓글이 0개인 경우도 0으로 채움
         for (final id in chunk) {
-          result[id] = result[id] ?? 0;
+          counts[id] = countActiveThreadComments(
+            commentsByPost[id] ?? const <Comment>[],
+          );
         }
       } catch (e) {
-        Logger.error('댓글 수 일괄 조회 오류: $e');
+        // 실패한 청크는 기존 카드 값을 유지한다. 빈 결과를 반환하면 호출 측에서
+        // 정상 완료되어 RefreshIndicator가 무한 대기하지 않는다.
+        Logger.error('댓글 수 일괄 조회 오류(${chunk.length}개): $e');
       }
+      return counts;
+    }
+
+    final result = <String, int>{};
+    final chunkResults = await Future.wait(
+      chunks.map(fetchChunk),
+      eagerError: false,
+    );
+    for (final counts in chunkResults) {
+      result.addAll(counts);
     }
 
     return result;
+  }
+
+  /// 화면에 유지할 수 있는 댓글 스레드만 반환합니다.
+  /// 삭제된 부모 댓글은 대댓글 위치 보존을 위한 tombstone이므로 부모로 인정하고,
+  /// 부모 문서 자체가 사라진 고아 대댓글만 제외합니다.
+  static List<Comment> retainValidThreadComments(
+    Iterable<Comment> comments,
+  ) {
+    final commentList = comments.toList(growable: false);
+    final topLevelIds = commentList
+        .where((comment) => comment.isTopLevel)
+        .map((comment) => comment.id)
+        .toSet();
+
+    return commentList
+        .where(
+          (comment) =>
+              comment.isTopLevel ||
+              (comment.parentCommentId != null &&
+                  topLevelIds.contains(comment.parentCommentId)),
+        )
+        .toList(growable: false);
+  }
+
+  /// 상세/목록에서 공통으로 사용하는 실제 표시 댓글 수입니다.
+  static int countActiveThreadComments(Iterable<Comment> comments) {
+    return retainValidThreadComments(comments)
+        .where((comment) => !comment.isDeleted)
+        .length;
   }
 
   // 게시글의 모든 댓글 가져오기
@@ -288,41 +482,29 @@ class CommentService {
           // .orderBy('createdAt', descending: false)
           .snapshots()
           .asyncMap((snapshot) async {
-            List<Comment> comments =
-                snapshot.docs.map((doc) {
-                  return Comment.fromFirestore(doc);
-                }).toList();
+        List<Comment> comments = snapshot.docs.map((doc) {
+          return Comment.fromFirestore(doc);
+        }).toList();
 
-            // 차단/차단당한 사용자의 댓글 필터링
-            final blockedUserIds = await ContentFilterService.getBlockedUserIds();
-            final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
-            if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
-              comments = comments.where((comment) => 
-                comment.userId != null && 
-                !blockedUserIds.contains(comment.userId) &&
-                !blockedByUserIds.contains(comment.userId)
-              ).toList();
-            }
+        // 신고/숨김 처리된 댓글/사용자 즉시 제외
+        await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
+        comments = comments.where((comment) {
+          return !ContentHideService.shouldHideComment(
+            commentId: comment.id,
+            userId: comment.userId,
+          );
+        }).toList();
 
-            // 신고/숨김 처리된 댓글/사용자 즉시 제외
-            await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
-            comments = comments.where((comment) {
-              return !ContentHideService.shouldHideComment(
-                commentId: comment.id,
-                userId: comment.userId,
-              );
-            }).toList();
+        // 클라이언트 측에서 정렬 수행
+        comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-            // 클라이언트 측에서 정렬 수행
-            comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        // 캐시 업데이트 (백그라운드, 실패해도 무시)
+        if (CacheFeatureFlags.isCommentCacheEnabled) {
+          unawaited(_cache.saveComments(postId, comments));
+        }
 
-            // 캐시 업데이트 (백그라운드, 실패해도 무시)
-            if (CacheFeatureFlags.isCommentCacheEnabled) {
-              unawaited(_cache.saveComments(postId, comments));
-            }
-
-            return comments;
-          });
+        return comments;
+      });
     } catch (e) {
       Logger.error('댓글 불러오기 오류: $e');
       // 오류 발생 시 빈 리스트 반환
@@ -357,16 +539,16 @@ class CommentService {
         return false;
       }
 
-      // 댓글 삭제
-      await _firestore.collection('comments').doc(commentId).delete();
-      
+      await _softDeleteComment(commentDoc.reference, user.uid);
+      unawaited(_deleteOwnCommentGif(data, postId, commentId, user.uid));
+
       // 댓글 수 정합성 보정 (리뷰 프로필용)
       unawaited(_updateCommentCount(postId));
 
       // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
         _cache.invalidatePostComments(postId);
-        Logger.log('💾 댓글 캐시 무효화 (댓글 삭제)');
+        if (Logger.isVerboseEnabled) Logger.log('💾 댓글 캐시 무효화 (댓글 삭제)');
       }
 
       return true;
@@ -377,31 +559,42 @@ class CommentService {
   }
 
   // 댓글 좋아요 토글
-  Future<bool> toggleCommentLike(String commentId, String userId) async {
+  // 반환값: 반영 후 좋아요 상태(true=좋아요, false=취소). 실패하면 null.
+  Future<bool?> toggleCommentLike(String commentId, String userId) async {
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('댓글 좋아요 토글 시작');
-      Logger.log('  - commentId: $commentId');
-      Logger.log('  - userId: $userId');
-      
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('댓글 좋아요 토글 시작');
+      if (Logger.isVerboseEnabled) Logger.log('  - commentId: $commentId');
+      if (Logger.isVerboseEnabled) Logger.log('  - userId: $userId');
+
       final commentRef = _firestore.collection('comments').doc(commentId);
-      
-      return await _firestore.runTransaction((transaction) async {
+
+      return await _firestore.runTransaction<bool?>((transaction) async {
         final commentDoc = await transaction.get(commentRef);
-        
+
         if (!commentDoc.exists) {
-          Logger.log('  ❌ 댓글을 찾을 수 없습니다.');
+          if (Logger.isVerboseEnabled) Logger.log('  ❌ 댓글을 찾을 수 없습니다.');
           throw Exception('댓글을 찾을 수 없습니다.');
         }
-        
+
         final commentData = commentDoc.data()!;
-        final List<String> likedBy = List<String>.from(commentData['likedBy'] ?? []);
+        if (commentData['isDeleted'] == true) {
+          if (Logger.isVerboseEnabled)
+            Logger.log('  ❌ 삭제된 댓글에는 좋아요를 변경할 수 없습니다.');
+          return null;
+        }
+        final List<String> likedBy =
+            List<String>.from(commentData['likedBy'] ?? []);
         final int currentLikeCount = commentData['likeCount'] ?? 0;
-        
-        Logger.log('  - 현재 좋아요 수: $currentLikeCount');
-        Logger.log('  - 좋아요 누른 사용자: ${likedBy.length}명');
-        Logger.log('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
-        
+
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - 현재 좋아요 수: $currentLikeCount');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - 좋아요 누른 사용자: ${likedBy.length}명');
+        if (Logger.isVerboseEnabled)
+          Logger.log('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
+
         if (likedBy.contains(userId)) {
           // 좋아요 취소
           likedBy.remove(userId);
@@ -409,7 +602,7 @@ class CommentService {
             'likedBy': likedBy,
             'likeCount': currentLikeCount - 1,
           });
-          Logger.log('  ✅ 좋아요 취소 완료');
+          if (Logger.isVerboseEnabled) Logger.log('  ✅ 좋아요 취소 완료');
           return false; // 좋아요 취소됨
         } else {
           // 좋아요 추가
@@ -418,77 +611,140 @@ class CommentService {
             'likedBy': likedBy,
             'likeCount': currentLikeCount + 1,
           });
-          Logger.log('  ✅ 좋아요 추가 완료');
+          if (Logger.isVerboseEnabled) Logger.log('  ✅ 좋아요 추가 완료');
           return true; // 좋아요 추가됨
         }
       });
     } catch (e, stackTrace) {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('❌ 댓글 좋아요 토글 오류');
       Logger.error('  에러: $e');
-      Logger.log('  스택 트레이스: $stackTrace');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      return false;
+      if (Logger.isVerboseEnabled) Logger.log('  스택 트레이스: $stackTrace');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      return null;
     } finally {
-      Logger.log('댓글 좋아요 토글 종료');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('댓글 좋아요 토글 종료');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 
   // 댓글과 대댓글을 계층적으로 가져오기
   Stream<List<Comment>> getCommentsWithReplies(String postId) {
+    final normalizedPostId = postId.trim();
+    if (!_isValidCommentTargetId(normalizedPostId)) {
+      final error = ArgumentError.value(postId, 'postId', 'invalidPostId');
+      Logger.error(
+        'commentReadFailure code=invalidPostId postId=$normalizedPostId',
+        error,
+      );
+      return Stream<List<Comment>>.error(error);
+    }
     try {
       return _firestore
           .collection('comments')
-          .where('postId', isEqualTo: postId)
+          .where('postId', isEqualTo: normalizedPostId)
           .snapshots(includeMetadataChanges: true)
-          .handleError((e, st) {
-            Logger.error('댓글 스트림 오류(postId=$postId)', e);
-          })
           .asyncMap((snapshot) async {
-            List<Comment> allComments = snapshot.docs.map((doc) {
-              return Comment.fromFirestore(doc);
-            }).toList();
+        List<Comment> allComments = snapshot.docs.map((doc) {
+          return Comment.fromFirestore(doc);
+        }).toList();
 
-            final blockedUserIds = await ContentFilterService.getBlockedUserIds();
-            final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
-            if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
-              allComments = allComments.where((comment) {
-                final uid = comment.userId;
-                return uid != null &&
-                    !blockedUserIds.contains(uid) &&
-                    !blockedByUserIds.contains(uid);
-              }).toList();
-            }
-            
-            // 클라이언트 측에서 정렬 수행
-            allComments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        // 클라이언트 측에서 정렬 수행
+        allComments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-            // 신고/숨김 처리된 댓글/사용자 즉시 제외
-            await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
-            allComments = allComments.where((comment) {
-              return !ContentHideService.shouldHideComment(
-                commentId: comment.id,
-                userId: comment.userId,
-              );
-            }).toList();
-            
-            return allComments;
-          });
+        // 신고/숨김 처리된 댓글/사용자 즉시 제외
+        await ReportService.getHiddenAnonymousCommentIdsForPost(
+          normalizedPostId,
+        );
+        allComments = allComments.where((comment) {
+          return !ContentHideService.shouldHideComment(
+            commentId: comment.id,
+            userId: comment.userId,
+          );
+        }).toList();
+
+        return allComments;
+      }).handleError((Object error, StackTrace stackTrace) {
+        unawaited(_diagnoseCommentReadFailure(
+          normalizedPostId,
+          error,
+          stackTrace,
+        ));
+        Error.throwWithStackTrace(error, stackTrace);
+      });
     } catch (e) {
-      Logger.error('댓글 불러오기 오류: $e');
-      return Stream.empty();
+      final stackTrace = StackTrace.current;
+      unawaited(_diagnoseCommentReadFailure(
+        normalizedPostId,
+        e,
+        stackTrace,
+      ));
+      return Stream<List<Comment>>.error(e, stackTrace);
     }
   }
 
-  // 개선된 댓글 삭제 (대댓글도 함께 삭제)
+  Future<void> _softDeleteComment(
+    DocumentReference<Map<String, dynamic>> commentRef,
+    String userId,
+  ) async {
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(commentRef);
+      if (!snapshot.exists) {
+        throw StateError('comment-not-found');
+      }
+
+      final data = snapshot.data()!;
+      if (data['userId'] != userId) {
+        throw StateError('comment-owner-mismatch');
+      }
+      if (data['isDeleted'] == true) return;
+
+      // 스레드의 ID/부모 관계/생성 시각은 그대로 두고 내용과 공개 작성자
+      // 정보만 비운다. 중간 답글이 삭제돼도 후속 답글의 위치가 유지된다.
+      transaction.update(commentRef, <String, dynamic>{
+        'isDeleted': true,
+        'deletedAt': FieldValue.serverTimestamp(),
+        'content': '',
+        'authorNickname': '',
+        'authorPhotoUrl': '',
+        'likeCount': 0,
+        'likedBy': <String>[],
+      });
+    }).timeout(const Duration(seconds: 10));
+  }
+
+  Future<void> _deleteOwnCommentGif(
+    Map<String, dynamic> data, String postId, String commentId, String uid,
+  ) async {
+    final path = data['gifStoragePath'];
+    if (path != 'post_comment_gifs/$postId/$commentId.gif' ||
+        _auth.currentUser?.uid != uid) return;
+    try {
+      await AppStorage.ref(
+        path as String,
+        storageBucket: (data['storageBucket'] ?? '').toString(),
+      ).delete();
+    } on FirebaseException catch (error) {
+      if (error.code != 'object-not-found') {
+        Logger.warning('댓글 GIF 정리 실패: ${error.code}');
+      }
+    } catch (error) {
+      Logger.warning('댓글 GIF 정리 실패: $error');
+    }
+  }
+
+  // 스레드 보존형 댓글 삭제. 기존 메서드명은 호출부 호환을 위해 유지한다.
   Future<bool> deleteCommentWithReplies(String commentId, String postId) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return false;
 
       // 댓글 정보 가져오기
-      final commentDoc = await _firestore.collection('comments').doc(commentId).get();
+      final commentDoc =
+          await _firestore.collection('comments').doc(commentId).get();
       if (!commentDoc.exists) return false;
 
       final commentData = commentDoc.data()!;
@@ -497,19 +753,16 @@ class CommentService {
       // 본인이 작성한 댓글만 삭제 가능
       if (commentUserId != user.uid) return false;
 
-      // NOTE:
-      // - 대댓글은 다른 사용자가 작성한 경우가 많아, 클라이언트 권한으로 일괄 삭제가 실패할 수 있다.
-      // - 따라서 여기서는 "부모 댓글"만 삭제하고,
-      //   대댓글은 Cloud Functions(onDelete 트리거)에서 관리자 권한으로 연쇄 삭제한다.
-      await _firestore.collection('comments').doc(commentId).delete();
-      
+      await _softDeleteComment(commentDoc.reference, user.uid);
+      unawaited(_deleteOwnCommentGif(commentData, postId, commentId, user.uid));
+
       // 댓글 수 정합성 보정 (리뷰 프로필용)
       unawaited(_updateCommentCount(postId));
 
       // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
         _cache.invalidatePostComments(postId);
-        Logger.log('💾 댓글 캐시 무효화 (댓글 삭제 요청)');
+        if (Logger.isVerboseEnabled) Logger.log('💾 댓글 캐시 무효화 (댓글 삭제 요청)');
       }
 
       return true;

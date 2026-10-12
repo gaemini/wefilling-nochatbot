@@ -9,8 +9,9 @@ import '../models/friend_request.dart';
 import '../models/relationship_status.dart';
 import '../services/relationship_service.dart';
 import '../services/friend_category_service.dart';
-import '../services/content_filter_service.dart';
+import '../repositories/users_repository.dart';
 import '../utils/logger.dart';
+import '../utils/latest_request_guard.dart';
 import 'auth_provider.dart';
 
 class RelationshipProvider with ChangeNotifier {
@@ -23,13 +24,21 @@ class RelationshipProvider with ChangeNotifier {
   List<UserProfile> _friends = [];
   Map<String, RelationshipStatus> _relationshipStatuses = {};
   bool _isLoading = false;
+  bool _isSearchLoading = false;
+  bool _isInterestLoadingMore = false;
+  bool _interestHasMore = false;
+  String? _activeInterestId;
+  String? _interestCursor;
+  String? _interestPaginationError;
   String? _errorMessage;
-  
+  String? _actionErrorMessage;
+  final LatestRequestGuard _searchRequestGuard = LatestRequestGuard();
+
   // 스트림 구독 관리
   StreamSubscription<List<FriendRequest>>? _incomingRequestsSubscription;
   StreamSubscription<List<FriendRequest>>? _outgoingRequestsSubscription;
   StreamSubscription<List<UserProfile>>? _friendsSubscription;
-  
+
   // AuthProvider 참조 (스트림 정리 등록용)
   AuthProvider? _authProvider;
 
@@ -38,8 +47,15 @@ class RelationshipProvider with ChangeNotifier {
   List<FriendRequest> get incomingRequests => _incomingRequests;
   List<FriendRequest> get outgoingRequests => _outgoingRequests;
   List<UserProfile> get friends => _friends;
-  bool get isLoading => _isLoading;
+  bool get isLoading => _isLoading || _isSearchLoading;
+  bool get isSearchLoading => _isSearchLoading;
+  bool get isInterestLoadingMore => _isInterestLoadingMore;
+  bool get interestHasMore => _interestHasMore;
+  String? get activeInterestId => _activeInterestId;
+  String? get interestPaginationError => _interestPaginationError;
+  String? get currentUserId => _relationshipService.currentUserId;
   String? get errorMessage => _errorMessage;
+  String? get actionErrorMessage => _actionErrorMessage;
 
   /// 특정 사용자와의 관계 상태 조회
   RelationshipStatus getRelationshipStatus(String otherUserId) {
@@ -58,53 +74,207 @@ class RelationshipProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// 친구요청 전송/수락 같은 사용자 액션 오류는 검색·목록 조회 오류와
+  /// 분리한다. 액션 한 번이 실패해도 정상 검색 결과가 오류 화면으로
+  /// 교체되지 않는다.
+  void _setActionError(String message) {
+    _actionErrorMessage = message;
+    notifyListeners();
+  }
+
+  void clearActionError() {
+    if (_actionErrorMessage == null) return;
+    _actionErrorMessage = null;
+    notifyListeners();
+  }
+
   /// 로딩 상태 설정
   void _setLoading(bool loading) {
     _isLoading = loading;
     notifyListeners();
   }
 
+  void _setSearchLoading(bool loading) {
+    _isSearchLoading = loading;
+    notifyListeners();
+  }
+
   /// 사용자 검색
   Future<void> searchUsers(String query) async {
+    final ownerUid = currentUserId;
+    final requestToken = _searchRequestGuard.begin();
     try {
-      _setLoading(true);
+      _activeInterestId = null;
+      _interestCursor = null;
+      _interestHasMore = false;
+      _interestPaginationError = null;
+      _isInterestLoadingMore = false;
+      // A new query must not display the previous query's users while the
+      // server request (or App Check preparation) is still in flight.
+      _searchResults = [];
+      _setSearchLoading(true);
       clearError();
 
-      if (query.trim().isEmpty) {
+      if (query.trim().isEmpty || ownerUid == null) {
         _searchResults = [];
         return;
       }
 
       final results = await _relationshipService.searchUsers(query);
-      
-      // 양방향 차단 필터링
-      final blockedUserIds = await ContentFilterService.getBlockedUserIds();
-      final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
-      
-      _searchResults = results.where((user) =>
-        !blockedUserIds.contains(user.uid) &&
-        !blockedByUserIds.contains(user.uid)
-      ).toList();
+      if (!_searchRequestGuard.isCurrent(requestToken) ||
+          currentUserId != ownerUid) {
+        return;
+      }
 
-      // 검색 결과의 관계 상태 조회
-      await _updateRelationshipStatuses(_searchResults.map((u) => u.uid).toList());
+      // searchSocialUsers가 현재 호출자 기준 양방향 차단을 서버에서 이미
+      // 검증한다. UID 구분이 없는 프로세스 캐시로 다시 거르면 계정 전환
+      // 직후 이전 사용자의 차단 목록 때문에 정상 결과가 사라질 수 있다.
+      _searchResults = <String, UserProfile>{
+        for (final user in results) user.uid: user,
+      }.values.toList(growable: true);
+      _refreshSearchRelationshipStatuses();
+      notifyListeners();
+    } on IncompleteUserSearchException catch (error) {
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid) {
+        _searchResults = <String, UserProfile>{
+          for (final user in error.partialResults) user.uid: user,
+        }.values.toList(growable: true);
+        _refreshSearchRelationshipStatuses();
+        _errorMessage = '사용자 검색 후보 상한으로 일부 결과만 확인되었습니다.';
+        notifyListeners();
+      }
     } catch (e) {
-      _setError('사용자 검색 중 오류가 발생했습니다: $e');
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid) {
+        _setError('사용자 검색 중 오류가 발생했습니다: $e');
+      }
     } finally {
-      _setLoading(false);
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid) {
+        _setSearchLoading(false);
+      }
     }
   }
 
-  /// 관계 상태들 일괄 업데이트
-  Future<void> _updateRelationshipStatuses(List<String> userIds) async {
-    try {
-      for (final userId in userIds) {
-        final status = await _relationshipService.getRelationshipStatus(userId);
-        _relationshipStatuses[userId] = status;
-      }
+  /// 프로필 관심사로 첫 페이지를 조회한다. 이름 검색과 동일한 결과/관계
+  /// 상태 저장소를 사용해 UserTile 액션과 실시간 친구 상태를 그대로 잇는다.
+  Future<void> searchUsersByInterest(String interestId) async {
+    final normalized = interestId.trim().toLowerCase();
+    final ownerUid = currentUserId;
+    final requestToken = _searchRequestGuard.begin();
+    _activeInterestId = normalized.isEmpty ? null : normalized;
+    _interestCursor = null;
+    _interestHasMore = normalized.isNotEmpty;
+    _interestPaginationError = null;
+    _searchResults = <UserProfile>[];
+    _errorMessage = null;
+    if (normalized.isEmpty || ownerUid == null) {
+      _isSearchLoading = false;
       notifyListeners();
-    } catch (e) {
-      Logger.error('관계 상태 업데이트 오류: $e');
+      return;
+    }
+
+    _isSearchLoading = true;
+    notifyListeners();
+    try {
+      final page = await _relationshipService.searchUsersByInterest(normalized);
+      if (!_searchRequestGuard.isCurrent(requestToken) ||
+          currentUserId != ownerUid ||
+          _activeInterestId != normalized) {
+        return;
+      }
+      _searchResults = page.users.toList(growable: true);
+      _interestCursor = page.nextCursor;
+      _interestHasMore = page.hasMore;
+      _refreshSearchRelationshipStatuses();
+      notifyListeners();
+    } catch (error) {
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid &&
+          _activeInterestId == normalized) {
+        _errorMessage = '관심사 친구 검색 중 오류가 발생했습니다: $error';
+        notifyListeners();
+      }
+    } finally {
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid &&
+          _activeInterestId == normalized) {
+        _isSearchLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> loadMoreInterestUsers() async {
+    final interestId = _activeInterestId;
+    final cursor = _interestCursor;
+    final ownerUid = currentUserId;
+    if (interestId == null ||
+        cursor == null ||
+        ownerUid == null ||
+        !_interestHasMore ||
+        _isInterestLoadingMore ||
+        _isSearchLoading) {
+      return;
+    }
+    final requestToken = _searchRequestGuard.begin();
+    _isInterestLoadingMore = true;
+    _interestPaginationError = null;
+    notifyListeners();
+    try {
+      final page = await _relationshipService.searchUsersByInterest(
+        interestId,
+        cursor: cursor,
+      );
+      if (!_searchRequestGuard.isCurrent(requestToken) ||
+          currentUserId != ownerUid ||
+          _activeInterestId != interestId) {
+        return;
+      }
+      final usersById = <String, UserProfile>{
+        for (final user in _searchResults) user.uid: user,
+        for (final user in page.users) user.uid: user,
+      };
+      _searchResults = usersById.values.toList(growable: true);
+      _interestCursor = page.nextCursor;
+      _interestHasMore = page.hasMore;
+      _refreshSearchRelationshipStatuses();
+      notifyListeners();
+    } catch (error) {
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid &&
+          _activeInterestId == interestId) {
+        _interestPaginationError = error.toString();
+        notifyListeners();
+      }
+    } finally {
+      if (_searchRequestGuard.isCurrent(requestToken) &&
+          currentUserId == ownerUid &&
+          _activeInterestId == interestId) {
+        _isInterestLoadingMore = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// 초기화 때 이미 구독 중인 친구/요청 목록에서 검색 결과의 관계 상태를
+  /// 계산한다. 검색 결과마다 여러 문서를 다시 읽지 않아도 되고, 각 스트림의
+  /// 첫 snapshot이 늦게 도착해도 아래 listener에서 곧바로 재계산된다.
+  void _refreshSearchRelationshipStatuses() {
+    final friendIds = _friends.map((friend) => friend.uid).toSet();
+    final incomingIds =
+        _incomingRequests.map((request) => request.fromUid).toSet();
+    final outgoingIds =
+        _outgoingRequests.map((request) => request.toUid).toSet();
+    for (final user in _searchResults) {
+      _relationshipStatuses[user.uid] = friendIds.contains(user.uid)
+          ? RelationshipStatus.friends
+          : outgoingIds.contains(user.uid)
+              ? RelationshipStatus.pendingOut
+              : incomingIds.contains(user.uid)
+                  ? RelationshipStatus.pendingIn
+                  : RelationshipStatus.none;
     }
   }
 
@@ -125,15 +295,15 @@ class RelationshipProvider with ChangeNotifier {
   Future<bool> sendFriendRequest(String toUid) async {
     try {
       _setLoading(true);
-      clearError();
+      clearActionError();
 
       final success = await _relationshipService.sendFriendRequest(toUid);
       if (success) {
-        // 🔥 iOS 크래시 방지: 즉시 UI 업데이트 후 백그라운드에서 상태 동기화
-        // 검색 결과에서 즉시 제거 (UI 빠른 반응)
-        _searchResults.removeWhere((user) => user.uid == toUid);
+        // 검색 결과는 유지하고 버튼 상태만 즉시 바꾼다. 요청 직후 사용자가
+        // 검색 결과를 잃지 않으며, 요청 스트림이 최종 상태를 재확인한다.
+        _relationshipStatuses[toUid] = RelationshipStatus.pendingOut;
         notifyListeners();
-        
+
         // 백그라운드에서 관계 상태 업데이트 (앱 블로킹 방지)
         unawaited(updateRelationshipStatus(toUid));
       }
@@ -144,7 +314,7 @@ class RelationshipProvider with ChangeNotifier {
       if (errorMessage.startsWith('Exception: ')) {
         errorMessage = errorMessage.substring('Exception: '.length);
       }
-      _setError(errorMessage);
+      _setActionError(errorMessage);
       return false;
     } finally {
       _setLoading(false);
@@ -153,24 +323,24 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 친구요청 취소
   Future<bool> cancelFriendRequest(String toUid) async {
+    final ownerUid = currentUserId;
+    if (ownerUid == null) return false;
     try {
       _setLoading(true);
-      clearError();
+      clearActionError();
 
       final success = await _relationshipService.cancelFriendRequest(toUid);
+      if (currentUserId != ownerUid) return success;
       if (success) {
-        // 관계 상태 업데이트
+        // 현재 결과에 이미 있는 사용자의 버튼 상태만 갱신한다. 검색어와
+        // 공개 정책을 확인하지 않은 프로필을 결과에 새로 추가하지 않는다.
         await updateRelationshipStatus(toUid);
-        // 검색 결과에 해당 사용자 다시 추가
-        final userProfile = await _relationshipService.getUserProfile(toUid);
-        if (userProfile != null && !_searchResults.any((u) => u.uid == toUid)) {
-          _searchResults.add(userProfile);
-        }
+        if (currentUserId != ownerUid) return success;
         notifyListeners();
       }
       return success;
     } catch (e) {
-      _setError('친구요청 취소 중 오류가 발생했습니다: $e');
+      _setActionError('친구요청 취소 중 오류가 발생했습니다: $e');
       return false;
     } finally {
       _setLoading(false);
@@ -181,24 +351,28 @@ class RelationshipProvider with ChangeNotifier {
   Future<bool> acceptFriendRequest(String fromUid) async {
     try {
       _setLoading(true);
-      clearError();
+      clearActionError();
 
       final success = await _relationshipService.acceptFriendRequest(fromUid);
       if (success) {
         // 🔥 iOS 크래시 방지: 즉시 UI 업데이트 후 백그라운드에서 상태 동기화
         // 받은 요청 목록에서 즉시 제거 (UI 빠른 반응)
-        _incomingRequests.removeWhere((req) => req.fromUid == fromUid);
+        _incomingRequests = _incomingRequests
+            .where((request) => request.fromUid != fromUid)
+            .toList(growable: true);
+        _relationshipStatuses[fromUid] = RelationshipStatus.friends;
         notifyListeners();
-        
+
         // 백그라운드에서 상태 업데이트 (앱 블로킹 방지)
         unawaited(Future(() async {
           try {
             // 관계 상태 업데이트
             await updateRelationshipStatus(fromUid);
-            
+
             // 친구 목록 즉시 반영(스트림 반영 전 UX 개선)
             if (!_friends.any((f) => f.uid == fromUid)) {
-              final profile = await _relationshipService.getUserProfile(fromUid);
+              final profile =
+                  await _relationshipService.getUserProfile(fromUid);
               if (profile != null) {
                 _friends = [..._friends, profile];
                 notifyListeners();
@@ -212,7 +386,7 @@ class RelationshipProvider with ChangeNotifier {
       }
       return success;
     } catch (e) {
-      _setError('친구요청 수락 중 오류가 발생했습니다: $e');
+      _setActionError('친구요청 수락 중 오류가 발생했습니다: $e');
       return false;
     } finally {
       _setLoading(false);
@@ -223,19 +397,21 @@ class RelationshipProvider with ChangeNotifier {
   Future<bool> rejectFriendRequest(String fromUid) async {
     try {
       _setLoading(true);
-      clearError();
+      clearActionError();
 
       final success = await _relationshipService.rejectFriendRequest(fromUid);
       if (success) {
         // 관계 상태 업데이트
         await updateRelationshipStatus(fromUid);
         // 받은 요청 목록에서 제거
-        _incomingRequests.removeWhere((req) => req.fromUid == fromUid);
+        _incomingRequests = _incomingRequests
+            .where((request) => request.fromUid != fromUid)
+            .toList(growable: true);
         notifyListeners();
       }
       return success;
     } catch (e) {
-      _setError('친구요청 거절 중 오류가 발생했습니다: $e');
+      _setActionError('친구요청 거절 중 오류가 발생했습니다: $e');
       return false;
     } finally {
       _setLoading(false);
@@ -244,69 +420,78 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 친구 삭제
   Future<bool> unfriend(String otherUid) async {
+    final ownerUid = currentUserId;
+    if (ownerUid == null) return false;
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🗑️ 친구 삭제 시작');
-      Logger.log('   대상 UID: $otherUid');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('🗑️ 친구 삭제 시작');
+      if (Logger.isVerboseEnabled) Logger.log('   대상 UID: $otherUid');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
       _setLoading(true);
-      clearError();
+      clearActionError();
 
       final success = await _relationshipService.unfriend(otherUid);
       Logger.error('   friendships 컬렉션 삭제: ${success ? "✅ 성공" : "❌ 실패"}');
-      
+
+      if (currentUserId != ownerUid) return success;
       if (success) {
         // 🔥 iOS 크래시 방지: 즉시 UI 업데이트 후 백그라운드에서 상태 동기화
         // 친구 목록에서 즉시 제거 (UI 빠른 반응)
         _friends.removeWhere((friend) => friend.uid == otherUid);
-        Logger.log('   _friends 목록에서 제거: ✅ 완료');
+        if (Logger.isVerboseEnabled) Logger.log('   _friends 목록에서 제거: ✅ 완료');
         notifyListeners();
-        
+
         // 백그라운드에서 상태 업데이트 (앱 블로킹 방지)
         unawaited(Future(() async {
           try {
+            if (currentUserId != ownerUid) return;
             // 관계 상태 업데이트
             await updateRelationshipStatus(otherUid);
-            Logger.log('   관계 상태 업데이트: ✅ 완료');
-            
+            if (currentUserId != ownerUid) return;
+            if (Logger.isVerboseEnabled) Logger.log('   관계 상태 업데이트: ✅ 완료');
+
             // 모든 친구 카테고리에서 제거
             try {
-              Logger.log('   카테고리에서 제거 시작...');
+              if (Logger.isVerboseEnabled) Logger.log('   카테고리에서 제거 시작...');
               final categoryService = FriendCategoryService();
               await categoryService.removeFriendFromAllCategories(otherUid);
-              Logger.log('   ✅ 친구 카테고리에서 제거 완료: $otherUid');
+              if (Logger.isVerboseEnabled)
+                Logger.log('   ✅ 친구 카테고리에서 제거 완료: $otherUid');
             } catch (categoryError) {
               Logger.error('   ⚠️ 카테고리에서 제거 실패 (계속 진행): $categoryError');
             }
-            
-            // 검색 결과에 해당 사용자 다시 추가
-            final userProfile = await _relationshipService.getUserProfile(otherUid);
-            if (userProfile != null &&
-                !_searchResults.any((u) => u.uid == otherUid)) {
-              _searchResults.add(userProfile);
-              notifyListeners();
-            }
-            Logger.log('   검색 결과 업데이트: ✅ 완료');
+
+            // 검색 결과의 항목 구성은 마지막 서버 검색만 소유한다. 관계
+            // 변경은 기존 항목의 버튼 상태만 바꾸며 사용자를 삽입하지 않는다.
+            if (Logger.isVerboseEnabled) Logger.log('   검색 관계 상태 업데이트: ✅ 완료');
           } catch (e) {
             Logger.error('친구 삭제 후 상태 동기화 실패(무시): $e');
           }
         }));
-        
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        Logger.log('🎉 친구 삭제 완료!');
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+        if (Logger.isVerboseEnabled)
+          Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        if (Logger.isVerboseEnabled) Logger.log('🎉 친구 삭제 완료!');
+        if (Logger.isVerboseEnabled)
+          Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       } else {
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        if (Logger.isVerboseEnabled)
+          Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         Logger.error('❌ 친구 삭제 실패');
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        if (Logger.isVerboseEnabled)
+          Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       }
       return success;
     } catch (e) {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('❌ 친구 삭제 중 예외 발생: $e');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      _setError('친구 삭제 중 오류가 발생했습니다: $e');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      if (Logger.isVerboseEnabled) Logger.log('❌ 친구 삭제 중 예외 발생: $e');
+      if (Logger.isVerboseEnabled)
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      _setActionError('친구 삭제 중 오류가 발생했습니다: $e');
       return false;
     } finally {
       _setLoading(false);
@@ -317,7 +502,7 @@ class RelationshipProvider with ChangeNotifier {
   Future<bool> blockUser(String targetUid) async {
     try {
       _setLoading(true);
-      clearError();
+      clearActionError();
 
       final success = await _relationshipService.blockUser(targetUid);
       if (success) {
@@ -334,7 +519,7 @@ class RelationshipProvider with ChangeNotifier {
       }
       return success;
     } catch (e) {
-      _setError('사용자 차단 중 오류가 발생했습니다: $e');
+      _setActionError('사용자 차단 중 오류가 발생했습니다: $e');
       return false;
     } finally {
       _setLoading(false);
@@ -343,27 +528,24 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 사용자 차단 해제
   Future<bool> unblockUser(String targetUid) async {
+    final ownerUid = currentUserId;
+    if (ownerUid == null) return false;
     try {
       _setLoading(true);
-      clearError();
+      clearActionError();
 
       final success = await _relationshipService.unblockUser(targetUid);
+      if (currentUserId != ownerUid) return success;
       if (success) {
-        // 관계 상태 업데이트
+        // 기존 결과에 항목이 있으면 관계 버튼만 갱신한다. 차단으로 제거된
+        // 항목의 복원은 화면이 현재 검색어를 다시 서버에 질의해 결정한다.
         await updateRelationshipStatus(targetUid);
-        // 검색 결과에 해당 사용자 다시 추가
-        final userProfile = await _relationshipService.getUserProfile(
-          targetUid,
-        );
-        if (userProfile != null &&
-            !_searchResults.any((u) => u.uid == targetUid)) {
-          _searchResults.add(userProfile);
-        }
+        if (currentUserId != ownerUid) return success;
         notifyListeners();
       }
       return success;
     } catch (e) {
-      _setError('사용자 차단 해제 중 오류가 발생했습니다: $e');
+      _setActionError('사용자 차단 해제 중 오류가 발생했습니다: $e');
       return false;
     } finally {
       _setLoading(false);
@@ -375,17 +557,20 @@ class RelationshipProvider with ChangeNotifier {
     try {
       // 기존 구독 취소
       await _incomingRequestsSubscription?.cancel();
-      
+
       // 새 구독 시작 및 저장
-      _incomingRequestsSubscription = _relationshipService.getIncomingRequests().listen(
+      _incomingRequestsSubscription =
+          _relationshipService.getIncomingRequests().listen(
         (requests) {
-          _incomingRequests = requests;
+          _incomingRequests = requests.toList(growable: true);
+          _refreshSearchRelationshipStatuses();
           notifyListeners();
         },
         onError: (error) {
           // 로그아웃 중 에러는 무시
           if (_authProvider?.user == null) {
-            Logger.log('로그아웃 중 친구요청 조회 에러 무시: $error');
+            if (Logger.isVerboseEnabled)
+              Logger.log('로그아웃 중 친구요청 조회 에러 무시: $error');
             return;
           }
           _setError('받은 친구요청 목록 로드 중 오류가 발생했습니다: $error');
@@ -401,17 +586,20 @@ class RelationshipProvider with ChangeNotifier {
     try {
       // 기존 구독 취소
       await _outgoingRequestsSubscription?.cancel();
-      
+
       // 새 구독 시작 및 저장
-      _outgoingRequestsSubscription = _relationshipService.getOutgoingRequests().listen(
+      _outgoingRequestsSubscription =
+          _relationshipService.getOutgoingRequests().listen(
         (requests) {
-          _outgoingRequests = requests;
+          _outgoingRequests = requests.toList(growable: true);
+          _refreshSearchRelationshipStatuses();
           notifyListeners();
         },
         onError: (error) {
           // 로그아웃 중 에러는 무시
           if (_authProvider?.user == null) {
-            Logger.log('로그아웃 중 친구요청 조회 에러 무시: $error');
+            if (Logger.isVerboseEnabled)
+              Logger.log('로그아웃 중 친구요청 조회 에러 무시: $error');
             return;
           }
           _setError('보낸 친구요청 목록 로드 중 오류가 발생했습니다: $error');
@@ -426,21 +614,23 @@ class RelationshipProvider with ChangeNotifier {
   Future<void> loadFriends() async {
     try {
       _setLoading(true);
-      
+
       // 기존 구독 취소
       await _friendsSubscription?.cancel();
-      
+
       // 새 구독 시작 및 저장
       _friendsSubscription = _relationshipService.getFriends().listen(
         (friends) {
-          _friends = friends;
+          _friends = friends.toList(growable: true);
+          _refreshSearchRelationshipStatuses();
           _setLoading(false);
           notifyListeners();
         },
         onError: (error) {
           // 로그아웃 중 에러는 무시
           if (_authProvider?.user == null) {
-            Logger.log('로그아웃 중 친구 목록 조회 에러 무시: $error');
+            if (Logger.isVerboseEnabled)
+              Logger.log('로그아웃 중 친구 목록 조회 에러 무시: $error');
             _setLoading(false);
             return;
           }
@@ -457,6 +647,10 @@ class RelationshipProvider with ChangeNotifier {
   /// 모든 데이터 초기화
   Future<void> initialize() async {
     try {
+      // 검색 등 다른 화면에서 남은 오류가 친구 요청 화면까지 전파되지 않게
+      // 초기화 시작 시 관계 데이터 오류 상태를 새로 설정한다.
+      _errorMessage = null;
+      _actionErrorMessage = null;
       _setLoading(true);
       await Future.wait([
         loadIncomingRequests(),
@@ -471,7 +665,16 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 검색 결과 초기화
   void clearSearchResults() {
+    _searchRequestGuard.invalidate();
     _searchResults = [];
+    _activeInterestId = null;
+    _interestCursor = null;
+    _interestHasMore = false;
+    _isInterestLoadingMore = false;
+    _interestPaginationError = null;
+    _errorMessage = null;
+    _actionErrorMessage = null;
+    _isSearchLoading = false;
     notifyListeners();
   }
 
@@ -536,22 +739,25 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 모든 Firestore 구독 취소
   void _cancelAllSubscriptions() {
-    Logger.log('RelationshipProvider: 모든 구독 취소 시작...');
-    
+    if (Logger.isVerboseEnabled)
+      Logger.log('RelationshipProvider: 모든 구독 취소 시작...');
+
     _incomingRequestsSubscription?.cancel();
     _incomingRequestsSubscription = null;
-    
+
     _outgoingRequestsSubscription?.cancel();
     _outgoingRequestsSubscription = null;
-    
+
     _friendsSubscription?.cancel();
     _friendsSubscription = null;
-    
-    Logger.log('RelationshipProvider: 모든 구독 취소 완료');
+
+    if (Logger.isVerboseEnabled)
+      Logger.log('RelationshipProvider: 모든 구독 취소 완료');
   }
 
   @override
   void dispose() {
+    _searchRequestGuard.invalidate();
     _cancelAllSubscriptions();
     // AuthProvider에서 정리 콜백 제거
     _authProvider?.unregisterStreamCleanup(_cancelAllSubscriptions);

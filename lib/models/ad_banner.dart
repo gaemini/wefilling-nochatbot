@@ -13,6 +13,7 @@ class AdBanner {
   final int order; // 표시 순서
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final String? notificationVersion;
 
   const AdBanner({
     required this.id,
@@ -24,6 +25,7 @@ class AdBanner {
     this.order = 0,
     this.createdAt,
     this.updatedAt,
+    this.notificationVersion,
   });
 
   // Firestore로 변환
@@ -38,6 +40,7 @@ class AdBanner {
       'order': order,
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
+      'notificationVersion': notificationVersion,
     };
   }
 
@@ -45,18 +48,22 @@ class AdBanner {
   factory AdBanner.fromJson(Map<String, dynamic> json) {
     return AdBanner(
       id: json['id'] as String,
+      notificationVersion: json['notificationVersion'] as String? ??
+          (json['updatedAt'] is Timestamp
+              ? '${(json['updatedAt'] as Timestamp).seconds}:${(json['updatedAt'] as Timestamp).nanoseconds}'
+              : null),
       title: json['title'] as String,
       description: json['description'] as String,
       url: json['url'] as String,
       imageUrl: json['imageUrl'] as String?,
       isActive: json['isActive'] as bool? ?? true,
       order: json['order'] as int? ?? 0,
-      createdAt: json['createdAt'] is Timestamp 
-          ? (json['createdAt'] as Timestamp).toDate() 
+      createdAt: json['createdAt'] is Timestamp
+          ? (json['createdAt'] as Timestamp).toDate()
           : json['createdAt'] is String
               ? DateTime.parse(json['createdAt'] as String)
               : null,
-      updatedAt: json['updatedAt'] is Timestamp 
+      updatedAt: json['updatedAt'] is Timestamp
           ? (json['updatedAt'] as Timestamp).toDate()
           : json['updatedAt'] is String
               ? DateTime.parse(json['updatedAt'] as String)
@@ -68,9 +75,10 @@ class AdBanner {
   factory AdBanner.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return AdBanner.fromJson({
-      'id': doc.id,
       ...data,
+      // 문서 내부의 레거시 id 필드가 중복되어 있어도 실제 Firestore 문서 ID를
+      // 화면/스크롤 앵커의 고유 식별자로 사용한다.
+      'id': doc.id,
     });
   }
 }
-

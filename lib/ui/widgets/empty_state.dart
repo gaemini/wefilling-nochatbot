@@ -114,7 +114,8 @@ class AppEmptyState extends StatelessWidget {
     return AppEmptyState(
       icon: IconStyles.article,
       title: '첫 번째 이야기를 들려주세요',
-      description: '당신의 경험과 생각을 다른 사람들과 나누어보세요.\n소중한 이야기가 누군가에게는 큰 도움이 될 수 있어요.',
+      description:
+          '당신의 경험과 생각을 다른 사람들과 나누어보세요.\n소중한 이야기가 누군가에게는 큰 도움이 될 수 있어요.',
       ctaText: '첫 글 쓰기',
       ctaIcon: IconStyles.edit,
       onCtaPressed: onCreatePost,
@@ -123,13 +124,31 @@ class AppEmptyState extends StatelessWidget {
   }
 
   /// 친구가 없을 때 표시하는 빈 상태 (프리셋)
-  factory AppEmptyState.noFriends({required BuildContext context, VoidCallback? onSearchFriends}) {
+  factory AppEmptyState.noFriends({
+    required BuildContext context,
+    VoidCallback? onSearchFriends,
+  }) {
     final l10n = AppLocalizations.of(context);
     return AppEmptyState(
       icon: IconStyles.group,
       title: l10n?.findFriends ?? "",
       description: l10n?.makeFriendsWithSameInterests ?? "",
-      // ctaText 및 onCtaPressed 제거하여 "Find Friends" 버튼 숨김
+      centerVertically: true,
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 64),
+      illustration: Container(
+        width: 84,
+        height: 84,
+        decoration: const BoxDecoration(
+          color: Color(0xFFF2F4F7),
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.group_outlined,
+          size: 36,
+          color: Color(0xFF475467),
+        ),
+      ),
     );
   }
 
@@ -143,10 +162,9 @@ class AppEmptyState extends StatelessWidget {
     return AppEmptyState(
       icon: Icons.search_off_outlined,
       title: l10n?.noSearchResults ?? "",
-      description:
-          searchQuery != null
-              ? '\'$searchQuery\' ${l10n?.tryDifferentKeyword ?? ""}'
-              : l10n?.tryDifferentKeyword ?? "",
+      description: searchQuery != null
+          ? '\'$searchQuery\' ${l10n?.tryDifferentKeyword ?? ""}'
+          : l10n?.tryDifferentKeyword ?? "",
       ctaText: l10n?.clearSearchQuery ?? "",
       ctaIcon: Icons.clear,
       onCtaPressed: onClearSearch,
@@ -190,8 +208,11 @@ class AppEmptyState extends StatelessWidget {
                   ? BoxConstraints(minHeight: minHeight)
                   : const BoxConstraints(),
               child: Column(
-                mainAxisSize: centerVertically ? MainAxisSize.max : MainAxisSize.min,
-                mainAxisAlignment: centerVertically ? MainAxisAlignment.center : MainAxisAlignment.center,
+                mainAxisSize:
+                    centerVertically ? MainAxisSize.max : MainAxisSize.min,
+                mainAxisAlignment: centerVertically
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // 일러스트 또는 아이콘
@@ -240,7 +261,7 @@ class AppEmptyState extends StatelessWidget {
       return illustration!;
     }
 
-      // 일관된 디자인의 아이콘 컨테이너 (애니메이션 추가)
+    // 일관된 디자인의 아이콘 컨테이너 (애니메이션 추가)
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
       duration: const Duration(milliseconds: 600),
@@ -257,7 +278,8 @@ class AppEmptyState extends StatelessWidget {
                 color: UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.1),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.2),
+                  color:
+                      UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.2),
                   width: 2,
                 ),
               ),
@@ -278,10 +300,9 @@ class AppEmptyState extends StatelessWidget {
       buttons.add(
         ElevatedButton.icon(
           onPressed: onCtaPressed,
-          icon:
-              ctaIcon != null
-                  ? Icon(ctaIcon!, size: 20)
-                  : const SizedBox.shrink(),
+          icon: ctaIcon != null
+              ? Icon(ctaIcon!, size: 20)
+              : const SizedBox.shrink(),
           label: Text(ctaText!),
           style: ComponentStyles.primaryButton,
         ),

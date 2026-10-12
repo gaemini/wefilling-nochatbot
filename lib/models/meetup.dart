@@ -6,6 +6,7 @@
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../l10n/ui_locale.dart';
 
 class Meetup {
   final String id;
@@ -31,9 +32,24 @@ class Meetup {
   final String? hostNickname; // 주최자 닉네임
   final String visibility; // 공개 범위: 'public', 'friends', 'category'
   final List<String> visibleToCategoryIds; // 특정 카테고리에만 공개할 경우 카테고리 ID들
+  final List<String> allowedUserIds; // 그룹 공개 대상 사용자 ID(주최자 포함)
+  final int visibilitySchemaVersion;
+  final DateTime? visibilityLockedAt;
+  final bool requiresHanyangVerification;
+
+  String? get ownerId => userId;
+  String get visibilityMode => visibility;
+  List<String> get audienceUserIdsFrozen => allowedUserIds;
+  List<String> get sourceGroupIds => visibleToCategoryIds;
   final bool isCompleted; // 모임장이 "모임 완료" 버튼을 눌렀는지
   final bool hasReview; // 후기가 작성되었는지
   final bool groupChatEnabled; // 모임 단체 톡방 활성화 여부 (호스트가 켜기)
+  final bool isConfirmed; // 모임장이 모임을 확정했는지
+  /// 미확정 밋업이 목록에 공개되는 시간. null이면 시간 제한 없음.
+  final int? publicDurationHours;
+  final DateTime? publicExpiresAt;
+  final String publicWindowStatus; // unlimited | timed | confirmed | expired
+  final String? snackChatId; // 이 모임에서 생성된 Snack Chat
   final String? reviewId; // 작성된 후기 ID
   final int viewCount; // 조회수
   final int commentCount; // 댓글수
@@ -60,9 +76,18 @@ class Meetup {
     this.hostNickname,
     this.visibility = 'public', // 기본값: 전체 공개
     this.visibleToCategoryIds = const [],
+    this.allowedUserIds = const [],
+    this.visibilitySchemaVersion = 0,
+    this.visibilityLockedAt,
+    this.requiresHanyangVerification = false,
     this.isCompleted = false, // 기본값: 미완료
     this.hasReview = false, // 기본값: 후기 없음
     this.groupChatEnabled = false, // 기본값: 비활성
+    this.isConfirmed = false,
+    this.publicDurationHours,
+    this.publicExpiresAt,
+    this.publicWindowStatus = '',
+    this.snackChatId,
     this.reviewId,
     this.viewCount = 0, // 기본값: 조회수 0
     this.commentCount = 0, // 기본값: 댓글수 0
@@ -90,9 +115,18 @@ class Meetup {
     String? hostNickname,
     String? visibility,
     List<String>? visibleToCategoryIds,
+    List<String>? allowedUserIds,
+    int? visibilitySchemaVersion,
+    DateTime? visibilityLockedAt,
+    bool? requiresHanyangVerification,
     bool? isCompleted,
     bool? hasReview,
     bool? groupChatEnabled,
+    bool? isConfirmed,
+    int? publicDurationHours,
+    DateTime? publicExpiresAt,
+    String? publicWindowStatus,
+    String? snackChatId,
     String? reviewId,
     int? viewCount,
     int? commentCount,
@@ -119,19 +153,73 @@ class Meetup {
       hostNickname: hostNickname ?? this.hostNickname,
       visibility: visibility ?? this.visibility,
       visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
+      allowedUserIds: allowedUserIds ?? this.allowedUserIds,
+      visibilitySchemaVersion:
+          visibilitySchemaVersion ?? this.visibilitySchemaVersion,
+      visibilityLockedAt: visibilityLockedAt ?? this.visibilityLockedAt,
+      requiresHanyangVerification:
+          requiresHanyangVerification ?? this.requiresHanyangVerification,
       isCompleted: isCompleted ?? this.isCompleted,
       hasReview: hasReview ?? this.hasReview,
       groupChatEnabled: groupChatEnabled ?? this.groupChatEnabled,
+      isConfirmed: isConfirmed ?? this.isConfirmed,
+      publicDurationHours: publicDurationHours ?? this.publicDurationHours,
+      publicExpiresAt: publicExpiresAt ?? this.publicExpiresAt,
+      publicWindowStatus: publicWindowStatus ?? this.publicWindowStatus,
+      snackChatId: snackChatId ?? this.snackChatId,
       reviewId: reviewId ?? this.reviewId,
       viewCount: viewCount ?? this.viewCount,
       commentCount: commentCount ?? this.commentCount,
     );
   }
 
+  /// 확정된 모임과 기존 완료 모임은 동일한 후기 플로우를 사용한다.
+  bool get canStartReview => isConfirmed || isCompleted;
+
+  bool get hasPublicTimeLimit =>
+      !isConfirmed &&
+      publicExpiresAt != null &&
+      publicWindowStatus != 'expired';
+
+  bool isPublicWindowExpiredAt([DateTime? now]) {
+    if (isConfirmed) return false;
+    if (publicWindowStatus == 'expired') return true;
+    final expiresAt = publicExpiresAt;
+    if (expiresAt == null) return false;
+    return !expiresAt.isAfter(now ?? DateTime.now());
+  }
+
+  Duration? publicTimeRemaining([DateTime? now]) {
+    if (!hasPublicTimeLimit) return null;
+    final remaining = publicExpiresAt!.difference(now ?? DateTime.now());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  bool isPublishedAt([DateTime? now]) => !isPublicWindowExpiredAt(now);
+
+  /// 수정 가능한 모임인지 한 곳에서 판정한다.
+  ///
+  /// 화면에서 버튼을 숨기는 조건과 저장 직전 검증이 서로 달라지지 않도록
+  /// 확정/완료/후기/일정 만료/공개 시간 만료를 모두 같은 기준으로 묶는다.
+  bool canEditAt([DateTime? now]) {
+    final base = now ?? DateTime.now();
+    return !isConfirmed &&
+        !isCompleted &&
+        !hasReview &&
+        !isExpired(now: base) &&
+        !isPublicWindowExpiredAt(base);
+  }
+
   static DateTime _parseFirestoreDate(dynamic raw, {DateTime? fallback}) {
     final fb = fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
     if (raw == null) return fb;
     if (raw is DateTime) return raw;
+    // Cloud Functions 검색 응답은 Firestore Timestamp를 epoch millis로
+    // 직렬화한다. 캐시/서버 응답/직접 Firestore 조회가 같은 모델 생성자를
+    // 사용할 수 있도록 num도 명시적으로 지원한다.
+    if (raw is num) {
+      return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
+    }
     // Firestore Timestamp 호환: dynamic 호출(toDate)
     try {
       final d = raw.toDate();
@@ -168,22 +256,24 @@ class Meetup {
 
     if (difference == 0) {
       // 오늘 예정 / Today Scheduled
-      return locale.languageCode == 'ko'
+      return (isChineseUi(context) ? '今天 ${l10n.scheduled}' : locale.languageCode == 'ko'
           ? '오늘 ${l10n.scheduled}'
-          : 'Today ${l10n.scheduled}';
+          : 'Today ${l10n.scheduled}');
     } else if (difference == 1) {
       // 내일 예정 / Tomorrow Scheduled
-      return locale.languageCode == 'ko'
+      return (isChineseUi(context) ? '明天 ${l10n.scheduled}' : locale.languageCode == 'ko'
           ? '내일 ${l10n.scheduled}'
-          : 'Tomorrow ${l10n.scheduled}';
+          : 'Tomorrow ${l10n.scheduled}');
     } else if (difference > 1 && difference < 7) {
       // N일 후 예정 / In N days
-      return locale.languageCode == 'ko'
+      return (isChineseUi(context) ? '${difference}天后' : locale.languageCode == 'ko'
           ? '$difference일 후 ${l10n.scheduled}'
-          : 'In $difference days';
+          : 'In $difference days');
     } else {
       // 날짜 표시 / Date display
-      if (locale.languageCode == 'ko') {
+      if (locale.languageCode == 'zh') {
+        return '${date.month}月${date.day}日 ${l10n.scheduled}';
+      } else if (locale.languageCode == 'ko') {
         return '${date.month}월 ${date.day}일 ${l10n.scheduled}';
       } else {
         final formatter = DateFormat('MMM d', 'en');
@@ -196,7 +286,8 @@ class Meetup {
   String getFormattedDayOfWeek({String languageCode = 'ko'}) {
     final dayNamesKo = ['월', '화', '수', '목', '금', '토', '일'];
     final dayNamesEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final dayNames = languageCode == 'en' ? dayNamesEn : dayNamesKo;
+    const dayNamesZh = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    final dayNames = languageCode == 'zh' ? dayNamesZh : languageCode == 'en' ? dayNamesEn : dayNamesKo;
     // DateTime의 weekday는 1(월요일)부터 7(일요일)까지, 배열 인덱스는 0부터 시작하므로 -1
     final dayIndex = (date.weekday - 1) % 7;
 
@@ -221,8 +312,8 @@ class Meetup {
     if (time.isEmpty || time == '미정' || !time.contains(':')) {
       // 날짜만으로 판단 (시간 정보 없음)
       final meetupDate = DateTime(date.year, date.month, date.day, 23, 59);
-      final upcoming = languageCode == 'en' ? 'Scheduled' : '예정';
-      final closed = languageCode == 'en' ? 'Closed' : '종료';
+      final upcoming = languageCode == 'zh' ? '待举行' : languageCode == 'en' ? 'Scheduled' : '예정';
+      final closed = languageCode == 'zh' ? '已结束' : languageCode == 'en' ? 'Closed' : '종료';
       return now.isAfter(meetupDate) ? closed : upcoming;
     }
 
@@ -235,8 +326,8 @@ class Meetup {
     if (timeParts.length < 2) {
       // 시간 형식이 잘못된 경우 날짜만으로 판단
       final meetupDate = DateTime(date.year, date.month, date.day, 23, 59);
-      final upcoming = languageCode == 'en' ? 'Scheduled' : '예정';
-      final closed = languageCode == 'en' ? 'Closed' : '종료';
+      final upcoming = languageCode == 'zh' ? '待举行' : languageCode == 'en' ? 'Scheduled' : '예정';
+      final closed = languageCode == 'zh' ? '已结束' : languageCode == 'en' ? 'Closed' : '종료';
       return now.isAfter(meetupDate) ? closed : upcoming;
     }
 
@@ -273,9 +364,9 @@ class Meetup {
       endMinute,
     );
 
-    final upcoming = languageCode == 'en' ? 'Scheduled' : '예정';
-    final ongoing = languageCode == 'en' ? 'Ongoing' : '진행중';
-    final closed = languageCode == 'en' ? 'Closed' : '종료';
+    final upcoming = languageCode == 'zh' ? '待举行' : languageCode == 'en' ? 'Scheduled' : '예정';
+    final ongoing = languageCode == 'zh' ? '进行中' : languageCode == 'en' ? 'Ongoing' : '진행중';
+    final closed = languageCode == 'zh' ? '已结束' : languageCode == 'en' ? 'Closed' : '종료';
 
     if (now.isBefore(meetupDateTime)) {
       return upcoming;
@@ -362,9 +453,16 @@ class Meetup {
       case 'cafe':
       case 'hobby':
         return Icons.palette_outlined;
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return Icons.flight_takeoff_outlined;
       case '술':
       case 'drink':
-        return Icons.local_bar_outlined;
+      case 'drinks':
+      case '행아웃':
+      case 'hangout':
+        return Icons.groups_outlined;
       case '문화':
       case 'culture':
         return Icons.theater_comedy_outlined;
@@ -392,9 +490,16 @@ class Meetup {
       case 'cafe':
       case 'hobby':
         return const Color(0xFF34C759); // 초록색
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return const Color(0xFF0EA5A4);
       case '술':
       case 'drink':
-        return const Color(0xFFEF4444); // 레드
+      case 'drinks':
+      case '행아웃':
+      case 'hangout':
+        return const Color(0xFF64748B);
       case '문화':
       case 'culture':
         return const Color(0xFFAF52DE); // 보라색
@@ -422,9 +527,16 @@ class Meetup {
       case 'cafe':
       case 'hobby':
         return const Color(0xFFF0FFF4); // 연한 초록색
+      case '여행':
+      case 'trip':
+      case 'travel':
+        return const Color(0xFFECFEFF);
       case '술':
       case 'drink':
-        return const Color(0xFFFFF1F2); // 연한 레드
+      case 'drinks':
+      case '행아웃':
+      case 'hangout':
+        return const Color(0xFFF1F5F9);
       case '문화':
       case 'culture':
         return const Color(0xFFF8F0FF); // 연한 보라색
@@ -485,15 +597,41 @@ class Meetup {
       date: _parseFirestoreDate(json['date'], fallback: DateTime.now()),
       createdAt: _parseFirestoreDate(json['createdAt']),
       category: json['category'] ?? '기타',
-      userId: json['userId'],
+      userId: json['ownerId'] ?? json['userId'],
       hostNickname: json['hostNickname'],
-      visibility: json['visibility'] ?? 'public',
-      visibleToCategoryIds: json['visibleToCategoryIds'] != null
-          ? List<String>.from(json['visibleToCategoryIds'] as List)
-          : [],
+      visibility: json['visibilityMode'] ?? json['visibility'] ?? 'public',
+      visibleToCategoryIds:
+          (json['sourceGroupIds'] ?? json['visibleToCategoryIds']) != null
+              ? List<String>.from(
+                  (json['sourceGroupIds'] ?? json['visibleToCategoryIds'])
+                      as List,
+                )
+              : [],
+      allowedUserIds:
+          (json['audienceUserIdsFrozen'] ?? json['allowedUserIds']) != null
+              ? List<String>.from(
+                  (json['audienceUserIdsFrozen'] ?? json['allowedUserIds'])
+                      as List,
+                )
+              : [],
+      visibilitySchemaVersion:
+          (json['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,
+      visibilityLockedAt: json['visibilityLockedAt'] == null
+          ? null
+          : _parseFirestoreDate(json['visibilityLockedAt']),
+      requiresHanyangVerification: json['requiresHanyangVerification'] == true,
       isCompleted: json['isCompleted'] ?? false,
       hasReview: json['hasReview'] ?? false,
       groupChatEnabled: json['groupChatEnabled'] ?? false,
+      isConfirmed: json['isConfirmed'] ?? false,
+      publicDurationHours: (json['publicDurationHours'] as num?)?.toInt(),
+      publicExpiresAt: json['publicExpiresAt'] == null
+          ? null
+          : _parseFirestoreDate(json['publicExpiresAt']),
+      publicWindowStatus: (json['publicWindowStatus'] ?? '').toString(),
+      snackChatId: (json['snackChatId'] ?? '').toString().trim().isEmpty
+          ? null
+          : json['snackChatId'].toString().trim(),
       reviewId: json['reviewId'],
       viewCount: json['viewCount'] ?? 0,
       commentCount: json['commentCount'] ?? 0,
@@ -536,9 +674,25 @@ class Meetup {
       'hostNickname': hostNickname,
       'visibility': visibility,
       'visibleToCategoryIds': visibleToCategoryIds,
+      'allowedUserIds': allowedUserIds,
+      'ownerId': ownerId,
+      'visibilityMode': visibilityMode,
+      'audienceUserIdsFrozen': audienceUserIdsFrozen,
+      'sourceGroupIds': sourceGroupIds,
+      'visibilitySchemaVersion': visibilitySchemaVersion,
+      if (visibilityLockedAt != null) 'visibilityLockedAt': visibilityLockedAt,
+      'requiresHanyangVerification': requiresHanyangVerification,
       'isCompleted': isCompleted,
       'hasReview': hasReview,
       'groupChatEnabled': groupChatEnabled,
+      'isConfirmed': isConfirmed,
+      if (publicDurationHours != null)
+        'publicDurationHours': publicDurationHours,
+      if (publicExpiresAt != null) 'publicExpiresAt': publicExpiresAt,
+      if (publicWindowStatus.isNotEmpty)
+        'publicWindowStatus': publicWindowStatus,
+      if (snackChatId != null && snackChatId!.isNotEmpty)
+        'snackChatId': snackChatId,
       'reviewId': reviewId,
       'viewCount': viewCount,
       'commentCount': commentCount,

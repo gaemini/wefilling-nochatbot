@@ -5,6 +5,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+import '../config/app_backend.dart';
 import 'content_filter_service.dart';
 import 'content_hide_service.dart';
 import 'post_service.dart';
@@ -14,7 +16,53 @@ import '../utils/logger.dart';
 class ReportService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-  static final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  static final FirebaseFunctions _functions = AppFunctions.instance;
+
+  static Future<bool> _reportSnackChatMessage({
+    required String reportedUserId,
+    required String targetId,
+    required String reason,
+    String? description,
+    String? targetTitle,
+  }) async {
+    final segments = targetId
+        .split('/')
+        .map((segment) => segment.trim())
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+    if (segments.length != 2) {
+      Logger.error('❌ 잘못된 Snack Chat 신고 대상 ID: $targetId');
+      return false;
+    }
+
+    final result = await _functions
+        .httpsCallable('reportSnackChatMessage')
+        .call(<String, dynamic>{
+      'snackChatId': segments[0],
+      'messageId': segments[1],
+      // 서버가 메시지 원본에서 작성자를 다시 검증하지만, 구버전 함수
+      // 호환과 감사 로그를 위해 클라이언트 값도 힌트로 전달한다.
+      'reportedUserId': reportedUserId,
+      'reason': reason,
+      if (description != null && description.trim().isNotEmpty)
+        'description': description.trim(),
+      if (targetTitle != null && targetTitle.trim().isNotEmpty)
+        'targetTitle': targetTitle.trim(),
+    }).timeout(
+      // Server-side validation and snapshotting has a 15 second ceiling.
+      // Keep the client bound finite but longer so a successfully committed
+      // report is not shown as a false timeout.
+      const Duration(seconds: 20),
+      onTimeout: () => throw TimeoutException('Snack Chat 신고 시간 초과'),
+    );
+    final data = result.data;
+    final success = data is Map && data['success'] == true;
+    if (success) {
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ Snack Chat 메시지 신고가 접수되었습니다: $targetId');
+    }
+    return success;
+  }
 
   // 신고하기
   static Future<bool> reportContent({
@@ -28,6 +76,19 @@ class ReportService {
     try {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return false;
+
+      // Snack Chat 신고는 서버가 방 참여 여부와 메시지 원본을 검증하고
+      // 신고 시점 스냅샷을 보존한다. 일반 콘텐츠 신고처럼 사용자를
+      // 전역 숨김 처리하지 않는다.
+      if (targetType.trim() == 'snack_chat_message') {
+        return _reportSnackChatMessage(
+          reportedUserId: reportedUserId,
+          targetId: targetId,
+          reason: reason,
+          description: description,
+          targetTitle: targetTitle,
+        );
+      }
 
       // Firestore에 직접 저장
       final reportRef = _firestore.collection('reports').doc();
@@ -57,8 +118,9 @@ class ReportService {
         reportedUserId: reportedUserId,
       );
       PostService.instance.requestReemitWithCurrentFilters();
-      
-      Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
+
+      if (Logger.isVerboseEnabled)
+        Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
       return true;
     } catch (e) {
       Logger.error('❌ 신고 접수 실패: $e');
@@ -79,20 +141,18 @@ class ReportService {
       }).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 사용자 차단 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 사용자 차단 타임아웃 (10초)');
           throw TimeoutException('사용자 차단 시간 초과');
         },
       );
 
       if (result.data['success'] == true) {
-        Logger.log('✅ 사용자를 차단했습니다: $blockedUserId');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ 사용자를 차단했습니다: $blockedUserId');
         // ✅ 즉시 피드에서 제거되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.addBlockedUserId(blockedUserId);
-        ContentHideService.hideReportedTarget(
-          targetType: 'user',
-          targetId: blockedUserId,
-          reportedUserId: blockedUserId,
-        );
+        // 차단 상태를 신고/수동 숨김 캐시에 중복 기록하지 않는다. 그래야
+        // 차단 해제 시 신고 상태는 보존하면서 차단 필터만 정상 복구된다.
         PostService.instance.requestReemitWithCurrentFilters();
         return true;
       } else {
@@ -118,13 +178,14 @@ class ReportService {
       }).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 사용자 차단 해제 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 사용자 차단 해제 타임아웃 (10초)');
           throw TimeoutException('사용자 차단 해제 시간 초과');
         },
       );
 
       if (result.data['success'] == true) {
-        Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
+        if (Logger.isVerboseEnabled)
+          Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
         // ✅ 즉시 피드에서 복구되도록 in-memory 캐시 업데이트 + 재필터 emit
         ContentFilterService.removeBlockedUserId(blockedUserId);
         PostService.instance.requestReemitWithCurrentFilters();
@@ -158,7 +219,7 @@ class ReportService {
       }).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 익명 게시글 차단 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 익명 게시글 차단 타임아웃 (10초)');
           throw TimeoutException('익명 게시글 차단 시간 초과');
         },
       );
@@ -187,7 +248,7 @@ class ReportService {
       final result = await callable.call({'postId': postId}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 익명 게시글 차단 해제 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 익명 게시글 차단 해제 타임아웃 (10초)');
           throw TimeoutException('익명 게시글 차단 해제 시간 초과');
         },
       );
@@ -221,10 +282,8 @@ class ReportService {
           .map((doc) => AnonymousBlockedPost.fromFirestore(doc.id, doc.data()))
           .toList();
 
-      final ids = posts
-          .map((e) => e.postId.trim())
-          .where((e) => e.isNotEmpty)
-          .toSet();
+      final ids =
+          posts.map((e) => e.postId.trim()).where((e) => e.isNotEmpty).toSet();
       ContentFilterService.setBlockedAnonymousPostIds(ids);
       ContentHideService.addHiddenAnonymousPostIds(ids);
       return posts;
@@ -251,7 +310,7 @@ class ReportService {
       }).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 익명 댓글 숨김 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 익명 댓글 숨김 타임아웃 (10초)');
           throw TimeoutException('익명 댓글 숨김 시간 초과');
         },
       );
@@ -278,7 +337,7 @@ class ReportService {
       final result = await callable.call({'commentId': commentId}).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          Logger.log('⏱️ 익명 댓글 숨김 해제 타임아웃 (10초)');
+          if (Logger.isVerboseEnabled) Logger.log('⏱️ 익명 댓글 숨김 해제 타임아웃 (10초)');
           throw TimeoutException('익명 댓글 숨김 해제 시간 초과');
         },
       );
@@ -356,7 +415,7 @@ class ReportService {
 
       final blockId = '${currentUser.uid}_$userId';
       final doc = await _firestore.collection('blocks').doc(blockId).get();
-      
+
       return doc.exists;
     } catch (e) {
       Logger.error('❌ 차단 상태 확인 실패: $e');
@@ -385,4 +444,3 @@ class ReportService {
     }
   }
 }
-

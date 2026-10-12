@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
 import '../models/app_notification.dart';
 import '../services/user_info_cache_service.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/ui_locale.dart';
 
 class NotificationListItem extends StatelessWidget {
   final AppNotification notification;
@@ -23,16 +25,20 @@ class NotificationListItem extends StatelessWidget {
   });
 
   // actorId로부터 최신 닉네임 가져오기
-  String _getLatestActorName() {
+  String _getLatestActorName(
+    BuildContext context,
+    DMUserInfo? actorInfo,
+  ) {
     final actorId = notification.actorId;
     if (actorId == null || actorId.isEmpty) {
       return notification.actorName ?? '';
     }
 
-    final cache = UserInfoCacheService();
-    final userInfo = cache.getCachedUserInfo(actorId);
-    if (userInfo != null && userInfo.nickname.isNotEmpty) {
-      return userInfo.nickname;
+    if (actorInfo?.isDeletedAccount == true) {
+      return AppLocalizations.of(context)!.deletedAccount;
+    }
+    if (actorInfo != null && actorInfo.nickname.isNotEmpty) {
+      return actorInfo.nickname;
     }
 
     return notification.actorName ?? '';
@@ -40,6 +46,19 @@ class NotificationListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final actorId = notification.actorId;
+    if (actorId == null || actorId.isEmpty) {
+      return _buildContent(context, null);
+    }
+    final cache = UserInfoCacheService();
+    return StreamBuilder<DMUserInfo?>(
+      stream: cache.watchUserInfo(actorId),
+      initialData: cache.getCachedUserInfo(actorId),
+      builder: (context, snapshot) => _buildContent(context, snapshot.data),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, DMUserInfo? actorInfo) {
     final isUnread = !notification.isRead;
     final theme = Theme.of(context);
 
@@ -52,10 +71,17 @@ class NotificationListItem extends StatelessWidget {
     final double primaryTextOpacity = isUnread ? 1.0 : 0.92;
     final int primaryTextAlpha =
         ((primaryColor.a * primaryTextOpacity) * 255.0).round() & 0xff;
+    final latestActorName = _getLatestActorName(context, actorInfo);
+    final storedActorName = (notification.actorName ?? '').trim();
+    final resolvedPrimaryText = storedActorName.isNotEmpty &&
+            latestActorName.isNotEmpty &&
+            primaryText.contains(storedActorName)
+        ? primaryText.replaceFirst(storedActorName, latestActorName)
+        : primaryText;
 
     return Semantics(
       button: true,
-      label: '$primaryText, $timeText',
+      label: '$resolvedPrimaryText, $timeText',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -79,9 +105,10 @@ class NotificationListItem extends StatelessWidget {
                                   primaryColor.withAlpha(primaryTextAlpha);
 
                               final strongStyle = TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: uiFontFamily(context, 'Inter'),
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 15,
-                                height: 1.25,
+                                height: isChineseUi(context) ? 1.3 : 1.25,
                                 // 아이디(닉네임)는 더 굵게
                                 fontWeight: isUnread
                                     ? FontWeight.w800
@@ -90,9 +117,10 @@ class NotificationListItem extends StatelessWidget {
                               );
 
                               final normalStyle = TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: uiFontFamily(context, 'Inter'),
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 15,
-                                height: 1.25,
+                                height: isChineseUi(context) ? 1.3 : 1.25,
                                 fontWeight: FontWeight.w500,
                                 color: baseColor,
                               );
@@ -108,39 +136,42 @@ class NotificationListItem extends StatelessWidget {
                               if (isAnonymous) {
                                 return <InlineSpan>[
                                   TextSpan(
-                                      text: primaryText, style: strongStyle),
+                                      text: resolvedPrimaryText,
+                                      style: strongStyle),
                                 ];
                               }
 
                               // 일반 알림: 메시지에서 "아이디(actorName)"만 굵게 처리
                               // 실시간 닉네임 가져오기
-                              final latestActorName = _getLatestActorName();
                               String? key = latestActorName.isNotEmpty
                                   ? latestActorName
                                   : null;
 
                               key ??= RegExp(r'^\S+')
-                                  .firstMatch(primaryText)
+                                  .firstMatch(resolvedPrimaryText)
                                   ?.group(0);
 
                               if (key == null || key.isEmpty) {
                                 return <InlineSpan>[
                                   TextSpan(
-                                      text: primaryText, style: strongStyle),
+                                      text: resolvedPrimaryText,
+                                      style: strongStyle),
                                 ];
                               }
 
-                              final idx = primaryText.indexOf(key);
+                              final idx = resolvedPrimaryText.indexOf(key);
                               if (idx < 0) {
                                 return <InlineSpan>[
                                   TextSpan(
-                                      text: primaryText, style: strongStyle),
+                                      text: resolvedPrimaryText,
+                                      style: strongStyle),
                                 ];
                               }
 
-                              final before = primaryText.substring(0, idx);
-                              final after =
-                                  primaryText.substring(idx + key.length);
+                              final before =
+                                  resolvedPrimaryText.substring(0, idx);
+                              final after = resolvedPrimaryText
+                                  .substring(idx + key.length);
 
                               return <InlineSpan>[
                                 if (before.isNotEmpty)
@@ -153,9 +184,10 @@ class NotificationListItem extends StatelessWidget {
                             TextSpan(
                               text: ' · $timeText',
                               style: TextStyle(
-                                fontFamily: 'Pretendard',
+                                fontFamily: uiFontFamily(context, 'Inter'),
+                                fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize: 15,
-                                height: 1.25,
+                                height: isChineseUi(context) ? 1.3 : 1.25,
                                 fontWeight: FontWeight.w500,
                                 color: secondaryColor.withAlpha(
                                   theme.brightness == Brightness.dark
@@ -338,15 +370,21 @@ class _BadgeSpec {
 _BadgeSpec _badgeSpecForType(String type) {
   switch (type) {
     case 'new_like':
-    case 'sharing_like':
     case 'comment_like':
     case 'review_like':
       return const _BadgeSpec(icon: Icons.favorite, color: Color(0xFFEF4444));
-    case 'sharing_request':
+    case 'snapshot_reaction':
+      return const _BadgeSpec(icon: Icons.favorite, color: Color(0xFF111827));
+    case 'snapshot_comment':
       return const _BadgeSpec(
-        icon: Icons.volunteer_activism,
-        color: AppColors.pointColor,
-      );
+          icon: Icons.mail_rounded, color: AppColors.pointColor);
+    case 'snapshot_comment_reply':
+      return const _BadgeSpec(
+          icon: Icons.mark_email_read_rounded, color: AppColors.pointColor);
+    case 'snapshot_feed_comment':
+    case 'snapshot_feed_comment_reply':
+      return const _BadgeSpec(
+          icon: Icons.chat_bubble_outline_rounded, color: AppColors.pointColor);
     case 'new_comment':
     case 'comment_reply':
       // 게시글 댓글 알림: 댓글 아이콘은 파란색으로 강조
@@ -360,6 +398,9 @@ _BadgeSpec _badgeSpecForType(String type) {
     case 'friend_request':
       return const _BadgeSpec(
           icon: Icons.person_add, color: AppColors.pointColor);
+    case 'friend_request_accepted':
+      return const _BadgeSpec(
+          icon: Icons.person_add_alt_1_rounded, color: AppColors.pointColor);
     case 'meetup_cancelled':
       return const _BadgeSpec(icon: Icons.event_busy, color: Color(0xFFEF4444));
     case 'meetup_full':
@@ -370,12 +411,16 @@ _BadgeSpec _badgeSpecForType(String type) {
     case 'meetup_participant_left':
       return const _BadgeSpec(
           icon: Icons.logout_rounded, color: Color(0xFFEF4444));
+    case 'meetup_created':
+      return const _BadgeSpec(
+          icon: Icons.event_available, color: AppColors.pointColor);
     case 'review_approval_request':
       return const _BadgeSpec(
           icon: Icons.rate_review, color: AppColors.pointColor);
     case 'ad_updates':
       return const _BadgeSpec(icon: Icons.campaign, color: Color(0xFFF59E0B));
     case 'post_private':
+    case 'post_created':
       // 친구공개(allowed users) 게시글 알림: 자물쇠 대신 일반 게시글 느낌으로 표시
       return const _BadgeSpec(icon: Icons.article, color: Color(0xFF9CA3AF));
     default:

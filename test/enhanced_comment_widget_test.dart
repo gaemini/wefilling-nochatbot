@@ -18,6 +18,7 @@ Comment _comment({
   int likeCount = 0,
   List<String> likedBy = const [],
   String gifStoragePath = '',
+  List<String> imagePaths = const [],
   int depth = 0,
   String? replyTo,
 }) =>
@@ -29,6 +30,7 @@ Comment _comment({
       authorPhotoUrl: '',
       content: content,
       gifStoragePath: gifStoragePath,
+      imagePaths: imagePaths,
       createdAt: DateTime.now().subtract(const Duration(minutes: 17)),
       depth: depth,
       parentCommentId: depth > 0 ? 'parent' : null,
@@ -290,5 +292,46 @@ void main() {
     expect(find.byKey(const ValueKey('comment-bubble:c1')), findsNothing);
     expect(badge('c1'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  for (final count in const [1, 2, 4]) {
+    for (final width in const [320.0, 430.0]) {
+      testComment('사진 $count장 댓글: 오버플로우 없음 width=$width', (tester) async {
+        for (final mine in const [false, true]) {
+          await pump(
+            tester,
+            _comment(
+              id: 'p$count$mine',
+              userId: mine ? _me : _other,
+              content: count == 4 ? '' : '사진 보세요 https://example.com/very/long/url',
+              imagePaths: [
+                for (var i = 0; i < count; i++)
+                  'post_comment_images/$_postId/p$count$mine/$i.jpg',
+              ],
+              likeCount: 2,
+            ),
+            width: width,
+            textScale: 2,
+          );
+          expect(
+            find.byKey(ValueKey('post-images:p$count$mine')),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        }
+      });
+    }
+  }
+
+  testComment('경로가 이 댓글의 것이 아니면 사진을 그리지 않는다', (tester) async {
+    await pump(
+      tester,
+      _comment(
+        id: 'x1',
+        content: 'hi',
+        imagePaths: const ['post_comment_images/other/x1/0.jpg'],
+      ),
+    );
+    expect(find.byKey(const ValueKey('post-images:x1')), findsNothing);
   });
 }

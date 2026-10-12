@@ -14,6 +14,7 @@ import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
 import '../../widgets/notification_read_observer.dart';
 import '../../constants/app_constants.dart';
+import '../../services/comment_image_upload.dart';
 import '../../services/comment_service.dart';
 import '../../services/content_hide_service.dart';
 import '../../services/user_info_cache_service.dart';
@@ -25,6 +26,7 @@ import '../../utils/post_translation_policy.dart';
 import '../../utils/responsive_helper.dart';
 import '../dialogs/block_dialog.dart';
 import '../snackbar/app_snackbar.dart';
+import 'fullscreen_image_viewer.dart';
 import 'post_chat_translated_text.dart';
 import '../../l10n/ui_locale.dart';
 import '../../snapshot/snapshot_strings.dart';
@@ -1310,6 +1312,16 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final quote = widget.quote;
     final hasGif = widget.comment.gifStoragePath ==
         'post_comment_gifs/${widget.postId}/${widget.comment.id}.gif';
+    // 이 댓글의 고정 경로와 정확히 일치하는 사진만 그린다(규칙과 같은 조건).
+    final imagePaths = <String>[
+      for (var i = 0;
+          i < widget.comment.imagePaths.length && i < maxCommentImages;
+          i++)
+        if (widget.comment.imagePaths[i] ==
+            commentImagePath(widget.postId, widget.comment.id, i))
+          widget.comment.imagePaths[i],
+    ];
+    final hasImages = imagePaths.isNotEmpty;
 
     RichText richBody(String content) => RichText(
           textScaler: textScaler,
@@ -1374,8 +1386,27 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           storageBucket: widget.comment.storageBucket,
         ));
         // 말풍선 없는 GIF 댓글도 좋아요 수가 보이도록 배지를 따로 단다.
-        if (!hasText && quote == null && widget.comment.likeCount > 0) {
+        if (!hasText &&
+            quote == null &&
+            !hasImages &&
+            widget.comment.likeCount > 0) {
           children.add(_buildLikeBadge(context, isLiked: isLiked));
+        }
+      }
+      if (hasImages) {
+        if (children.isNotEmpty) children.add(const SizedBox(height: 4));
+        children.add(_PostCommentImages(
+          key: ValueKey('post-images:${widget.comment.id}'),
+          paths: imagePaths,
+          storageBucket: widget.comment.storageBucket,
+          radius: _bubbleRadius(isMyComment),
+        ));
+        if (!hasText && quote == null && widget.comment.likeCount > 0) {
+          children.add(_buildLikeBadge(
+            context,
+            isLiked: isLiked,
+            alignStart: isMyComment,
+          ));
         }
       }
       return Column(
@@ -1766,4 +1797,174 @@ class PostCommentQuote {
 
   /// 대상에 사진이나 GIF가 있는지(본문이 비면 '사진'으로 표시).
   final bool isMedia;
+}
+
+/// 사진 댓글: 1장은 180x220, 2-4장은 2열 격자. 모서리는 말풍선 규칙을 따른다.
+class _PostCommentImages extends StatelessWidget {
+  const _PostCommentImages({
+    super.key,
+    required this.paths,
+    required this.storageBucket,
+    required this.radius,
+  });
+
+  final List<String> paths;
+  final String storageBucket;
+  final BorderRadius radius;
+
+  static const double _single = 180;
+  static const double _singleHeight = 220;
+  static const double _cell = 110;
+  static const double _gap = 4;
+
+  void _open(BuildContext context, int index) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => FullscreenImageViewer(
+        storagePaths: paths,
+        storageBuckets: List<String?>.filled(paths.length, storageBucket),
+        initialIndex: index,
+      ),
+    ));
+  }
+
+  Widget _tile(BuildContext context, int index, double w, double h) {
+    return Semantics(
+      button: true,
+      image: true,
+      label: '${AppLocalizations.of(context)!.commentPhotoLabel} ${index + 1}',
+      child: GestureDetector(
+        onTap: () => _open(context, index),
+        child: _PostCommentImageTile(
+          key: ValueKey<String>(paths[index]),
+          storagePath: paths[index],
+          storageBucket: storageBucket,
+          width: w,
+          height: h,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (paths.length == 1) {
+      return ClipRRect(
+        borderRadius: radius,
+        child: _tile(context, 0, _single, _singleHeight),
+      );
+    }
+    return ClipRRect(
+      borderRadius: radius,
+      child: SizedBox(
+        width: _cell * 2 + _gap,
+        child: Wrap(
+          spacing: _gap,
+          runSpacing: _gap,
+          children: [
+            for (var i = 0; i < paths.length; i++)
+              _tile(context, i, _cell, _cell),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PostCommentImageTile extends StatefulWidget {
+  const _PostCommentImageTile({
+    super.key,
+    required this.storagePath,
+    required this.storageBucket,
+    required this.width,
+    required this.height,
+  });
+
+  final String storagePath;
+  final String storageBucket;
+  final double width;
+  final double height;
+
+  @override
+  State<_PostCommentImageTile> createState() => _PostCommentImageTileState();
+}
+
+class _PostCommentImageTileState extends State<_PostCommentImageTile> {
+  late Future<Uint8List> _bytes;
+  String? _viewerId;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PostCommentImageTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.storagePath != widget.storagePath ||
+        oldWidget.storageBucket != widget.storageBucket) {
+      _load();
+    }
+  }
+
+  // _PostCommentGif와 같은 방식: 계정이 바뀌면 다시 읽고, 실패하면 재시도를 준다.
+  void _load() {
+    _viewerId = FirebaseAuth.instance.currentUser?.uid;
+    _bytes =
+        AppStorage.ref(widget.storagePath, storageBucket: widget.storageBucket)
+            .getData(maxCommentImageBytes)
+            .then((data) {
+      if (data == null || FirebaseAuth.instance.currentUser?.uid != _viewerId) {
+        throw StateError('post-comment-image-unavailable');
+      }
+      return data;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_viewerId != FirebaseAuth.instance.currentUser?.uid) _load();
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: FutureBuilder<Uint8List>(
+        future: _bytes,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return ColoredBox(
+              color: _kFillSubtle,
+              child: Center(
+                child: IconButton(
+                  tooltip: MaterialLocalizations.of(context)
+                      .refreshIndicatorSemanticLabel,
+                  onPressed: () => setState(_load),
+                  icon:
+                      const Icon(Icons.refresh_rounded, color: _kInkSecondary),
+                ),
+              ),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const ColoredBox(
+              color: _kFillSubtle,
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+          return Image.memory(
+            snapshot.data!,
+            width: widget.width,
+            height: widget.height,
+            fit: BoxFit.cover,
+            cacheWidth: (widget.width * 3).round(),
+            gaplessPlayback: true,
+          );
+        },
+      ),
+    );
+  }
 }

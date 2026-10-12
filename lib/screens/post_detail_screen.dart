@@ -3,11 +3,13 @@
 // 게시글 내용, 좋아요, 댓글 표시
 // 댓글 작성 및 게시글 삭제 기능
 
+import 'dart:io';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -68,6 +70,7 @@ import '../snapshot/snapshot_strings.dart';
 import '../utils/comment_gif_input.dart';
 import '../utils/chat_date_label.dart';
 import '../utils/post_comment_conversation.dart';
+import '../services/comment_image_upload.dart';
 
 /// Keeps Material route behavior (including back navigation) while making the
 /// feed-to-detail change perceptible without waiting for an animation.
@@ -139,8 +142,81 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _commentGifId;
   int _commentGifInputGeneration = 0;
 
+  // 사진 댓글 첨부(최대 4장). GIF와 함께 담지 않는다.
+  final ImagePicker _commentImagePicker = ImagePicker();
+  List<File> _commentImages = const <File>[];
+  bool _isPickingCommentImages = false;
+
+  Future<void> _pickCommentImages() async {
+    if (_isSubmittingComment ||
+        _isPickingCommentImages ||
+        _commentGif != null ||
+        FirebaseAuth.instance.currentUser == null) {
+      return;
+    }
+    final remaining = maxCommentImages - _commentImages.length;
+    final l10n = AppLocalizations.of(context)!;
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.commentPhotoLimit(maxCommentImages)),
+      ));
+      return;
+    }
+    setState(() => _isPickingCommentImages = true);
+    try {
+      // limit 1은 플러그인이 허용하지 않아 남은 칸이 1이면 한 장 고르기를 쓴다.
+      final picked = remaining == 1
+          ? <XFile>[
+              if (await _commentImagePicker.pickImage(
+                    source: ImageSource.gallery,
+                  )
+                  case final XFile file)
+                file,
+            ]
+          : await _commentImagePicker.pickMultiImage(limit: remaining);
+      if (!mounted || picked.isEmpty || _commentGif != null) return;
+      final files = picked.map((x) => File(x.path)).toList(growable: false);
+      if (files.length > remaining) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(l10n.commentPhotoLimit(maxCommentImages)),
+        ));
+      }
+      setState(() {
+        _commentImages = <File>[
+          ..._commentImages,
+          ...files.take(remaining),
+        ];
+      });
+    } catch (e) {
+      // DM _pickImageFrom과 같은 방식: 로그 후 짧은 안내.
+      Logger.error('댓글 사진 선택 오류: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          isChineseUi(context)
+              ? '无法选择图片'
+              : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '이미지를 불러올 수 없습니다'
+                  : 'Unable to pick an image',
+        ),
+        duration: const Duration(seconds: 2),
+      ));
+    } finally {
+      if (mounted) setState(() => _isPickingCommentImages = false);
+    }
+  }
+
+  void _removeCommentImage(int index) {
+    if (_isSubmittingComment) return;
+    setState(() {
+      _commentImages = <File>[..._commentImages]..removeAt(index);
+    });
+  }
+
   Future<void> _onKeyboardCommentContent(KeyboardInsertedContent content) async {
     if (_isSubmittingComment || FirebaseAuth.instance.currentUser == null) return;
+    // 사진을 담은 상태에서는 GIF를 함께 담지 않는다.
+    if (_commentImages.isNotEmpty) return;
     final uid = FirebaseAuth.instance.currentUser!.uid;
     final generation = ++_commentGifInputGeneration;
     final bytes = await readKeyboardGif(content);
@@ -2639,6 +2715,96 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
+  /// 사진 버튼(터치 44). GIF를 담았거나 4장을 채웠거나 전송 중이면 비활성.
+  Widget _buildCommentPhotoButton() {
+    final enabled = !_isSubmittingComment &&
+        !_isPickingCommentImages &&
+        _commentGif == null &&
+        _commentImages.length < maxCommentImages;
+    return IconButton(
+      key: const ValueKey('comment-photo-button'),
+      tooltip: AppLocalizations.of(context)!.commentAttachPhoto,
+      onPressed: enabled ? _pickCommentImages : null,
+      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+      padding: EdgeInsets.zero,
+      icon: Icon(
+        Icons.image_outlined,
+        size: 24,
+        color: enabled ? Colors.black : _kDetailInkTertiary,
+      ),
+    );
+  }
+
+  /// 첨부 트레이: 64x64 썸네일(radius 12), 오른쪽 위 x(보이는 22, 터치 44).
+  Widget _buildCommentImageTray() {
+    final l10n = AppLocalizations.of(context)!;
+    return SizedBox(
+      height: 64 + 16,
+      child: ListView.separated(
+        key: const ValueKey('comment-image-tray'),
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        itemCount: _commentImages.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) => SizedBox.square(
+          dimension: 64,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  _commentImages[index],
+                  width: 64,
+                  height: 64,
+                  fit: BoxFit.cover,
+                  cacheWidth: 192,
+                ),
+              ),
+              Positioned(
+                top: -11,
+                right: -11,
+                child: Semantics(
+                  button: true,
+                  enabled: !_isSubmittingComment,
+                  label: l10n.commentRemovePhoto,
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _isSubmittingComment
+                        ? null
+                        : () => _removeCommentImage(index),
+                    child: SizedBox.square(
+                      dimension: 44,
+                      child: Center(
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: _isSubmittingComment
+                                ? _kDetailInkTertiary
+                                : Colors.black87,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 대화형 보기: 최상위·답글을 createdAt 오름차순 한 줄로 펼친다.
   /// 데이터와 쿼리는 그대로이고 보여 주는 방식만 바꾼다.
   Widget _buildCommentConversation(
@@ -2754,7 +2920,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   bool _commentHasMedia(Comment comment) =>
-      comment.gifStoragePath.trim().isNotEmpty;
+      comment.gifStoragePath.trim().isNotEmpty || comment.imagePaths.isNotEmpty;
 
   Widget _buildCommentDaySeparator(String label) {
     return Padding(
@@ -2854,7 +3020,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = _commentController.text.trim();
     final gifBytes = _commentGif;
     final gifCommentId = _commentGifId;
-    if (content.isEmpty && gifBytes == null) return;
+    final images = _commentImages;
+    if (content.isEmpty && gifBytes == null && images.isEmpty) return;
 
     // 댓글 작성 전 상태 로깅
     final authUser = FirebaseAuth.instance.currentUser;
@@ -2885,6 +3052,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           replyToUserNickname: _replyToUserName,
           gifBytes: gifBytes,
           gifCommentId: gifCommentId,
+          images: images.isEmpty ? null : images,
         );
         if (Logger.isVerboseEnabled)
           Logger.log(
@@ -2892,7 +3060,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       } else {
         // 일반 댓글 작성
         success = await _commentService.addComment(widget.post.id, content,
-            gifBytes: gifBytes, gifCommentId: gifCommentId);
+            gifBytes: gifBytes,
+            gifCommentId: gifCommentId,
+            images: images.isEmpty ? null : images);
         if (Logger.isVerboseEnabled) Logger.log('💬 일반 댓글 작성 완료');
       }
 
@@ -2914,6 +3084,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         setState(() {
           _commentGif = null;
           _commentGifId = null;
+          _commentImages = const <File>[];
         });
 
         // 대댓글 모드 종료
@@ -2924,11 +3095,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           FocusScope.of(context).unfocus();
         }
       } else if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(
-            content:
-                Text(AppLocalizations.of(context)!.commentSubmitFailed ?? "")));
+            content: Text(images.isNotEmpty
+                ? l10n.commentPhotoUploadFailed
+                : (l10n.commentSubmitFailed ?? ""))));
       }
     } catch (e) {
       Logger.error('❌ 댓글 작성 오류: $e');
@@ -4003,6 +4176,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ]),
                         ),
                       ),
+                    if (_commentImages.isNotEmpty) _buildCommentImageTray(),
                     Padding(
                       padding: EdgeInsets.only(
                         left: 16.0,
@@ -4015,6 +4189,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                       child: Row(
                         children: [
+                          if (isLoggedIn) _buildCommentPhotoButton(),
                           Expanded(
                             child: TextField(
                               controller: _commentController,
@@ -4027,6 +4202,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               contextMenuBuilder: (context, state) =>
                                   commentGifContextMenu(context, state, (bytes) {
                                 if (!mounted || _isSubmittingComment ||
+                                    _commentImages.isNotEmpty ||
                                     FirebaseAuth.instance.currentUser == null) {
                                   return;
                                 }
@@ -4093,7 +4269,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     builder: (context, value, _) {
                                       final canSend =
                                           value.text.trim().isNotEmpty ||
-                                              _commentGif != null;
+                                              _commentGif != null ||
+                                              _commentImages.isNotEmpty;
                                       return Semantics(
                                         button: true,
                                         enabled: canSend,

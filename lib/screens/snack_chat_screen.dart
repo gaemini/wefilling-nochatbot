@@ -235,10 +235,13 @@ class _SnackChatOutboundLane {
 class _SnackChatScreenState extends State<SnackChatScreen>
     with WidgetsBindingObserver, RouteAware {
   static const Color _chatBackground = SnackChatBackdrop.backgroundColor;
-  static const Color _outgoingBubble = Color(0xFF344054);
-  static const Color _incomingBubble = Color(0xFFFFFFFF);
-  static const Color _secondaryText = Color(0xFF667085);
-  static const Color _tertiaryText = Color(0xFF98A2B3);
+  // 스낵챗 v3: 위필링 디자인 시스템 값(SnackChatPalette)만 쓴다.
+  static const Color _outgoingBubble = SnackChatPalette.pointStrong;
+  static const Color _incomingBubble = SnackChatPalette.fillSubtle;
+  static const Color _incomingText = SnackChatPalette.ink;
+  static const Color _secondaryText = SnackChatPalette.inkSecondary;
+  static const Color _tertiaryText = SnackChatPalette.inkTertiary;
+  static const Color _readCountText = SnackChatPalette.pointStrong;
   static const Color _composerBackground = Color(0xFF252629);
   static const Color _composerAction = Color(0xFF4B4E55);
   static const Color _composerActionDisabled = Color(0xFF36383D);
@@ -253,7 +256,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       Duration(milliseconds: 70);
   static const Duration _toolbarAnimationDuration = Duration(milliseconds: 190);
   static const Duration _translationStyleAnimationDuration = MotionTokens.fast;
-  static const double _senderAvatarSize = 34;
+  static const double _senderAvatarSize = 28;
   static const double _senderAvatarGap = 8;
 
   final SnackChatService _snackChatService = SnackChatService();
@@ -7969,7 +7972,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ? 6
           : hasFile
               ? 10
-              : 9,
+              : 8,
       hasImage
           ? 6
           : hasFile
@@ -7979,21 +7982,22 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ? 6
           : hasFile
               ? 10
-              : 9,
+              : 8,
     );
     final textStyle = TextStyle(
       fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
-      fontWeight: FontWeight.w500,
-      height: 1.35,
-      color: isMe ? Colors.white : const Color(0xFF111827),
+      fontSize: 15,
+      fontWeight: FontWeight.w400,
+      height: isChineseUi(context) ? 1.47 : 22 / 15,
+      color: isMe ? Colors.white : _incomingText,
     );
+    // 같은 묶음에서 이웃과 붙는 쪽 모서리만 8로 좁힌다.
     final bubbleRadius = BorderRadius.only(
-      topLeft: Radius.circular(!isMe && groupedWithOlder ? 6 : 16),
-      topRight: Radius.circular(isMe && groupedWithOlder ? 6 : 16),
-      bottomLeft: Radius.circular(!isMe && groupedWithNewer ? 6 : 16),
-      bottomRight: Radius.circular(isMe && groupedWithNewer ? 6 : 16),
+      topLeft: Radius.circular(!isMe && groupedWithOlder ? 8 : 16),
+      topRight: Radius.circular(isMe && groupedWithOlder ? 8 : 16),
+      bottomLeft: Radius.circular(!isMe && groupedWithNewer ? 8 : 16),
+      bottomRight: Radius.circular(isMe && groupedWithNewer ? 8 : 16),
     );
     final replyPreview = message.replyPreview == null
         ? null
@@ -8161,9 +8165,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(13).clamp(12, 14).toDouble(),
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF111827),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _incomingText,
+                  height: isChineseUi(context) ? 1.38 : 18 / 13,
                 ),
               ),
             ),
@@ -8216,7 +8221,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             isAnonymous: isAnonymous || profile?.isDeletedAccount == true,
             size: _senderAvatarSize,
             placeholderIcon: Icons.person_outline_rounded,
-            placeholderIconSize: 18,
+            placeholderIconSize: 15,
           ),
         ),
       ),
@@ -8352,9 +8357,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     : 'Tap to open')),
       };
     }
-    final foreground = isMe ? Colors.white : const Color(0xFF111827);
+    final foreground = isMe ? Colors.white : _incomingText;
     final secondary =
-        isMe ? Colors.white.withValues(alpha: 0.72) : const Color(0xFF667085);
+        isMe ? Colors.white.withValues(alpha: 0.94) : _secondaryText;
     final extension = (message.fileExtension ?? '').toUpperCase();
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: 190),
@@ -8439,9 +8444,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
                     color: message.hasFailed
-                        ? (isMe
-                            ? const Color(0xFFFFD5D2)
-                            : const Color(0xFFB42318))
+                        ? (isMe ? Colors.white : const Color(0xFFB42318))
                         : secondary,
                   ),
                 ),
@@ -8478,10 +8481,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               child: LinearProgressIndicator(
                 minHeight: 2,
                 value: progress,
-                color: isMe ? Colors.white : const Color(0xFF475467),
+                color: isMe ? Colors.white : _secondaryText,
                 backgroundColor: isMe
                     ? Colors.white.withValues(alpha: 0.22)
-                    : const Color(0xFFE4E7EC),
+                    : Colors.white,
               ),
             ),
           ],
@@ -8704,7 +8707,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         tooltip: snackDiscoveryText(context, '전송 확인 중 · 다시 확인',
             'Confirming delivery · Check again', '正在确认发送 · 再次检查'),
         onPressed: () => _retryMessage(message, manual: true),
-        icon: const Icon(Icons.schedule, size: 15, color: Color(0xFF667085)),
+        icon: const Icon(Icons.schedule, size: 15, color: _secondaryText),
       );
     }
     if (message.isPending) return const SizedBox(width: 5);
@@ -8757,7 +8760,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         fontFamilyFallback: const ['NotoSansKR'],
                         fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
                         fontWeight: FontWeight.w700,
-                        color: _secondaryText,
+                        color: _readCountText,
                         height: 1,
                       ),
                     ),
@@ -8776,9 +8779,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         style: TextStyle(
           fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: context.rf(10.5).clamp(10, 11.5).toDouble(),
-          fontWeight: FontWeight.w600,
+          fontSize: 11,
+          fontWeight: FontWeight.w400,
           color: _tertiaryText,
+          height: isChineseUi(context) ? 1.36 : 15 / 11,
         ),
       );
 

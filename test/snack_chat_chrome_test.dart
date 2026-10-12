@@ -112,20 +112,17 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('2026년 9월 3일 목요일'), findsOneWidget);
-      expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
-      final badge = tester.widget<Container>(
+      // v3: 배지 대신 양옆 hairline + 11px #707070 글자. 흰 배경 대비 4.5:1 이상.
+      expect(find.byIcon(Icons.calendar_today_outlined), findsNothing);
+      expect(
         find.byKey(const ValueKey('snack_chat_date_badge')),
+        findsOneWidget,
       );
-      final decoration = badge.decoration! as BoxDecoration;
-      expect(decoration.color, const Color(0xFF667085));
       expect(
         tester.widget<Text>(find.text('2026년 9월 3일 목요일')).style?.color,
-        Colors.white,
+        const Color(0xFF707070),
       );
-      expect(
-        tester.widget<Icon>(find.byIcon(Icons.calendar_today_outlined)).color,
-        Colors.white,
-      );
+      expect(find.byType(Divider), findsNWidgets(2));
     },
   );
 
@@ -173,8 +170,8 @@ void main() {
       );
       expect(find.text('128명 참여'), findsOneWidget);
       expect(find.byIcon(Icons.forum_outlined), findsNothing);
-      expect(find.byType(CustomPaint), findsWidgets);
-      expect(SnackChatBackdrop.backgroundColor, const Color(0xFFFBFAF7));
+      // v3: 무늬 없는 흰 배경.
+      expect(SnackChatBackdrop.backgroundColor, const Color(0xFFFFFFFF));
       expect(
         SnackChatBackdrop.backgroundColor,
         isNot(const Color(0xFFF4F5F3)),

@@ -451,9 +451,10 @@ class SnackChatReplyPreviewView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // v3: #EEEEEE / #2C6BC0 말풍선 위에서 4.5:1 이상.
     final foreground = isOutgoing
-        ? Colors.white.withValues(alpha: 0.82)
-        : const Color(0xFF475467);
+        ? Colors.white.withValues(alpha: 0.94)
+        : const Color(0xFF5F5F5F);
     final fileExpired = preview.type == SnackChatMessageType.file &&
         preview.fileExpiresAt != null &&
         !DateTime.now().isBefore(preview.fileExpiresAt!);
@@ -617,10 +618,11 @@ class SnackChatPollCard extends StatelessWidget {
   }
 
   Widget _buildCard(BuildContext context) {
-    final foreground = isOutgoing ? Colors.white : const Color(0xFF101828);
+    final foreground = isOutgoing ? Colors.white : const Color(0xFF000000);
+    // v3: #EEEEEE / #2C6BC0 말풍선 위에서 4.5:1 이상.
     final secondary = isOutgoing
-        ? Colors.white.withValues(alpha: 0.72)
-        : const Color(0xFF667085);
+        ? Colors.white.withValues(alpha: 0.94)
+        : const Color(0xFF5F5F5F);
     final isClosed = poll.isClosed();
     final canVote = enabled && !isClosed;
     return ConstrainedBox(
@@ -825,10 +827,11 @@ class SnackChatLinkPreviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = isOutgoing ? Colors.white : const Color(0xFF101828);
+    final foreground = isOutgoing ? Colors.white : const Color(0xFF000000);
+    // v3: #EEEEEE / #2C6BC0 말풍선 위에서 4.5:1 이상.
     final secondary = isOutgoing
-        ? Colors.white.withValues(alpha: 0.72)
-        : const Color(0xFF667085);
+        ? Colors.white.withValues(alpha: 0.94)
+        : const Color(0xFF5F5F5F);
     return Padding(
       padding: const EdgeInsets.only(top: 9),
       child: MotionPressBoundary(

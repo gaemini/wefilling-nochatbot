@@ -19,7 +19,7 @@ Future<String?> showTranslationLanguageSheet(
     useSafeArea: true,
     backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
     builder: (sheetContext) => TranslationLanguageSheet(
       selectedCode: selected,
@@ -76,96 +76,91 @@ class _TranslationLanguageSheetState extends State<TranslationLanguageSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 10),
-            const Align(
+            Align(
               alignment: Alignment.center,
-              child: SizedBox(
-                width: 40,
-                child: Divider(
-                  height: 4,
-                  thickness: 4,
-                  color: Color(0xFFD1D5DB),
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD6D6D6),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
               child: Text(
-                (isChineseUi(context) ? '翻译目标语言' : isKo ? '번역해서 볼 언어' : 'Language to translate into'),
+                (isChineseUi(context)
+                    ? '翻译目标语言'
+                    : isKo
+                        ? '번역해서 볼 언어'
+                        : 'Language to translate into'),
                 key: const ValueKey('translation_language_sheet_title'),
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF111827),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF000000),
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F8FE),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(top: 1),
-                        child: Icon(
-                          Icons.info_outline_rounded,
-                          size: 18,
-                          color: Color(0xFF2F9BE8),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          widget.forSnackChat
-                              ? ((isChineseUi(context) ? '选择查看他人消息时使用的翻译语言。你发送的消息仍显示原文。' : isKo
-                                  ? '상대방 메시지를 번역해서 보고 싶은 언어를 선택해 주세요. 내 메시지는 입력한 원문으로 표시됩니다.'
-                                  : 'Choose the language for translating messages from other people. Your messages stay in the original text.'))
-                              : ((isChineseUi(context) ? '选择动态和评论的翻译目标语言，而不是原文语言。' : isKo
-                                  ? '원문의 언어가 아니라, 포스트와 댓글을 번역해서 보고 싶은 언어를 선택해 주세요.'
-                                  : 'Choose the language you want posts and comments translated into, not the language of the original text.')),
-                          key: const ValueKey(
-                            'translation_language_sheet_guidance',
-                          ),
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: ['NotoSansKR'],
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            height: 1.4,
-                            color: Color(0xFF36566F),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+              child: Text(
+                widget.forSnackChat
+                    ? ((isChineseUi(context)
+                        ? '选择查看他人消息时使用的翻译语言。你发送的消息仍显示原文。'
+                        : isKo
+                            ? '상대방 메시지를 번역해서 보고 싶은 언어를 선택해 주세요. 내 메시지는 입력한 원문으로 표시됩니다.'
+                            : 'Choose the language for translating messages from other people. Your messages stay in the original text.'))
+                    : ((isChineseUi(context)
+                        ? '选择动态和评论的翻译目标语言，而不是原文语言。'
+                        : isKo
+                            ? '원문의 언어가 아니라, 포스트와 댓글을 번역해서 보고 싶은 언어를 선택해 주세요.'
+                            : 'Choose the language you want posts and comments translated into, not the language of the original text.')),
+                key: const ValueKey('translation_language_sheet_guidance'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: ['NotoSansKR'],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                  height: isChineseUi(context) ? 1.4 : 18 / 13,
+                  color: Color(0xFF5F5F5F),
                 ),
               ),
             ),
             Flexible(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                children: ContentTranslationService.supportedLanguages.entries
-                    .map(
-                      (entry) => ListTile(
+                children:
+                    ContentTranslationService.supportedLanguages.entries.map(
+                  (entry) {
+                    final selected = entry.key == widget.selectedCode;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: ListTile(
                         key: ValueKey<String>(
                           'translation_language_${entry.key}',
                         ),
-                        dense: true,
+                        minTileHeight: 48,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 12),
+                        selected: selected,
+                        selectedTileColor: const Color(0xFFF4F4F4),
+                        selectedColor: const Color(0xFF000000),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         title: Text(
                           entry.value,
                           style: TextStyle(
                             fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: ['NotoSansKR'],
                             fontSize: 15,
-                            fontWeight: FontWeight.w500,
+                            fontWeight:
+                                selected ? FontWeight.w600 : FontWeight.w400,
+                            color: const Color(0xFF000000),
                           ),
                         ),
                         trailing: _savingCode == entry.key
@@ -173,21 +168,22 @@ class _TranslationLanguageSheetState extends State<TranslationLanguageSheet> {
                                 dimension: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Color(0xFF2F9BE8),
+                                  color: Color(0xFF2C6BC0),
                                 ),
                               )
-                            : entry.key == widget.selectedCode
+                            : selected
                                 ? const Icon(
                                     Icons.check_rounded,
-                                    color: Color(0xFF2F9BE8),
+                                    color: Color(0xFF2C6BC0),
                                   )
                                 : null,
                         onTap: _savingCode == null
                             ? () => _select(entry.key)
                             : null,
                       ),
-                    )
-                    .toList(growable: false),
+                    );
+                  },
+                ).toList(growable: false),
               ),
             ),
           ],

@@ -75,6 +75,7 @@ import '../services/comment_image_upload.dart';
 /// Keeps Material route behavior (including back navigation) while making the
 /// feed-to-detail change perceptible without waiting for an animation.
 // 포스트 상세 v2 입력줄·스낵챗 행 값 (위필링 디자인 시스템)
+const Color _kDetailInkSecondary = Color(0xFF5F5F5F);
 const Color _kDetailInkTertiary = Color(0xFF707070);
 const Color _kDetailFillSubtle = Color(0xFFEEEEEE);
 const Color _kDetailHairline = Color(0xFFEBEBEB);
@@ -280,6 +281,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _replyToUserId; // 직전 부모 댓글 작성자 ID
   String? _replyToUserName; // 직전 부모 댓글 작성자 닉네임
   String? _replyTargetCommentId; // 하이라이트할 댓글 ID (시각적 피드백용)
+  String? _replyTargetPreview; // 답장 바 2줄째: 대상 본문 한 줄
 
   // 대화형 보기: 인용 탭으로 이동할 댓글 위치와 잠깐의 강조 상태.
   final Map<String, GlobalKey> _commentKeys = <String, GlobalKey>{};
@@ -2715,6 +2717,65 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
+  Widget _buildReplyBar() {
+    final l10n = AppLocalizations.of(context)!;
+    final preview =
+        (_replyTargetPreview ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final base = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: 13,
+      height: isChineseUi(context) ? 1.38 : 18 / 13,
+    );
+    return Padding(
+      key: const ValueKey('comment-reply-bar'),
+      padding: const EdgeInsets.fromLTRB(16, 8, 4, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.only(left: 10),
+              decoration: const BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: _kDetailPointStrong, width: 2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    l10n.replyingTo(_replyToUserName ?? ''),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: base.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
+                  if (preview.isNotEmpty)
+                    Text(
+                      preview,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: base.copyWith(color: _kDetailInkSecondary),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: l10n.cancelReply,
+            onPressed: _exitReplyMode,
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+            padding: EdgeInsets.zero,
+            icon: const Icon(Icons.close_rounded, size: 20, color: Colors.black),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 사진 버튼(터치 44). GIF를 담았거나 4장을 채웠거나 전송 중이면 비활성.
   Widget _buildCommentPhotoButton() {
     final enabled = !_isSubmittingComment &&
@@ -2870,6 +2931,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             replyToUserId: comment.userId,
             replyToUserName: getCommentAuthorName(comment, currentUserId),
             targetCommentId: comment.id,
+            targetPreview: comment.content.trim().isNotEmpty
+                ? comment.content
+                : (_commentHasMedia(comment) ? l10n.commentPhotoLabel : null),
           );
 
       children.add(KeyedSubtree(
@@ -2975,8 +3039,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     required String replyToUserId,
     required String replyToUserName,
     required String targetCommentId,
+    String? targetPreview,
   }) {
     setState(() {
+      _replyTargetPreview = targetPreview;
       _isReplyMode = true;
       _replyParentTopLevelId = parentTopId;
       _replyToUserId = replyToUserId;
@@ -2998,6 +3064,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _replyToUserId = null;
       _replyToUserName = null;
       _replyTargetCommentId = null;
+      _replyTargetPreview = null;
     });
     _commentController.clear();
     FocusScope.of(context).unfocus();
@@ -4103,56 +4170,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 대댓글 모드 상단 바 (미니멀 디자인)
-                    if (_isReplyMode)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16.0,
-                          vertical: 10.0,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50], // 매우 연한 회색 배경
-                          border: Border(
-                            bottom: BorderSide(
-                              color: Colors.grey[300]!, // 연한 회색 테두리
-                              width: 1,
-                            ),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.subdirectory_arrow_right, // 더 명확한 대댓글 아이콘
-                              size: 18,
-                              color: Colors.grey[700], // 검은색 계열
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                AppLocalizations.of(context)!
-                                    .replyingTo(_replyToUserName ?? ''),
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[800], // 검은색 계열
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            MotionPress(
-                              pressedScale: .92,
-                              child: GestureDetector(
-                                onTap: _exitReplyMode,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  child: Icon(Icons.close, size: 18, color: Colors.grey[600]),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                    // 답장 바: 좌측 파란 선 + 받는 사람 + 대상 본문 한 줄 + x(터치 44).
+                    if (_isReplyMode) _buildReplyBar(),
 
                     // 입력창
                     if (_commentGif != null)
@@ -4179,8 +4198,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     if (_commentImages.isNotEmpty) _buildCommentImageTray(),
                     Padding(
                       padding: EdgeInsets.only(
-                        left: 16.0,
-                        right: 16.0,
+                        // 사진 버튼(44)이 자체 여백을 가져 왼쪽은 8로 줄인다.
+                        left: isLoggedIn ? 8.0 : 16.0,
+                        right: 12.0,
                         top: 8.0,
                         bottom: MediaQuery.of(context).viewInsets.bottom > 0
                             ? 8.0 // 키보드가 올라온 경우
@@ -4230,7 +4250,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   color: _kDetailInkTertiary,
                                 ),
                                 border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius: BorderRadius.circular(20),
                                   borderSide: BorderSide.none,
                                 ),
                                 filled: true,

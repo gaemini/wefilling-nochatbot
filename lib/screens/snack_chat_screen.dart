@@ -74,6 +74,7 @@ import 'friend_categories_screen.dart';
 import 'main_screen.dart';
 import 'snack_chat_info_screen.dart';
 import '../ui/widgets/pinned_post_card.dart';
+import '../ui/widgets/snack_chat_translation_split_button.dart';
 import '../l10n/ui_locale.dart';
 
 @visibleForTesting
@@ -251,8 +252,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const int _translationAdjacentPrefetchLimit = 2;
   static const Duration _translationMicroBatchWindow =
       Duration(milliseconds: 70);
-  static const Duration _toolbarAnimationDuration = Duration(milliseconds: 190);
-  static const Duration _translationStyleAnimationDuration = MotionTokens.fast;
   static const double _senderAvatarSize = 28;
   static const double _senderAvatarGap = 8;
 
@@ -272,9 +271,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final FocusNode _messageFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
-  final ValueNotifier<bool> _toolbarVisible = ValueNotifier<bool>(true);
-  final SnackChatToolbarScrollTracker _toolbarScrollTracker =
-      SnackChatToolbarScrollTracker();
+  String? _targetLanguageCode;
 
   bool _isUploadingImage = false;
   static final _imageUploadQueue = ChatWorkQueue();
@@ -579,8 +576,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _translationModeReady = false;
     _manualTranslationRetryKeys.clear();
     _isUserScrolling = false;
-    _toolbarScrollTracker.resetRoom();
-    _toolbarVisible.value = true;
     _cancelPendingTranslationRestore();
     _messageTranslations.clear();
     _translationSourceSignatures.clear();
@@ -615,6 +610,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           _translationService.showsOriginal(_translationScope);
     });
     if (!_translationShowsOriginal) _scheduleVisibleTranslations();
+    unawaited(_refreshTargetLanguageLabel());
   }
 
   void _handleTranslationServiceChange() {
@@ -2623,7 +2619,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       if (!_accountInvalidated && ModalRoute.of(context)?.isCurrent == true) {
         SnackChatActiveConversation.setActive(widget.snackChatId);
       }
-      _toolbarScrollTracker.resetGesture();
       if (_isUserScrolling) {
         _isUserScrolling = false;
         _cancelPendingTranslationRestore();
@@ -2656,7 +2651,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       if (mounted) setState(() {});
     } else if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
-      _toolbarScrollTracker.resetGesture();
       if (_isUserScrolling) {
         _isUserScrolling = false;
         _cancelPendingTranslationRestore();
@@ -3808,7 +3802,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (notification.depth != 0) return false;
     if (notification is ScrollStartNotification &&
         notification.dragDetails != null) {
-      _toolbarScrollTracker.resetGesture();
     }
     final beginsUserScroll = (notification is ScrollStartNotification &&
             notification.dragDetails != null) ||
@@ -3825,12 +3818,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       }
       _cancelPendingTranslationRestore();
     }
-    if (notification is ScrollUpdateNotification &&
-        notification.dragDetails != null) {
-      _handleToolbarUserScroll(notification);
-    } else if (notification is ScrollEndNotification && _isUserScrolling) {
+    if (notification is ScrollEndNotification && _isUserScrolling) {
       _isUserScrolling = false;
-      _toolbarScrollTracker.resetGesture();
       if (_messageWindowExpansionPending) {
         _scheduleMessageWindowExpansion();
       }
@@ -3843,18 +3832,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       _scheduleActiveReadSync();
     }
     return false;
-  }
-
-  void _handleToolbarUserScroll(ScrollUpdateNotification notification) {
-    final metrics = notification.metrics;
-    if (metrics.axis != Axis.vertical) return;
-    final nextVisible = _toolbarScrollTracker.addUserDelta(
-      axisDirection: metrics.axisDirection,
-      scrollDelta: notification.scrollDelta ?? 0,
-      outOfRange: metrics.outOfRange,
-      scrollableExtent: metrics.maxScrollExtent - metrics.minScrollExtent,
-    );
-    if (nextVisible != null) _toolbarVisible.value = nextVisible;
   }
 
   Future<void> _loadMoreMessages() async {
@@ -4136,7 +4113,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _messageController.dispose();
     _messageFocusNode.dispose();
     _scrollController.dispose();
-    _toolbarVisible.dispose();
     super.dispose();
   }
 
@@ -6815,8 +6791,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               scrolledUnderElevation: 0,
               toolbarHeight: context.rh(58, min: 56, max: 62),
               leadingWidth: 48,
-              centerTitle: true,
-              titleSpacing: 4,
+              centerTitle: false,
+              titleSpacing: 0,
+              shape: const Border(
+                bottom: BorderSide(color: SnackChatPalette.hairline),
+              ),
               iconTheme: IconThemeData(
                 color: const Color(0xFF111827),
                 size: context.ri(22).clamp(21, 24).toDouble(),
@@ -6828,13 +6807,16 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                     : room.title.trim(),
                 participantLabel:
                     l10n.snackChatParticipantCount(participantCount),
+                participantAvatars: _headerParticipantAvatars(room),
               ),
               actions: [
+                _buildTranslationSplitButton(isKo: isKo),
+                const SizedBox(width: 2),
                 IconButton(
                   onPressed: _isLeavingRoom ? null : () => _openRoomInfo(room),
                   icon: const Icon(
                     Icons.more_vert_rounded,
-                    color: Color(0xFF344054),
+                    color: SnackChatPalette.ink,
                   ),
                   iconSize: context.ri(22).clamp(21, 24).toDouble(),
                   constraints: const BoxConstraints.tightFor(
@@ -6868,42 +6850,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                           ),
                         ),
                       ),
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        child: ValueListenableBuilder<bool>(
-                          valueListenable: _toolbarVisible,
-                          builder: (context, visible, child) {
-                            final reduceMotion = MediaQuery.maybeOf(context)
-                                    ?.disableAnimations ??
-                                false;
-                            final duration = reduceMotion
-                                ? Duration.zero
-                                : _toolbarAnimationDuration;
-                            return ExcludeSemantics(
-                              excluding: !visible,
-                              child: IgnorePointer(
-                                ignoring: !visible,
-                                child: AnimatedSlide(
-                                  duration: duration,
-                                  curve: Curves.easeOutCubic,
-                                  offset: visible
-                                      ? Offset.zero
-                                      : const Offset(0, -0.32),
-                                  child: AnimatedOpacity(
-                                    duration: duration,
-                                    curve: Curves.easeOut,
-                                    opacity: visible ? 1 : 0,
-                                    child: child,
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                          child: _buildTranslationControl(isKo: isKo),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -6916,231 +6862,77 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     );
   }
 
-  Widget _buildTranslationControl({required bool isKo}) {
-    final showingOriginal = _translationShowsOriginal;
-    final translationActionLabel = (isChineseUi(context)
-        ? '查看译文'
-        : isKo
-            ? '번역 보기'
-            : 'View translation');
-    final originalActionLabel = (isChineseUi(context)
-        ? '查看原文'
-        : isKo
-            ? '원문 보기'
-            : 'View original');
-    final toggleLabel =
-        showingOriginal ? translationActionLabel : originalActionLabel;
-    final toggleTooltip = showingOriginal
-        ? ((isChineseUi(context)
-            ? '查看译文'
-            : isKo
-                ? '번역 보기'
-                : 'View translation'))
-        : ((isChineseUi(context)
-            ? '查看原文'
-            : isKo
-                ? '원문 보기'
-                : 'View original'));
-    final settingsTooltip = (isChineseUi(context)
-        ? '翻译语言'
-        : isKo
-            ? '번역 언어 설정'
-            : 'Translation language');
-    final toggleLoading = !_translationModeReady;
-    final controlTextStyle = TextStyle(
-      fontFamily: uiFontFamily(context, 'Inter'),
-      fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
-      fontWeight: FontWeight.w700,
-      height: 1,
-      letterSpacing: -0.1,
-    );
-    var widestTranslationLabel = 0.0;
-    for (final label in <String>[
-      translationActionLabel,
-      originalActionLabel,
-    ]) {
-      final painter = TextPainter(
-        text: TextSpan(text: label, style: controlTextStyle),
-        maxLines: 1,
-        textDirection: Directionality.of(context),
-        textScaler: MediaQuery.textScalerOf(context).clamp(
-          maxScaleFactor: 1.15,
-        ),
-      )..layout();
-      if (painter.width > widestTranslationLabel) {
-        widestTranslationLabel = painter.width;
-      }
-      painter.dispose();
-    }
-    // Keep a stable width while switching translation/original labels. The
-    // 양쪽 경계와 아이콘/문자 사이에 중간 단계의 여백을 유지한다.
-    final translationControlWidth =
-        (6 + 15 + 4 + widestTranslationLabel + 2).ceilToDouble();
-
-    return Material(
-      color: Colors.transparent,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                12,
-                context.rs(6).clamp(5, 8).toDouble(),
-                12,
-                4,
-              ),
-              child: MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.15,
-                child: Wrap(
-                  alignment: WrapAlignment.end,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 7,
-                  runSpacing: 4,
-                  children: [
-                    _buildTranslationActionControl(
-                      showingOriginal: showingOriginal,
-                      toggleLabel: toggleLabel,
-                      toggleTooltip: toggleTooltip,
-                      settingsTooltip: settingsTooltip,
-                      toggleLoading: toggleLoading,
-                      toggleWidth: translationControlWidth,
-                      textStyle: controlTextStyle,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+  Widget _buildTranslationSplitButton({required bool isKo}) {
+    final zh = isChineseUi(context);
+    final translationOn = !_translationShowsOriginal;
+    // 접근성 라벨: 누르면 일어날 일(기존 문구 그대로).
+    final toggleLabel = translationOn
+        ? (zh ? '查看原文' : (isKo ? '원문 보기' : 'View original'))
+        : (zh ? '查看译文' : (isKo ? '번역 보기' : 'View translation'));
+    final settingsLabel =
+        zh ? '翻译语言' : (isKo ? '번역 언어 설정' : 'Translation language');
+    final code = _targetLanguageCode;
+    final languageLabel = code == null
+        ? ''
+        : ContentTranslationService.supportedLanguages[code] ?? '';
+    return SnackChatTranslationSplitButton(
+      translationOn: translationOn,
+      enabled: _translationModeReady,
+      languageLabel: languageLabel,
+      toggleSemanticLabel: toggleLabel,
+      languageSemanticLabel: settingsLabel,
+      onToggle: _toggleSnackTranslation,
+      onOpenLanguage: _openSnackTranslationLanguageSettings,
     );
   }
 
-  Widget _buildTranslationActionControl({
-    required bool showingOriginal,
-    required String toggleLabel,
-    required String toggleTooltip,
-    required String settingsTooltip,
-    required bool toggleLoading,
-    required double toggleWidth,
-    required TextStyle textStyle,
-  }) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: showingOriginal ? 0 : 1),
-      duration: MotionTokens.reduceMotion(context)
-          ? Duration.zero
-          : _translationStyleAnimationDuration,
-      curve: Curves.easeOut,
-      builder: (context, value, _) {
-        const pointColor = Color(0xFF087BB5);
-        final background = Color.lerp(pointColor, Colors.white, value)!;
-        final foreground = Color.lerp(Colors.white, pointColor, value)!;
-        final disabledForeground = Color.lerp(
-          const Color(0xFFD6EBF5),
-          const Color(0xFF76AFCB),
-          value,
-        )!;
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(14),
-            // A transparent border in the filled state keeps dimensions
-            // identical when the white original-action style appears.
-            border: Border.all(
-              color: Color.lerp(Colors.transparent, pointColor, value)!,
-              width: .8,
+  /// 상단 바의 언어 이름. targetLanguage는 비동기라 state에 보관하고
+  /// 방 진입과 언어 변경(languageRevision) 때만 갱신한다.
+  Future<void> _refreshTargetLanguageLabel() async {
+    final revision = _translationService.languageRevision;
+    final code = await _translationService.targetLanguage(
+      uiLanguageCode: Localizations.localeOf(context).languageCode,
+    );
+    if (!mounted || revision != _translationService.languageRevision) return;
+    if (code == _targetLanguageCode) return;
+    setState(() => _targetLanguageCode = code);
+  }
+
+  /// 이미 캐시에 있는 참여자만 16px 아바타로 보여 준다(추가 조회 없음).
+  List<Widget> _headerParticipantAvatars(SnackChat room) {
+    final me = _uid;
+    final ordered = <String>[
+      ...room.participantIds.where((id) => id != me),
+      if (me != null && room.participantIds.contains(me)) me,
+    ];
+    final avatars = <Widget>[];
+    for (final id in ordered) {
+      final info = _userInfoCache.getCachedUserInfo(id);
+      if (info == null) continue;
+      avatars.add(
+        DecoratedBox(
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(1),
+            child: UserAvatar(
+              key: ValueKey('snack-header-$id-${info.photoVersion}'),
+              uid: id,
+              photoUrl: info.photoURL,
+              photoVersion: info.photoVersion,
+              isAnonymous: info.isDeletedAccount,
+              size: SnackChatHeaderTitle.avatarSize - 2,
+              placeholderIcon: Icons.person_outline_rounded,
+              placeholderIconSize: 9,
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Semantics(
-                button: true,
-                label: toggleTooltip,
-                child: Tooltip(
-                  message: toggleTooltip,
-                  child: SizedBox(
-                    width: toggleWidth,
-                    height: 28,
-                    child: TextButton(
-                      key: const ValueKey('snack_translation_toggle'),
-                      onPressed: _translationModeReady
-                          ? _toggleSnackTranslation
-                          : null,
-                      style: TextButton.styleFrom(
-                        foregroundColor: foreground,
-                        disabledForegroundColor: disabledForeground,
-                        minimumSize: const Size(0, 28),
-                        maximumSize: const Size(double.infinity, 28),
-                        padding: const EdgeInsets.fromLTRB(6, 0, 2, 0),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: const StadiumBorder(),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (toggleLoading)
-                            SizedBox.square(
-                              dimension: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.8,
-                                color: disabledForeground,
-                              ),
-                            )
-                          else
-                            Icon(
-                              Icons.translate_rounded,
-                              size: 15,
-                              color: foreground,
-                            ),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              toggleLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              softWrap: false,
-                              style: textStyle,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Semantics(
-                button: true,
-                label: settingsTooltip,
-                child: Tooltip(
-                  message: settingsTooltip,
-                  child: IconButton(
-                    key: const ValueKey(
-                      'snack_translation_language_settings',
-                    ),
-                    onPressed: _openSnackTranslationLanguageSettings,
-                    icon: const Icon(Icons.settings_outlined),
-                    color: foreground,
-                    iconSize: 15,
-                    padding: const EdgeInsets.only(right: 7),
-                    style: IconButton.styleFrom(
-                      minimumSize: const Size(31, 28),
-                      maximumSize: const Size(31, 28),
-                      padding: const EdgeInsets.only(right: 7),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+        ),
+      );
+      if (avatars.length == 3) break;
+    }
+    return avatars;
   }
 
   Widget _buildMessageContent({required bool isKo}) {
@@ -7242,10 +7034,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         ),
         padding: EdgeInsets.fromLTRB(
           context.rs(10).clamp(8, 14).toDouble(),
-          // The translation control floats above the list. Keep its visual
-          // footprint inside the scrollable top inset so the oldest bubble
-          // can always settle fully below the control when pulled to the top.
-          context.rs(48).clamp(44, 52).toDouble(),
+          // v3: 번역 버튼은 상단 바로 옮겨 목록 위에 떠 있는 요소가 없다.
+          12,
           context.rs(10).clamp(8, 14).toDouble(),
           context.rs(6).clamp(4, 8).toDouble(),
         ),

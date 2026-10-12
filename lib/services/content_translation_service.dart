@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/content_translation.dart';
 import '../utils/logger.dart';
 import '../utils/translation_source_hash_cache.dart';
+import '../utils/translation_language_guard.dart';
 
 typedef ScopeTranslationLoader = Future<bool> Function();
 
@@ -213,6 +214,9 @@ class ContentTranslationService extends ChangeNotifier {
   bool _persistentCacheRecoveryAttempted = false;
   final Set<String> _persistentCacheFailureStages = <String>{};
   Future<String>? _targetLanguageFuture;
+  // 지금 확정된 대상 언어(동기 조회용). 다른 언어로 만들어진 결과가 화면에
+  // 남지 않게 latestResultFor/latestOutcomeFor가 대조한다.
+  String? _resolvedTargetLanguage;
   Timer? _flushTimer;
   String? _lastUid;
   int _languageRevision = 0;
@@ -267,6 +271,7 @@ class ContentTranslationService extends ChangeNotifier {
     _languageRevision++;
     _cancelPendingTranslations();
     _targetLanguageFuture = null;
+    _resolvedTargetLanguage = null;
     _memory.clear();
     _latestResults.clear();
     _blockedFailures.clear();
@@ -614,7 +619,47 @@ class ContentTranslationService extends ChangeNotifier {
         sourceHash: sourceHash,
         targetLanguage: targetLanguage,
       ) &&
-      _hasCompleteFields(request, result);
+      _hasCompleteFields(request, result) &&
+      _isTrustedLanguageOutcome(request, result, targetLanguage);
+
+  /// 저장된 결과가 "대상 언어로 보여 줘도 되는" 결과인지.
+  ///
+  /// - 번역 완료: 글자 종류가 대상 언어와 명백히 다르면(예: 중국어를 골랐는데
+  ///   영어가 저장됨) 버리고 다시 요청한다.
+  /// - 같은 언어 판정: 예전 서버 판정(cacheSource == same_language)은 스페인어/
+  ///   포르투갈어처럼 비슷한 언어를 같은 언어로 잘못 본 적이 있어 다시 판정한다.
+  ///   고쳐진 서버(same_language_v2)와 기기 안의 보수적 판정만 그대로 믿는다.
+  bool _isTrustedLanguageOutcome(
+    ContentTranslationRequest request,
+    ContentTranslationResult result,
+    String targetLanguage,
+  ) {
+    if (result.isSameLanguage) {
+      return result.cacheSource == 'same_language_v2' ||
+          result.cacheSource == 'client_same_language' ||
+          _looksObviouslySameLanguage(request.sourceFields, targetLanguage);
+    }
+    return _translatedFieldsMatchTarget(request, result, targetLanguage);
+  }
+
+  bool _translatedFieldsMatchTarget(
+    ContentTranslationRequest request,
+    ContentTranslationResult result,
+    String targetLanguage,
+  ) {
+    for (final entry in request.sourceFields.entries) {
+      final translated = result.translatedFields[entry.key];
+      if (translated == null || entry.value.trim().isEmpty) continue;
+      if (!translationLooksInTargetLanguage(
+        source: entry.value,
+        translated: translated,
+        targetLanguage: targetLanguage,
+      )) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   void _debugTranslationState(
     String reason,
@@ -758,8 +803,20 @@ class ContentTranslationService extends ChangeNotifier {
   }
 
   Future<String> targetLanguage({String? uiLanguageCode}) {
-    return _targetLanguageFuture ??=
-        _resolveTargetLanguage(uiLanguageCode: uiLanguageCode);
+    final existing = _targetLanguageFuture;
+    if (existing != null) return existing;
+    late final Future<String> resolving;
+    resolving = _resolveTargetLanguage(uiLanguageCode: uiLanguageCode).then(
+      (code) {
+        // 도중에 언어가 바뀌어 새 future로 교체됐다면 늦게 도착한 값은 버린다.
+        if (identical(_targetLanguageFuture, resolving)) {
+          _resolvedTargetLanguage = code;
+        }
+        return code;
+      },
+    );
+    _targetLanguageFuture = resolving;
+    return resolving;
   }
 
   Future<String> _resolveTargetLanguage({String? uiLanguageCode}) async {
@@ -878,6 +935,7 @@ class ContentTranslationService extends ChangeNotifier {
   void _activateTargetLanguage(String code) {
     _cancelPendingTranslations();
     _targetLanguageFuture = Future<String>.value(code);
+    _resolvedTargetLanguage = code;
     _languageRevision++;
     _memory.clear();
     _latestResults.clear();
@@ -1006,13 +1064,16 @@ class ContentTranslationService extends ChangeNotifier {
   ) {
     final hash = _sourceHash(request.sourceFields);
     final result = _latestResults[_latestResultKey(request, hash)];
-    if (result == null ||
-        !_isUsableCachedResult(
-          request,
-          result,
-          sourceHash: hash,
-          targetLanguage: result.targetLanguage,
-        )) {
+    if (result == null) return null;
+    // 대상 언어가 바뀐 뒤 이전 언어의 결과가 남아 있어도 보여 주지 않는다.
+    final current = _resolvedTargetLanguage;
+    if (current != null && result.targetLanguage != current) return null;
+    if (!_isUsableCachedResult(
+      request,
+      result,
+      sourceHash: hash,
+      targetLanguage: current ?? result.targetLanguage,
+    )) {
       return null;
     }
     return result;
@@ -1099,7 +1160,8 @@ class ContentTranslationService extends ChangeNotifier {
                 sourceHash: hash,
                 targetLanguage: target,
               ) ||
-              !_hasCompleteFields(request, result))) {
+              !_hasCompleteFields(request, result) ||
+              !_isTrustedLanguageOutcome(request, result, target))) {
         _memory.remove(key);
         result = null;
       }
@@ -1112,7 +1174,8 @@ class ContentTranslationService extends ChangeNotifier {
                 sourceHash: hash,
                 targetLanguage: target,
               ) &&
-              _hasCompleteFields(request, decoded)) {
+              _hasCompleteFields(request, decoded) &&
+              _isTrustedLanguageOutcome(request, decoded, target)) {
             result = decoded;
             _putMemory(key, decoded);
           } else {
@@ -1744,6 +1807,7 @@ class ContentTranslationService extends ChangeNotifier {
       'field_mismatch',
       'semantic_or_structure_guard',
       'strict_metadata_guard',
+      'wrong_target_language',
       'UNTRANSLATED_TEMPORAL_UNIT',
       'TEMPORAL_VALUE_MISMATCH',
       'TEMPORAL_DAY_PERIOD_MISMATCH',
@@ -1983,6 +2047,27 @@ class ContentTranslationService extends ChangeNotifier {
             'empty_translation',
           )) {
             _completeFailure(key, queued, 'empty_translation');
+          }
+          continue;
+        }
+        // 서버가 명시한 same_language는 그대로 받아들인다(예전 서버의 오판은
+        // 저장된 캐시를 읽을 때 다시 판정한다). 번역문만 글자 종류를 검사한다.
+        if (!result.isSameLanguage &&
+            !_translatedFieldsMatchTarget(
+              queued.request,
+              result,
+              queued.targetLanguage,
+            )) {
+          // 서버가 대상 언어가 아닌 글을 돌려줬다. 보여 주거나 저장하지 않고
+          // 실패로 처리해, 사용자가 다시 번역하면 서버가 새로 생성한다.
+          _debugTranslationState(
+            'wrongTargetLanguage',
+            queued.request,
+            queued.sourceHash,
+            queued.targetLanguage,
+          );
+          if (!_scheduleFailureRetry(key, queued, 'wrong_target_language')) {
+            _completeFailure(key, queued, 'wrong_target_language');
           }
           continue;
         }

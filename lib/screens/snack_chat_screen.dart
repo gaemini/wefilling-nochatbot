@@ -79,6 +79,7 @@ import '../l10n/translation_source_language.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/chat_pill_composer.dart';
 import '../utils/chat_message_typography.dart';
+import '../utils/avatar_image.dart';
 
 @visibleForTesting
 bool isSnackChatMessageMeaningfullyVisible({
@@ -2149,7 +2150,28 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       roomId == widget.snackChatId &&
       ownerUid == _uid;
 
+  /// 보낸 사람 프로필이 확정되면 아바타를 디스크 캐시와 디코딩 캐시에 미리
+  /// 올린다. 말풍선이 화면에 들어올 때 이미 준비되어 있어 첫 프레임에 그려진다.
+  void _warmSenderAvatars(Map<String, DMUserInfo?> profiles) {
+    final targets = <AvatarWarmTarget>[
+      for (final profile in profiles.values)
+        if (profile != null && !profile.isDeletedAccount)
+          AvatarWarmTarget(
+            uid: profile.uid,
+            photoVersion: profile.photoVersion,
+            photoUrl: profile.photoURL.trim(),
+            logicalSize: _senderAvatarSize,
+          ),
+    ];
+    if (targets.isEmpty) return;
+    unawaited(warmAvatarFiles(targets));
+    if (mounted) {
+      unawaited(precacheAvatarImages(context, targets, maxItems: 12));
+    }
+  }
+
   void _publishSenderProfiles(Map<String, DMUserInfo?> profiles) {
+    _warmSenderAvatars(profiles);
     for (final entry in profiles.entries) {
       final profile = entry.value;
       final nickname = profile?.nickname.trim() ?? '';

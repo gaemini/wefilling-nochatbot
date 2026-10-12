@@ -1,6 +1,7 @@
 // lib/ui/widgets/post_chat_translated_text.dart
 // 포스트 대화(본문·댓글)의 원문/번역 표시. 원문과 번역을 동시에 보여 주지 않고
-// 같은 자리에서 바꾸며, 상태는 말풍선 맨 아래 한 줄로만 알린다.
+// 같은 자리에서 바꾸며, 상태는 말풍선 맨 아래 한 줄로만 알린다. 전환은 상단
+// 분할 버튼(스코프)으로만 한다.
 //
 // 번역 요청·scope 로딩·결과 공유는 TranslatableContent와 같은 방식으로
 // ContentTranslationService를 직접 쓴다(TranslatableContent는 피드가 쓰므로
@@ -30,9 +31,6 @@ class PostChatTranslatedText extends StatefulWidget {
     required this.scope,
     required this.builder,
     this.isCandidate = true,
-    this.perItemShowTranslation = false,
-    this.perItemShowOriginal = false,
-    this.onPreferenceChanged,
   });
 
   final ContentTranslationRequest request;
@@ -41,14 +39,6 @@ class PostChatTranslatedText extends StatefulWidget {
 
   /// 번역 대상인지(내 댓글·빈 본문이면 false → 원문만, 발 줄 없음).
   final bool isCandidate;
-
-  /// 화면 상태로만 관리하는 개별 전환. scope가 꺼져 있을 때 '번역 보기'를 누른
-  /// 항목 / 켜져 있을 때 '원문 보기'를 누른 항목.
-  final bool perItemShowTranslation;
-  final bool perItemShowOriginal;
-
-  /// true = 이 항목을 번역으로, false = 원문으로 보고 싶다.
-  final ValueChanged<bool>? onPreferenceChanged;
 
   @override
   State<PostChatTranslatedText> createState() => _PostChatTranslatedTextState();
@@ -278,7 +268,8 @@ class _PostChatTranslatedTextState extends State<PostChatTranslatedText> {
       if (failed) return SnackChatTranslationState.failed;
       return SnackChatTranslationState.none;
     }
-    return SnackChatTranslationState.original;
+    // 스코프가 꺼져 있으면 원문만, 발 줄 없음(상단 버튼으로만 전환).
+    return SnackChatTranslationState.none;
   }
 
   @override
@@ -291,14 +282,13 @@ class _PostChatTranslatedTextState extends State<PostChatTranslatedText> {
         !result.isSameLanguage &&
         result.translatedFields.isNotEmpty;
     final scopeOn = !_service.showsOriginal(widget.scope);
-    final wants =
-        scopeOn ? !widget.perItemShowOriginal : widget.perItemShowTranslation;
+    // 번역은 상단 분할 버튼(스코프)으로만 켜고 끈다. 항목별 전환은 없다.
+    final wants = scopeOn;
     final loading = _activeLoad != null;
     final state = _state(wants: wants, ready: ready, loading: loading);
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final zh = isChineseUi(context);
     final l10n = AppLocalizations.of(context)!;
-    final onPreference = widget.onPreferenceChanged;
 
     return SnackChatTranslatedText(
       state: state,
@@ -316,16 +306,8 @@ class _PostChatTranslatedTextState extends State<PostChatTranslatedText> {
       showOriginalLabel: zh ? '查看原文' : (isKo ? '원문 보기' : 'View original'),
       translatingLabel: l10n.chatTranslationTranslating,
       retryLabel: l10n.chatTranslationRetry,
-      // 개별 '번역 보기'는 원문 상태와(scope가 꺼진 상태의) 유예 중 자리 유지에만.
-      onShowTranslation: onPreference != null &&
-              (state == SnackChatTranslationState.original ||
-                  (state == SnackChatTranslationState.pending && !scopeOn))
-          ? () {
-              onPreference(true);
-              if (!ready && _activeLoad == null) unawaited(_startLoad());
-            }
-          : null,
-      onShowOriginal: onPreference == null ? null : () => onPreference(false),
+      // 발 줄은 상태만 알린다(번역 중 / 원문 언어 / 다시 번역). '번역 보기'·
+      // '원문 보기' 링크는 두지 않는다.
       onRetry: state == SnackChatTranslationState.failed
           ? () => unawaited(_startLoad(manualRetry: true))
           : null,

@@ -75,6 +75,7 @@ import 'snack_chat_info_screen.dart';
 import '../ui/widgets/pinned_post_card.dart';
 import '../ui/widgets/snack_chat_translation_split_button.dart';
 import '../ui/widgets/snack_chat_translated_text.dart';
+import '../ui/widgets/swipe_to_reply.dart';
 import '../l10n/translation_source_language.dart';
 import '../l10n/ui_locale.dart';
 
@@ -7097,22 +7098,32 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   date: message.createdAt,
                   languageCode: Localizations.localeOf(context).languageCode,
                 ),
-              SnackChatOutgoingEntrance(
-                key: ValueKey<String>('snack-outgoing-${message.id}'),
-                animateOnMount:
-                    isMe && _outboundEntranceMessageIds.contains(message.id),
-                onAnimationClaimed: () => _claimOutboundEntrance(message.id),
-                child: _buildMessageBubble(
-                  message: message,
-                  isMe: isMe,
-                  timeText: message.hasConfirmedServerTimestamp
-                      ? _formatTime(message.createdAt)
-                      : '',
-                  showTimeText:
-                      !groupedWithNewer && message.hasConfirmedServerTimestamp,
-                  showSenderName: startsSenderIdentityGroup,
-                  groupedWithNewer: groupedWithNewer,
-                  groupedWithOlder: groupedWithOlder,
+              // 밀어서 답장: KeyedSubtree(스크롤 앵커 GlobalKey) 안쪽에서 감싼다.
+              // 활성 조건은 _beginReply의 가드와 같다(미디어 메시지 포함).
+              SwipeToReply(
+                enabled: message.type != SnackChatMessageType.system &&
+                    !message.hasFailed &&
+                    !message.isPending &&
+                    !message.isDeleted,
+                onReply: () => unawaited(_beginReply(message)),
+                semanticsLabel: AppLocalizations.of(context)!.chatReply,
+                child: SnackChatOutgoingEntrance(
+                  key: ValueKey<String>('snack-outgoing-${message.id}'),
+                  animateOnMount:
+                      isMe && _outboundEntranceMessageIds.contains(message.id),
+                  onAnimationClaimed: () => _claimOutboundEntrance(message.id),
+                  child: _buildMessageBubble(
+                    message: message,
+                    isMe: isMe,
+                    timeText: message.hasConfirmedServerTimestamp
+                        ? _formatTime(message.createdAt)
+                        : '',
+                    showTimeText:
+                        !groupedWithNewer && message.hasConfirmedServerTimestamp,
+                    showSenderName: startsSenderIdentityGroup,
+                    groupedWithNewer: groupedWithNewer,
+                    groupedWithOlder: groupedWithOlder,
+                  ),
                 ),
               ),
             ],

@@ -77,6 +77,7 @@ import '../ui/widgets/snack_chat_mention_picker.dart';
 import 'friend_categories_screen.dart';
 import 'main_screen.dart';
 import 'snack_chat_info_screen.dart';
+import '../ui/widgets/pinned_post_card.dart';
 import '../l10n/ui_locale.dart';
 
 @visibleForTesting
@@ -6872,6 +6873,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             ),
             body: Column(
               children: [
+                if (room.postId != null)
+                  PinnedPostCard(postId: room.postId!),
                 Expanded(
                   child: Stack(
                     children: [

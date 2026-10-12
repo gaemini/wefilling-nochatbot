@@ -1989,6 +1989,44 @@ class SnackChatService {
     return data is Map && data['success'] == true && data['joined'] == true;
   }
 
+  /// 포스트 작성자나 댓글 작성자가 포스트에 연결된 Snack Chat을 연다.
+  /// 이미 열린 방이 있으면 서버가 그 방에 참여시키고 같은 ID를 돌려준다.
+  /// 초대 알림은 만들지 않는다.
+  Future<String?> createPostSnackChat({required String postId}) async {
+    if (_uid == null) return null;
+    if (postId.trim().isEmpty) return null;
+    final result = await _functions
+        .httpsCallable('createPostSnackChatSecure')
+        .call(<String, dynamic>{
+      'postId': postId.trim(),
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('Post Snack Chat을 만들지 못했습니다.');
+    }
+    final roomId = (data['snackChatId'] ?? '').toString().trim();
+    if (roomId.isEmpty) {
+      throw StateError('생성된 Post Snack Chat ID가 없습니다.');
+    }
+    return roomId;
+  }
+
+  /// 포스트 상세에서 자격 있는 사용자가 연결 Snack Chat에 참가한다.
+  Future<bool> joinPostSnackChat({
+    required String snackChatId,
+    required String postId,
+  }) async {
+    if (_uid == null) return false;
+    final result = await _functions
+        .httpsCallable('joinPostSnackChatSecure')
+        .call(<String, dynamic>{
+      'snackChatId': snackChatId,
+      'postId': postId,
+    }).timeout(const Duration(seconds: 20));
+    final data = result.data;
+    return data is Map && data['success'] == true && data['joined'] == true;
+  }
+
   Future<bool> sendMessage(
     String snackChatId,
     String text, {

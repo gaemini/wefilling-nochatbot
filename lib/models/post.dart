@@ -88,6 +88,8 @@ class Post {
   final String userId;
   final int commentCount;
   final int viewCount; // 조회수
+  /// "스낵챗에서 이어가기"로 연결된 방. 서버(Admin SDK)만 쓰므로 toMap에 넣지 않는다.
+  final String? snackChatId;
   final int likes; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
@@ -135,6 +137,7 @@ class Post {
     required this.userId,
     this.commentCount = 0,
     this.viewCount = 0,
+    this.snackChatId,
     this.likes = 0,
     this.likedBy = const [],
     this.imageUrls = const [], // URL 변환 제거 - 원본 URL 그대로 사용
@@ -289,6 +292,7 @@ class Post {
     String? userId,
     int? commentCount,
     int? viewCount,
+    String? snackChatId,
     int? likes,
     List<String>? likedBy,
     List<String>? imageUrls,
@@ -320,6 +324,7 @@ class Post {
       userId: userId ?? this.userId,
       commentCount: commentCount ?? this.commentCount,
       viewCount: viewCount ?? this.viewCount,
+      snackChatId: snackChatId ?? this.snackChatId,
       likes: likes ?? this.likes,
       likedBy: likedBy ?? this.likedBy,
       imageUrls: imageUrls ?? this.imageUrls,
@@ -407,6 +412,10 @@ class Post {
       userId: map['ownerId'] ?? map['userId'] ?? '',
       commentCount: map['commentCount'] ?? 0,
       viewCount: map['viewCount'] ?? 0,
+      snackChatId: (map['snackChatId'] is String &&
+              (map['snackChatId'] as String).trim().isNotEmpty)
+          ? (map['snackChatId'] as String).trim()
+          : null,
       likes: map['likes'] ?? 0,
       likedBy: List<String>.from(map['likedBy'] ?? []),
       imageUrls: List<String>.from(map['imageUrls'] ?? []),

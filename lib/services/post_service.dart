@@ -501,6 +501,10 @@ class PostService {
       commentCount: data['commentCount'] ?? 0,
       likes: data['likes'] ?? 0,
       viewCount: data['viewCount'] ?? 0,
+      snackChatId: (data['snackChatId'] is String &&
+              (data['snackChatId'] as String).trim().isNotEmpty)
+          ? (data['snackChatId'] as String).trim()
+          : null,
       likedBy: _parseStringList(data['likedBy']),
       imageUrls: _parseStringList(data['imageUrls']),
       linkPreview: parsedLinkPreview,

@@ -42,6 +42,7 @@ class PostActionGroup extends StatelessWidget {
   final double? countFontSizeOverride;
   final double? minExtentOverride;
   final bool animateLike;
+  final bool showViews;
 
   const PostActionGroup({
     super.key,
@@ -74,6 +75,7 @@ class PostActionGroup extends StatelessWidget {
     this.countFontSizeOverride,
     this.minExtentOverride,
     this.animateLike = false,
+    this.showViews = true,
   });
 
   String _labelWithCount(String label, int count) {
@@ -202,7 +204,7 @@ class PostActionGroup extends StatelessWidget {
       // 빈 메트릭 숨김 정책과 관계없이 항상 노출한다.
       likeAction,
       if (!prioritizeComments && showComments) commentAction,
-      if (!hideEmptyMetrics || views > 0) viewsAction,
+      if (showViews && (!hideEmptyMetrics || views > 0)) viewsAction,
     ];
 
     final trailingActions = <Widget>[

@@ -33,6 +33,9 @@ class SnackChat {
   final DateTime updatedAt;
   final String? meetupId;
   final bool allowMeetupJoin;
+  /// 포스트에서 "스낵챗에서 이어가기"로 연 방. 서버(callable)만 쓴다.
+  final String? postId;
+  final bool allowPostJoin;
 
   const SnackChat({
     required this.id,
@@ -56,6 +59,8 @@ class SnackChat {
     required this.updatedAt,
     this.meetupId,
     this.allowMeetupJoin = false,
+    this.postId,
+    this.allowPostJoin = false,
   }) : assert(
           activeDurationHours == 0 || activeDurationHours == 24,
           'Snack Chat duration must be 0 or 24 hours.',
@@ -88,7 +93,8 @@ class SnackChat {
     if (userId == null || userId.isEmpty) return false;
     return participantIds.contains(userId) &&
         !allowMeetupJoin &&
-        !(meetupId?.isNotEmpty ?? false);
+        !(meetupId?.isNotEmpty ?? false) &&
+        !(postId?.isNotEmpty ?? false);
   }
 
   int getMyUnreadCount(String currentUserId) {
@@ -179,6 +185,10 @@ class SnackChat {
           ? null
           : data['meetupId'].toString().trim(),
       allowMeetupJoin: data['allowMeetupJoin'] == true,
+      postId: (data['postId'] ?? '').toString().trim().isEmpty
+          ? null
+          : data['postId'].toString().trim(),
+      allowPostJoin: data['allowPostJoin'] == true,
     );
   }
 
@@ -205,6 +215,8 @@ class SnackChat {
       'updatedAt': Timestamp.fromDate(updatedAt),
       if (meetupId != null && meetupId!.isNotEmpty) 'meetupId': meetupId,
       'allowMeetupJoin': allowMeetupJoin,
+      if (postId != null && postId!.isNotEmpty) 'postId': postId,
+      'allowPostJoin': allowPostJoin,
     };
   }
 
@@ -222,6 +234,8 @@ class SnackChat {
     DateTime? updatedAt,
     String? meetupId,
     bool? allowMeetupJoin,
+    String? postId,
+    bool? allowPostJoin,
   }) {
     return SnackChat(
       id: id,
@@ -245,6 +259,8 @@ class SnackChat {
       updatedAt: updatedAt ?? this.updatedAt,
       meetupId: meetupId ?? this.meetupId,
       allowMeetupJoin: allowMeetupJoin ?? this.allowMeetupJoin,
+      postId: postId ?? this.postId,
+      allowPostJoin: allowPostJoin ?? this.allowPostJoin,
     );
   }
 

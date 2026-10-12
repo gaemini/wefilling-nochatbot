@@ -242,9 +242,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const Color _secondaryText = SnackChatPalette.inkSecondary;
   static const Color _tertiaryText = SnackChatPalette.inkTertiary;
   static const Color _readCountText = SnackChatPalette.pointStrong;
-  static const Color _composerBackground = Color(0xFF252629);
-  static const Color _composerAction = Color(0xFF4B4E55);
-  static const Color _composerActionDisabled = Color(0xFF36383D);
+  // v3 입력줄: 흰 바 + #EEEEEE 입력창, 전송은 활성 #2C6BC0 / 비활성 #EEEEEE.
+  static const Color _composerBackground = SnackChatPalette.fillSubtle;
+  static const Color _composerAction = SnackChatPalette.pointStrong;
+  static const Color _composerActionDisabled = SnackChatPalette.fillSubtle;
   static const Duration _peopleLookupDeadline = Duration(seconds: 8);
   static const int _translationPrimaryBatchSize = 5;
   static const int _translationOverflowBatchSize = 2;
@@ -7534,15 +7535,19 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isNarrow = screenWidth < 360;
     final horizontalPadding = (screenWidth * 0.032).clamp(10.0, 18.0);
-    final composerPadding = isNarrow ? 5.0 : 6.0;
-    final actionExtent = isNarrow ? 40.0 : 44.0;
-    final sendWidth = actionExtent;
-    final itemGap = isNarrow ? 6.0 : 8.0;
-    final composerRadius = isNarrow ? 26.0 : 30.0;
+    // 터치 영역 44, 보이는 전송 원 32, 입력창 최소 높이 40.
+    const actionExtent = 44.0;
+    const sendVisual = 32.0;
+    const inputMinHeight = 40.0;
+    const itemGap = 4.0;
+    const composerRadius = 16.0;
     final replyingTo = _replyingTo;
 
     return Material(
-      color: Colors.transparent,
+      color: SnackChatPalette.background,
+      shape: const Border(
+        top: BorderSide(color: SnackChatPalette.hairline),
+      ),
       child: SafeArea(
         top: false,
         minimum: const EdgeInsets.only(bottom: 4),
@@ -7551,8 +7556,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             constraints: const BoxConstraints(maxWidth: 760),
             child: Padding(
               padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                7,
+                horizontalPadding - 8,
+                6,
                 horizontalPadding,
                 6,
               ),
@@ -7609,43 +7614,44 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                             ),
                           ),
                   ),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: _composerBackground,
-                      borderRadius: BorderRadius.circular(composerRadius),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(composerPadding),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _buildComposerButton(
-                            width: actionExtent,
-                            height: actionExtent,
-                            radius: actionExtent / 2,
-                            tooltip: (isChineseUi(context)
-                                ? '添加附件'
-                                : isKo
-                                    ? '첨부'
-                                    : 'Attach'),
-                            onPressed: _isAttachmentFlowOpen
-                                ? null
-                                : _showAttachmentOptions,
-                            enabledColor: _composerAction,
-                            disabledColor: _composerActionDisabled,
-                            child: Icon(
-                              Icons.add_rounded,
-                              size: context.ri(24).clamp(22, 25).toDouble(),
-                              color: _isAttachmentFlowOpen
-                                  ? Colors.white54
-                                  : Colors.white,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _buildComposerButton(
+                        width: actionExtent,
+                        height: actionExtent,
+                        visualSize: actionExtent,
+                        tooltip: (isChineseUi(context)
+                            ? '添加附件'
+                            : isKo
+                                ? '첨부'
+                                : 'Attach'),
+                        onPressed: _isAttachmentFlowOpen
+                            ? null
+                            : _showAttachmentOptions,
+                        enabledColor: Colors.transparent,
+                        disabledColor: Colors.transparent,
+                        child: Icon(
+                          Icons.add_rounded,
+                          size: 26,
+                          color: _isAttachmentFlowOpen
+                              ? _tertiaryText
+                              : SnackChatPalette.ink,
+                        ),
+                      ),
+                      SizedBox(width: itemGap),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: _composerBackground,
+                              borderRadius:
+                                  BorderRadius.circular(composerRadius),
                             ),
-                          ),
-                          SizedBox(width: itemGap),
-                          Expanded(
                             child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                minHeight: actionExtent,
+                              constraints: const BoxConstraints(
+                                minHeight: inputMinHeight,
                                 maxHeight: 108,
                               ),
                               child: MediaQuery.withClampedTextScaling(
@@ -7665,14 +7671,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                                       null,
                                   keyboardType: TextInputType.multiline,
                                   textInputAction: TextInputAction.newline,
-                                  cursorColor: const Color(0xFFD1D5DB),
+                                  cursorColor: SnackChatPalette.pointStrong,
                                   style: TextStyle(
                                     fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize:
-                                        context.rf(15).clamp(14, 16).toDouble(),
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w400,
+                                    color: SnackChatPalette.ink,
                                     height: 1.35,
                                   ),
                                   decoration: InputDecoration(
@@ -7685,57 +7690,51 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                                       fontFamily:
                                           uiFontFamily(context, 'Inter'),
                                       fontFamilyFallback: const ['NotoSansKR'],
-                                      fontWeight: FontWeight.w500,
-                                      color: Color(0xFF9CA3AF),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w400,
+                                      color: _tertiaryText,
                                     ),
                                     isDense: true,
                                     border: InputBorder.none,
                                     enabledBorder: InputBorder.none,
                                     focusedBorder: InputBorder.none,
                                     contentPadding: EdgeInsets.symmetric(
-                                      horizontal: isNarrow ? 2 : 4,
-                                      vertical: isNarrow ? 10 : 11,
+                                      horizontal: isNarrow ? 12 : 14,
+                                      vertical: 9,
                                     ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                          SizedBox(width: itemGap),
-                          ValueListenableBuilder<TextEditingValue>(
-                            valueListenable: _messageController,
-                            builder: (context, value, _) {
-                              final canSend = value.text.trim().isNotEmpty;
-                              return AnimatedOpacity(
-                                opacity: canSend ? 1 : 0.45,
-                                duration: MotionTokens.reduceMotion(context)
-                                    ? Duration.zero
-                                    : MotionTokens.fast,
-                                child: _buildComposerButton(
-                                  width: sendWidth,
-                                  height: actionExtent,
-                                  radius: actionExtent / 2,
-                                  tooltip: (isChineseUi(context)
-                                      ? '发送'
-                                      : isKo
-                                          ? '전송'
-                                          : 'Send'),
-                                  onPressed: canSend ? _send : null,
-                                  enabledColor: _composerAction,
-                                  disabledColor: _composerActionDisabled,
-                                  child: Icon(
-                                    Icons.arrow_upward_rounded,
-                                    size:
-                                        context.ri(21).clamp(19, 22).toDouble(),
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
+                      SizedBox(width: itemGap),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _messageController,
+                        builder: (context, value, _) {
+                          final canSend = value.text.trim().isNotEmpty;
+                          return _buildComposerButton(
+                            width: actionExtent,
+                            height: actionExtent,
+                            visualSize: sendVisual,
+                            tooltip: (isChineseUi(context)
+                                ? '发送'
+                                : isKo
+                                    ? '전송'
+                                    : 'Send'),
+                            onPressed: canSend ? _send : null,
+                            enabledColor: _composerAction,
+                            disabledColor: _composerActionDisabled,
+                            child: Icon(
+                              Icons.arrow_upward_rounded,
+                              size: 18,
+                              color: canSend ? Colors.white : _tertiaryText,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -7749,7 +7748,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   Widget _buildComposerButton({
     required double width,
     required double height,
-    required double radius,
+    required double visualSize,
     required String tooltip,
     required VoidCallback? onPressed,
     required Color enabledColor,
@@ -7766,16 +7765,26 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         child: MotionPress(
           enabled: enabled,
           pressedScale: .90,
-          child: Material(
-            color: enabled ? enabledColor : disabledColor,
-            borderRadius: BorderRadius.circular(radius),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onPressed,
-              child: SizedBox(
-                width: width,
-                height: height,
-                child: Center(child: child),
+          // 터치 상자(width x height) 가운데에 보이는 원(visualSize)을 둔다.
+          child: InkResponse(
+            onTap: onPressed,
+            radius: width / 2,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: MotionTokens.reduceMotion(context)
+                      ? Duration.zero
+                      : MotionTokens.fast,
+                  width: visualSize,
+                  height: visualSize,
+                  decoration: BoxDecoration(
+                    color: enabled ? enabledColor : disabledColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(child: child),
+                ),
               ),
             ),
           ),

@@ -3436,4 +3436,21 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commentUnlikeAction => '좋아요 취소';
+
+  @override
+  String get commentPhotoLabel => '사진';
+
+  @override
+  String get commentAttachPhoto => '사진 첨부';
+
+  @override
+  String commentPhotoLimit(int count) {
+    return '사진은 최대 $count장까지 올릴 수 있어요';
+  }
+
+  @override
+  String get commentPhotoUploadFailed => '사진을 올리지 못했어요. 다시 시도해 주세요.';
+
+  @override
+  String get commentRemovePhoto => '사진 빼기';
 }

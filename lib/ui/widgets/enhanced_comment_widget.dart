@@ -38,13 +38,16 @@ const Color _kFillSubtle = Color(0xFFEEEEEE);
 const Color _kHairline = Color(0xFFEBEBEB);
 const Color _kPointStrong = Color(0xFF2C6BC0);
 const double _kBubbleRadius = 16;
-const double _kTopAvatarSize = 28;
-const double _kReplyAvatarSize = 24;
-const double _kCommentGap = 12;
-const double _kReplyGap = 6;
+const Color _kQuoteRail = Color(0xFFC9C9C9);
+const Color _kHighlight = Color(0xFFD6D6D6);
+const double _kBubbleJoinRadius = 8;
+const double _kAvatarSize = 28;
+const double _kAvatarGap = 8;
+const double _kGroupGap = 12;
+const double _kInGroupGap = 2;
 const double _kNameBubbleGap = 2;
-const double _kOthersTrailingInset = 44;
-const double _kMineLeadingInset = 56;
+const double _kOthersTrailingInset = 52;
+const double _kMineLeadingInset = 72;
 const double _kMinTouch = 44;
 const double _kBadgeHeight = 20;
 const double _kBadgeOverlap = 10;
@@ -52,7 +55,6 @@ const double _kBadgeBottomInset = 2;
 
 class EnhancedCommentWidget extends StatefulWidget {
   final Comment comment;
-  final List<Comment> replies;
   final String postId;
   final VoidCallback? onReplyTap;
   final Function(String)? onDeleteComment;
@@ -62,14 +64,26 @@ class EnhancedCommentWidget extends StatefulWidget {
   final String Function(Comment)? getDisplayName; // 댓글 작성자 표시명 함수
   final bool isReplyTarget; // 현재 하이라이트 대상인지
   final String? parentTopLevelCommentId; // 최상위 댓글 ID (대댓글 작성용)
-  final Widget Function(Comment)? replyWidgetBuilder; // 대댓글 위젯 빌더
   final bool watchAuthorProfile;
   final bool directInteractionBlocked;
+
+  /// 대화형 보기: 묶음 첫 메시지에만 아바타·이름·시간을 보인다.
+  final bool showHeader;
+
+  /// 바로 앞/뒤 메시지와 같은 묶음인지(붙는 쪽 모서리 8, 간격 2).
+  final bool groupedWithPrevious;
+  final bool groupedWithNext;
+
+  /// 답글의 인용 줄. 대상이 바로 앞 메시지면 null(생략).
+  final PostCommentQuote? quote;
+  final VoidCallback? onQuoteTap;
+
+  /// 인용 탭으로 이동해 온 대상이면 잠시 강조한다.
+  final bool highlighted;
 
   const EnhancedCommentWidget({
     super.key,
     required this.comment,
-    required this.replies,
     required this.postId,
     this.onReplyTap,
     this.onDeleteComment,
@@ -79,9 +93,14 @@ class EnhancedCommentWidget extends StatefulWidget {
     this.getDisplayName,
     this.isReplyTarget = false,
     this.parentTopLevelCommentId,
-    this.replyWidgetBuilder,
     this.watchAuthorProfile = true,
     this.directInteractionBlocked = false,
+    this.showHeader = true,
+    this.groupedWithPrevious = false,
+    this.groupedWithNext = false,
+    this.quote,
+    this.onQuoteTap,
+    this.highlighted = false,
   });
 
   @override
@@ -90,7 +109,6 @@ class EnhancedCommentWidget extends StatefulWidget {
 
 class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   final CommentService _commentService = CommentService();
-  bool _showReplies = true;
   bool _hiddenByReport = false;
   bool _likeInFlight = false;
   bool _heartPop = false;
@@ -98,26 +116,6 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   Offset? _bubbleDownPosition;
   Duration? _lastBubbleTapAt;
   Offset? _lastBubbleTapPosition;
-
-  String _localizedReplyTarget(BuildContext context) {
-    final raw = (widget.comment.replyToUserNickname ?? '').trim();
-    if (!widget.isAnonymousPost || raw.isEmpty) return raw;
-
-    final l10n = AppLocalizations.of(context)!;
-    final anonymousMatch = RegExp(
-      r'^(?:익명|Anonymous)\s*(\d+)$',
-      caseSensitive: false,
-    ).firstMatch(raw);
-    if (anonymousMatch != null) {
-      return l10n.anonymousUser(anonymousMatch.group(1)!);
-    }
-
-    final normalized = raw.toLowerCase();
-    if (raw == '작성자' || raw == '글쓴이' || normalized == 'author') {
-      return l10n.author;
-    }
-    return raw;
-  }
 
   Future<void> _openLinkUrl(String url) async {
     final uri = Uri.tryParse(url);
@@ -671,50 +669,45 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     return isKo ? ko : en;
   }
 
-  Widget _buildHiddenCommentPlaceholder() {
-    return MotionPress(
-      pressedScale: .99,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onLongPress: _confirmUnhideAnonymousComment,
-        child: Container(
-          margin: _commentMargin(),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: _kFillSubtle,
-            borderRadius: BorderRadius.circular(_kBubbleRadius),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _localizedText(ko: '차단한 댓글입니다.', en: 'Blocked comment.'),
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: _kInkSecondary,
-                ),
+  /// 대화 흐름 가운데 한 줄 시스템 표시(삭제·숨김).
+  Widget _buildSystemLine(List<String> lines) {
+    return Container(
+      margin: _commentMargin(),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final line in lines)
+            Text(
+              line,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                color: _kInkTertiary,
+                height: isChineseUi(context) ? 1.4 : 16 / 12,
               ),
-              const SizedBox(height: 4),
-              Text(
-                _localizedText(
-                  ko: '길게 눌러 차단을 해제할 수 있어요.',
-                  en: 'Long press to unblock.',
-                ),
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: _kInkSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildHiddenCommentPlaceholder() {
+    // 문구와 길게 눌러 해제하는 기능은 그대로, 모양만 시스템 줄로 바꾼다.
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onLongPress: _confirmUnhideAnonymousComment,
+      child: _buildSystemLine([
+        _localizedText(ko: '차단한 댓글입니다.', en: 'Blocked comment.'),
+        _localizedText(
+          ko: '길게 눌러 차단을 해제할 수 있어요.',
+          en: 'Long press to unblock.',
+        ),
+      ]),
     );
   }
 
@@ -931,128 +924,111 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     }
   }
 
-  List<Widget> _buildReplyThread() {
-    if (widget.replies.isEmpty) return const <Widget>[];
-
-    final toggleLabel = _showReplies
-        ? _localizedText(ko: '답글 숨기기', en: 'Hide replies')
-        : _localizedText(
-            ko: '답글 ${widget.replies.length}개 보기',
-            en: 'View ${widget.replies.length} replies',
-          );
-    final children = <Widget>[
-      InkWell(
-        onTap: () => setState(() => _showReplies = !_showReplies),
-        child: SizedBox(
-          height: 32,
-          width: double.infinity,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              toggleLabel,
-              style: _metaStyle(context).copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ),
-    ];
-    if (_showReplies) {
-      for (var i = 0; i < widget.replies.length; i++) {
-        final reply = widget.replies[i];
-        final child = widget.replyWidgetBuilder?.call(reply) ??
-            EnhancedCommentWidget(
-              key: ValueKey<String>(commentTranslationItemKey(
-                reply,
-                postId: widget.postId,
-              )),
-              comment: reply,
-              replies: const [],
-              postId: widget.postId,
-              onDeleteComment: widget.onDeleteComment,
-              isAnonymousPost: widget.isAnonymousPost,
-              getDisplayName: widget.getDisplayName,
-              isReplyTarget: false,
-              parentTopLevelCommentId: widget.comment.id,
-              onReplyTap: reply.isDeleted ? null : widget.onReplyTap,
-            );
-
-        if (i > 0) children.add(const SizedBox(height: _kReplyGap));
-        // 빌더가 반환한 위젯에도 댓글 문서 ID를 키로 강제한다. 중간 항목이
-        // 사라지거나 갱신돼도 다음 댓글의 State/프로필 스트림이 재사용되지 않는다.
-        children.add(KeyedSubtree(
-          key: ValueKey<String>('reply-slot-${reply.id}'),
-          child: child,
-        ));
-      }
-    }
-
-    return <Widget>[
-      const SizedBox(height: _kNameBubbleGap),
-      Container(
-        // 레일은 최상위 아바타 중심선(28 / 2 - 1)에 맞춘다. 익명은 아바타가 없다.
-        margin: EdgeInsets.only(left: widget.isAnonymousPost ? 4 : 13),
-        padding: const EdgeInsets.only(left: 9),
-        decoration: const BoxDecoration(
-          border: Border(left: BorderSide(color: _kHairline, width: 2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: children,
-        ),
-      ),
-    ];
-  }
-
-  EdgeInsets _commentMargin() => widget.comment.depth == 0
-      ? const EdgeInsets.only(left: 16, right: 16, bottom: _kCommentGap)
-      : EdgeInsets.zero;
+  EdgeInsets _commentMargin() => EdgeInsets.only(
+        left: 16,
+        right: 16,
+        bottom: widget.groupedWithNext ? _kInGroupGap : _kGroupGap,
+      );
 
   Widget _buildDeletedCommentPlaceholder() {
-    return Container(
-      margin: _commentMargin(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return _buildSystemLine([
+      _localizedText(ko: '삭제된 댓글입니다.', en: 'This comment was deleted.'),
+    ]);
+  }
+
+  /// 같은 묶음에서 이웃과 붙는 쪽 모서리만 8로 좁힌다.
+  BorderRadius _bubbleRadius(bool isMyComment) {
+    const full = Radius.circular(_kBubbleRadius);
+    const join = Radius.circular(_kBubbleJoinRadius);
+    final top = widget.groupedWithPrevious ? join : full;
+    final bottom = widget.groupedWithNext ? join : full;
+    return isMyComment
+        ? BorderRadius.only(
+            topLeft: full,
+            bottomLeft: full,
+            topRight: top,
+            bottomRight: bottom,
+          )
+        : BorderRadius.only(
+            topLeft: top,
+            bottomLeft: bottom,
+            topRight: full,
+            bottomRight: full,
+          );
+  }
+
+  Widget _buildQuote(BuildContext context, PostCommentQuote quote) {
+    final zh = isChineseUi(context);
+    final base = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      color: _kInkSecondary,
+    );
+    final String body;
+    if (quote.isDeleted) {
+      body = _localizedText(ko: '삭제된 댓글입니다.', en: 'This comment was deleted.');
+    } else if (quote.isMedia && quote.text.trim().isEmpty) {
+      body = AppLocalizations.of(context)!.commentPhotoLabel;
+    } else {
+      body = quote.text.replaceAll('\n', ' ').trim();
+    }
+    final showMediaIcon =
+        !quote.isDeleted && quote.isMedia && quote.text.trim().isEmpty;
+    return Semantics(
+      button: widget.onQuoteTap != null,
+      label: '${quote.authorName}, $body',
+      excludeSemantics: true,
+      child: GestureDetector(
+        key: ValueKey<String>('comment-quote:${widget.comment.id}'),
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onQuoteTap,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          padding: const EdgeInsets.only(left: 8),
+          decoration: const BoxDecoration(
+            border: Border(left: BorderSide(color: _kQuoteRail, width: 2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              if (!widget.isAnonymousPost) ...[
-                Container(
-                  width: _avatarSize,
-                  height: _avatarSize,
-                  alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _kFillSubtle,
-                  ),
-                  child: const Icon(
-                    Icons.person_off_outlined,
-                    size: 15,
-                    color: _kInkTertiary,
-                  ),
+              Text(
+                quote.authorName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: base.copyWith(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  height: zh ? 1.36 : 15 / 11,
                 ),
-                const SizedBox(width: 8),
-              ],
-              Expanded(
-                child: Text(
-                  _localizedText(
-                    ko: '삭제된 댓글입니다.',
-                    en: 'This comment was deleted.',
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (showMediaIcon) ...[
+                    const Icon(Icons.image_outlined,
+                        size: 13, color: _kInkSecondary),
+                    const SizedBox(width: 3),
+                  ],
+                  Flexible(
+                    child: Text(
+                      body,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: base.copyWith(
+                        fontSize: 12,
+                        height: zh ? 1.4 : 16 / 12,
+                      ),
+                    ),
                   ),
-                  style: _metaStyle(context).copyWith(fontSize: 14),
-                ),
+                ],
               ),
             ],
           ),
-          ..._buildReplyThread(),
-        ],
+        ),
       ),
     );
   }
-
-  double get _avatarSize =>
-      widget.comment.depth == 0 ? _kTopAvatarSize : _kReplyAvatarSize;
 
   TextStyle _metaStyle(BuildContext context) => TextStyle(
         fontFamily: uiFontFamily(context, 'Inter'),
@@ -1117,7 +1093,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     return Semantics(
       button: true,
       toggled: isLiked,
-      label: '${isLiked ? l10n.commentUnlikeAction : l10n.commentLikeAction} $count',
+      label:
+          '${isLiked ? l10n.commentUnlikeAction : l10n.commentLikeAction} $count',
       excludeSemantics: true,
       child: GestureDetector(
         key: ValueKey<String>('comment-like-badge:${widget.comment.id}'),
@@ -1128,8 +1105,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             minWidth: _kMinTouch,
             minHeight: _kMinTouch,
           ),
-          alignment:
-              alignStart ? Alignment.bottomLeft : Alignment.bottomRight,
+          alignment: alignStart ? Alignment.bottomLeft : Alignment.bottomRight,
           padding: const EdgeInsets.only(
             left: 6,
             right: 6,
@@ -1137,8 +1113,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           ),
           child: MediaQuery(
             data: MediaQuery.of(context).copyWith(
-              textScaler: MediaQuery.textScalerOf(context)
-                  .clamp(maxScaleFactor: 1.3),
+              textScaler:
+                  MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3),
             ),
             child: Container(
               height: _kBadgeHeight,
@@ -1185,15 +1161,25 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   }) {
     final l10n = AppLocalizations.of(context)!;
     final hasBadge = widget.comment.likeCount > 0;
-    Widget bubble = Container(
-      key: ValueKey<String>('comment-bubble:${widget.comment.id}'),
-      constraints: BoxConstraints(minWidth: hasBadge ? _kMinTouch + 4 : 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: _kFillSubtle,
-        borderRadius: BorderRadius.circular(_kBubbleRadius),
+    // 인용 탭으로 이동해 온 대상 강조는 부드럽게 들어오고 빠진다.
+    Widget bubble = TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: widget.highlighted ? 1 : 0),
+      duration: MediaQuery.maybeDisableAnimationsOf(context) == true
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
+      builder: (context, t, child) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: Color.lerp(_kFillSubtle, _kHighlight, t),
+          borderRadius: _bubbleRadius(isMyComment),
+        ),
+        child: child,
       ),
-      child: text,
+      child: Container(
+        key: ValueKey<String>('comment-bubble:${widget.comment.id}'),
+        constraints: BoxConstraints(minWidth: hasBadge ? _kMinTouch + 4 : 0),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: text,
+      ),
     );
     bubble = Listener(
       onPointerDown: _onBubblePointerDown,
@@ -1230,9 +1216,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       customSemanticsActions: canLikeAction
           ? <CustomSemanticsAction, VoidCallback>{
               CustomSemanticsAction(
-                label: isLiked
-                    ? l10n.commentUnlikeAction
-                    : l10n.commentLikeAction,
+                label:
+                    isLiked ? l10n.commentUnlikeAction : l10n.commentLikeAction,
               ): _toggleLike,
             }
           : null,
@@ -1299,19 +1284,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       decoration: TextDecoration.underline,
       decorationColor: _kPointStrong,
     );
-    final mentionStyle = bodyStyle.copyWith(
-      fontWeight: FontWeight.w600,
-      color: _kInkSecondary,
-    );
     final metaStyle = _metaStyle(context);
     final nameStyle = metaStyle.copyWith(
       fontWeight: FontWeight.w600,
       color: _kInk,
     );
-
-    final isReply = widget.comment.replyToUserNickname != null &&
-        widget.comment.replyToUserId != null &&
-        (widget.comment.replyToUserNickname?.isNotEmpty ?? false);
 
     final cache = UserInfoCacheService();
     final canUseLiveUserInfo = !widget.isAnonymousPost &&
@@ -1320,7 +1297,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final anonymousDisplayName = widget.getDisplayName?.call(widget.comment) ??
         AppLocalizations.of(context)!.anonymous;
 
-    final hasText = widget.comment.content.isNotEmpty || isReply;
+    // 대화형 보기에서는 @아이디 접두어 대신 인용 줄이 답글 대상을 알린다.
+    final hasText = widget.comment.content.isNotEmpty;
+    final quote = widget.quote;
     final hasGif = widget.comment.gifStoragePath ==
         'post_comment_gifs/${widget.postId}/${widget.comment.id}.gif';
 
@@ -1328,11 +1307,6 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           textScaler: textScaler,
           text: TextSpan(
             children: [
-              if (isReply)
-                TextSpan(
-                  text: '@${_localizedReplyTarget(context)} ',
-                  style: mentionStyle,
-                ),
               ..._buildLinkifiedSpans(
                 text: content,
                 style: bodyStyle,
@@ -1344,26 +1318,36 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
     Widget buildBody() {
       final children = <Widget>[];
-      if (hasText) {
-        // @아이디를 본문과 "같은 텍스트 흐름"으로 합쳐 줄바꿈까지 자연스럽게 처리
-        final text = isMyComment
-            ? KeyedSubtree(
-                key: ValueKey<String>('${widget.comment.id}:original'),
-                child: richBody(widget.comment.content),
-              )
-            : TranslatableContent(
-                request: commentTranslationRequest(
-                  widget.comment,
-                  postId: widget.postId,
-                ),
-                scope: commentTranslationScope(widget.postId),
-                showToggle: false,
-                builder: (context, fields) =>
-                    richBody(fields['content'] ?? widget.comment.content),
-              );
+      if (hasText || quote != null) {
+        final Widget? text = !hasText
+            ? null
+            : isMyComment
+                ? KeyedSubtree(
+                    key: ValueKey<String>('${widget.comment.id}:original'),
+                    child: richBody(widget.comment.content),
+                  )
+                : TranslatableContent(
+                    request: commentTranslationRequest(
+                      widget.comment,
+                      postId: widget.postId,
+                    ),
+                    scope: commentTranslationScope(widget.postId),
+                    showToggle: false,
+                    builder: (context, fields) =>
+                        richBody(fields['content'] ?? widget.comment.content),
+                  );
         children.add(_buildBubble(
           context,
-          text: text,
+          text: quote == null
+              ? text!
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildQuote(context, quote),
+                    if (text != null) text,
+                  ],
+                ),
           isMyComment: isMyComment,
           isLiked: isLiked,
         ));
@@ -1375,8 +1359,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           storagePath: widget.comment.gifStoragePath,
           storageBucket: widget.comment.storageBucket,
         ));
-        // 본문 없는 GIF 댓글도 좋아요 수가 보이도록 배지를 따로 단다.
-        if (!hasText && widget.comment.likeCount > 0) {
+        // 말풍선 없는 GIF 댓글도 좋아요 수가 보이도록 배지를 따로 단다.
+        if (!hasText && quote == null && widget.comment.likeCount > 0) {
           children.add(_buildLikeBadge(context, isLiked: isLiked));
         }
       }
@@ -1399,7 +1383,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       final canOpenProfile = !isDeletedAccount &&
           !widget.directInteractionBlocked &&
           !widget.isAnonymousPost;
-      final avatarSize = _avatarSize;
+      const avatarSize = _kAvatarSize;
+      final showHeader = widget.showHeader;
 
       Widget commentBody;
       if (isMyComment) {
@@ -1409,11 +1394,13 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                widget.comment.getFormattedTime(context),
-                style: metaStyle,
-              ),
-              const SizedBox(height: _kNameBubbleGap),
+              if (showHeader) ...[
+                Text(
+                  widget.comment.getFormattedTime(context),
+                  style: metaStyle,
+                ),
+                const SizedBox(height: _kNameBubbleGap),
+              ],
               buildBody(),
             ],
           ),
@@ -1422,8 +1409,10 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         commentBody = Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 익명 게시글이 아닐 때만 프로필 이미지 표시
-            if (!widget.isAnonymousPost) ...[
+            // 익명 게시글이 아닐 때만 프로필 이미지 표시. 묶음 안에서는 자리만 둔다.
+            if (!widget.isAnonymousPost && !showHeader)
+              const SizedBox(width: avatarSize + _kAvatarGap),
+            if (!widget.isAnonymousPost && showHeader) ...[
               MotionPress(
                 enabled: canOpenProfile,
                 pressedScale: .99,
@@ -1444,14 +1433,14 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                               width: avatarSize,
                               height: avatarSize,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Icon(
+                              errorBuilder: (_, __, ___) => const Icon(
                                 Icons.person,
                                 size: avatarSize * .6,
                                 color: _kInkTertiary,
                               ),
                             ),
                           )
-                        : Icon(
+                        : const Icon(
                             Icons.person,
                             size: avatarSize * .6,
                             color: _kInkTertiary,
@@ -1459,7 +1448,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: _kAvatarGap),
             ],
             Expanded(
               child: Padding(
@@ -1467,33 +1456,35 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: MotionPress(
-                            enabled: canOpenProfile,
-                            pressedScale: .99,
-                            child: GestureDetector(
-                              onTap: canOpenProfile
-                                  ? _openCommentAuthorProfile
-                                  : null,
-                              child: Text(
-                                effectiveDisplayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: nameStyle,
+                    if (showHeader) ...[
+                      Row(
+                        children: [
+                          Flexible(
+                            child: MotionPress(
+                              enabled: canOpenProfile,
+                              pressedScale: .99,
+                              child: GestureDetector(
+                                onTap: canOpenProfile
+                                    ? _openCommentAuthorProfile
+                                    : null,
+                                child: Text(
+                                  effectiveDisplayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: nameStyle,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          widget.comment.getFormattedTime(context),
-                          style: metaStyle,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: _kNameBubbleGap),
+                          const SizedBox(width: 4),
+                          Text(
+                            widget.comment.getFormattedTime(context),
+                            style: metaStyle,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: _kNameBubbleGap),
+                    ],
                     buildBody(),
                   ],
                 ),
@@ -1531,12 +1522,12 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               NotificationReadObserver(
                 key: ValueKey('read:${widget.comment.id}'),
                 types: const {'new_comment', 'comment_reply', 'comment_like'},
-                targets: {'postId': widget.postId, 'commentId': widget.comment.id},
+                targets: {
+                  'postId': widget.postId,
+                  'commentId': widget.comment.id
+                },
                 child: commentBody,
               ),
-
-              // 답글 목록은 문서 ID 키로 고정되어 삭제/삽입 후에도 State가 섞이지 않는다.
-              ..._buildReplyThread(),
             ],
           ),
         ),
@@ -1700,9 +1691,10 @@ class _PostCommentGifState extends State<_PostCommentGif> {
 
   void _load() {
     _viewerId = FirebaseAuth.instance.currentUser?.uid;
-    _bytes = AppStorage.ref(widget.storagePath, storageBucket: widget.storageBucket)
-        .getData(maxCommentGifBytes)
-        .then((data) {
+    _bytes =
+        AppStorage.ref(widget.storagePath, storageBucket: widget.storageBucket)
+            .getData(maxCommentGifBytes)
+            .then((data) {
       if (data == null || FirebaseAuth.instance.currentUser?.uid != _viewerId) {
         throw StateError('post-comment-gif-unavailable');
       }
@@ -1724,15 +1716,40 @@ class _PostCommentGifState extends State<_PostCommentGif> {
           );
         }
         if (!snapshot.hasData) {
-          return const SizedBox(width: 120, height: 90,
+          return const SizedBox(
+              width: 120,
+              height: 90,
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
         }
         return ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: Image.memory(snapshot.data!, width: 180, height: 180,
-              fit: BoxFit.contain, cacheWidth: 480),
+          child: Image.memory(snapshot.data!,
+              width: 180, height: 180, fit: BoxFit.contain, cacheWidth: 480),
         );
       },
     );
   }
+}
+
+/// 대화형 보기에서 답글 말풍선 맨 위에 그리는 인용 줄 데이터.
+class PostCommentQuote {
+  const PostCommentQuote({
+    required this.targetId,
+    required this.authorName,
+    required this.text,
+    this.isDeleted = false,
+    this.isMedia = false,
+  });
+
+  final String targetId;
+
+  /// 익명 규칙(작성자/익명 N)을 적용한 이름.
+  final String authorName;
+  final String text;
+
+  /// 대상이 삭제됐거나 숨김 상태.
+  final bool isDeleted;
+
+  /// 대상에 사진이나 GIF가 있는지(본문이 비면 '사진'으로 표시).
+  final bool isMedia;
 }

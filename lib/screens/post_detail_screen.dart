@@ -63,6 +63,8 @@ import '../services/active_content_registry.dart';
 import '../l10n/ui_locale.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../utils/comment_gif_input.dart';
+import '../utils/chat_date_label.dart';
+import '../utils/post_comment_conversation.dart';
 
 /// Keeps Material route behavior (including back navigation) while making the
 /// feed-to-detail change perceptible without waiting for an animation.
@@ -199,6 +201,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _replyToUserId; // 직전 부모 댓글 작성자 ID
   String? _replyToUserName; // 직전 부모 댓글 작성자 닉네임
   String? _replyTargetCommentId; // 하이라이트할 댓글 ID (시각적 피드백용)
+
+  // 대화형 보기: 인용 탭으로 이동할 댓글 위치와 잠깐의 강조 상태.
+  final Map<String, GlobalKey> _commentKeys = <String, GlobalKey>{};
+  String? _highlightedCommentId;
+  Timer? _highlightTimer;
 
   // 댓글 스트림(목록/카운트) - 단일 스트림을 공유해서 UI/카운트 동기화
   late final Stream<List<Comment>> _commentsStream;
@@ -1103,6 +1110,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _engagementSubscription?.cancel();
     _likeHoldTimer?.cancel();
     _commentController.dispose();
+    _highlightTimer?.cancel();
     _scrollController.dispose();
     _commentFocusNode.dispose();
     _imagePageController.dispose();
@@ -2535,6 +2543,162 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  /// 대화형 보기: 최상위·답글을 createdAt 오름차순 한 줄로 펼친다.
+  /// 데이터와 쿼리는 그대로이고 보여 주는 방식만 바꾼다.
+  Widget _buildCommentConversation(
+    List<Comment> comments, {
+    required String? currentUserId,
+  }) {
+    final l10n = AppLocalizations.of(context)!;
+    final languageCode = Localizations.localeOf(context).languageCode;
+    final byId = <String, Comment>{for (final c in comments) c.id: c};
+    final liveIds = comments.map((c) => c.id).toSet();
+    _commentKeys.removeWhere((id, _) => !liveIds.contains(id));
+    bool hidden(Comment c) =>
+        ContentHideService.isHiddenAnonymousComment(c.id);
+
+    final children = <Widget>[];
+    for (var i = 0; i < comments.length; i++) {
+      final comment = comments[i];
+      final previous = i > 0 ? comments[i - 1] : null;
+      final next = i + 1 < comments.length ? comments[i + 1] : null;
+      if (previous == null ||
+          !isSameLocalDay(previous.createdAt, comment.createdAt)) {
+        children.add(_buildCommentDaySeparator(chatDayLabel(
+          comment.createdAt,
+          languageCode: languageCode,
+          today: l10n.today,
+          yesterday: l10n.yesterday,
+        )));
+      }
+      final groupedWithPrevious = shouldGroupPostComments(
+        previous,
+        comment,
+        previousHidden: previous != null && hidden(previous),
+        nextHidden: hidden(comment),
+      );
+      final groupedWithNext = next != null &&
+          shouldGroupPostComments(
+            comment,
+            next,
+            previousHidden: hidden(comment),
+            nextHidden: hidden(next),
+          );
+
+      PostCommentQuote? quote;
+      if (shouldShowPostCommentQuote(comment, previous)) {
+        final targetId = postCommentQuoteTargetId(comment)!;
+        final target = byId[targetId];
+        final targetGone = target == null || target.isDeleted || hidden(target);
+        quote = PostCommentQuote(
+          targetId: targetId,
+          authorName: target == null
+              ? (comment.replyToUserNickname ?? '')
+              : getCommentAuthorName(target, currentUserId),
+          text: targetGone ? '' : target.content,
+          isDeleted: targetGone,
+          isMedia: !targetGone && _commentHasMedia(target),
+        );
+      }
+
+      final parentTopId =
+          comment.isTopLevel ? comment.id : (comment.parentCommentId ?? comment.id);
+      void enterReply() => _enterReplyMode(
+            parentTopId: parentTopId,
+            replyToUserId: comment.userId,
+            replyToUserName: getCommentAuthorName(comment, currentUserId),
+            targetCommentId: comment.id,
+          );
+
+      children.add(KeyedSubtree(
+        key: _commentKeys.putIfAbsent(comment.id, GlobalKey.new),
+        child: EnhancedCommentWidget(
+          key: ValueKey<String>(commentTranslationItemKey(
+            comment,
+            postId: _currentPost.id,
+          )),
+          comment: comment,
+          postId: _currentPost.id,
+          onDeleteComment: _deleteCommentWithReplies,
+          onBlockApplied: () {
+            if (!mounted) return;
+            setState(() {});
+          },
+          isAnonymousPost: _currentPost.isAnonymous,
+          getDisplayName: (c) => getCommentAuthorName(c, currentUserId),
+          isReplyTarget: _replyTargetCommentId == comment.id,
+          onReplyTap: comment.isDeleted ? null : enterReply,
+          parentTopLevelCommentId: parentTopId,
+          watchAuthorProfile: false,
+          directInteractionBlocked:
+              _blockedCommentAuthorIds.contains(comment.userId),
+          showHeader: !groupedWithPrevious,
+          groupedWithPrevious: groupedWithPrevious,
+          groupedWithNext: groupedWithNext,
+          quote: quote,
+          onQuoteTap: quote == null || quote.isDeleted
+              ? null
+              : () => _jumpToComment(quote!.targetId),
+          highlighted: _highlightedCommentId == comment.id,
+        ),
+      ));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+  }
+
+  bool _commentHasMedia(Comment comment) =>
+      comment.gifStoragePath.trim().isNotEmpty;
+
+  Widget _buildCommentDaySeparator(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Divider(height: 1, thickness: 1, color: _kDetailHairline),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 11,
+                color: _kDetailInkTertiary,
+                height: isChineseUi(context) ? 1.36 : 15 / 11,
+              ),
+            ),
+          ),
+          const Expanded(
+            child: Divider(height: 1, thickness: 1, color: _kDetailHairline),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 인용 줄을 탭하면 대상 메시지로 스크롤하고 1.2초 강조한다.
+  void _jumpToComment(String commentId) {
+    final targetContext = _commentKeys[commentId]?.currentContext;
+    if (targetContext == null) return;
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    unawaited(Scrollable.ensureVisible(
+      targetContext,
+      alignment: .3,
+      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 280),
+      curve: Curves.easeOut,
+    ));
+    _highlightTimer?.cancel();
+    setState(() => _highlightedCommentId = commentId);
+    _highlightTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _highlightedCommentId = null);
+    });
+  }
+
   // 대댓글 모드 진입
   void _enterReplyMode({
     required String parentTopId,
@@ -3618,8 +3782,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               CommentService.retainValidThreadComments(
                             rawComments,
                           );
-                          final topLevelComments =
-                              allComments.where((c) => c.isTopLevel).toList();
                           _syncCommentTranslationScope(allComments);
                           final currentUser = FirebaseAuth.instance.currentUser;
                           if (allComments.isEmpty) {
@@ -3640,100 +3802,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             );
                           }
 
-                          // 댓글을 계층적으로 구조화
-                          // (topLevelComments는 위에서 raw 기준으로 계산)
-
-                          // 댓글 위젯을 재귀적으로 빌드하는 헬퍼 함수
-                          Widget buildCommentWidget(
-                              Comment comment, String parentTopId) {
-                            return EnhancedCommentWidget(
-                              key: ValueKey<String>(commentTranslationItemKey(
-                                comment,
-                                postId: _currentPost.id,
-                              )),
-                              comment: comment,
-                              replies: const [],
-                              postId: _currentPost.id,
-                              onDeleteComment: _deleteCommentWithReplies,
-                              onBlockApplied: () {
-                                if (!mounted) return;
-                                setState(() {});
-                              },
-                              isAnonymousPost: _currentPost.isAnonymous,
-                              getDisplayName: (comment) => getCommentAuthorName(
-                                  comment, currentUser?.uid),
-                              isReplyTarget:
-                                  _replyTargetCommentId == comment.id,
-                              onReplyTap: comment.isDeleted
-                                  ? null
-                                  : () {
-                                      // 해당 댓글에 답글 달기
-                                      _enterReplyMode(
-                                        parentTopId: parentTopId,
-                                        replyToUserId: comment.userId,
-                                        replyToUserName: getCommentAuthorName(
-                                            comment, currentUser?.uid),
-                                        targetCommentId: comment.id,
-                                      );
-                                    },
-                              parentTopLevelCommentId: parentTopId,
-                              watchAuthorProfile: false,
-                              directInteractionBlocked: _blockedCommentAuthorIds
-                                  .contains(comment.userId),
-                            );
-                          }
-
-                          final commentList = ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: topLevelComments.length,
-                            itemBuilder: (context, index) {
-                              final comment = topLevelComments[index];
-                              final replies = allComments
-                                  .where((c) => c.parentCommentId == comment.id)
-                                  .toList();
-
-                              return EnhancedCommentWidget(
-                                key: ValueKey<String>(commentTranslationItemKey(
-                                  comment,
-                                  postId: _currentPost.id,
-                                )),
-                                comment: comment,
-                                replies: replies,
-                                postId: _currentPost.id,
-                                onDeleteComment: _deleteCommentWithReplies,
-                                onBlockApplied: () {
-                                  if (!mounted) return;
-                                  setState(() {});
-                                },
-                                isAnonymousPost: _currentPost.isAnonymous,
-                                getDisplayName: (comment) =>
-                                    getCommentAuthorName(
-                                        comment, currentUser?.uid),
-                                isReplyTarget:
-                                    _replyTargetCommentId == comment.id,
-                                onReplyTap: comment.isDeleted
-                                    ? null
-                                    : () {
-                                        // 최상위 댓글에 답글 달기
-                                        _enterReplyMode(
-                                          parentTopId: comment.id,
-                                          replyToUserId: comment.userId,
-                                          replyToUserName: getCommentAuthorName(
-                                              comment, currentUser?.uid),
-                                          targetCommentId: comment.id,
-                                        );
-                                      },
-                                parentTopLevelCommentId: comment.id,
-                                watchAuthorProfile: false,
-                                directInteractionBlocked:
-                                    _blockedCommentAuthorIds
-                                        .contains(comment.userId),
-                                // 대댓글을 위한 빌더: 각 대댓글마다 개별 콜백 생성
-                                replyWidgetBuilder: (reply) =>
-                                    buildCommentWidget(reply, comment.id),
-                              );
-                            },
+                          final commentList = _buildCommentConversation(
+                            allComments,
+                            currentUserId: currentUser?.uid,
                           );
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,

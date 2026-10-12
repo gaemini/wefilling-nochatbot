@@ -1528,5 +1528,11 @@
   "postSnackChatSheetSubtitle": "This post stays pinned at the top",
   "postSnackChatNoInvite": "People who commented won't be invited. They'll just see that a Snack Chat is open and can join if they want.",
   "commentLikeAction": "Like",
-  "commentUnlikeAction": "Unlike"
+  "commentUnlikeAction": "Unlike",
+  "commentPhotoLabel": "Photo",
+  "commentAttachPhoto": "Add photos",
+  "commentPhotoLimit": "You can add up to {count} photos",
+  "@commentPhotoLimit": { "placeholders": { "count": { "type": "int" } } },
+  "commentPhotoUploadFailed": "Couldn't upload the photos. Please try again.",
+  "commentRemovePhoto": "Remove photo"
 }

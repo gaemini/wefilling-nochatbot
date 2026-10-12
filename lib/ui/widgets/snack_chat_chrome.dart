@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../utils/responsive_helper.dart';
 import '../../l10n/ui_locale.dart';
+import '../../utils/chat_date_label.dart';
 
 /// Accumulates only direct-drag deltas supplied by SnackChatScreen and maps
 /// reversed scroll axes to the direction a person sees on screen.
@@ -193,57 +194,8 @@ class SnackChatDateSeparator extends StatelessWidget {
   final DateTime date;
   final String languageCode;
 
-  static String formatDate(DateTime date, {required String languageCode}) {
-    final local = date.toLocal();
-    if (languageCode == 'zh') {
-      const weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
-      return '${local.year}年${local.month}月${local.day}日 ${weekdays[local.weekday - 1]}';
-    }
-    if (languageCode == 'ko') {
-      const weekdays = <String>[
-        '월요일',
-        '화요일',
-        '수요일',
-        '목요일',
-        '금요일',
-        '토요일',
-        '일요일',
-      ];
-      return '${local.year}년 ${local.month}월 ${local.day}일 '
-          '${weekdays[local.weekday - 1]}';
-    }
-
-    if (languageCode == 'en') {
-      const weekdays = <String>[
-        'Monday',
-        'Tuesday',
-        'Wednesday',
-        'Thursday',
-        'Friday',
-        'Saturday',
-        'Sunday',
-      ];
-      const months = <String>[
-        'January',
-        'February',
-        'March',
-        'April',
-        'May',
-        'June',
-        'July',
-        'August',
-        'September',
-        'October',
-        'November',
-        'December',
-      ];
-      return '${weekdays[local.weekday - 1]}, '
-          '${months[local.month - 1]} ${local.day}, ${local.year}';
-    }
-
-    return '${local.year}.${local.month.toString().padLeft(2, '0')}.'
-        '${local.day.toString().padLeft(2, '0')}';
-  }
+  static String formatDate(DateTime date, {required String languageCode}) =>
+      formatChatCalendarDate(date, languageCode: languageCode);
 
   @override
   Widget build(BuildContext context) {

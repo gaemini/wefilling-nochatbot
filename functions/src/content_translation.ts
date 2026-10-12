@@ -18,6 +18,10 @@ import {
   validateTemporalTranslation,
 } from './content_translation_policy';
 import {canAccessSnapshot} from './snapshot';
+import {
+  looksLikeTargetLanguage,
+  translationMatchesTargetLanguage,
+} from './translation_language_guard';
 
 const GEMINI_API_VERSION = 'v1beta';
 const GEMINI_MODEL = 'gemini-3.5-flash-lite';
@@ -341,6 +345,12 @@ function isCurrentCompletedCache(
     CURRENT_MODELS.has(stringValue(cached.modelUsed)) &&
     expectedFields.every((field) =>
       typeof (translatedFields as Record<string, unknown>)[field] === 'string' &&
+      // 대상 언어가 아닌 결과가 과거에 캐시됐다면 다시 생성한다.
+      translationMatchesTargetLanguage(
+        item.fields[field],
+        (translatedFields as Record<string, string>)[field],
+        targetLanguage,
+      ) &&
       isPlausibleTranslation(
         item.fields[field],
         (translatedFields as Record<string, string>)[field],
@@ -456,63 +466,10 @@ function isUnexpectedlyUnchangedTranslation(
   return words.length >= 4 && meaningful.length >= 16;
 }
 
+// 이미 대상 언어로 쓰인 본문인지. 라틴 문자 언어끼리의 오판(스페인어↔포르투갈어
+// 등)을 막기 위해 대상 언어 점수가 다른 언어보다 분명히 높을 때만 true다.
 function looksLikeSameLanguage(text: string, target: string): boolean {
-  const meaningful = text
-    .replace(IMMUTABLE_TEXT_PATTERN, '')
-    .trim();
-  if (!meaningful) return true;
-  const letters = meaningful.match(/\p{L}/gu) ?? [];
-  const ratio = (pattern: RegExp) =>
-    (meaningful.match(pattern) ?? []).length / Math.max(letters.length, 1);
-  if (target === 'ko') {
-    const hangul = meaningful.match(/[가-힣]/g) ?? [];
-    return hangul.length >= 2 && ratio(/[가-힣]/g) >= 0.95;
-  }
-  if (target === 'ja') {
-    return /[ぁ-んァ-ン]/.test(meaningful) &&
-      !/[가-힣]/.test(meaningful) &&
-      ratio(/[ぁ-ン\u3400-\u9FFF]/g) >= 0.95;
-  }
-  if (target === 'zh') {
-    return (meaningful.match(/[\u3400-\u9FFF]/g) ?? []).length >= 2 &&
-      !/[ぁ-ン가-힣]/.test(meaningful) &&
-      ratio(/[\u3400-\u9FFF]/g) >= 0.97;
-  }
-  if (target === 'ru' || target === 'uk') {
-    return ratio(/[\u0400-\u04FF]/g) >= 0.9 && letters.length >= 3;
-  }
-  if (target === 'ar') {
-    return ratio(/[\u0600-\u06FF]/g) >= 0.9 && letters.length >= 3;
-  }
-  if (target === 'th') {
-    return ratio(/[\u0E00-\u0E7F]/g) >= 0.9 && letters.length >= 3;
-  }
-  const latinHints: Record<string, Set<string>> = {
-    en: new Set(['the', 'and', 'is', 'are', 'this', 'that', 'hello', 'thanks', 'with', 'for']),
-    es: new Set(['el', 'la', 'los', 'las', 'es', 'hola', 'gracias', 'con', 'para', 'que']),
-    fr: new Set(['le', 'la', 'les', 'est', 'bonjour', 'merci', 'avec', 'pour', 'que', 'des']),
-    de: new Set(['der', 'die', 'das', 'ist', 'hallo', 'danke', 'mit', 'für', 'und', 'ein']),
-    pt: new Set(['o', 'a', 'os', 'as', 'é', 'olá', 'obrigado', 'com', 'para', 'que']),
-    it: new Set(['il', 'la', 'gli', 'è', 'ciao', 'grazie', 'con', 'per', 'che', 'un']),
-    ro: new Set(['și', 'este', 'sunt', 'acest', 'această', 'cu', 'pentru', 'bună', 'mulțumesc', 'că']),
-    tr: new Set(['bir', 've', 'bu', 'ile', 'için', 'merhaba', 'teşekkürler', 'çok']),
-    id: new Set(['dan', 'ini', 'itu', 'dengan', 'untuk', 'halo', 'terima', 'kasih']),
-    ms: new Set(['dan', 'ini', 'itu', 'dengan', 'untuk', 'hai', 'terima', 'kasih']),
-    vi: new Set(['và', 'là', 'này', 'với', 'cho', 'xin', 'chào', 'cảm', 'ơn']),
-  };
-  const hints = latinHints[target];
-  if (hints && /[A-Za-zÀ-ỹ]/.test(meaningful)) {
-    const words = meaningful.toLocaleLowerCase()
-      .match(/[\p{L}]+/gu) ?? [];
-    const hits = words.filter((word) => hints.has(word)).length;
-    const latinRatio = ratio(/[A-Za-zÀ-ỹ]/g);
-    // One-word Latin messages are ambiguous (shared vocabulary or names), so
-    // they must not become a permanent same-language cache entry.
-    if (words.length === 1) return false;
-    return words.length >= 3 && hits >= 2 && latinRatio >= 0.9 &&
-      hits / words.length >= 0.3;
-  }
-  return false;
+  return looksLikeTargetLanguage(text, target);
 }
 
 async function canReadAudienceDocument(
@@ -1279,6 +1236,8 @@ async function callGeminiModel(
         temporalRepair ?
           'TEMPORAL REPAIR: the previous candidate failed date/time validation. Re-translate this one item from the original TARGET, preserve numeric meaning and AM/PM, and ensure temporal units are expressed naturally in the target language.' :
           '',
+        // 긴 규칙 목록 뒤에서도 대상 언어를 잃지 않도록 JSON 직전에 한 번 더 못박는다.
+        `OUTPUT LANGUAGE (mandatory): every value inside "translations" must be written in ${targetLanguageName} (${targetLanguage}). Never answer in English, Korean, or the source language unless it is ${targetLanguageName}. CONTEXT and typoHints may be written in any language and must never change the output language.`,
         'Return only JSON shaped exactly as {"items":[{"id":"input id","sourceLanguage":"ISO 639-1 code","sourceIntent":"question","coverageComplete":true,"uncertainTerms":[],"translations":{"TARGET field name":"translated text"}}]}.',
         JSON.stringify(compactItems),
       ].join('\n')}]}],
@@ -1609,6 +1568,11 @@ function isValidItemTranslation(
     return false;
   }
   if (!expectedFields.every((field) =>
+    translationMatchesTargetLanguage(
+      item.fields[field],
+      result.translations[field],
+      targetLanguage,
+    ) &&
     isPlausibleTranslation(
       item.fields[field],
       result.translations[field],
@@ -1690,6 +1654,11 @@ function isSafeFallbackItemTranslation(
     return false;
   }
   return expectedFields.every((field) =>
+    translationMatchesTargetLanguage(
+      item.fields[field],
+      result.translations[field],
+      targetLanguage,
+    ) &&
     isPlausibleTranslation(
       item.fields[field],
       result.translations[field],
@@ -1731,6 +1700,13 @@ function safeFallbackFailureCode(
       expectedFields.some((field, index) => field !== actualFields[index])) {
     return 'field_mismatch';
   }
+  if (!expectedFields.every((field) =>
+    translationMatchesTargetLanguage(
+      item.fields[field],
+      result.translations[field],
+      targetLanguage,
+    ),
+  )) return 'wrong_target_language';
   if (!expectedFields.every((field) =>
     isPlausibleTranslation(
       item.fields[field],
@@ -2199,12 +2175,12 @@ export const translateContentBatch = callables()
           coverageComplete: true,
           uncertainTerms: [],
           translatedAt: Date.now(),
-          cacheSource: 'same_language',
+          cacheSource: 'same_language_v2',
         });
         logTranslationItemDiagnostic(item, targetLanguage, {
           sourceLanguage: targetLanguage,
           modelUsed: 'same-language',
-          cacheSource: 'same_language',
+          cacheSource: 'same_language_v2',
           durationMs: Date.now() - startedAt,
         });
         return;

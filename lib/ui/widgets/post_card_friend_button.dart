@@ -140,6 +140,8 @@ class _PostCardFriendButtonState extends State<PostCardFriendButton> {
     final labelDuration =
         reduceMotion ? Duration.zero : const Duration(milliseconds: 180);
 
+    // 좁은 폰(폭 360 미만)에서는 여백과 아이콘을 조금 줄인다.
+    final compact = MediaQuery.sizeOf(context).width < 360;
     final filled = status != RelationshipStatus.pendingOut;
     final background = filled ? _kPointStrong : _kFillSubtle;
     final foreground = filled ? Colors.white : _kInkSecondary;
@@ -169,7 +171,7 @@ class _PostCardFriendButtonState extends State<PostCardFriendButton> {
         key: ValueKey<RelationshipStatus>(status),
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: foreground),
+          Icon(icon, size: compact ? 14 : 16, color: foreground),
           const SizedBox(width: 4),
           Flexible(
             child: Text(
@@ -220,8 +222,9 @@ class _PostCardFriendButtonState extends State<PostCardFriendButton> {
               child: AnimatedContainer(
                 duration: colorDuration,
                 height: PostCardFriendButton.visualHeight,
-                padding: const EdgeInsets.only(left: 10, right: 12),
-                alignment: Alignment.center,
+                // alignment를 주면 허용 폭 끝까지 늘어난다. 내용 폭에 맞춘다.
+                padding: EdgeInsets.only(
+                    left: compact ? 8 : 10, right: compact ? 10 : 12),
                 decoration: BoxDecoration(
                   color: background,
                   borderRadius: BorderRadius.circular(15),

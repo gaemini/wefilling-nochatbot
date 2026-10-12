@@ -165,4 +165,29 @@ void main() {
     final pill = tester.getSize(find.byType(AnimatedContainer));
     expect(pill.height, 30);
   });
+
+  testWidgets('넓은 화면에서도 알약은 내용 폭만큼만(늘어나지 않음)', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      locale: const Locale('ko'),
+      home: Scaffold(
+        body: Row(children: [
+          const Expanded(child: SizedBox()),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: PostCardFriendButton(
+              status: RelationshipStatus.none,
+              onSend: () async => true,
+              onCancel: () async => true,
+              onAccept: () async => true,
+            ),
+          ),
+        ]),
+      ),
+    ));
+    final pill = tester.getSize(find.byType(AnimatedContainer));
+    expect(pill.width, lessThan(140));
+    expect(pill.height, 30);
+  });
 }

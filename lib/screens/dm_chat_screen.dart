@@ -792,12 +792,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       statusColor: DMColors.textSecondary,
       child: _buildDmLinkifiedText(
         canShowTranslation ? translatedText : message.text,
-        TextStyle(
+        chatMessageTextStyle(
+          context,
           color: DMColors.otherMessageText,
-          fontFamily: uiFontFamily(context, 'Inter'),
-          fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: 15,
-          height: 1.35,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -4521,12 +4518,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                   if (hasText)
                     _buildDmLinkifiedText(
                       message.text,
-                      TextStyle(
+                      chatMessageTextStyle(
+                        context,
                         color: DMColors.myMessageText,
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 15,
-                        height: 1.35,
                         fontWeight: FontWeight.w500,
                       ),
                     ),

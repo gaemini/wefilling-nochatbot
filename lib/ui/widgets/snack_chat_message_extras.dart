@@ -15,6 +15,7 @@ import '../../services/snack_chat_media_cache_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../l10n/ui_locale.dart';
 import 'chat_reaction_widgets.dart';
+import '../../utils/chat_message_typography.dart';
 
 class SnackChatStorageImage extends StatefulWidget {
   const SnackChatStorageImage({
@@ -538,13 +539,12 @@ class SnackChatReplyPreviewView extends StatelessWidget {
                         summary.isEmpty ? '메시지' : summary,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
+                        // 인용 원문은 메시지 글꼴(시스템 글꼴)을 쓰되 크기는 그대로 둔다.
+                        style: chatMessageTextStyle(
+                          context,
                           color: foreground.withValues(alpha: 0.86),
-                        ),
+                          fontWeight: FontWeight.w500,
+                        ).copyWith(fontSize: 11.5),
                       ),
                     ],
                   ),

@@ -39,7 +39,6 @@ import '../services/user_info_cache_service.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../ui/widgets/snack_chat_message_extras.dart';
 import '../ui/widgets/chat_reaction_widgets.dart';
-import '../design/tokens.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/chat_reply_reveal.dart';
 import '../ui/widgets/snack_chat_chrome.dart';
@@ -78,6 +77,8 @@ import '../ui/widgets/snack_chat_translated_text.dart';
 import '../ui/widgets/swipe_to_reply.dart';
 import '../l10n/translation_source_language.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/chat_pill_composer.dart';
+import '../utils/chat_message_typography.dart';
 
 @visibleForTesting
 bool isSnackChatMessageMeaningfullyVisible({
@@ -241,10 +242,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const Color _secondaryText = SnackChatPalette.inkSecondary;
   static const Color _tertiaryText = SnackChatPalette.inkTertiary;
   static const Color _readCountText = SnackChatPalette.pointStrong;
-  // v3 입력줄: 흰 바 + #EEEEEE 입력창, 전송은 활성 #2C6BC0 / 비활성 #EEEEEE.
-  static const Color _composerBackground = SnackChatPalette.fillSubtle;
-  static const Color _composerAction = SnackChatPalette.pointStrong;
-  static const Color _composerActionDisabled = SnackChatPalette.fillSubtle;
   static const Duration _peopleLookupDeadline = Duration(seconds: 8);
   static const int _translationPrimaryBatchSize = 5;
   static const int _translationOverflowBatchSize = 2;
@@ -4860,6 +4857,26 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
   }
 
+  /// 카메라로 찍은 사진을 기존 이미지 보내기 경로(확인·압축·업로드)에 넘긴다.
+  /// 권한 거부·취소는 DM _pickImageFrom처럼 조용히 끝낸다.
+  Future<void> _captureAndSendImage() async {
+    if (_isUploadingImage || _isLeavingRoom || _isAttachmentFlowOpen) return;
+    XFile? captured;
+    try {
+      captured = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1800,
+        maxHeight: 1800,
+        imageQuality: 88,
+      );
+    } catch (error) {
+      Logger.error('스낵챗 카메라 열기 실패: $error');
+      return;
+    }
+    if (captured == null || !mounted) return;
+    await _pickAndSendImage(preselected: captured);
+  }
+
   Future<void> _pickAndSendImage({XFile? preselected}) async {
     if (_isUploadingImage || _isLeavingRoom) return;
     final roomId = widget.snackChatId;
@@ -7248,22 +7265,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     required bool isKo,
     required SnackChat room,
   }) {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final isNarrow = screenWidth < 360;
-    final horizontalPadding = (screenWidth * 0.032).clamp(10.0, 18.0);
-    // 터치 영역 44, 보이는 전송 원 32, 입력창 최소 높이 40.
-    const actionExtent = 44.0;
-    const sendVisual = 32.0;
-    const inputMinHeight = 40.0;
-    const itemGap = 4.0;
-    const composerRadius = 16.0;
     final replyingTo = _replyingTo;
 
     return Material(
       color: SnackChatPalette.background,
-      shape: const Border(
-        top: BorderSide(color: SnackChatPalette.hairline),
-      ),
       child: SafeArea(
         top: false,
         minimum: const EdgeInsets.only(bottom: 4),
@@ -7271,12 +7276,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
             child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding - 8,
-                6,
-                horizontalPadding,
-                6,
-              ),
+              // 화면 아래에 떠 있는 알약: 좌우 12, 위 8.
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -7330,177 +7331,78 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                             ),
                           ),
                   ),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _buildComposerButton(
-                        width: actionExtent,
-                        height: actionExtent,
-                        visualSize: actionExtent,
-                        tooltip: (isChineseUi(context)
-                            ? '添加附件'
-                            : isKo
-                                ? '첨부'
-                                : 'Attach'),
-                        onPressed: _isAttachmentFlowOpen
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _messageController,
+                    builder: (context, value, _) {
+                      final hasText = value.text.trim().isNotEmpty;
+                      final zh = isChineseUi(context);
+                      return ChatPillComposer(
+                        showSend: hasText,
+                        canSend: hasText,
+                        onCamera: _isAttachmentFlowOpen || _isUploadingImage
+                            ? null
+                            : _captureAndSendImage,
+                        onGallery: _isAttachmentFlowOpen || _isUploadingImage
+                            ? null
+                            : () => unawaited(_pickAndSendImage()),
+                        onAttach: _isAttachmentFlowOpen
                             ? null
                             : _showAttachmentOptions,
-                        enabledColor: Colors.transparent,
-                        disabledColor: Colors.transparent,
-                        child: Icon(
-                          Icons.add_rounded,
-                          size: 26,
-                          color: _isAttachmentFlowOpen
-                              ? _tertiaryText
-                              : SnackChatPalette.ink,
-                        ),
-                      ),
-                      const SizedBox(width: itemGap),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: _composerBackground,
-                              borderRadius:
-                                  BorderRadius.circular(composerRadius),
+                        onSend: _send,
+                        cameraLabel:
+                            zh ? '相机' : (isKo ? '카메라' : 'Camera'),
+                        galleryLabel: zh
+                            ? '相册'
+                            : (isKo ? '사진 보관함' : 'Photo library'),
+                        attachLabel:
+                            zh ? '添加附件' : (isKo ? '첨부' : 'Attach'),
+                        sendLabel: zh ? '发送' : (isKo ? '전송' : 'Send'),
+                        textField: MediaQuery.withClampedTextScaling(
+                          maxScaleFactor: 1.3,
+                          child: TextField(
+                            controller: _messageController,
+                            focusNode: _messageFocusNode,
+                            maxLines: 4,
+                            minLines: 1,
+                            maxLength: 500,
+                            buildCounter: (
+                              _, {
+                              required currentLength,
+                              required isFocused,
+                              required maxLength,
+                            }) =>
+                                null,
+                            keyboardType: TextInputType.multiline,
+                            textInputAction: TextInputAction.newline,
+                            cursorColor: Colors.white,
+                            style: chatMessageTextStyle(
+                              context,
+                              color: Colors.white,
                             ),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                minHeight: inputMinHeight,
-                                maxHeight: 108,
+                            decoration: InputDecoration(
+                              hintText: (zh
+                                  ? '输入消息…'
+                                  : isKo
+                                      ? '메시지를 입력하세요...'
+                                      : 'Type a message...'),
+                              hintStyle: chatMessageTextStyle(
+                                context,
+                                color: chatComposerPlaceholder,
                               ),
-                              child: MediaQuery.withClampedTextScaling(
-                                maxScaleFactor: 1.3,
-                                child: TextField(
-                                  controller: _messageController,
-                                  focusNode: _messageFocusNode,
-                                  maxLines: 4,
-                                  minLines: 1,
-                                  maxLength: 500,
-                                  buildCounter: (
-                                    _, {
-                                    required currentLength,
-                                    required isFocused,
-                                    required maxLength,
-                                  }) =>
-                                      null,
-                                  keyboardType: TextInputType.multiline,
-                                  textInputAction: TextInputAction.newline,
-                                  cursorColor: SnackChatPalette.pointStrong,
-                                  style: TextStyle(
-                                    fontFamily: uiFontFamily(context, 'Inter'),
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w400,
-                                    color: SnackChatPalette.ink,
-                                    height: 1.35,
-                                  ),
-                                  decoration: InputDecoration(
-                                    hintText: (isChineseUi(context)
-                                        ? '输入消息…'
-                                        : isKo
-                                            ? '메시지를 입력하세요...'
-                                            : 'Type a message...'),
-                                    hintStyle: TextStyle(
-                                      fontFamily:
-                                          uiFontFamily(context, 'Inter'),
-                                      fontFamilyFallback: const ['NotoSansKR'],
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w400,
-                                      color: _tertiaryText,
-                                    ),
-                                    isDense: true,
-                                    border: InputBorder.none,
-                                    enabledBorder: InputBorder.none,
-                                    focusedBorder: InputBorder.none,
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: isNarrow ? 12 : 14,
-                                      vertical: 9,
-                                    ),
-                                  ),
-                                ),
+                              isDense: true,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 10,
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: itemGap),
-                      ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: _messageController,
-                        builder: (context, value, _) {
-                          final canSend = value.text.trim().isNotEmpty;
-                          return _buildComposerButton(
-                            width: actionExtent,
-                            height: actionExtent,
-                            visualSize: sendVisual,
-                            tooltip: (isChineseUi(context)
-                                ? '发送'
-                                : isKo
-                                    ? '전송'
-                                    : 'Send'),
-                            onPressed: canSend ? _send : null,
-                            enabledColor: _composerAction,
-                            disabledColor: _composerActionDisabled,
-                            child: Icon(
-                              Icons.arrow_upward_rounded,
-                              size: 18,
-                              color: canSend ? Colors.white : _tertiaryText,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                      );
+                    },
                   ),
                 ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildComposerButton({
-    required double width,
-    required double height,
-    required double visualSize,
-    required String tooltip,
-    required VoidCallback? onPressed,
-    required Color enabledColor,
-    required Color disabledColor,
-    required Widget child,
-  }) {
-    final enabled = onPressed != null;
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      label: tooltip,
-      child: Tooltip(
-        message: tooltip,
-        child: MotionPress(
-          enabled: enabled,
-          pressedScale: .90,
-          // 터치 상자(width x height) 가운데에 보이는 원(visualSize)을 둔다.
-          child: InkResponse(
-            onTap: onPressed,
-            radius: width / 2,
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: Center(
-                child: AnimatedContainer(
-                  duration: MotionTokens.reduceMotion(context)
-                      ? Duration.zero
-                      : MotionTokens.fast,
-                  width: visualSize,
-                  height: visualSize,
-                  decoration: BoxDecoration(
-                    color: enabled ? enabledColor : disabledColor,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(child: child),
-                ),
               ),
             ),
           ),
@@ -7736,7 +7638,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ? 6
           : hasFile
               ? 10
-              : 8,
+              : 7,
       hasImage
           ? 6
           : hasFile
@@ -7746,15 +7648,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ? 6
           : hasFile
               ? 10
-              : 8,
+              : 7,
     );
-    final textStyle = TextStyle(
-      fontFamily: uiFontFamily(context, 'Inter'),
-      fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: 15,
-      fontWeight: FontWeight.w400,
-      height: isChineseUi(context) ? 1.47 : 22 / 15,
+    // iPhone 메시지와 같은 시스템 글꼴 17pt(그 밖의 플랫폼은 기존 글꼴 17/22).
+    final textStyle = chatMessageTextStyle(
+      context,
       color: isMe ? Colors.white : _incomingText,
+      fontWeight: FontWeight.w400,
     );
     // 같은 묶음에서 이웃과 붙는 쪽 모서리만 8로 좁힌다.
     final bubbleRadius = BorderRadius.only(

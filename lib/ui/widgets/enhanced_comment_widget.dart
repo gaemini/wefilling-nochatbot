@@ -25,7 +25,7 @@ import '../../utils/post_translation_policy.dart';
 import '../../utils/responsive_helper.dart';
 import '../dialogs/block_dialog.dart';
 import '../snackbar/app_snackbar.dart';
-import 'translatable_content.dart';
+import 'post_chat_translated_text.dart';
 import '../../l10n/ui_locale.dart';
 import '../../snapshot/snapshot_strings.dart';
 import '../../utils/comment_gif_input.dart';
@@ -81,6 +81,11 @@ class EnhancedCommentWidget extends StatefulWidget {
   /// 인용 탭으로 이동해 온 대상이면 잠시 강조한다.
   final bool highlighted;
 
+  /// 번역 개별 전환(화면 상태, 저장하지 않음). PostChatTranslatedText 참고.
+  final bool perItemShowTranslation;
+  final bool perItemShowOriginal;
+  final ValueChanged<bool>? onTranslationPreference;
+
   const EnhancedCommentWidget({
     super.key,
     required this.comment,
@@ -101,6 +106,9 @@ class EnhancedCommentWidget extends StatefulWidget {
     this.quote,
     this.onQuoteTap,
     this.highlighted = false,
+    this.perItemShowTranslation = false,
+    this.perItemShowOriginal = false,
+    this.onTranslationPreference,
   });
 
   @override
@@ -1326,13 +1334,19 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     key: ValueKey<String>('${widget.comment.id}:original'),
                     child: richBody(widget.comment.content),
                   )
-                : TranslatableContent(
+                : PostChatTranslatedText(
                     request: commentTranslationRequest(
                       widget.comment,
                       postId: widget.postId,
                     ),
                     scope: commentTranslationScope(widget.postId),
-                    showToggle: false,
+                    isCandidate: isCommentTranslationCandidate(
+                      widget.comment,
+                      currentUser?.uid,
+                    ),
+                    perItemShowTranslation: widget.perItemShowTranslation,
+                    perItemShowOriginal: widget.perItemShowOriginal,
+                    onPreferenceChanged: widget.onTranslationPreference,
                     builder: (context, fields) =>
                         richBody(fields['content'] ?? widget.comment.content),
                   );

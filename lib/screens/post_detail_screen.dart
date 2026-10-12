@@ -51,7 +51,10 @@ import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/adaptive_post_image_frame.dart';
 import '../ui/widgets/feed_video_player.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
-import '../ui/widgets/translatable_content.dart';
+import '../services/content_translation_service.dart';
+import '../ui/sheets/translation_language_sheet.dart';
+import '../ui/widgets/post_chat_translated_text.dart';
+import '../ui/widgets/snack_chat_translation_split_button.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/post_translation_policy.dart';
@@ -221,6 +224,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   ];
   static const Duration _commentFirstSnapshotTimeout = Duration(seconds: 8);
   late final String _commentsScope;
+  late final String _postScope;
+
+  // 번역 개별 전환(화면 상태, 저장하지 않음). 스코프 토글·언어 변경 때 비운다.
+  static const String _postBodyItemKey = 'post-body';
+  final Set<String> _itemShowTranslation = <String>{};
+  final Set<String> _itemShowOriginal = <String>{};
+  final ContentTranslationService _translationService =
+      ContentTranslationService.instance;
+  String? _translationLanguageCode;
+  late int _translationLanguageRevision;
+  late bool _postScopeShowsOriginal;
+  late bool _commentsScopeShowsOriginal;
   bool _hasTranslatableComments = false;
 
   @override
@@ -250,6 +265,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 댓글/답글이 추가되거나 정렬돼도 scope가 바뀌지 않아야 각 항목의
     // stable widget state와 번역 캐시가 그대로 유지된다.
     _commentsScope = commentTranslationScope(_currentPost.id);
+    _postScope = 'post:${_currentPost.id}';
+    _translationLanguageRevision = _translationService.languageRevision;
+    _postScopeShowsOriginal = _translationService.showsOriginal(_postScope);
+    _commentsScopeShowsOriginal =
+        _translationService.showsOriginal(_commentsScope);
+    _translationService.addListener(_handleTranslationServiceChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_refreshTranslationLanguageLabel());
+    });
     _commentsStream = _createResilientCommentsStream(_currentPost.id);
     unawaited(_refreshBlockedCommentAuthors());
     _engagementSubscription = _postService
@@ -1106,6 +1130,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   void dispose() {
+    _translationService.removeListener(_handleTranslationServiceChange);
     ActiveContentRegistry.unregister(this);
     _engagementSubscription?.cancel();
     _likeHoldTimer?.cancel();
@@ -1155,24 +1180,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           const HanyangContentBadge(),
       ],
     );
-    if (postTranslationSourceFields(_currentPost).isEmpty) return tags;
-    // 상세 v2: 포스트 번역 표시는 카테고리 줄 오른쪽. 좁으면 다음 줄로 넘어간다.
-    return SizedBox(
-      width: double.infinity,
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: DesignTokens.s8,
-        runSpacing: 4,
-        children: [
-          tags,
-          TranslationScopeToggle(
-            scope: 'post:${_currentPost.id}',
-            postCardHeader: true,
-          ),
-        ],
-      ),
-    );
+    // 번역 켜기/끄기는 상단 바의 분할 버튼으로 옮겼다.
+    return tags;
   }
 
   /// 다중 이미지 인디케이터(이미지 아래 점/바)
@@ -2543,6 +2552,93 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  /// 포스트 본문(post:)과 댓글(post-comments:) 스코프를 함께 켜고 끈다.
+  /// 둘이 다르면 한 번 눌러 같은 상태(켜짐)로 맞춘다. 저장은 기존 toggleScope뿐이다.
+  bool get _postTranslationOn =>
+      !_translationService.showsOriginal(_postScope) &&
+      !_translationService.showsOriginal(_commentsScope);
+
+  void _togglePostTranslation() {
+    final wantOriginal = _postTranslationOn;
+    for (final scope in <String>[_postScope, _commentsScope]) {
+      if (_translationService.showsOriginal(scope) != wantOriginal) {
+        _translationService.toggleScope(scope);
+      }
+    }
+  }
+
+  void _handleTranslationServiceChange() {
+    if (!mounted) return;
+    final revision = _translationService.languageRevision;
+    final postOriginal = _translationService.showsOriginal(_postScope);
+    final commentsOriginal = _translationService.showsOriginal(_commentsScope);
+    final languageChanged = revision != _translationLanguageRevision;
+    if (!languageChanged &&
+        postOriginal == _postScopeShowsOriginal &&
+        commentsOriginal == _commentsScopeShowsOriginal) {
+      return;
+    }
+    setState(() {
+      _translationLanguageRevision = revision;
+      _postScopeShowsOriginal = postOriginal;
+      _commentsScopeShowsOriginal = commentsOriginal;
+      _itemShowTranslation.clear();
+      _itemShowOriginal.clear();
+    });
+    if (languageChanged) unawaited(_refreshTranslationLanguageLabel());
+  }
+
+  Future<void> _refreshTranslationLanguageLabel() async {
+    final revision = _translationService.languageRevision;
+    final code = await _translationService.targetLanguage(
+      uiLanguageCode: Localizations.localeOf(context).languageCode,
+    );
+    if (!mounted || revision != _translationService.languageRevision) return;
+    if (code != _translationLanguageCode) {
+      setState(() => _translationLanguageCode = code);
+    }
+  }
+
+  void _setItemTranslationPreference(
+    String itemKey, {
+    required String scope,
+    required bool translate,
+  }) {
+    final scopeOn = !_translationService.showsOriginal(scope);
+    setState(() {
+      if (scopeOn) {
+        translate
+            ? _itemShowOriginal.remove(itemKey)
+            : _itemShowOriginal.add(itemKey);
+      } else {
+        translate
+            ? _itemShowTranslation.add(itemKey)
+            : _itemShowTranslation.remove(itemKey);
+      }
+    });
+  }
+
+  Widget _buildTranslationSplitButton() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final zh = isChineseUi(context);
+    final on = _postTranslationOn;
+    final code = _translationLanguageCode;
+    return SnackChatTranslationSplitButton(
+      translationOn: on,
+      enabled: true,
+      languageLabel: code == null
+          ? ''
+          : ContentTranslationService.supportedLanguages[code] ?? '',
+      toggleSemanticLabel: on
+          ? (zh ? '查看原文' : (isKo ? '원문 보기' : 'View original'))
+          : (zh ? '查看译文' : (isKo ? '번역 보기' : 'View translation')),
+      languageSemanticLabel:
+          zh ? '翻译语言' : (isKo ? '번역 언어 설정' : 'Translation language'),
+      onToggle: _togglePostTranslation,
+      onOpenLanguage: () => unawaited(showTranslationLanguageSheet(context)),
+    );
+  }
+
   /// 대화형 보기: 최상위·답글을 createdAt 오름차순 한 줄로 펼친다.
   /// 데이터와 쿼리는 그대로이고 보여 주는 방식만 바꾼다.
   Widget _buildCommentConversation(
@@ -2640,6 +2736,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ? null
               : () => _jumpToComment(quote!.targetId),
           highlighted: _highlightedCommentId == comment.id,
+          perItemShowTranslation: _itemShowTranslation.contains(comment.id),
+          perItemShowOriginal: _itemShowOriginal.contains(comment.id),
+          onTranslationPreference: (translate) =>
+              _setItemTranslationPreference(
+            comment.id,
+            scope: _commentsScope,
+            translate: translate,
+          ),
         ),
       ));
     }
@@ -3611,14 +3715,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         if (content.trim().isNotEmpty) ...[
           SizedBox(height: context.rs(10).clamp(8.0, 12.0).toDouble()),
-          TranslatableContent(
+          PostChatTranslatedText(
             request: ContentTranslationRequest(
               contentType: 'post',
               contentId: _currentPost.id,
               sourceFields: postTranslationSourceFields(_currentPost),
             ),
-            scope: 'post:${_currentPost.id}',
-            showToggle: false,
+            scope: _postScope,
+            perItemShowTranslation:
+                _itemShowTranslation.contains(_postBodyItemKey),
+            perItemShowOriginal: _itemShowOriginal.contains(_postBodyItemKey),
+            onPreferenceChanged: (translate) => _setItemTranslationPreference(
+              _postBodyItemKey,
+              scope: _postScope,
+              translate: translate,
+            ),
             builder: (context, fields) => PostLinkifiedText(
               text: fields['content'] ?? content,
               textAlign: TextAlign.left,
@@ -3704,6 +3815,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         title: const SizedBox.shrink(),
         centerTitle: false,
         actions: [
+          if (postTranslationSourceFields(_currentPost).isNotEmpty ||
+              _hasTranslatableComments)
+            _buildTranslationSplitButton(),
           IconButton(
             tooltip: AppLocalizations.of(context)!.moreOptions,
             onPressed: _openPostActionsSheet,
@@ -3729,22 +3843,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     children: [
                       _buildEditorialPostContent(),
 
-                      // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
-                      if (_hasTranslatableComments) ...[
-                        const SizedBox(height: DesignTokens.s4),
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(right: DesignTokens.s12),
-                          child: Align(
-                            alignment: Alignment.centerRight,
-                            child: TranslationScopeToggle(
-                              scope: _commentsScope,
-                              postCardHeader: true,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: DesignTokens.s2),
-                      ],
+                      const SizedBox(height: DesignTokens.s8),
 
                       // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
                       StreamBuilder<List<Comment>>(

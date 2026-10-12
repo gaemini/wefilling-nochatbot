@@ -559,7 +559,8 @@ class CommentService {
   }
 
   // 댓글 좋아요 토글
-  Future<bool> toggleCommentLike(String commentId, String userId) async {
+  // 반환값: 반영 후 좋아요 상태(true=좋아요, false=취소). 실패하면 null.
+  Future<bool?> toggleCommentLike(String commentId, String userId) async {
     try {
       if (Logger.isVerboseEnabled)
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -569,7 +570,7 @@ class CommentService {
 
       final commentRef = _firestore.collection('comments').doc(commentId);
 
-      return await _firestore.runTransaction((transaction) async {
+      return await _firestore.runTransaction<bool?>((transaction) async {
         final commentDoc = await transaction.get(commentRef);
 
         if (!commentDoc.exists) {
@@ -581,7 +582,7 @@ class CommentService {
         if (commentData['isDeleted'] == true) {
           if (Logger.isVerboseEnabled)
             Logger.log('  ❌ 삭제된 댓글에는 좋아요를 변경할 수 없습니다.');
-          return false;
+          return null;
         }
         final List<String> likedBy =
             List<String>.from(commentData['likedBy'] ?? []);
@@ -622,7 +623,7 @@ class CommentService {
       if (Logger.isVerboseEnabled) Logger.log('  스택 트레이스: $stackTrace');
       if (Logger.isVerboseEnabled)
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      return false;
+      return null;
     } finally {
       if (Logger.isVerboseEnabled) Logger.log('댓글 좋아요 토글 종료');
       if (Logger.isVerboseEnabled)

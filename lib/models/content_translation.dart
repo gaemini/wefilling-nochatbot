@@ -100,6 +100,7 @@ class ContentTranslationResult {
             'field_mismatch',
             'semantic_or_structure_guard',
             'strict_metadata_guard',
+            'wrong_target_language',
             'UNTRANSLATED_TEMPORAL_UNIT',
             'TEMPORAL_VALUE_MISMATCH',
             'TEMPORAL_DAY_PERIOD_MISMATCH',

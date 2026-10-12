@@ -73,7 +73,7 @@ class SnackChatTranslatedText extends StatefulWidget {
   static const Duration pulsePeriod = Duration(milliseconds: 1200);
 
   /// 발 줄의 터치 높이. 말풍선 아래 여백과 합쳐 손가락 영역을 확보한다.
-  static const double footerTouchHeight = 36;
+  static const double footerTouchHeight = 32;
 
   @override
   State<SnackChatTranslatedText> createState() =>
@@ -329,12 +329,15 @@ class _SnackChatTranslatedTextState extends State<SnackChatTranslatedText>
     VoidCallback? onTap,
     String? semanticsLabel,
   }) {
+    // 상태만 알리는 줄(원문 언어·번역 중)은 본문 바로 아래 붙게 위 여백 2만 둔다.
+    // 누를 수 있는 줄(다시 번역)만 손가락 영역을 위해 최소 높이를 확보한다.
     Widget row = ConstrainedBox(
-      constraints: const BoxConstraints(
-        minHeight: SnackChatTranslatedText.footerTouchHeight,
+      constraints: BoxConstraints(
+        minHeight:
+            onTap == null ? 0 : SnackChatTranslatedText.footerTouchHeight,
       ),
       child: Padding(
-        padding: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.only(top: 2),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,

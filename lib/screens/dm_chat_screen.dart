@@ -4181,7 +4181,7 @@ class _DMChatScreenState extends State<DMChatScreen>
               : isLocalImageOnly
                   ? bareLocalImage()
                   : Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: const BoxDecoration(
                 color: DMColors.myMessageBg,
                 borderRadius: BorderRadius.only(
@@ -4313,7 +4313,7 @@ class _DMChatScreenState extends State<DMChatScreen>
           : isVideoOnly
               ? _buildFileBubble(message, isMine: false)
               : Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: const BoxDecoration(
                 color: DMColors.otherMessageBg,
                 borderRadius: BorderRadius.only(

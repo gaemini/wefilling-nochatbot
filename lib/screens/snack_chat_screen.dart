@@ -7639,7 +7639,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ? 6
           : hasFile
               ? 10
-              : 8,
+              : 7,
       hasImage
           ? 6
           : hasFile
@@ -7649,7 +7649,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ? 6
           : hasFile
               ? 10
-              : 8,
+              : 7,
     );
     // 스낵챗·DM 공통 메시지 글꼴(15.5/21, w500).
     final textStyle = chatMessageTextStyle(

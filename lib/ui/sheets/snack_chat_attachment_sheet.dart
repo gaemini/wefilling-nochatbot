@@ -10,6 +10,8 @@ enum SnackChatAttachmentAction { image, file, poll }
 Future<SnackChatAttachmentAction?> showSnackChatAttachmentSheet(
   BuildContext context, {
   bool showPoll = true,
+  // 입력바에 사진·영상 버튼이 따로 있는 화면은 false로 이미지 항목을 숨긴다.
+  bool showImage = true,
 }) {
   final isKorean = Localizations.localeOf(context).languageCode == 'ko';
   return showModalBottomSheet<SnackChatAttachmentAction>(
@@ -26,6 +28,7 @@ Future<SnackChatAttachmentAction?> showSnackChatAttachmentSheet(
     builder: (sheetContext) => SnackChatAttachmentSheet(
       isKorean: isKorean,
       showPoll: showPoll,
+      showImage: showImage,
     ),
   );
 }
@@ -35,10 +38,12 @@ class SnackChatAttachmentSheet extends StatelessWidget {
     super.key,
     required this.isKorean,
     this.showPoll = true,
+    this.showImage = true,
   });
 
   final bool isKorean;
   final bool showPoll;
+  final bool showImage;
 
   @override
   Widget build(BuildContext context) {
@@ -116,7 +121,8 @@ class SnackChatAttachmentSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-                _AttachmentActionRow(
+                if (showImage)
+                  _AttachmentActionRow(
                   icon: Icons.image_outlined,
                   title: (isChineseUi(context)
                       ? '图片'

@@ -59,7 +59,6 @@ import '../utils/logger.dart';
 import '../utils/chat_timing.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/translation_language_sheet.dart';
-import '../ui/sheets/snack_chat_attachment_sheet.dart';
 import '../ui/widgets/chat_video_tile.dart';
 import '../ui/widgets/video_preparing_dialog.dart';
 import '../services/media/video_prepare_service.dart';
@@ -5189,12 +5188,14 @@ class _DMChatScreenState extends State<DMChatScreen>
                     canSend: !disabled && hasDraft,
                     onCamera: () => _pickImageFrom(ImageSource.camera),
                     onGallery: () => _pickImageFrom(ImageSource.gallery),
-                    onAttach: _showAttachmentOptions,
+                    // 사진·영상은 사진 버튼에 있으니 +는 파일 첨부만 남는다.
+                    onAttach: _pickFile,
+                    attachIcon: Icons.attach_file_rounded,
                     onSend: _sendMessage,
                     cameraLabel: zh ? '相机' : (isKo ? '카메라' : 'Camera'),
                     galleryLabel:
                         zh ? '相册' : (isKo ? '사진 보관함' : 'Photo library'),
-                    attachLabel: zh ? '添加附件' : (isKo ? '첨부' : 'Attach'),
+                    attachLabel: zh ? '文件' : (isKo ? '파일' : 'File'),
                     sendLabel: zh ? '发送' : (isKo ? '전송' : 'Send'),
                     textField: ConstrainedBox(
                       constraints: const BoxConstraints(maxHeight: 120),
@@ -5596,21 +5597,6 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
-  Future<void> _showAttachmentOptions() async {
-    // 키보드가 첨부 시트·갤러리와 겹쳐 보이지 않도록 먼저 포커스를 내린다.
-    FocusManager.instance.primaryFocus?.unfocus();
-    final action = await showSnackChatAttachmentSheet(
-      context,
-      showPoll: false,
-    );
-    if (!mounted || action == null) return;
-    if (action == SnackChatAttachmentAction.image) {
-      await _pickImage();
-    } else if (action == SnackChatAttachmentAction.file) {
-      await _pickFile();
-    }
-  }
-
   Future<void> _pickFile() async {
     try {
       final picked = await FilePicker.pickFiles(
@@ -5712,81 +5698,6 @@ class _DMChatScreenState extends State<DMChatScreen>
     } else {
       await _sendPickedImageFile(media, beforeSend: fillContext);
     }
-  }
-
-  Future<void> _pickImage() async {
-    if (_pendingImage != null) {
-      // 1장 제한: 이미 선택되어 있으면 안내
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            (isChineseUi(context)
-                ? '每次只能添加1张图片'
-                : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '이미지는 한 번에 1장만 첨부할 수 있어요'
-                    : 'You can attach only 1 image at a time'),
-          ),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: 10, bottom: 6),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD1D5DB),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.photo_library_outlined),
-                  title: Text((isChineseUi(context)
-                      ? '从相册选择'
-                      : isKorean
-                          ? '사진 선택'
-                          : 'Choose from library')),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await _pickImageFrom(ImageSource.gallery);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.photo_camera_outlined),
-                  title: Text((isChineseUi(context)
-                      ? '拍照'
-                      : isKorean
-                          ? '카메라 촬영'
-                          : 'Take a photo')),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await _pickImageFrom(ImageSource.camera);
-                  },
-                ),
-                const SizedBox(height: 6),
-              ],
-            ),
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _pickImageFrom(ImageSource source) async {

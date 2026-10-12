@@ -5579,11 +5579,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _isAttachmentFlowOpen = true);
     try {
-      final action = await showSnackChatAttachmentSheet(context);
+      // 사진·영상은 입력바의 사진 버튼으로 보내므로 +는 파일·투표만 연다.
+      final action =
+          await showSnackChatAttachmentSheet(context, showImage: false);
       if (!mounted) return;
-      if (action == SnackChatAttachmentAction.image) {
-        await _pickAndSendMedia();
-      } else if (action == SnackChatAttachmentAction.file) {
+      if (action == SnackChatAttachmentAction.file) {
         await _pickAndQueueFiles();
       } else if (action == SnackChatAttachmentAction.poll) {
         await _createPoll();
@@ -7342,9 +7342,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         onCamera: _isAttachmentFlowOpen || _isUploadingImage
                             ? null
                             : _captureAndSendImage,
+                        // 사진·영상 함께 고르기(기존 첨부 시트의 '이미지' 경로).
                         onGallery: _isAttachmentFlowOpen || _isUploadingImage
                             ? null
-                            : () => unawaited(_pickAndSendImage()),
+                            : () => unawaited(_pickAndSendMedia()),
                         onAttach: _isAttachmentFlowOpen
                             ? null
                             : _showAttachmentOptions,

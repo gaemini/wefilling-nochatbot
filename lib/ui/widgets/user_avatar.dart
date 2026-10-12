@@ -1,20 +1,17 @@
-import 'dart:io';
-
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../services/avatar_cache_service.dart';
-import '../../services/cache/app_image_cache_manager.dart';
-import '../../utils/profile_photo_policy.dart';
+import '../../utils/avatar_image.dart';
 import '../../utils/logger.dart';
 
 /// DM/채팅 등에서 공통으로 사용하는 사용자 아바타 위젯.
 ///
 /// 정책:
-/// - 익명/빈 URL이면 placeholder(회색 원 + 아이콘)
-/// - `photoVersion > 0`이면 (uid, version) 로컬 캐시 파일을 우선 사용
-/// - 네트워크는 `withVersion(url, photoVersion)`로 캐시를 확실히 무효화(최신 이미지 보장)
+/// - 익명/빈 URL이거나 허용된 프로필 사진 주소가 아니면 placeholder
+/// - 캐시 키는 `photoVersion > 0`이면 (uid, version)이라 사진이 바뀌면 이전
+///   파일을 재사용하지 않는다(최신 이미지 보장).
+/// - 전용 아바타 캐시(AppImageCacheManager.avatars)와 크기 구간별 디코딩을 쓴다.
+///   미리 데운 이미지(precacheAvatarImages)는 첫 프레임에 동기적으로 그려진다.
 class UserAvatar extends StatelessWidget {
   final String uid;
   final String photoUrl;
@@ -40,71 +37,58 @@ class UserAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // ✅ 보안/정책: 우리 Storage 버킷에 없는 URL은 절대 표시하지 않는다.
-    if (isAnonymous ||
-        photoUrl.isEmpty ||
-        !ProfilePhotoPolicy.isAllowedProfilePhotoUrl(photoUrl)) {
+    if (isAnonymous || !isDisplayableAvatarUrl(photoUrl)) {
       return _placeholder();
     }
 
-    if (photoVersion > 0) {
-      return FutureBuilder<File?>(
-        key: ValueKey('${uid}_$photoVersion'),
-        future: AvatarCacheService().getOrDownloadAvatar(
-          uid: uid,
-          photoVersion: photoVersion,
-          photoUrl: photoUrl,
-        ),
-        builder: (context, snapshot) {
-          final file = snapshot.data;
-          if (file != null) {
-            return ClipOval(
-              child: SizedBox(
-                width: size,
-                height: size,
-                child: Image.file(file, fit: BoxFit.cover),
-              ),
-            );
-          }
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    final provider = avatarImageProvider(
+      uid: uid,
+      photoVersion: photoVersion,
+      photoUrl: photoUrl,
+      logicalSize: size,
+      devicePixelRatio: ratio,
+    );
+    // 사진이 바뀌면(버전/URL) 이전 사진이 남아 보이지 않도록 새 위젯으로 만든다.
+    final identity = '${uid}_${photoVersion}_$photoUrl';
 
-          // 로딩 중에는 이전 사진을 유지하지 않고 placeholder를 노출 (DM UX 통일)
-          if (snapshot.connectionState != ConnectionState.done) {
-            return _placeholder();
-          }
-
-          return _networkAvatar();
-        },
-      );
-    }
-
-    return _networkAvatar();
-  }
-
-  Widget _networkAvatar() {
-    // URL 자체를 바꾸지 않고(cache-bust로 인한 서명/토큰 파손 방지),
-    // cacheKey를 버전 기반으로 바꿔서 "최신만" 보이게 한다.
-    final cacheKey = photoVersion > 0 ? '${uid}_$photoVersion' : photoUrl;
-    return ClipOval(
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: CachedNetworkImage(
-          key: ValueKey(cacheKey),
-          imageUrl: photoUrl,
-          cacheKey: cacheKey,
-          cacheManager: AppImageCacheManager.instance,
-          memCacheWidth: (size * 3).ceil().clamp(64, 384),
-          fit: BoxFit.cover,
-          fadeInDuration: const Duration(milliseconds: 150),
-          fadeOutDuration: const Duration(milliseconds: 150),
-          placeholder: (_, __) => _placeholder(),
-          errorWidget: (context, url, error) {
-            if (kDebugMode) {
-              Logger.error(
-                '❌ UserAvatar 로드 실패: uid=$uid, v=$photoVersion, url=$url, error=$error',
+    return RepaintBoundary(
+      child: ClipOval(
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Image(
+            key: ValueKey<String>(identity),
+            image: provider,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.low,
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+              // 이미 디코딩된 이미지는 깜빡임 없이 첫 프레임에 바로 그린다.
+              if (wasSynchronouslyLoaded) return child;
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  _placeholder(),
+                  AnimatedOpacity(
+                    opacity: frame == null ? 0 : 1,
+                    duration: const Duration(milliseconds: 120),
+                    curve: Curves.easeOut,
+                    child: child,
+                  ),
+                ],
               );
-            }
-            return _placeholder();
-          },
+            },
+            errorBuilder: (context, error, stackTrace) {
+              if (kDebugMode) {
+                Logger.error(
+                  '❌ UserAvatar 로드 실패: uid=$uid, v=$photoVersion, error=$error',
+                );
+              }
+              return _placeholder();
+            },
+          ),
         ),
       ),
     );

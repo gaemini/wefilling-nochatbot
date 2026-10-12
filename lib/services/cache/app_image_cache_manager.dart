@@ -18,7 +18,17 @@ class AppImageCacheManager {
   static const String cacheKey = 'wefilling_image_cache_v1';
   static const Duration firebaseObjectFreshness = Duration(days: 90);
 
+  /// 프로필 사진 전용 캐시. 게시글 사진(수 MB)과 같은 다운로드 풀을 쓰면 작은
+  /// 아바타가 큰 사진 뒤에 줄을 서서 늦게 뜨므로 풀과 디스크 캐시를 분리한다.
+  static const String avatarCacheKey = 'wefilling_avatar_cache_v1';
+  static const int _maximumAvatarObjects = 1500;
+
   static _WefillingImageCacheManager? _instance;
+  static _WefillingImageCacheManager? _avatarInstance;
+  static final Map<String, Future<bool>> _avatarPrefetchInFlight =
+      <String, Future<bool>>{};
+  static final LinkedHashSet<String> _recentlyPrefetchedAvatars =
+      LinkedHashSet<String>();
   static final Map<String, Future<bool>> _prefetchInFlight =
       <String, Future<bool>>{};
   static final LinkedHashSet<String> _recentlyPrefetched =
@@ -27,7 +37,79 @@ class AppImageCacheManager {
   static const Duration _prefetchTimeout = Duration(seconds: 12);
 
   static fcm.CacheManager get instance {
-    return _instance ??= _WefillingImageCacheManager();
+    return _instance ??= _WefillingImageCacheManager(
+      key: cacheKey,
+      maxObjects: 2500,
+      concurrentFetches: 4,
+    );
+  }
+
+  /// 프로필 사진 전용 캐시 매니저. 사진 URL마다 [avatarCacheKeyFor]로 만든 키를
+  /// 쓰면 버전이 바뀐 사진이 이전 파일을 재사용하지 않는다.
+  static fcm.CacheManager get avatars {
+    return _avatarInstance ??= _WefillingImageCacheManager(
+      key: avatarCacheKey,
+      maxObjects: _maximumAvatarObjects,
+      // 아바타는 작아서 동시 다운로드를 늘려도 디코딩 경쟁이 적다.
+      concurrentFetches: 6,
+    );
+  }
+
+  /// 아바타 캐시 키. 사진 버전이 있으면 (uid, version), 없으면 URL 자체.
+  static String avatarCacheKeyFor({
+    required String uid,
+    required int photoVersion,
+    required String photoUrl,
+  }) =>
+      photoVersion > 0 ? '${uid}_$photoVersion' : photoUrl;
+
+  /// 아바타 한 장을 디스크 캐시에 준비한다(디코딩 없음). 이미 있으면 바로 true.
+  static Future<bool> prefetchAvatar({
+    required String url,
+    required String cacheKey,
+  }) {
+    final value = url.trim();
+    if (value.isEmpty || cacheKey.isEmpty) return Future<bool>.value(false);
+    final active = _avatarPrefetchInFlight[cacheKey];
+    if (active != null) return active;
+    if (_recentlyPrefetchedAvatars.contains(cacheKey)) {
+      return Future<bool>.value(true);
+    }
+    late final Future<bool> operation;
+    operation = () async {
+      try {
+        final cached = await avatars.getFileFromCache(cacheKey);
+        if (cached != null) {
+          _rememberAvatar(cacheKey);
+          return true;
+        }
+        final file = await avatars
+            .getSingleFile(value, key: cacheKey)
+            .timeout(_prefetchTimeout);
+        if (!await file.exists() || await file.length() <= 0) return false;
+        _rememberAvatar(cacheKey);
+        return true;
+      } catch (_) {
+        // 선조회 실패는 화면의 실제 이미지 요청이 재시도한다.
+        return false;
+      }
+    }()
+        .whenComplete(() {
+      if (identical(_avatarPrefetchInFlight[cacheKey], operation)) {
+        _avatarPrefetchInFlight.remove(cacheKey);
+      }
+    });
+    _avatarPrefetchInFlight[cacheKey] = operation;
+    return operation;
+  }
+
+  static void _rememberAvatar(String cacheKey) {
+    _recentlyPrefetchedAvatars
+      ..remove(cacheKey)
+      ..add(cacheKey);
+    while (_recentlyPrefetchedAvatars.length > 600) {
+      _recentlyPrefetchedAvatars.remove(_recentlyPrefetchedAvatars.first);
+    }
   }
 
   /// 화면에 보이기 직전의 소수 이미지를 디스크 캐시에 병렬로 준비한다.
@@ -107,8 +189,14 @@ class AppImageCacheManager {
   /// 로그아웃/설정 등에서 이미지 캐시를 명시적으로 비우고 싶을 때 사용.
   static Future<void> clear() async {
     _recentlyPrefetched.clear();
+    _recentlyPrefetchedAvatars.clear();
     try {
       await instance.emptyCache();
+    } catch (_) {
+      // best-effort
+    }
+    try {
+      await avatars.emptyCache();
     } catch (_) {
       // best-effort
     }
@@ -121,21 +209,24 @@ class AppImageCacheManager {
 /// 이미지 요청이 완료되어도 렌더링 전에 실패합니다.
 class _WefillingImageCacheManager extends fcm.CacheManager
     with fcm.ImageCacheManager {
-  _WefillingImageCacheManager()
-      : super(
+  _WefillingImageCacheManager({
+    required String key,
+    required int maxObjects,
+    required int concurrentFetches,
+  }) : super(
           fcm.Config(
-            AppImageCacheManager.cacheKey,
+            key,
             // stalePeriod는 HTTP 유효 기간이 아니라 마지막 사용 후
             // 파일을 보관하는 기간이다. 반복해서 보는 피드 이미지는
             // 오프라인 재사용이 가능하도록 넉넉하게 유지한다.
             stalePeriod: AppImageCacheManager.firebaseObjectFreshness,
-            maxNrOfCacheObjects: 2500,
-            repo: fcm.JsonCacheInfoRepository(
-              databaseName: AppImageCacheManager.cacheKey,
-            ),
+            maxNrOfCacheObjects: maxObjects,
+            repo: fcm.JsonCacheInfoRepository(databaseName: key),
             // 동시 다운로드/리사이즈가 UI 디코딩과 경쟁하지 않도록
             // 제한하고, UUID 경로의 Firebase 미디어는 장기 재사용한다.
-            fileService: _PersistentImageHttpFileService(),
+            fileService: _PersistentImageHttpFileService(
+              concurrentFetches: concurrentFetches,
+            ),
           ),
         );
 }
@@ -144,10 +235,10 @@ class _WefillingImageCacheManager extends fcm.CacheManager
 /// Their default HTTP freshness is much shorter than the app's disk retention,
 /// which otherwise causes avoidable conditional requests for old feed images.
 class _PersistentImageHttpFileService extends fcm.HttpFileService {
-  _PersistentImageHttpFileService() {
+  _PersistentImageHttpFileService({int concurrentFetches = 4}) {
     // Ten parallel image responses can trigger several image decodes at once
     // and contend with the raster/UI threads while a feed is being scrolled.
-    concurrentFetches = 4;
+    this.concurrentFetches = concurrentFetches;
   }
 
   @override

@@ -7638,7 +7638,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ? 6
           : hasFile
               ? 10
-              : 7,
+              : 8,
       hasImage
           ? 6
           : hasFile
@@ -7648,13 +7648,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           ? 6
           : hasFile
               ? 10
-              : 7,
+              : 8,
     );
-    // iPhone 메시지와 같은 시스템 글꼴 17pt(그 밖의 플랫폼은 기존 글꼴 17/22).
+    // 스낵챗·DM 공통 메시지 글꼴(15.5/21, w500).
     final textStyle = chatMessageTextStyle(
       context,
       color: isMe ? Colors.white : _incomingText,
-      fontWeight: FontWeight.w400,
     );
     // 같은 묶음에서 이웃과 붙는 쪽 모서리만 8로 좁힌다.
     final bubbleRadius = BorderRadius.only(

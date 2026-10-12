@@ -31,6 +31,7 @@ import 'post_chat_translated_text.dart';
 import '../../l10n/ui_locale.dart';
 import '../../snapshot/snapshot_strings.dart';
 import '../../utils/comment_gif_input.dart';
+import '../../utils/chat_message_typography.dart';
 
 // 포스트 상세 v2 댓글 스레드 값. 위필링 디자인 시스템 토큰을 이 화면용 이름으로 모은다.
 const Color _kInk = Color(0xFF000000);
@@ -1179,7 +1180,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       child: Container(
         key: ValueKey<String>('comment-bubble:${widget.comment.id}'),
         constraints: BoxConstraints(minWidth: hasBadge ? _kMinTouch + 4 : 0),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         child: text,
       ),
     );
@@ -1273,14 +1274,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final isLiked =
         currentUser != null && widget.comment.isLikedBy(currentUser.uid);
     final textScaler = MediaQuery.textScalerOf(context);
-    final bodyStyle = TextStyle(
-      fontFamily: uiFontFamily(context, 'Inter'),
-      fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: 15,
-      fontWeight: FontWeight.w400,
-      color: _kInk,
-      height: 22 / 15,
-    );
+    // 스낵챗·DM과 같은 메시지 글꼴(15.5/21, w500, iOS 시스템 글꼴).
+    final bodyStyle = chatMessageTextStyle(context, color: _kInk);
     final linkStyle = bodyStyle.copyWith(
       color: _kPointStrong,
       decoration: TextDecoration.underline,

@@ -3384,4 +3384,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commentUnlikeAction => '取消点赞';
+
+  @override
+  String get commentPhotoLabel => '照片';
+
+  @override
+  String get commentAttachPhoto => '添加照片';
+
+  @override
+  String commentPhotoLimit(int count) {
+    return '最多可添加$count张照片';
+  }
+
+  @override
+  String get commentPhotoUploadFailed => '照片上传失败，请重试。';
+
+  @override
+  String get commentRemovePhoto => '移除照片';
 }

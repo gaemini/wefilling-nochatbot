@@ -1508,5 +1508,11 @@
   "postSnackChatSheetSubtitle": "这条帖子会固定在群聊顶部",
   "postSnackChatNoInvite": "评论过的人不会收到邀请，只会看到“群聊已开启”的提示。是否加入由各自决定。",
   "commentLikeAction": "点赞",
-  "commentUnlikeAction": "取消点赞"
+  "commentUnlikeAction": "取消点赞",
+  "commentPhotoLabel": "照片",
+  "commentAttachPhoto": "添加照片",
+  "commentPhotoLimit": "最多可添加{count}张照片",
+  "@commentPhotoLimit": { "placeholders": { "count": { "type": "int" } } },
+  "commentPhotoUploadFailed": "照片上传失败，请重试。",
+  "commentRemovePhoto": "移除照片"
 }

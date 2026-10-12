@@ -6399,6 +6399,36 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'좋아요 취소'**
   String get commentUnlikeAction;
+
+  /// No description provided for @commentPhotoLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진'**
+  String get commentPhotoLabel;
+
+  /// No description provided for @commentAttachPhoto.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진 첨부'**
+  String get commentAttachPhoto;
+
+  /// No description provided for @commentPhotoLimit.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진은 최대 {count}장까지 올릴 수 있어요'**
+  String commentPhotoLimit(int count);
+
+  /// No description provided for @commentPhotoUploadFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진을 올리지 못했어요. 다시 시도해 주세요.'**
+  String get commentPhotoUploadFailed;
+
+  /// No description provided for @commentRemovePhoto.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진 빼기'**
+  String get commentRemovePhoto;
 }
 
 class _AppLocalizationsDelegate

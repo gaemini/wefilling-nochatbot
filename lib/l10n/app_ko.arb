@@ -1524,5 +1524,11 @@
   "postSnackChatSheetSubtitle": "이 포스트가 채팅방 위에 고정돼요",
   "postSnackChatNoInvite": "댓글 단 사람에게는 초대 대신 ‘열린 스낵챗’ 표시만 보여요. 들어올지는 각자 정해요.",
   "commentLikeAction": "좋아요",
-  "commentUnlikeAction": "좋아요 취소"
+  "commentUnlikeAction": "좋아요 취소",
+  "commentPhotoLabel": "사진",
+  "commentAttachPhoto": "사진 첨부",
+  "commentPhotoLimit": "사진은 최대 {count}장까지 올릴 수 있어요",
+  "@commentPhotoLimit": { "placeholders": { "count": { "type": "int" } } },
+  "commentPhotoUploadFailed": "사진을 올리지 못했어요. 다시 시도해 주세요.",
+  "commentRemovePhoto": "사진 빼기"
 }

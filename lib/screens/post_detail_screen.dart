@@ -3,11 +3,13 @@
 // 게시글 내용, 좋아요, 댓글 표시
 // 댓글 작성 및 게시글 삭제 기능
 
+import 'dart:io';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -51,7 +53,11 @@ import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/adaptive_post_image_frame.dart';
 import '../ui/widgets/feed_video_player.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
-import '../ui/widgets/translatable_content.dart';
+import '../services/content_translation_service.dart';
+import '../ui/sheets/translation_language_sheet.dart';
+import '../ui/widgets/post_chat_translated_text.dart';
+import '../ui/widgets/snack_chat_translation_split_button.dart';
+import '../ui/widgets/swipe_to_reply.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/post_translation_policy.dart';
@@ -63,10 +69,14 @@ import '../services/active_content_registry.dart';
 import '../l10n/ui_locale.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../utils/comment_gif_input.dart';
+import '../utils/chat_date_label.dart';
+import '../utils/post_comment_conversation.dart';
+import '../services/comment_image_upload.dart';
 
 /// Keeps Material route behavior (including back navigation) while making the
 /// feed-to-detail change perceptible without waiting for an animation.
 // 포스트 상세 v2 입력줄·스낵챗 행 값 (위필링 디자인 시스템)
+const Color _kDetailInkSecondary = Color(0xFF5F5F5F);
 const Color _kDetailInkTertiary = Color(0xFF707070);
 const Color _kDetailFillSubtle = Color(0xFFEEEEEE);
 const Color _kDetailHairline = Color(0xFFEBEBEB);
@@ -134,8 +144,81 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _commentGifId;
   int _commentGifInputGeneration = 0;
 
+  // 사진 댓글 첨부(최대 4장). GIF와 함께 담지 않는다.
+  final ImagePicker _commentImagePicker = ImagePicker();
+  List<File> _commentImages = const <File>[];
+  bool _isPickingCommentImages = false;
+
+  Future<void> _pickCommentImages() async {
+    if (_isSubmittingComment ||
+        _isPickingCommentImages ||
+        _commentGif != null ||
+        FirebaseAuth.instance.currentUser == null) {
+      return;
+    }
+    final remaining = maxCommentImages - _commentImages.length;
+    final l10n = AppLocalizations.of(context)!;
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.commentPhotoLimit(maxCommentImages)),
+      ));
+      return;
+    }
+    setState(() => _isPickingCommentImages = true);
+    try {
+      // limit 1은 플러그인이 허용하지 않아 남은 칸이 1이면 한 장 고르기를 쓴다.
+      final picked = remaining == 1
+          ? <XFile>[
+              if (await _commentImagePicker.pickImage(
+                    source: ImageSource.gallery,
+                  )
+                  case final XFile file)
+                file,
+            ]
+          : await _commentImagePicker.pickMultiImage(limit: remaining);
+      if (!mounted || picked.isEmpty || _commentGif != null) return;
+      final files = picked.map((x) => File(x.path)).toList(growable: false);
+      if (files.length > remaining) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(l10n.commentPhotoLimit(maxCommentImages)),
+        ));
+      }
+      setState(() {
+        _commentImages = <File>[
+          ..._commentImages,
+          ...files.take(remaining),
+        ];
+      });
+    } catch (e) {
+      // DM _pickImageFrom과 같은 방식: 로그 후 짧은 안내.
+      Logger.error('댓글 사진 선택 오류: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          isChineseUi(context)
+              ? '无法选择图片'
+              : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '이미지를 불러올 수 없습니다'
+                  : 'Unable to pick an image',
+        ),
+        duration: const Duration(seconds: 2),
+      ));
+    } finally {
+      if (mounted) setState(() => _isPickingCommentImages = false);
+    }
+  }
+
+  void _removeCommentImage(int index) {
+    if (_isSubmittingComment) return;
+    setState(() {
+      _commentImages = <File>[..._commentImages]..removeAt(index);
+    });
+  }
+
   Future<void> _onKeyboardCommentContent(KeyboardInsertedContent content) async {
     if (_isSubmittingComment || FirebaseAuth.instance.currentUser == null) return;
+    // 사진을 담은 상태에서는 GIF를 함께 담지 않는다.
+    if (_commentImages.isNotEmpty) return;
     final uid = FirebaseAuth.instance.currentUser!.uid;
     final generation = ++_commentGifInputGeneration;
     final bytes = await readKeyboardGif(content);
@@ -199,6 +282,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _replyToUserId; // 직전 부모 댓글 작성자 ID
   String? _replyToUserName; // 직전 부모 댓글 작성자 닉네임
   String? _replyTargetCommentId; // 하이라이트할 댓글 ID (시각적 피드백용)
+  String? _replyTargetPreview; // 답장 바 2줄째: 대상 본문 한 줄
+
+  // 대화형 보기: 인용 탭으로 이동할 댓글 위치와 잠깐의 강조 상태.
+  final Map<String, GlobalKey> _commentKeys = <String, GlobalKey>{};
+  String? _highlightedCommentId;
+  Timer? _highlightTimer;
 
   // 댓글 스트림(목록/카운트) - 단일 스트림을 공유해서 UI/카운트 동기화
   late final Stream<List<Comment>> _commentsStream;
@@ -214,6 +303,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   ];
   static const Duration _commentFirstSnapshotTimeout = Duration(seconds: 8);
   late final String _commentsScope;
+  late final String _postScope;
+
+  // 번역 개별 전환(화면 상태, 저장하지 않음). 스코프 토글·언어 변경 때 비운다.
+  static const String _postBodyItemKey = 'post-body';
+  final Set<String> _itemShowTranslation = <String>{};
+  final Set<String> _itemShowOriginal = <String>{};
+  final ContentTranslationService _translationService =
+      ContentTranslationService.instance;
+  String? _translationLanguageCode;
+  late int _translationLanguageRevision;
+  late bool _postScopeShowsOriginal;
+  late bool _commentsScopeShowsOriginal;
   bool _hasTranslatableComments = false;
 
   @override
@@ -243,6 +344,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 댓글/답글이 추가되거나 정렬돼도 scope가 바뀌지 않아야 각 항목의
     // stable widget state와 번역 캐시가 그대로 유지된다.
     _commentsScope = commentTranslationScope(_currentPost.id);
+    _postScope = 'post:${_currentPost.id}';
+    _translationLanguageRevision = _translationService.languageRevision;
+    _postScopeShowsOriginal = _translationService.showsOriginal(_postScope);
+    _commentsScopeShowsOriginal =
+        _translationService.showsOriginal(_commentsScope);
+    _translationService.addListener(_handleTranslationServiceChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_refreshTranslationLanguageLabel());
+    });
     _commentsStream = _createResilientCommentsStream(_currentPost.id);
     unawaited(_refreshBlockedCommentAuthors());
     _engagementSubscription = _postService
@@ -1099,10 +1209,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   void dispose() {
+    _translationService.removeListener(_handleTranslationServiceChange);
     ActiveContentRegistry.unregister(this);
     _engagementSubscription?.cancel();
     _likeHoldTimer?.cancel();
     _commentController.dispose();
+    _highlightTimer?.cancel();
     _scrollController.dispose();
     _commentFocusNode.dispose();
     _imagePageController.dispose();
@@ -1147,24 +1259,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           const HanyangContentBadge(),
       ],
     );
-    if (postTranslationSourceFields(_currentPost).isEmpty) return tags;
-    // 상세 v2: 포스트 번역 표시는 카테고리 줄 오른쪽. 좁으면 다음 줄로 넘어간다.
-    return SizedBox(
-      width: double.infinity,
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: DesignTokens.s8,
-        runSpacing: 4,
-        children: [
-          tags,
-          TranslationScopeToggle(
-            scope: 'post:${_currentPost.id}',
-            postCardHeader: true,
-          ),
-        ],
-      ),
-    );
+    // 번역 켜기/끄기는 상단 바의 분할 버튼으로 옮겼다.
+    return tags;
   }
 
   /// 다중 이미지 인디케이터(이미지 아래 점/바)
@@ -2535,14 +2631,431 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  /// 포스트 본문(post:)과 댓글(post-comments:) 스코프를 함께 켜고 끈다.
+  /// 둘이 다르면 한 번 눌러 같은 상태(켜짐)로 맞춘다. 저장은 기존 toggleScope뿐이다.
+  bool get _postTranslationOn =>
+      !_translationService.showsOriginal(_postScope) &&
+      !_translationService.showsOriginal(_commentsScope);
+
+  void _togglePostTranslation() {
+    final wantOriginal = _postTranslationOn;
+    for (final scope in <String>[_postScope, _commentsScope]) {
+      if (_translationService.showsOriginal(scope) != wantOriginal) {
+        _translationService.toggleScope(scope);
+      }
+    }
+  }
+
+  void _handleTranslationServiceChange() {
+    if (!mounted) return;
+    final revision = _translationService.languageRevision;
+    final postOriginal = _translationService.showsOriginal(_postScope);
+    final commentsOriginal = _translationService.showsOriginal(_commentsScope);
+    final languageChanged = revision != _translationLanguageRevision;
+    if (!languageChanged &&
+        postOriginal == _postScopeShowsOriginal &&
+        commentsOriginal == _commentsScopeShowsOriginal) {
+      return;
+    }
+    setState(() {
+      _translationLanguageRevision = revision;
+      _postScopeShowsOriginal = postOriginal;
+      _commentsScopeShowsOriginal = commentsOriginal;
+      _itemShowTranslation.clear();
+      _itemShowOriginal.clear();
+    });
+    if (languageChanged) unawaited(_refreshTranslationLanguageLabel());
+  }
+
+  Future<void> _refreshTranslationLanguageLabel() async {
+    final revision = _translationService.languageRevision;
+    final code = await _translationService.targetLanguage(
+      uiLanguageCode: Localizations.localeOf(context).languageCode,
+    );
+    if (!mounted || revision != _translationService.languageRevision) return;
+    if (code != _translationLanguageCode) {
+      setState(() => _translationLanguageCode = code);
+    }
+  }
+
+  void _setItemTranslationPreference(
+    String itemKey, {
+    required String scope,
+    required bool translate,
+  }) {
+    final scopeOn = !_translationService.showsOriginal(scope);
+    setState(() {
+      if (scopeOn) {
+        translate
+            ? _itemShowOriginal.remove(itemKey)
+            : _itemShowOriginal.add(itemKey);
+      } else {
+        translate
+            ? _itemShowTranslation.add(itemKey)
+            : _itemShowTranslation.remove(itemKey);
+      }
+    });
+  }
+
+  Widget _buildTranslationSplitButton() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final zh = isChineseUi(context);
+    final on = _postTranslationOn;
+    final code = _translationLanguageCode;
+    return SnackChatTranslationSplitButton(
+      translationOn: on,
+      enabled: true,
+      languageLabel: code == null
+          ? ''
+          : ContentTranslationService.supportedLanguages[code] ?? '',
+      toggleSemanticLabel: on
+          ? (zh ? '查看原文' : (isKo ? '원문 보기' : 'View original'))
+          : (zh ? '查看译文' : (isKo ? '번역 보기' : 'View translation')),
+      languageSemanticLabel:
+          zh ? '翻译语言' : (isKo ? '번역 언어 설정' : 'Translation language'),
+      onToggle: _togglePostTranslation,
+      onOpenLanguage: () => unawaited(showTranslationLanguageSheet(context)),
+    );
+  }
+
+  Widget _buildReplyBar() {
+    final l10n = AppLocalizations.of(context)!;
+    final preview =
+        (_replyTargetPreview ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final base = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: 13,
+      height: isChineseUi(context) ? 1.38 : 18 / 13,
+    );
+    return Padding(
+      key: const ValueKey('comment-reply-bar'),
+      padding: const EdgeInsets.fromLTRB(16, 8, 4, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.only(left: 10),
+              decoration: const BoxDecoration(
+                border: Border(
+                  left: BorderSide(color: _kDetailPointStrong, width: 2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    l10n.replyingTo(_replyToUserName ?? ''),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: base.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
+                  if (preview.isNotEmpty)
+                    Text(
+                      preview,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: base.copyWith(color: _kDetailInkSecondary),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: l10n.cancelReply,
+            onPressed: _exitReplyMode,
+            constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+            padding: EdgeInsets.zero,
+            icon: const Icon(Icons.close_rounded, size: 20, color: Colors.black),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 사진 버튼(터치 44). GIF를 담았거나 4장을 채웠거나 전송 중이면 비활성.
+  Widget _buildCommentPhotoButton() {
+    final enabled = !_isSubmittingComment &&
+        !_isPickingCommentImages &&
+        _commentGif == null &&
+        _commentImages.length < maxCommentImages;
+    return IconButton(
+      key: const ValueKey('comment-photo-button'),
+      tooltip: AppLocalizations.of(context)!.commentAttachPhoto,
+      onPressed: enabled ? _pickCommentImages : null,
+      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+      padding: EdgeInsets.zero,
+      icon: Icon(
+        Icons.image_outlined,
+        size: 24,
+        color: enabled ? Colors.black : _kDetailInkTertiary,
+      ),
+    );
+  }
+
+  /// 첨부 트레이: 64x64 썸네일(radius 12), 오른쪽 위 x(보이는 22, 터치 44).
+  Widget _buildCommentImageTray() {
+    final l10n = AppLocalizations.of(context)!;
+    return SizedBox(
+      height: 64 + 16,
+      child: ListView.separated(
+        key: const ValueKey('comment-image-tray'),
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        itemCount: _commentImages.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) => SizedBox.square(
+          dimension: 64,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  _commentImages[index],
+                  width: 64,
+                  height: 64,
+                  fit: BoxFit.cover,
+                  cacheWidth: 192,
+                ),
+              ),
+              Positioned(
+                top: -11,
+                right: -11,
+                child: Semantics(
+                  button: true,
+                  enabled: !_isSubmittingComment,
+                  label: l10n.commentRemovePhoto,
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _isSubmittingComment
+                        ? null
+                        : () => _removeCommentImage(index),
+                    child: SizedBox.square(
+                      dimension: 44,
+                      child: Center(
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: _isSubmittingComment
+                                ? _kDetailInkTertiary
+                                : Colors.black87,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 대화형 보기: 최상위·답글을 createdAt 오름차순 한 줄로 펼친다.
+  /// 데이터와 쿼리는 그대로이고 보여 주는 방식만 바꾼다.
+  Widget _buildCommentConversation(
+    List<Comment> comments, {
+    required String? currentUserId,
+  }) {
+    final l10n = AppLocalizations.of(context)!;
+    final languageCode = Localizations.localeOf(context).languageCode;
+    final byId = <String, Comment>{for (final c in comments) c.id: c};
+    final liveIds = comments.map((c) => c.id).toSet();
+    _commentKeys.removeWhere((id, _) => !liveIds.contains(id));
+    bool hidden(Comment c) =>
+        ContentHideService.isHiddenAnonymousComment(c.id);
+
+    final children = <Widget>[];
+    for (var i = 0; i < comments.length; i++) {
+      final comment = comments[i];
+      final previous = i > 0 ? comments[i - 1] : null;
+      final next = i + 1 < comments.length ? comments[i + 1] : null;
+      if (previous == null ||
+          !isSameLocalDay(previous.createdAt, comment.createdAt)) {
+        children.add(_buildCommentDaySeparator(chatDayLabel(
+          comment.createdAt,
+          languageCode: languageCode,
+          today: l10n.today,
+          yesterday: l10n.yesterday,
+        )));
+      }
+      final groupedWithPrevious = shouldGroupPostComments(
+        previous,
+        comment,
+        previousHidden: previous != null && hidden(previous),
+        nextHidden: hidden(comment),
+      );
+      final groupedWithNext = next != null &&
+          shouldGroupPostComments(
+            comment,
+            next,
+            previousHidden: hidden(comment),
+            nextHidden: hidden(next),
+          );
+
+      PostCommentQuote? quote;
+      if (shouldShowPostCommentQuote(comment, previous)) {
+        final targetId = postCommentQuoteTargetId(comment)!;
+        final target = byId[targetId];
+        final targetGone = target == null || target.isDeleted || hidden(target);
+        quote = PostCommentQuote(
+          targetId: targetId,
+          authorName: target == null
+              ? (comment.replyToUserNickname ?? '')
+              : getCommentAuthorName(target, currentUserId),
+          text: targetGone ? '' : target.content,
+          isDeleted: targetGone,
+          isMedia: !targetGone && _commentHasMedia(target),
+        );
+      }
+
+      final parentTopId =
+          comment.isTopLevel ? comment.id : (comment.parentCommentId ?? comment.id);
+      void enterReply() => _enterReplyMode(
+            parentTopId: parentTopId,
+            replyToUserId: comment.userId,
+            replyToUserName: getCommentAuthorName(comment, currentUserId),
+            targetCommentId: comment.id,
+            targetPreview: comment.content.trim().isNotEmpty
+                ? comment.content
+                : (_commentHasMedia(comment) ? l10n.commentPhotoLabel : null),
+          );
+
+      // 밀어서 답장: 지금 답글이 가능한 경우와 같은 조건(남의 글, 삭제·숨김
+      // 아님, 차단 아님). 익명 포스트도 시트의 canReply와 같은 조건이다.
+      final canSwipeReply = currentUserId != null &&
+          comment.userId != currentUserId &&
+          !comment.isDeleted &&
+          !hidden(comment) &&
+          !_blockedCommentAuthorIds.contains(comment.userId);
+      children.add(KeyedSubtree(
+        key: _commentKeys.putIfAbsent(comment.id, GlobalKey.new),
+        child: SwipeToReply(
+          enabled: canSwipeReply,
+          onReply: comment.isDeleted ? null : enterReply,
+          semanticsLabel: l10n.reply,
+          child: EnhancedCommentWidget(
+            key: ValueKey<String>(commentTranslationItemKey(
+              comment,
+              postId: _currentPost.id,
+            )),
+            comment: comment,
+            postId: _currentPost.id,
+            onDeleteComment: _deleteCommentWithReplies,
+            onBlockApplied: () {
+              if (!mounted) return;
+              setState(() {});
+            },
+            isAnonymousPost: _currentPost.isAnonymous,
+            getDisplayName: (c) => getCommentAuthorName(c, currentUserId),
+            isReplyTarget: _replyTargetCommentId == comment.id,
+            onReplyTap: comment.isDeleted ? null : enterReply,
+            parentTopLevelCommentId: parentTopId,
+            watchAuthorProfile: false,
+            directInteractionBlocked:
+                _blockedCommentAuthorIds.contains(comment.userId),
+            showHeader: !groupedWithPrevious,
+            groupedWithPrevious: groupedWithPrevious,
+            groupedWithNext: groupedWithNext,
+            quote: quote,
+            onQuoteTap: quote == null || quote.isDeleted
+                ? null
+                : () => _jumpToComment(quote!.targetId),
+            highlighted: _highlightedCommentId == comment.id,
+            perItemShowTranslation: _itemShowTranslation.contains(comment.id),
+            perItemShowOriginal: _itemShowOriginal.contains(comment.id),
+            onTranslationPreference: (translate) =>
+                _setItemTranslationPreference(
+              comment.id,
+              scope: _commentsScope,
+              translate: translate,
+            ),
+          ),
+        ),
+      ));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+  }
+
+  bool _commentHasMedia(Comment comment) =>
+      comment.gifStoragePath.trim().isNotEmpty || comment.imagePaths.isNotEmpty;
+
+  Widget _buildCommentDaySeparator(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Divider(height: 1, thickness: 1, color: _kDetailHairline),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 11,
+                color: _kDetailInkTertiary,
+                height: isChineseUi(context) ? 1.36 : 15 / 11,
+              ),
+            ),
+          ),
+          const Expanded(
+            child: Divider(height: 1, thickness: 1, color: _kDetailHairline),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 인용 줄을 탭하면 대상 메시지로 스크롤하고 1.2초 강조한다.
+  void _jumpToComment(String commentId) {
+    final targetContext = _commentKeys[commentId]?.currentContext;
+    if (targetContext == null) return;
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    unawaited(Scrollable.ensureVisible(
+      targetContext,
+      alignment: .3,
+      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 280),
+      curve: Curves.easeOut,
+    ));
+    _highlightTimer?.cancel();
+    setState(() => _highlightedCommentId = commentId);
+    _highlightTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _highlightedCommentId = null);
+    });
+  }
+
   // 대댓글 모드 진입
   void _enterReplyMode({
     required String parentTopId,
     required String replyToUserId,
     required String replyToUserName,
     required String targetCommentId,
+    String? targetPreview,
   }) {
     setState(() {
+      _replyTargetPreview = targetPreview;
       _isReplyMode = true;
       _replyParentTopLevelId = parentTopId;
       _replyToUserId = replyToUserId;
@@ -2564,6 +3077,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _replyToUserId = null;
       _replyToUserName = null;
       _replyTargetCommentId = null;
+      _replyTargetPreview = null;
     });
     _commentController.clear();
     FocusScope.of(context).unfocus();
@@ -2586,7 +3100,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final content = _commentController.text.trim();
     final gifBytes = _commentGif;
     final gifCommentId = _commentGifId;
-    if (content.isEmpty && gifBytes == null) return;
+    final images = _commentImages;
+    if (content.isEmpty && gifBytes == null && images.isEmpty) return;
 
     // 댓글 작성 전 상태 로깅
     final authUser = FirebaseAuth.instance.currentUser;
@@ -2617,6 +3132,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           replyToUserNickname: _replyToUserName,
           gifBytes: gifBytes,
           gifCommentId: gifCommentId,
+          images: images.isEmpty ? null : images,
         );
         if (Logger.isVerboseEnabled)
           Logger.log(
@@ -2624,7 +3140,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       } else {
         // 일반 댓글 작성
         success = await _commentService.addComment(widget.post.id, content,
-            gifBytes: gifBytes, gifCommentId: gifCommentId);
+            gifBytes: gifBytes,
+            gifCommentId: gifCommentId,
+            images: images.isEmpty ? null : images);
         if (Logger.isVerboseEnabled) Logger.log('💬 일반 댓글 작성 완료');
       }
 
@@ -2646,6 +3164,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         setState(() {
           _commentGif = null;
           _commentGifId = null;
+          _commentImages = const <File>[];
         });
 
         // 대댓글 모드 종료
@@ -2656,11 +3175,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           FocusScope.of(context).unfocus();
         }
       } else if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(
-            content:
-                Text(AppLocalizations.of(context)!.commentSubmitFailed ?? "")));
+            content: Text(images.isNotEmpty
+                ? l10n.commentPhotoUploadFailed
+                : (l10n.commentSubmitFailed ?? ""))));
       }
     } catch (e) {
       Logger.error('❌ 댓글 작성 오류: $e');
@@ -3447,14 +3968,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         if (content.trim().isNotEmpty) ...[
           SizedBox(height: context.rs(10).clamp(8.0, 12.0).toDouble()),
-          TranslatableContent(
+          PostChatTranslatedText(
             request: ContentTranslationRequest(
               contentType: 'post',
               contentId: _currentPost.id,
               sourceFields: postTranslationSourceFields(_currentPost),
             ),
-            scope: 'post:${_currentPost.id}',
-            showToggle: false,
+            scope: _postScope,
+            perItemShowTranslation:
+                _itemShowTranslation.contains(_postBodyItemKey),
+            perItemShowOriginal: _itemShowOriginal.contains(_postBodyItemKey),
+            onPreferenceChanged: (translate) => _setItemTranslationPreference(
+              _postBodyItemKey,
+              scope: _postScope,
+              translate: translate,
+            ),
             builder: (context, fields) => PostLinkifiedText(
               text: fields['content'] ?? content,
               textAlign: TextAlign.left,
@@ -3540,6 +4068,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         title: const SizedBox.shrink(),
         centerTitle: false,
         actions: [
+          if (postTranslationSourceFields(_currentPost).isNotEmpty ||
+              _hasTranslatableComments)
+            _buildTranslationSplitButton(),
           IconButton(
             tooltip: AppLocalizations.of(context)!.moreOptions,
             onPressed: _openPostActionsSheet,
@@ -3565,22 +4096,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     children: [
                       _buildEditorialPostContent(),
 
-                      // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
-                      if (_hasTranslatableComments) ...[
-                        const SizedBox(height: DesignTokens.s4),
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(right: DesignTokens.s12),
-                          child: Align(
-                            alignment: Alignment.centerRight,
-                            child: TranslationScopeToggle(
-                              scope: _commentsScope,
-                              postCardHeader: true,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: DesignTokens.s2),
-                      ],
+                      const SizedBox(height: DesignTokens.s8),
 
                       // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
                       StreamBuilder<List<Comment>>(
@@ -3618,8 +4134,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               CommentService.retainValidThreadComments(
                             rawComments,
                           );
-                          final topLevelComments =
-                              allComments.where((c) => c.isTopLevel).toList();
                           _syncCommentTranslationScope(allComments);
                           final currentUser = FirebaseAuth.instance.currentUser;
                           if (allComments.isEmpty) {
@@ -3640,100 +4154,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             );
                           }
 
-                          // 댓글을 계층적으로 구조화
-                          // (topLevelComments는 위에서 raw 기준으로 계산)
-
-                          // 댓글 위젯을 재귀적으로 빌드하는 헬퍼 함수
-                          Widget buildCommentWidget(
-                              Comment comment, String parentTopId) {
-                            return EnhancedCommentWidget(
-                              key: ValueKey<String>(commentTranslationItemKey(
-                                comment,
-                                postId: _currentPost.id,
-                              )),
-                              comment: comment,
-                              replies: const [],
-                              postId: _currentPost.id,
-                              onDeleteComment: _deleteCommentWithReplies,
-                              onBlockApplied: () {
-                                if (!mounted) return;
-                                setState(() {});
-                              },
-                              isAnonymousPost: _currentPost.isAnonymous,
-                              getDisplayName: (comment) => getCommentAuthorName(
-                                  comment, currentUser?.uid),
-                              isReplyTarget:
-                                  _replyTargetCommentId == comment.id,
-                              onReplyTap: comment.isDeleted
-                                  ? null
-                                  : () {
-                                      // 해당 댓글에 답글 달기
-                                      _enterReplyMode(
-                                        parentTopId: parentTopId,
-                                        replyToUserId: comment.userId,
-                                        replyToUserName: getCommentAuthorName(
-                                            comment, currentUser?.uid),
-                                        targetCommentId: comment.id,
-                                      );
-                                    },
-                              parentTopLevelCommentId: parentTopId,
-                              watchAuthorProfile: false,
-                              directInteractionBlocked: _blockedCommentAuthorIds
-                                  .contains(comment.userId),
-                            );
-                          }
-
-                          final commentList = ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: topLevelComments.length,
-                            itemBuilder: (context, index) {
-                              final comment = topLevelComments[index];
-                              final replies = allComments
-                                  .where((c) => c.parentCommentId == comment.id)
-                                  .toList();
-
-                              return EnhancedCommentWidget(
-                                key: ValueKey<String>(commentTranslationItemKey(
-                                  comment,
-                                  postId: _currentPost.id,
-                                )),
-                                comment: comment,
-                                replies: replies,
-                                postId: _currentPost.id,
-                                onDeleteComment: _deleteCommentWithReplies,
-                                onBlockApplied: () {
-                                  if (!mounted) return;
-                                  setState(() {});
-                                },
-                                isAnonymousPost: _currentPost.isAnonymous,
-                                getDisplayName: (comment) =>
-                                    getCommentAuthorName(
-                                        comment, currentUser?.uid),
-                                isReplyTarget:
-                                    _replyTargetCommentId == comment.id,
-                                onReplyTap: comment.isDeleted
-                                    ? null
-                                    : () {
-                                        // 최상위 댓글에 답글 달기
-                                        _enterReplyMode(
-                                          parentTopId: comment.id,
-                                          replyToUserId: comment.userId,
-                                          replyToUserName: getCommentAuthorName(
-                                              comment, currentUser?.uid),
-                                          targetCommentId: comment.id,
-                                        );
-                                      },
-                                parentTopLevelCommentId: comment.id,
-                                watchAuthorProfile: false,
-                                directInteractionBlocked:
-                                    _blockedCommentAuthorIds
-                                        .contains(comment.userId),
-                                // 대댓글을 위한 빌더: 각 대댓글마다 개별 콜백 생성
-                                replyWidgetBuilder: (reply) =>
-                                    buildCommentWidget(reply, comment.id),
-                              );
-                            },
+                          final commentList = _buildCommentConversation(
+                            allComments,
+                            currentUserId: currentUser?.uid,
                           );
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3760,56 +4183,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 대댓글 모드 상단 바 (미니멀 디자인)
-                    if (_isReplyMode)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16.0,
-                          vertical: 10.0,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50], // 매우 연한 회색 배경
-                          border: Border(
-                            bottom: BorderSide(
-                              color: Colors.grey[300]!, // 연한 회색 테두리
-                              width: 1,
-                            ),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.subdirectory_arrow_right, // 더 명확한 대댓글 아이콘
-                              size: 18,
-                              color: Colors.grey[700], // 검은색 계열
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                AppLocalizations.of(context)!
-                                    .replyingTo(_replyToUserName ?? ''),
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[800], // 검은색 계열
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            MotionPress(
-                              pressedScale: .92,
-                              child: GestureDetector(
-                                onTap: _exitReplyMode,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  child: Icon(Icons.close, size: 18, color: Colors.grey[600]),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                    // 답장 바: 좌측 파란 선 + 받는 사람 + 대상 본문 한 줄 + x(터치 44).
+                    if (_isReplyMode) _buildReplyBar(),
 
                     // 입력창
                     if (_commentGif != null)
@@ -3833,10 +4208,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ]),
                         ),
                       ),
+                    if (_commentImages.isNotEmpty) _buildCommentImageTray(),
                     Padding(
                       padding: EdgeInsets.only(
-                        left: 16.0,
-                        right: 16.0,
+                        // 사진 버튼(44)이 자체 여백을 가져 왼쪽은 8로 줄인다.
+                        left: isLoggedIn ? 8.0 : 16.0,
+                        right: 12.0,
                         top: 8.0,
                         bottom: MediaQuery.of(context).viewInsets.bottom > 0
                             ? 8.0 // 키보드가 올라온 경우
@@ -3845,6 +4222,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                       child: Row(
                         children: [
+                          if (isLoggedIn) _buildCommentPhotoButton(),
                           Expanded(
                             child: TextField(
                               controller: _commentController,
@@ -3857,6 +4235,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               contextMenuBuilder: (context, state) =>
                                   commentGifContextMenu(context, state, (bytes) {
                                 if (!mounted || _isSubmittingComment ||
+                                    _commentImages.isNotEmpty ||
                                     FirebaseAuth.instance.currentUser == null) {
                                   return;
                                 }
@@ -3884,7 +4263,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   color: _kDetailInkTertiary,
                                 ),
                                 border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius: BorderRadius.circular(20),
                                   borderSide: BorderSide.none,
                                 ),
                                 filled: true,
@@ -3923,7 +4302,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     builder: (context, value, _) {
                                       final canSend =
                                           value.text.trim().isNotEmpty ||
-                                              _commentGif != null;
+                                              _commentGif != null ||
+                                              _commentImages.isNotEmpty;
                                       return Semantics(
                                         button: true,
                                         enabled: canSend,

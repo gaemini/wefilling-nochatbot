@@ -18,6 +18,7 @@ Comment _comment({
   int likeCount = 0,
   List<String> likedBy = const [],
   String gifStoragePath = '',
+  List<String> imagePaths = const [],
   int depth = 0,
   String? replyTo,
 }) =>
@@ -29,6 +30,7 @@ Comment _comment({
       authorPhotoUrl: '',
       content: content,
       gifStoragePath: gifStoragePath,
+      imagePaths: imagePaths,
       createdAt: DateTime.now().subtract(const Duration(minutes: 17)),
       depth: depth,
       parentCommentId: depth > 0 ? 'parent' : null,
@@ -50,7 +52,10 @@ void main() {
   Future<void> pump(
     WidgetTester tester,
     Comment comment, {
-    List<Comment> replies = const [],
+    PostCommentQuote? quote,
+    bool showHeader = true,
+    bool groupedWithPrevious = false,
+    bool groupedWithNext = false,
     bool anonymous = false,
     double width = 375,
     double textScale = 1,
@@ -73,8 +78,11 @@ void main() {
             body: SingleChildScrollView(
               child: EnhancedCommentWidget(
                 comment: comment,
-                replies: replies,
                 postId: _postId,
+                quote: quote,
+                showHeader: showHeader,
+                groupedWithPrevious: groupedWithPrevious,
+                groupedWithNext: groupedWithNext,
                 isAnonymousPost: anonymous,
                 getDisplayName: (_) => '익명 1',
                 watchAuthorProfile: false,
@@ -154,19 +162,76 @@ void main() {
     expect(find.text('익명 1'), findsOneWidget);
   });
 
-  testComment('답글 스레드는 토글로 접고 펼친다', (tester) async {
-    final reply = _comment(
-      id: 'r1',
-      depth: 1,
-      content: '토요일 간거입니다',
-      replyTo: 'JBum',
+  testComment('대화형 보기: 답글은 @아이디 대신 인용 줄을 말풍선 안에 그린다',
+      (tester) async {
+    await pump(
+      tester,
+      _comment(id: 'r1', depth: 1, content: '토요일 간거입니다', replyTo: 'JBum'),
+      quote: const PostCommentQuote(
+        targetId: 'c0',
+        authorName: 'JBum',
+        text: '와 출근을 안했다라...?',
+      ),
     );
-    await pump(tester, _comment(), replies: [reply]);
-    expect(find.byKey(const ValueKey('comment-bubble:r1')), findsOneWidget);
-    await tester.tap(find.text('답글 숨기기'));
-    await tester.pump();
-    expect(find.byKey(const ValueKey('comment-bubble:r1')), findsNothing);
-    expect(find.text('답글 1개 보기'), findsOneWidget);
+    expect(find.byKey(const ValueKey('comment-quote:r1')), findsOneWidget);
+    expect(find.text('JBum'), findsOneWidget);
+    expect(find.text('와 출근을 안했다라...?'), findsOneWidget);
+    expect(find.textContaining('@JBum'), findsNothing);
+  });
+
+  testComment('인용 대상이 삭제됐으면 기존 문구, 사진만이면 사진', (tester) async {
+    await pump(
+      tester,
+      _comment(id: 'r1', depth: 1, content: '응'),
+      quote: const PostCommentQuote(
+        targetId: 'c0',
+        authorName: 'A',
+        text: '',
+        isDeleted: true,
+      ),
+    );
+    expect(find.text('삭제된 댓글입니다.'), findsOneWidget);
+    await pump(
+      tester,
+      _comment(id: 'r2', depth: 1, content: '응'),
+      quote: const PostCommentQuote(
+        targetId: 'c0',
+        authorName: 'A',
+        text: '',
+        isMedia: true,
+      ),
+    );
+    expect(find.text('사진'), findsOneWidget);
+    expect(find.byIcon(Icons.image_outlined), findsOneWidget);
+  });
+
+  testComment('묶음 안의 메시지는 아바타·이름·시간이 없다', (tester) async {
+    await pump(tester, _comment(), showHeader: false, groupedWithPrevious: true);
+    expect(find.byIcon(Icons.person), findsNothing);
+    expect(
+      find.text('A commenter with a deliberately long nickname here'),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('comment-bubble:c1')), findsOneWidget);
+  });
+
+  testComment('삭제된 댓글은 가운데 한 줄 시스템 표시다', (tester) async {
+    await pump(
+      tester,
+      Comment(
+        id: 'd1',
+        postId: _postId,
+        userId: _other,
+        authorNickname: 'x',
+        authorPhotoUrl: '',
+        content: '',
+        createdAt: DateTime.now(),
+        isDeleted: true,
+      ),
+    );
+    final text = tester.widget<Text>(find.text('삭제된 댓글입니다.'));
+    expect(text.textAlign, TextAlign.center);
+    expect(text.style?.fontSize, 12);
   });
 
   const contents = <String, String>{
@@ -194,16 +259,11 @@ void main() {
                 likeCount: 12,
                 likedBy: const [_me],
               ),
-              replies: [
-                _comment(
-                  id: 'reply-${entry.key}-$mine',
-                  depth: 1,
-                  userId: mine ? _other : _me,
-                  content: entry.value,
-                  replyTo: 'KyJung',
-                  likeCount: 3,
-                ),
-              ],
+              quote: PostCommentQuote(
+                targetId: 'quoted',
+                authorName: 'KyJung with a very long display name indeed',
+                text: entry.value,
+              ),
               width: width,
               textScale: scale,
               locale: entry.key == 'chinese'
@@ -232,5 +292,46 @@ void main() {
     expect(find.byKey(const ValueKey('comment-bubble:c1')), findsNothing);
     expect(badge('c1'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  for (final count in const [1, 2, 4]) {
+    for (final width in const [320.0, 430.0]) {
+      testComment('사진 $count장 댓글: 오버플로우 없음 width=$width', (tester) async {
+        for (final mine in const [false, true]) {
+          await pump(
+            tester,
+            _comment(
+              id: 'p$count$mine',
+              userId: mine ? _me : _other,
+              content: count == 4 ? '' : '사진 보세요 https://example.com/very/long/url',
+              imagePaths: [
+                for (var i = 0; i < count; i++)
+                  'post_comment_images/$_postId/p$count$mine/$i.jpg',
+              ],
+              likeCount: 2,
+            ),
+            width: width,
+            textScale: 2,
+          );
+          expect(
+            find.byKey(ValueKey('post-images:p$count$mine')),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        }
+      });
+    }
+  }
+
+  testComment('경로가 이 댓글의 것이 아니면 사진을 그리지 않는다', (tester) async {
+    await pump(
+      tester,
+      _comment(
+        id: 'x1',
+        content: 'hi',
+        imagePaths: const ['post_comment_images/other/x1/0.jpg'],
+      ),
+    );
+    expect(find.byKey(const ValueKey('post-images:x1')), findsNothing);
   });
 }

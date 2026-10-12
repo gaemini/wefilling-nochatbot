@@ -1691,6 +1691,19 @@ service cloud.firestore {
           && (removingOwnLike || addingOwnLike);
       }
 
+      function validCommentImagePaths(data) {
+        let paths = data.get('imagePaths', []);
+        let prefix = 'post_comment_images/' + string(data.postId) + '/'
+          + commentId + '/';
+        return paths is list
+          && paths.size() <= 4
+          && (paths.size() < 1 || paths[0] == prefix + '0.jpg')
+          && (paths.size() < 2 || paths[1] == prefix + '1.jpg')
+          && (paths.size() < 3 || paths[2] == prefix + '2.jpg')
+          && (paths.size() < 4 || paths[3] == prefix + '3.jpg')
+          && (paths.size() == 0 || data.get('gifStoragePath', '') == '');
+      }
+
       allow read: if canReadCommentTarget(resource.data);
       
       // 생성: 로그인한 사용자만 댓글 작성 가능 (emailVerified 확인)
@@ -1706,7 +1719,9 @@ service cloud.firestore {
         directCommentTargetsBlockFree(request.resource.data) &&
         // 대댓글의 표시 부모, 실제 답글 대상, 수신자 UID가 모두 같은
         // 게시글/스레드에 속하는지 검증한다.
-        validCommentThread(request.resource.data);
+        validCommentThread(request.resource.data) &&
+        // 사진 댓글: 최대 4장, 이 댓글의 고정 경로만, GIF와 함께 담지 않는다.
+        validCommentImagePaths(request.resource.data);
       
       // 수정: 삭제는 스레드 위치를 보존하는 tombstone 전환만 허용한다.
       // 좋아요는 삭제되지 않은 댓글의 집계 필드만 변경할 수 있다.

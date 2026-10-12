@@ -53,6 +53,43 @@ class FirestoreRulesTest {
 }
 
 void main() {
+  group('Rules - Post comment photos', () {
+    // 실제 평가는 functions/scripts/test_comment_image_rules_emulator.js가
+    // Firestore+Storage 에뮬레이터로 검증한다(5장 거부, 잘못된 경로 거부,
+    // 기존 텍스트·GIF 댓글 통과). 여기서는 규칙 원문의 불변 조건을 지킨다.
+    final rules = File('firestore.rules').readAsStringSync();
+    final storage = File('storage.rules').readAsStringSync();
+
+    test('댓글 생성은 imagePaths를 최대 4장, 고정 경로로만 허용한다', () {
+      expect(rules, contains('validCommentImagePaths(request.resource.data)'));
+      expect(rules, contains('paths.size() <= 4'));
+      expect(rules, contains("paths[3] == prefix + '3.jpg'"));
+      expect(
+        rules,
+        contains("(paths.size() == 0 || data.get('gifStoragePath', '') == '')"),
+      );
+    });
+
+    test('소프트 삭제·좋아요 업데이트 허용 목록은 imagePaths를 포함하지 않는다', () {
+      final update = rules.substring(
+        rules.indexOf('function isCommentSoftDelete()'),
+        rules.indexOf('function validCommentImagePaths(data)'),
+      );
+      expect(update, contains("hasOnly(['likeCount', 'likedBy'])"));
+      expect(update.contains("'imagePaths'"), isFalse);
+    });
+
+    test('Storage 사진 경로는 jpeg 3MB, 소유자 메타데이터를 요구한다', () {
+      final block = storage.substring(
+        storage.indexOf('match /post_comment_images/{postId}/{commentId}/{fileName}'),
+      );
+      expect(block, contains("request.resource.contentType == 'image/jpeg'"));
+      expect(block, contains('request.resource.size <= 3 * 1024 * 1024'));
+      expect(block, contains('request.resource.metadata.ownerUid == request.auth.uid'));
+      expect(block, contains("fileName.matches('^[0-3]\\\\.jpg\$')"));
+    });
+  });
+
   group('Firestore Rules - Post Snack Chat link', () {
     // 실제 규칙 평가는 functions/scripts/test_post_snack_chat_emulator.js가
     // 에뮬레이터로 검증한다. 여기서는 규칙 원문에서 불변 조건이 빠지지 않게 막는다.

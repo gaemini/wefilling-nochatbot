@@ -3578,4 +3578,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commentUnlikeAction => 'Unlike';
+
+  @override
+  String get commentPhotoLabel => 'Photo';
+
+  @override
+  String get commentAttachPhoto => 'Add photos';
+
+  @override
+  String commentPhotoLimit(int count) {
+    return 'You can add up to $count photos';
+  }
+
+  @override
+  String get commentPhotoUploadFailed =>
+      'Couldn\'t upload the photos. Please try again.';
+
+  @override
+  String get commentRemovePhoto => 'Remove photo';
 }

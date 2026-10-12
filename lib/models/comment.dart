@@ -17,8 +17,11 @@ class Comment {
   final String authorPhotoUrl;
   final String content;
   final String gifStoragePath;
-  /// Bucket holding [gifStoragePath]; empty means the legacy bucket.
+  /// Bucket holding [gifStoragePath]/[imagePaths]; empty means the legacy bucket.
   final String storageBucket;
+
+  /// 사진 댓글(0–4장). post_comment_images/{postId}/{commentId}/{i}.jpg
+  final List<String> imagePaths;
   final DateTime createdAt;
   final bool isDeleted;
   final DateTime? deletedAt;
@@ -46,6 +49,7 @@ class Comment {
     required this.content,
     this.gifStoragePath = '',
     this.storageBucket = '',
+    this.imagePaths = const <String>[],
     required this.createdAt,
     this.isDeleted = false,
     this.deletedAt,
@@ -71,6 +75,7 @@ class Comment {
       content: data['content'] ?? '',
       gifStoragePath: (data['gifStoragePath'] ?? '').toString(),
       storageBucket: (data['storageBucket'] ?? '').toString(),
+      imagePaths: _parseImagePaths(data['imagePaths']),
       createdAt: data['createdAt'] != null
           ? (data['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
@@ -117,6 +122,7 @@ class Comment {
       'content': content,
       'gifStoragePath': gifStoragePath,
       'storageBucket': storageBucket,
+      if (imagePaths.isNotEmpty) 'imagePaths': imagePaths,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'isDeleted': isDeleted,
       'deletedAt': deletedAt?.millisecondsSinceEpoch,
@@ -141,6 +147,7 @@ class Comment {
       content: map['content'] ?? '',
       gifStoragePath: (map['gifStoragePath'] ?? '').toString(),
       storageBucket: (map['storageBucket'] ?? '').toString(),
+      imagePaths: _parseImagePaths(map['imagePaths']),
       createdAt: map['createdAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),
@@ -177,6 +184,7 @@ class Comment {
     String? content,
     String? gifStoragePath,
     String? storageBucket,
+    List<String>? imagePaths,
     DateTime? createdAt,
     bool? isDeleted,
     DateTime? deletedAt,
@@ -197,6 +205,7 @@ class Comment {
       content: content ?? this.content,
       gifStoragePath: gifStoragePath ?? this.gifStoragePath,
       storageBucket: storageBucket ?? this.storageBucket,
+      imagePaths: imagePaths ?? this.imagePaths,
       createdAt: createdAt ?? this.createdAt,
       isDeleted: isDeleted ?? this.isDeleted,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -216,4 +225,12 @@ class Comment {
 
   // 사용자가 이 댓글에 좋아요를 눌렀는지 확인
   bool isLikedBy(String userId) => likedBy.contains(userId);
+
+  static List<String> _parseImagePaths(Object? raw) => raw is List
+      ? raw
+          .map((e) => e?.toString() ?? '')
+          .where((e) => e.trim().isNotEmpty)
+          .take(4)
+          .toList(growable: false)
+      : const <String>[];
 }

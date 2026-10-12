@@ -44,6 +44,12 @@ import 'relationship_orbit_for_user.dart';
 import 'post_card_comment_invite.dart';
 import '../sheets/translation_language_sheet.dart';
 import '../../l10n/ui_locale.dart';
+import 'post_card_friend_button.dart';
+import 'post_card_header_line.dart';
+import 'package:provider/provider.dart';
+import '../../providers/relationship_provider.dart';
+import '../../models/relationship_status.dart';
+import '../../services/content_filter_service.dart';
 
 /// Board/Home 피드에서 사용하는 content-first 일반 게시글 카드.
 class OptimizedPostCard extends StatefulWidget {
@@ -1117,11 +1123,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: MotionPress(
+                    PostCardHeaderLine(
+                      name: MotionPress(
                             enabled: canOpenProfile,
                             pressedScale: .99,
                             child: GestureDetector(
@@ -1151,7 +1154,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                               ),
                             ),
                           ),
-                        ),
+                      details: [
                         if (!isAnonymous &&
                             !effectiveDeleted &&
                             post.authorNationality.trim().isNotEmpty) ...[
@@ -1201,6 +1204,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           ),
                         ],
                       ],
+                      trailing: _buildFriendButton(
+                        post,
+                        isDeleted: effectiveDeleted,
+                        usesLimitedAudienceIdentity:
+                            usesLimitedAudienceIdentity,
+                      ),
                     ),
                     if (showTranslationToggle) ...[
                       const SizedBox(height: 1),
@@ -1252,6 +1261,43 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           resolvedPhotoURL: resolvedPhotoURL,
           isDeletedAccount:
               isDeletedByPostSnapshot || live?.isDeletedAccount == true,
+        );
+      },
+    );
+  }
+
+  /// 머리줄 오른쪽 친구 추가 버튼. 카드마다 서버를 읽지 않고 관계 provider의
+  /// 스트림 상태를 작성자 uid 단위로 고른다(그 작성자 상태가 바뀔 때만 다시 그림).
+  Widget? _buildFriendButton(
+    Post post, {
+    required bool isDeleted,
+    required bool usesLimitedAudienceIdentity,
+  }) {
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    final authorId = post.userId.trim();
+    if (me == null ||
+        authorId.isEmpty ||
+        authorId == 'deleted' ||
+        authorId == me ||
+        post.isAnonymous ||
+        isDeleted ||
+        usesLimitedAudienceIdentity ||
+        ContentFilterService.getExcludedUserIdsCached().contains(authorId)) {
+      return null;
+    }
+    return Selector<RelationshipProvider, RelationshipStatus?>(
+      selector: (_, provider) => provider.feedRelationshipStatus(authorId),
+      builder: (context, status, _) {
+        if (FirebaseAuth.instance.currentUser?.uid != me) {
+          return const SizedBox.shrink();
+        }
+        final provider = context.read<RelationshipProvider>();
+        return PostCardFriendButton(
+          key: ValueKey<String>('friend-button:$me:$authorId'),
+          status: status,
+          onSend: () => provider.sendFriendRequest(authorId, silent: true),
+          onCancel: () => provider.cancelFriendRequest(authorId, silent: true),
+          onAccept: () => provider.acceptFriendRequest(authorId, silent: true),
         );
       },
     );

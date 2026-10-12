@@ -122,7 +122,8 @@ class _PostCardFriendButtonState extends State<PostCardFriendButton> {
     if (!ok) {
       AppSnackBar.show(context, message: failure, type: AppSnackBarType.error);
     } else if (success != null) {
-      AppSnackBar.show(context, message: success, type: AppSnackBarType.success);
+      AppSnackBar.show(context,
+          message: success, type: AppSnackBarType.success);
     }
   }
 
@@ -143,8 +144,14 @@ class _PostCardFriendButtonState extends State<PostCardFriendButton> {
     final background = filled ? _kPointStrong : _kFillSubtle;
     final foreground = filled ? Colors.white : _kInkSecondary;
     final (IconData icon, String label) = switch (status!) {
-      RelationshipStatus.none => (Icons.person_add_alt_1_rounded, l10n.addFriend),
-      RelationshipStatus.pendingOut => (Icons.check_rounded, l10n.requestPending),
+      RelationshipStatus.none => (
+          Icons.person_add_alt_1_rounded,
+          l10n.addFriend
+        ),
+      RelationshipStatus.pendingOut => (
+          Icons.check_rounded,
+          l10n.requestPending
+        ),
       _ => (Icons.check_rounded, l10n.accept),
     };
 
@@ -164,17 +171,20 @@ class _PostCardFriendButtonState extends State<PostCardFriendButton> {
         children: [
           Icon(icon, size: 16, color: foreground),
           const SizedBox(width: 4),
-          Text(
-            label,
-            maxLines: 1,
-            softWrap: false,
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: foreground,
-              height: isChineseUi(context) ? 1.3 : 1.2,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: foreground,
+                height: isChineseUi(context) ? 1.3 : 1.2,
+              ),
             ),
           ),
         ],

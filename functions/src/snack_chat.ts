@@ -39,6 +39,8 @@ const SNACK_CHATS = 'snack_chats';
 const USERS = 'users';
 const BLOCKS = 'blocks';
 const MEETUPS = 'meetups';
+const POSTS = 'posts';
+const COMMENTS = 'comments';
 const MEETUP_PARTICIPANTS = 'meetup_participants';
 const REPORTS = 'reports';
 const FUNCTION_EVENTS = '_snack_chat_function_events';
@@ -2521,6 +2523,264 @@ export const joinMeetupSnackChatSecure = callables()
         ...(participants.length === 0 ? {creatorId: userId} : {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
+      return true;
+    });
+    return {success: true, joined};
+  });
+
+/**
+ * Post-linked Snack Chat ("continue in Snack Chat"). Mirrors the Meetup room
+ * pattern: the stored Post is the authority, the room is created/joined only
+ * through these callables, and nobody is invited — eligible people (the post
+ * author and anyone with a live comment on it) choose to join themselves.
+ */
+const POST_ROOM_ACTIVE_HOURS = 24;
+
+export function postSnackChatTitle(data: Data): string {
+  const firstLine = stringValue(data.content)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0) ?? '';
+  const fromContent = Array.from(firstLine).slice(0, 40).join('').trim();
+  if (fromContent) return fromContent;
+  const fallback = boundedString(
+    stringValue(data.category) || stringValue(data.categoryKey),
+    40,
+  );
+  return fallback || 'Snack Chat';
+}
+
+function assertPostAllowsSnackChat(
+  post: FirebaseFirestore.DocumentSnapshot,
+): Data {
+  const data = post.data() ?? {};
+  if (!post.exists || data.isDeleted === true) {
+    throw new functions.https.HttpsError('not-found', 'Post not found.');
+  }
+  if (data.isAnonymous === true) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'An anonymous post cannot open a Snack Chat.',
+    );
+  }
+  return data;
+}
+
+/**
+ * The post author, or someone with a non-deleted comment on the post. The
+ * comment create rule already proved that commenter could read the post, so
+ * visibility is not re-implemented here.
+ */
+async function isPostSnackChatEligible(
+  postId: string,
+  postData: Data,
+  userId: string,
+): Promise<boolean> {
+  if (stringValue(postData.userId) === userId) return true;
+  const comments = await db().collection(COMMENTS)
+    .where('postId', '==', postId)
+    .where('userId', '==', userId)
+    .limit(20)
+    .get();
+  return comments.docs.some((doc) => doc.get('isDeleted') !== true);
+}
+
+function postRoomIsLive(
+  room: FirebaseFirestore.DocumentSnapshot,
+  postId: string,
+): boolean {
+  return room.exists &&
+    stringValue(room.get('postId')) === postId &&
+    room.get('allowPostJoin') === true &&
+    timestampMillis(room.get('expiresAt')) > Date.now();
+}
+
+/**
+ * Reads blocks and stages the participant update. All transaction reads happen
+ * before the single write so callers can use it after their own reads.
+ */
+async function admitPostRoomParticipant(
+  transaction: FirebaseFirestore.Transaction,
+  room: FirebaseFirestore.DocumentSnapshot,
+  userId: string,
+): Promise<void> {
+  const participants = uniqueStrings(room.get('participantIds'));
+  if (participants.includes(userId)) return;
+  if (participants.length >= MAX_ROOM_PARTICIPANTS) {
+    throw new functions.https.HttpsError(
+      'resource-exhausted',
+      'This Snack Chat already has 50 participants.',
+    );
+  }
+  const others = participants.filter((id) => id !== userId);
+  if (others.length > 0) {
+    const blockDocs = await transaction.getAll(...others.flatMap((id) => [
+      db().collection(BLOCKS).doc(userId + '_' + id),
+      db().collection(BLOCKS).doc(id + '_' + userId),
+    ]));
+    if (blockDocs.some((snapshot) => snapshot.exists)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'You cannot join this Snack Chat.',
+      );
+    }
+  }
+  const nextParticipants = [...participants, userId];
+  const previousUnread = normalizedCountMap(room.get('unreadCount'));
+  const unreadCount: Record<string, number> = {};
+  nextParticipants.forEach((id) => {
+    unreadCount[id] = previousUnread[id] ?? 0;
+  });
+  unreadCount[userId] = 0;
+  const unreadStartSequenceBy = {
+    ...objectValue(room.get('unreadStartSequenceBy')),
+    [userId]: nonNegativeInteger(room.get('lastMessageSequence')),
+  };
+  transaction.update(room.ref, {
+    participantIds: nextParticipants,
+    unreadCount,
+    unreadStartSequenceBy,
+    ...(participants.length === 0 ? {creatorId: userId} : {}),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+}
+
+export const createPostSnackChatSecure = callables()
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const creatorId = requireUid(context);
+    await requireActiveUser(creatorId);
+    const request = objectValue(raw);
+    const postId = firestoreId(request.postId, 'Post id');
+    const postRef = db().collection(POSTS).doc(postId);
+
+    const preflight = assertPostAllowsSnackChat(await postRef.get());
+    if (!await isPostSnackChatEligible(postId, preflight, creatorId)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only the post author or a commenter can open this Snack Chat.',
+      );
+    }
+
+    const newRoomRef = db().collection(SNACK_CHATS).doc();
+    const result = await db().runTransaction(async (transaction) => {
+      const [post, creator] = await transaction.getAll(
+        postRef,
+        db().collection(USERS).doc(creatorId),
+      );
+      assertActiveUserSnapshot(creator);
+      const postData = assertPostAllowsSnackChat(post);
+
+      const existingId = stringValue(postData.snackChatId);
+      if (existingId) {
+        const existingRoom = await transaction.get(
+          db().collection(SNACK_CHATS).doc(
+            firestoreId(existingId, 'Snack Chat id'),
+          ),
+        );
+        if (postRoomIsLive(existingRoom, postId)) {
+          await admitPostRoomParticipant(transaction, existingRoom, creatorId);
+          return {snackChatId: existingRoom.id, created: false};
+        }
+        // Keep the old room's history for its members, but stop the stale
+        // post link from admitting anybody else.
+        if (existingRoom.exists &&
+            stringValue(existingRoom.get('postId')) === postId) {
+          transaction.update(existingRoom.ref, {
+            allowPostJoin: false,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+      }
+
+      const now = Timestamp.now();
+      const expiresAt = Timestamp.fromMillis(
+        now.toMillis() + POST_ROOM_ACTIVE_HOURS * 60 * 60 * 1000,
+      );
+      transaction.create(newRoomRef, {
+        title: postSnackChatTitle(postData),
+        creatorId,
+        participantIds: [creatorId],
+        visibleToCategoryIds: [],
+        postId,
+        allowPostJoin: true,
+        createdAt: now,
+        listPolicyVersion: CURRENT_LIST_POLICY_VERSION,
+        participantIntegrityVersion: CURRENT_PARTICIPANT_INTEGRITY_VERSION,
+        activeDurationHours: POST_ROOM_ACTIVE_HOURS,
+        expiresAt,
+        favoriteUserIds: [],
+        lastMessage: '',
+        lastMessageId: '',
+        lastMessageTime: now,
+        lastMessageSenderId: creatorId,
+        lastMessageSequence: 0,
+        unreadCount: {[creatorId]: 0},
+        updatedAt: now,
+      });
+      // Intentionally no snack_chat_invite notification: nobody is invited.
+      transaction.update(postRef, {snackChatId: newRoomRef.id});
+      return {snackChatId: newRoomRef.id, created: true};
+    });
+
+    return {
+      success: true,
+      snackChatId: result.snackChatId,
+      created: result.created,
+    };
+  });
+
+export const joinPostSnackChatSecure = callables()
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const userId = requireUid(context);
+    await requireActiveUser(userId);
+    const request = objectValue(raw);
+    const snackChatId = firestoreId(request.snackChatId, 'Snack Chat id');
+    const postId = firestoreId(request.postId, 'Post id');
+    const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
+    const postRef = db().collection(POSTS).doc(postId);
+
+    const preflight = assertPostAllowsSnackChat(await postRef.get());
+    if (!await isPostSnackChatEligible(postId, preflight, userId)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only the post author or a commenter can join this Snack Chat.',
+      );
+    }
+
+    const joined = await db().runTransaction(async (transaction) => {
+      const [room, post, user] = await transaction.getAll(
+        roomRef,
+        postRef,
+        db().collection(USERS).doc(userId),
+      );
+      assertActiveUserSnapshot(user);
+      const postData = assertPostAllowsSnackChat(post);
+      if (!room.exists) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          'Post Snack Chat not found.',
+        );
+      }
+      if (room.get('allowPostJoin') !== true ||
+          stringValue(room.get('postId')) !== postId ||
+          stringValue(postData.snackChatId) !== snackChatId) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'This room is not linked to the requested post.',
+        );
+      }
+      if (uniqueStrings(room.get('participantIds')).includes(userId)) {
+        return true;
+      }
+      if (timestampMillis(room.get('expiresAt')) <= Date.now()) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'This Snack Chat has expired.',
+        );
+      }
+      await admitPostRoomParticipant(transaction, room, userId);
       return true;
     });
     return {success: true, joined};

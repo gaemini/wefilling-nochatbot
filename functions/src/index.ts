@@ -145,6 +145,8 @@ export {
   createMeetupSnackChatSecure,
   inviteSnackChatParticipants,
   joinMeetupSnackChatSecure,
+  createPostSnackChatSecure,
+  joinPostSnackChatSecure,
   kickMeetupParticipantSecure,
   leaveMeetupParticipationSecure,
   ensureSnackChatMembershipSecure,

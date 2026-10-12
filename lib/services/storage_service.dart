@@ -13,6 +13,7 @@ import '../utils/logger.dart';
 import 'media/video_upload_policy.dart';
 import 'media/video_prepare_service.dart';
 import 'snack_chat_media_cache_service.dart';
+import 'comment_image_upload.dart';
 
 /// 프로필 이미지 업로드 결과
 /// - downloadUrl: 액세스 토큰 포함 URL
@@ -41,8 +42,10 @@ class PreparedChatImage {
 
   /// Final JPEG bytes to upload.
   final Uint8List bytes;
+
   /// Path the user picked (kept for retries / local preview).
   final String sourcePath;
+
   /// Compressed temp file to delete after use, if compression produced one.
   final String? tempPath;
   final int? width;
@@ -56,6 +59,7 @@ class PreparedChatImage {
     } catch (_) {}
   }
 }
+
 typedef _ChatImageUploadResult = ({
   String storagePath,
   String? downloadUrl,
@@ -882,6 +886,47 @@ class StorageService {
         stackTrace,
       );
     }
+  }
+
+  /// 포스트 댓글 사진 1장을 올리고 Storage 경로를 돌려준다(실패하면 throw).
+  /// 기존 압축(_compressImage, JPEG)을 거쳐 post_comment_images/{postId}/
+  /// {commentId}/{index}.jpg에 ownerUid/postId/commentId 메타데이터로 올린다.
+  Future<String> uploadCommentImage(
+    File imageFile, {
+    required String postId,
+    required String commentId,
+    required int index,
+    required String ownerUid,
+  }) async {
+    final compressed = await _compressImage(imageFile, forceJpeg: true);
+    if (compressed == null) throw StateError('comment-image-compress-failed');
+    final bytes = await compressed.readAsBytes();
+    if (bytes.isEmpty || bytes.length > maxCommentImageBytes) {
+      throw StateError('comment-image-too-large');
+    }
+    final storagePath = commentImagePath(postId, commentId, index);
+    final task = _uploads.ref(storagePath).putData(
+          bytes,
+          SettableMetadata(
+            contentType: 'image/jpeg',
+            customMetadata: {
+              'ownerUid': ownerUid,
+              'postId': postId,
+              'commentId': commentId,
+            },
+          ),
+        );
+    try {
+      await task.timeout(const Duration(minutes: 2));
+    } catch (_) {
+      await task.cancel().catchError((_) => false);
+      rethrow;
+    } finally {
+      if (compressed.path != imageFile.path) {
+        unawaited(compressed.delete().then((_) {}, onError: (_) {}));
+      }
+    }
+    return storagePath;
   }
 
   // 이미지 압축 메서드

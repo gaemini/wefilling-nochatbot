@@ -17,7 +17,17 @@ class SnackChatTranslationSplitButton extends StatelessWidget {
     required this.languageSemanticLabel,
     required this.onToggle,
     required this.onOpenLanguage,
+    this.toggleKey = const ValueKey('snack_translation_toggle'),
+    this.languageKey = const ValueKey('snack_translation_language_settings'),
+    this.languageMaxWidth = 132,
   });
+
+  /// 테스트·화면별 키(DM은 dm_translation_toggle 등).
+  final Key toggleKey;
+  final Key languageKey;
+
+  /// 언어 부분 최대 폭(넘치면 언어 이름이 말줄임).
+  final double languageMaxWidth;
 
   /// 방 번역이 켜져 있는지(!showsOriginal).
   final bool translationOn;
@@ -77,7 +87,7 @@ class SnackChatTranslationSplitButton extends StatelessWidget {
                 child: Tooltip(
                   message: toggleSemanticLabel,
                   child: GestureDetector(
-                    key: const ValueKey('snack_translation_toggle'),
+                    key: toggleKey,
                     behavior: HitTestBehavior.opaque,
                     onTap: enabled ? onToggle : null,
                     child: SizedBox(
@@ -120,14 +130,14 @@ class SnackChatTranslationSplitButton extends StatelessWidget {
                 child: Tooltip(
                   message: languageSemanticLabel,
                   child: GestureDetector(
-                    key: const ValueKey('snack_translation_language_settings'),
+                    key: languageKey,
                     behavior: HitTestBehavior.opaque,
                     onTap: onOpenLanguage,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(
+                      constraints: BoxConstraints(
                         minWidth: minTouch,
                         minHeight: minTouch,
-                        maxWidth: 132,
+                        maxWidth: languageMaxWidth,
                       ),
                       child: Padding(
                         padding: const EdgeInsets.only(left: 6, right: 8),

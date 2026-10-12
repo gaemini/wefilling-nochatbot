@@ -240,11 +240,13 @@ class CommentService {
         commentData['storageBucket'] = AppStorage.uploadBucketName;
         final commentRef = _firestore.collection('comments').doc(commentId);
         try {
-          await _firestore.runTransaction((transaction) async {
-            final existing = await transaction.get(commentRef);
-            if (existing.exists) throw StateError('comment-image-id-conflict');
-            transaction.set(commentRef, commentData);
-          }).timeout(const Duration(seconds: 10));
+          await _createOwnCommentDocument(
+            commentRef,
+            commentData,
+            ownerUid: user.uid,
+            storageField: 'imagePaths',
+            expectedStorageValue: paths,
+          );
         } catch (_) {
           await deleteCommentImagesQuietly(paths, deleteUploaded);
           rethrow;
@@ -288,17 +290,13 @@ class CommentService {
         }
         if (_auth.currentUser?.uid != user.uid) return false;
         final commentRef = _firestore.collection('comments').doc(gifCommentId);
-        await _firestore.runTransaction((transaction) async {
-          final existing = await transaction.get(commentRef);
-          if (existing.exists) {
-            if (existing.data()?['userId'] != user.uid ||
-                existing.data()?['gifStoragePath'] != gifPath) {
-              throw StateError('comment-gif-id-conflict');
-            }
-            return;
-          }
-          transaction.set(commentRef, commentData);
-        }).timeout(const Duration(seconds: 10));
+        await _createOwnCommentDocument(
+          commentRef,
+          commentData,
+          ownerUid: user.uid,
+          storageField: 'gifStoragePath',
+          expectedStorageValue: gifPath,
+        );
       }
 
       // 캐시 무효화 (새 댓글이 추가되었으므로 해당 게시글의 댓글 캐시 삭제)
@@ -361,6 +359,41 @@ class CommentService {
     } catch (e) {
       Logger.error('댓글 작성 오류: $e');
       return false;
+    }
+  }
+
+  /// 미리 정한 id로 댓글 문서를 만든다.
+  ///
+  /// 아직 없는 댓글 문서를 읽으면 규칙(canReadCommentTarget(resource.data))이
+  /// null 오류로 거부해, 이전의 트랜잭션 get이 항상 permission-denied로 실패했다.
+  /// 그래서 읽지 않고 바로 set한다. 규칙상 set은 새 문서일 때만 create로 허용되고,
+  /// 기존 문서 덮어쓰기는 update 규칙이 막는다. 재시도 등으로 이미 만들어진
+  /// 경우에는 존재하는 문서(읽기 허용)가 내 것이고 같은 첨부면 성공으로 본다.
+  Future<void> _createOwnCommentDocument(
+    DocumentReference<Map<String, dynamic>> commentRef,
+    Map<String, dynamic> commentData, {
+    required String ownerUid,
+    required String storageField,
+    required Object expectedStorageValue,
+  }) async {
+    try {
+      await commentRef.set(commentData).timeout(const Duration(seconds: 10));
+    } on FirebaseException catch (error) {
+      if (error.code != 'permission-denied') rethrow;
+      final existing = await commentRef.get().timeout(
+            const Duration(seconds: 6),
+          );
+      final data = existing.data();
+      final stored = data?[storageField];
+      final sameAttachment = expectedStorageValue is List
+          ? stored is List &&
+              stored.length == expectedStorageValue.length &&
+              List.generate(stored.length, (i) => i)
+                  .every((i) => stored[i] == expectedStorageValue[i])
+          : stored == expectedStorageValue;
+      if (!existing.exists || data?['userId'] != ownerUid || !sameAttachment) {
+        rethrow;
+      }
     }
   }
 

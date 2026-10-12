@@ -33,6 +33,7 @@ import 'friends_main_page.dart';
 import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/dialogs/relationship_confirm_dialog.dart';
 
 class ProfileGridScreen extends StatefulWidget {
   final String? userId; // null이면 현재 사용자 프로필
@@ -713,29 +714,14 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
     required String message,
     String? confirmLabel,
     String? cancelLabel,
-  }) async {
-    final loc = AppLocalizations.of(context)!;
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(cancelLabel ?? loc.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(confirmLabel ?? loc.confirm),
-          ),
-        ],
-      ),
-    );
-
-    return result ?? false;
-  }
+  }) =>
+      showRelationshipConfirmDialog(
+        context,
+        title: title,
+        message: message,
+        confirmLabel: confirmLabel,
+        cancelLabel: cancelLabel,
+      );
 
   /// 더보기 액션 처리
   void _handleMoreActions() {

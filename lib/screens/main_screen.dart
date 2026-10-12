@@ -3,6 +3,7 @@
 // 하단 탭 네비게이션 제공
 // 게시판, 모임, 마이페이지 화면 통합
 
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'dart:math' as math;
 
@@ -34,6 +35,7 @@ import 'mypage_screen.dart';
 import 'notification_screen.dart';
 import 'unified_search_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../providers/relationship_provider.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -128,6 +130,16 @@ class _MainScreenState extends State<MainScreen>
           _pendingMeetupId = null;
         });
       }
+
+      // 피드 카드 친구 버튼이 카드마다 서버를 읽지 않도록 관계 스트림을 한 번
+      // 구독해 둔다. 같은 계정이면 다시 구독하지 않고(멱등), 로그아웃 정리는
+      // 기존 AuthProvider 스트림 정리 흐름에 등록한다.
+      final relationshipProvider = context.read<RelationshipProvider>();
+      final authProvider = _authProvider;
+      if (authProvider != null) {
+        relationshipProvider.setAuthProvider(authProvider);
+      }
+      unawaited(relationshipProvider.ensureInitialized());
 
       // 실시간 배지 리스너 시작 (알림/DM 변경 시 자동 업데이트)
       BadgeService.startRealtimeBadgeSync().catchError((e) {

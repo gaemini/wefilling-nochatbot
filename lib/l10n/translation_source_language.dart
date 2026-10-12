@@ -55,10 +55,37 @@ String translationSourceLanguageLabel(BuildContext context, String? code) {
     'uk': 'Ukrainian',
     'mn': 'Mongolian',
   };
+  // 중국어 UI는 '来自' 뒤에 중국어 언어 이름을 쓴다(이전에는 영어 이름이 들어갔다).
+  const chineseNames = <String, String>{
+    'ko': '韩语',
+    'en': '英语',
+    'ja': '日语',
+    'zh': '中文',
+    'es': '西班牙语',
+    'fr': '法语',
+    'de': '德语',
+    'ru': '俄语',
+    'pt': '葡萄牙语',
+    'it': '意大利语',
+    'ar': '阿拉伯语',
+    'hi': '印地语',
+    'th': '泰语',
+    'vi': '越南语',
+    'id': '印尼语',
+    'ms': '马来语',
+    'tr': '土耳其语',
+    'nl': '荷兰语',
+    'pl': '波兰语',
+    'ro': '罗马尼亚语',
+    'uk': '乌克兰语',
+    'mn': '蒙古语',
+  };
+  final names = isChineseUi(context)
+      ? chineseNames
+      : (isKo ? koreanNames : englishNames);
   // 이름 맵에 없는 코드는 지원 언어의 고유 이름(예: Română)으로 대체한다.
-  final language =
-      (isKo ? koreanNames[normalized] : englishNames[normalized]) ??
-          ContentTranslationService.supportedLanguages[normalized] ??
-          normalized.toUpperCase();
+  final language = names[normalized] ??
+      ContentTranslationService.supportedLanguages[normalized] ??
+      normalized.toUpperCase();
   return (isChineseUi(context) ? '来自$language' : isKo ? '원문 언어 $language' : 'From $language');
 }

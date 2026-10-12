@@ -39,6 +39,13 @@ class RelationshipProvider with ChangeNotifier {
   StreamSubscription<List<FriendRequest>>? _outgoingRequestsSubscription;
   StreamSubscription<List<UserProfile>>? _friendsSubscription;
 
+  // 받은 요청/보낸 요청/친구 스트림을 어느 계정으로 구독했는지와, 그 계정의
+  // 첫 스냅샷이 셋 다 도착했는지. 피드 카드는 준비되기 전에는 버튼을 숨긴다.
+  String? _subscribedUid;
+  bool _incomingReady = false;
+  bool _outgoingReady = false;
+  bool _friendsReady = false;
+
   // AuthProvider 참조 (스트림 정리 등록용)
   AuthProvider? _authProvider;
 
@@ -60,6 +67,35 @@ class RelationshipProvider with ChangeNotifier {
   /// 특정 사용자와의 관계 상태 조회
   RelationshipStatus getRelationshipStatus(String otherUserId) {
     return _relationshipStatuses[otherUserId] ?? RelationshipStatus.none;
+  }
+
+  /// 현재 계정으로 구독한 세 스트림의 첫 스냅샷이 모두 도착했는지.
+  bool get relationshipStreamsReady {
+    final uid = currentUserId;
+    return uid != null &&
+        uid == _subscribedUid &&
+        _incomingReady &&
+        _outgoingReady &&
+        _friendsReady;
+  }
+
+  /// 피드 카드용 관계 상태. 서버를 읽지 않고 스트림 상태(친구·보낸 요청·
+  /// 받은 요청)만으로 판단한다. 아직 준비 전이면 null(버튼 숨김).
+  /// 차단 관계는 ContentFilterService가 따로 판별한다.
+  RelationshipStatus? feedRelationshipStatus(String otherUserId) {
+    if (!relationshipStreamsReady) return null;
+    if (isUserFriend(otherUserId)) return RelationshipStatus.friends;
+    if (hasIncomingRequest(otherUserId)) return RelationshipStatus.pendingIn;
+    if (hasOutgoingRequest(otherUserId)) return RelationshipStatus.pendingOut;
+    return RelationshipStatus.none;
+  }
+
+  /// 피드 진입 전에 한 번 부른다. 같은 계정으로 이미 구독 중이면 아무것도
+  /// 하지 않는다(멱등). 계정이 바뀌었으면 이전 계정 데이터를 비우고 다시 구독한다.
+  Future<void> ensureInitialized() async {
+    final uid = currentUserId;
+    if (uid == null || uid == _subscribedUid) return;
+    await initialize(silent: true);
   }
 
   /// 에러 메시지 설정
@@ -292,10 +328,15 @@ class RelationshipProvider with ChangeNotifier {
   }
 
   /// 친구요청 보내기
-  Future<bool> sendFriendRequest(String toUid) async {
+  ///
+  /// [silent]: 피드 카드처럼 자체 로딩·오류 표시를 갖는 호출부용. 전역
+  /// isLoading/actionErrorMessage를 바꾸지 않아 다른 화면에 영향을 주지 않는다.
+  Future<bool> sendFriendRequest(String toUid, {bool silent = false}) async {
     try {
-      _setLoading(true);
-      clearActionError();
+      if (!silent) {
+        _setLoading(true);
+        clearActionError();
+      }
 
       final success = await _relationshipService.sendFriendRequest(toUid);
       if (success) {
@@ -314,20 +355,22 @@ class RelationshipProvider with ChangeNotifier {
       if (errorMessage.startsWith('Exception: ')) {
         errorMessage = errorMessage.substring('Exception: '.length);
       }
-      _setActionError(errorMessage);
+      if (!silent) _setActionError(errorMessage);
       return false;
     } finally {
-      _setLoading(false);
+      if (!silent) _setLoading(false);
     }
   }
 
-  /// 친구요청 취소
-  Future<bool> cancelFriendRequest(String toUid) async {
+  /// 친구요청 취소 ([silent]는 sendFriendRequest와 같다)
+  Future<bool> cancelFriendRequest(String toUid, {bool silent = false}) async {
     final ownerUid = currentUserId;
     if (ownerUid == null) return false;
     try {
-      _setLoading(true);
-      clearActionError();
+      if (!silent) {
+        _setLoading(true);
+        clearActionError();
+      }
 
       final success = await _relationshipService.cancelFriendRequest(toUid);
       if (currentUserId != ownerUid) return success;
@@ -340,18 +383,20 @@ class RelationshipProvider with ChangeNotifier {
       }
       return success;
     } catch (e) {
-      _setActionError('친구요청 취소 중 오류가 발생했습니다: $e');
+      if (!silent) _setActionError('친구요청 취소 중 오류가 발생했습니다: $e');
       return false;
     } finally {
-      _setLoading(false);
+      if (!silent) _setLoading(false);
     }
   }
 
-  /// 친구요청 수락
-  Future<bool> acceptFriendRequest(String fromUid) async {
+  /// 친구요청 수락 ([silent]는 sendFriendRequest와 같다)
+  Future<bool> acceptFriendRequest(String fromUid, {bool silent = false}) async {
     try {
-      _setLoading(true);
-      clearActionError();
+      if (!silent) {
+        _setLoading(true);
+        clearActionError();
+      }
 
       final success = await _relationshipService.acceptFriendRequest(fromUid);
       if (success) {
@@ -386,10 +431,10 @@ class RelationshipProvider with ChangeNotifier {
       }
       return success;
     } catch (e) {
-      _setActionError('친구요청 수락 중 오류가 발생했습니다: $e');
+      if (!silent) _setActionError('친구요청 수락 중 오류가 발생했습니다: $e');
       return false;
     } finally {
-      _setLoading(false);
+      if (!silent) _setLoading(false);
     }
   }
 
@@ -562,6 +607,7 @@ class RelationshipProvider with ChangeNotifier {
       _incomingRequestsSubscription =
           _relationshipService.getIncomingRequests().listen(
         (requests) {
+          _incomingReady = true;
           _incomingRequests = requests.toList(growable: true);
           _refreshSearchRelationshipStatuses();
           notifyListeners();
@@ -591,6 +637,7 @@ class RelationshipProvider with ChangeNotifier {
       _outgoingRequestsSubscription =
           _relationshipService.getOutgoingRequests().listen(
         (requests) {
+          _outgoingReady = true;
           _outgoingRequests = requests.toList(growable: true);
           _refreshSearchRelationshipStatuses();
           notifyListeners();
@@ -611,9 +658,9 @@ class RelationshipProvider with ChangeNotifier {
   }
 
   /// 친구 목록 로드
-  Future<void> loadFriends() async {
+  Future<void> loadFriends({bool silent = false}) async {
     try {
-      _setLoading(true);
+      if (!silent) _setLoading(true);
 
       // 기존 구독 취소
       await _friendsSubscription?.cancel();
@@ -621,6 +668,7 @@ class RelationshipProvider with ChangeNotifier {
       // 새 구독 시작 및 저장
       _friendsSubscription = _relationshipService.getFriends().listen(
         (friends) {
+          _friendsReady = true;
           _friends = friends.toList(growable: true);
           _refreshSearchRelationshipStatuses();
           _setLoading(false);
@@ -645,17 +693,34 @@ class RelationshipProvider with ChangeNotifier {
   }
 
   /// 모든 데이터 초기화
-  Future<void> initialize() async {
+  ///
+  /// [silent]: 피드 진입 시 ensureInitialized가 쓴다. 전역 로딩·오류 상태를
+  /// 건드리지 않아 다른 화면에 로딩 표시가 뜨지 않는다.
+  Future<void> initialize({bool silent = false}) async {
     try {
-      // 검색 등 다른 화면에서 남은 오류가 친구 요청 화면까지 전파되지 않게
-      // 초기화 시작 시 관계 데이터 오류 상태를 새로 설정한다.
-      _errorMessage = null;
-      _actionErrorMessage = null;
-      _setLoading(true);
+      final uid = currentUserId;
+      if (uid != _subscribedUid) {
+        // 계정이 바뀌었으면 이전 계정의 관계 데이터를 쓰지 않는다.
+        _incomingRequests = [];
+        _outgoingRequests = [];
+        _friends = [];
+        _relationshipStatuses = {};
+      }
+      _subscribedUid = uid;
+      _incomingReady = false;
+      _outgoingReady = false;
+      _friendsReady = false;
+      if (!silent) {
+        // 검색 등 다른 화면에서 남은 오류가 친구 요청 화면까지 전파되지 않게
+        // 초기화 시작 시 관계 데이터 오류 상태를 새로 설정한다.
+        _errorMessage = null;
+        _actionErrorMessage = null;
+        _setLoading(true);
+      }
       await Future.wait([
         loadIncomingRequests(),
         loadOutgoingRequests(),
-        loadFriends(),
+        loadFriends(silent: silent),
       ]);
     } catch (e) {
       _setError('데이터 초기화 중 오류가 발생했습니다: $e');
@@ -750,6 +815,17 @@ class RelationshipProvider with ChangeNotifier {
 
     _friendsSubscription?.cancel();
     _friendsSubscription = null;
+
+    // 로그아웃·계정 전환: 다음 계정이 이전 계정의 관계를 보지 않게 비운다.
+    // dispose 중에도 불리므로 여기서는 알리지 않는다.
+    _subscribedUid = null;
+    _incomingReady = false;
+    _outgoingReady = false;
+    _friendsReady = false;
+    _incomingRequests = [];
+    _outgoingRequests = [];
+    _friends = [];
+    _relationshipStatuses = {};
 
     if (Logger.isVerboseEnabled)
       Logger.log('RelationshipProvider: 모든 구독 취소 완료');

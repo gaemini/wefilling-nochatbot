@@ -637,10 +637,9 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
     });
 
     try {
-      final conversationId = await _dmService.getOrCreateConversation(
-        targetUserId,
-        isFriend: _relationshipStatus == RelationshipStatus.friends,
-      );
+      // 방은 첫 메시지를 보낼 때 만들어진다(빈 방 방지).
+      final conversationId =
+          await _dmService.prepareConversationForOpen(targetUserId);
 
       if (!mounted) return;
 

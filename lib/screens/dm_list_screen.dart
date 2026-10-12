@@ -1233,10 +1233,9 @@ class _DMListScreenState extends State<DMListScreen> {
       if (Logger.isVerboseEnabled) Logger.log(
           '🚀 사용자와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
 
-      final conversationId = await _dmService.getOrCreateConversation(
-        friend.uid,
-        isOtherUserAnonymous: false,
-      );
+      // 방은 첫 메시지를 보낼 때 만들어진다(빈 방 방지).
+      final conversationId =
+          await _dmService.prepareConversationForOpen(friend.uid);
 
       if (Logger.isVerboseEnabled) Logger.log('✅ 대화방 ID: $conversationId');
 

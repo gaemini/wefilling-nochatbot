@@ -307,6 +307,28 @@ class DMService {
     return true;
   }
 
+  /// DM 화면을 열기 위한 대화 ID만 준비한다. 문서는 만들지 않는다.
+  /// 방은 첫 메시지를 보낼 때 DMChatScreen._ensureSendRoom이 만든다. 그래서
+  /// 'DM하기'만 누르고 나가면 나와 상대방 모두에게 빈 방이 생기지 않는다.
+  /// 전송할 수 없는 상대(차단·탈퇴·본인 등)면 null을 돌려준다.
+  Future<String?> prepareConversationForOpen(
+    String otherUserId, {
+    String? postId,
+    bool isOtherUserAnonymous = false,
+  }) async {
+    final owner = _auth.currentUser?.uid;
+    if (owner == null) return null;
+    if (!await canSendDM(otherUserId, postId: postId)) return null;
+    if (_auth.currentUser?.uid != owner) return null;
+    // 보관(archivedBy) 해제 같은 쓰기도 하지 않는다. 숨긴 방은 첫 메시지가
+    // 오갈 때 기존 전송 경로에서 다시 나타난다.
+    return computeConversationId(
+      otherUserId,
+      isOtherUserAnonymous: isOtherUserAnonymous,
+      postId: postId,
+    );
+  }
+
   /// 대화방 가져오기 또는 생성
   Future<String?> getOrCreateConversation(
     String otherUserId, {
@@ -624,6 +646,13 @@ class DMService {
           final userLeftTime = conv.userLeftAt[currentUser.uid];
           final lastMessageTime = conv.lastMessageTime;
           final isArchived = conv.archivedBy.contains(currentUser.uid);
+
+          // 메시지가 한 번도 오가지 않은 빈 방은 나와 상대 모두의 목록에서 숨긴다.
+          // (이전 버전 앱이 'DM하기'만으로 만든 방 포함) 모든 전송은
+          // lastMessage와 lastMessageSenderId를 함께 채운다.
+          if (conv.lastMessage.isEmpty && conv.lastMessageSenderId.isEmpty) {
+            return false;
+          }
 
           // ✅ archivedBy 체크 + 새 메시지 복원 로직
           if (isArchived) {

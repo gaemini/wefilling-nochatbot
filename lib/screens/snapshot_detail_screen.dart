@@ -351,10 +351,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     final relationshipStrings = RelationshipStrings.of(context);
     String? room;
     try {
-      room = await _dmService.getOrCreateConversation(
-        item.authorId,
-        isFriend: true,
-      );
+      // 방은 사진·영상을 실제로 보낼 때 만들어진다(빈 방 방지).
+      room = await _dmService.prepareConversationForOpen(item.authorId);
     } catch (_) {
       room = null;
     }
@@ -835,10 +833,9 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   Future<void> _openMessage() async {
     final strings = SnapshotStrings.of(context);
     try {
-      final conversationId = await _dmService.getOrCreateConversation(
-        _current.authorId,
-        isFriend: _current.visibility != SnapshotVisibility.public,
-      );
+      // 방은 첫 메시지를 보낼 때 만들어진다(빈 방 방지).
+      final conversationId =
+          await _dmService.prepareConversationForOpen(_current.authorId);
       if (!mounted) return;
       if (conversationId == null) throw StateError('conversation-unavailable');
       await Navigator.of(context).push<void>(

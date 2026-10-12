@@ -239,8 +239,9 @@ class _SnackChatTranslatedTextState extends State<SnackChatTranslatedText>
         return _footerRow(
           key: 'translated',
           onTap: widget.onShowOriginal,
-          semanticsLabel:
-              '${widget.sourceLanguageLabel}, ${widget.showOriginalLabel}',
+          semanticsLabel: widget.onShowOriginal == null
+              ? widget.sourceLanguageLabel
+              : '${widget.sourceLanguageLabel}, ${widget.showOriginalLabel}',
           children: [
             _icon(SnackChatPalette.inkSecondary),
             Flexible(
@@ -248,8 +249,13 @@ class _SnackChatTranslatedTextState extends State<SnackChatTranslatedText>
                 TextSpan(
                   children: [
                     if (widget.sourceLanguageLabel.isNotEmpty)
-                      TextSpan(text: '${widget.sourceLanguageLabel} · '),
-                    TextSpan(
+                      TextSpan(
+                        text: widget.onShowOriginal == null
+                            ? widget.sourceLanguageLabel
+                            : '${widget.sourceLanguageLabel} · ',
+                      ),
+                    // 원문 보기 동작이 없으면(스낵챗: 상단 버튼으로만 전환) 링크를 숨긴다.
+                    if (widget.onShowOriginal != null) TextSpan(
                       text: widget.showOriginalLabel,
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,

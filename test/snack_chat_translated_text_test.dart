@@ -15,6 +15,7 @@ void main() {
     double scale = 1,
     bool disableAnimations = false,
     bool withRetry = true,
+    bool withShowOriginal = true,
   }) async {
     final taps = <String>[];
     await tester.binding.setSurfaceSize(Size(width, 800));
@@ -44,7 +45,8 @@ void main() {
                   translatingLabel: '번역 중',
                   retryLabel: '다시 번역',
                   onShowTranslation: () => taps.add('translate'),
-                  onShowOriginal: () => taps.add('original'),
+                  onShowOriginal:
+                      withShowOriginal ? () => taps.add('original') : null,
                   onRetry: withRetry ? () => taps.add('retry') : null,
                 ),
               ),
@@ -98,6 +100,16 @@ void main() {
     expect(find.textContaining('원문 언어 중국어 · 원문 보기'), findsOneWidget);
     await tester.tap(find.textContaining('원문 보기'));
     expect(taps, ['original']);
+  });
+
+  testWidgets('스낵챗(상단 버튼으로만 전환): 번역됨 발 줄에 원문 보기 링크가 없다',
+      (tester) async {
+    await pump(tester, SnackChatTranslationState.translated,
+        withShowOriginal: false);
+    await tester.pumpAndSettle();
+    expectOnly(_translated, _original);
+    expect(find.textContaining('원문 언어 중국어'), findsOneWidget);
+    expect(find.textContaining('원문 보기'), findsNothing);
   });
 
   testWidgets('실패: 원문 유지 + 다시 번역', (tester) async {

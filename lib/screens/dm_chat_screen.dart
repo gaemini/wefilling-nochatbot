@@ -70,6 +70,8 @@ import '../config/snack_chat_file_policy.dart';
 import '../config/app_backend.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/chat_pill_composer.dart';
+import '../utils/chat_message_typography.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -5258,11 +5260,6 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   Widget _buildComposer() {
     final peerDeleted = _isPeerDeleted;
-    final canSend = !peerDeleted &&
-        !_directInteractionRestricted &&
-        (_messageController.text.trim().isNotEmpty ||
-            _pendingImage != null ||
-            _pendingFile != null);
 
     final originPostId = (widget.originPostId ?? '').trim();
     final shouldShowComposerPostContext = originPostId.isNotEmpty &&
@@ -5325,133 +5322,69 @@ class _DMChatScreenState extends State<DMChatScreen>
                 _buildAttachmentPreview(),
                 const SizedBox(height: 8),
               ],
-              Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: DMColors.composerBg,
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // 첨부 버튼 (+)
-                    MotionPress(
-                      enabled: !peerDeleted && !_directInteractionRestricted,
-                      pressedScale: .9,
-                      child: InkWell(
-                        onTap: (peerDeleted || _directInteractionRestricted)
-                            ? null
-                            : _showAttachmentOptions,
-                        customBorder: const CircleBorder(),
-                        child: Container(
-                          width:
-                              MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
-                          height:
-                              MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
-                          decoration: BoxDecoration(
-                            color: DMColors.composerActionBg,
-                            shape: BoxShape.circle,
+              // 화면 아래에 떠 있는 어두운 알약(스낵챗과 같은 ChatPillComposer).
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _messageController,
+                builder: (context, value, _) {
+                  final disabled = peerDeleted || _directInteractionRestricted;
+                  final hasDraft = value.text.trim().isNotEmpty ||
+                      _pendingImage != null ||
+                      _pendingFile != null;
+                  final zh = isChineseUi(context);
+                  final isKo =
+                      Localizations.localeOf(context).languageCode == 'ko';
+                  return ChatPillComposer(
+                    enabled: !disabled,
+                    showSend: hasDraft,
+                    canSend: !disabled && hasDraft,
+                    onCamera: () => _pickImageFrom(ImageSource.camera),
+                    onGallery: () => _pickImageFrom(ImageSource.gallery),
+                    onAttach: _showAttachmentOptions,
+                    onSend: _sendMessage,
+                    cameraLabel: zh ? '相机' : (isKo ? '카메라' : 'Camera'),
+                    galleryLabel:
+                        zh ? '相册' : (isKo ? '사진 보관함' : 'Photo library'),
+                    attachLabel: zh ? '添加附件' : (isKo ? '첨부' : 'Attach'),
+                    sendLabel: zh ? '发送' : (isKo ? '전송' : 'Send'),
+                    textField: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 120),
+                      child: TextField(
+                        controller: _messageController,
+                        focusNode: _messageFocusNode,
+                        enabled: !disabled,
+                        minLines: 1,
+                        maxLines: 4,
+                        maxLength: 500,
+                        textInputAction: TextInputAction.newline,
+                        cursorColor: Colors.white,
+                        decoration: InputDecoration(
+                          hintText: peerDeleted
+                              ? (zh
+                                  ? '无法给已注销的账号发消息'
+                                  : isKo
+                                      ? '탈퇴한 계정에게는 메시지를 보낼 수 없어요'
+                                      : 'You cannot message a deleted account')
+                              : (_isBlocked || _isBlockedBy)
+                                  ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
+                                  : AppLocalizations.of(context)!.typeMessage,
+                          hintStyle: chatMessageTextStyle(
+                            context,
+                            color: chatComposerPlaceholder,
                           ),
-                          child: Icon(
-                            Icons.add,
-                            color: (peerDeleted || _directInteractionRestricted)
-                                ? const Color(0xFF667085)
-                                : Colors.white,
-                            size: 22,
-                          ),
+                          isDense: true,
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 10),
+                          border: InputBorder.none,
+                          counterText: '',
+                        ),
+                        style: chatMessageTextStyle(
+                          context,
+                          color: Colors.white,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Container(
-                        constraints: const BoxConstraints(maxHeight: 120),
-                        decoration: const BoxDecoration(
-                          color: DMColors.inputBg,
-                        ),
-                        child: TextField(
-                          controller: _messageController,
-                          focusNode: _messageFocusNode,
-                          enabled:
-                              !peerDeleted && !_directInteractionRestricted,
-                          maxLines: null,
-                          maxLength: 500,
-                          textInputAction: TextInputAction.newline,
-                          decoration: InputDecoration(
-                            hintText: peerDeleted
-                                ? ((isChineseUi(context)
-                                    ? '无法给已注销的账号发消息'
-                                    : Localizations.localeOf(context)
-                                                .languageCode ==
-                                            'ko'
-                                        ? '탈퇴한 계정에게는 메시지를 보낼 수 없어요'
-                                        : 'You cannot message a deleted account'))
-                                : (_isBlocked || _isBlockedBy)
-                                    ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
-                                    : AppLocalizations.of(context)!.typeMessage,
-                            hintStyle: TextStyle(
-                              color:
-                                  (peerDeleted || _directInteractionRestricted)
-                                      ? const Color(0xFF667085)
-                                      : const Color(0xFF98A2B3),
-                              fontSize: MediaQuery.sizeOf(context).width < 360
-                                  ? 14
-                                  : 15,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 9,
-                            ),
-                            border: InputBorder.none,
-                            counterText: '',
-                          ),
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            color: Colors.white,
-                            fontSize: MediaQuery.sizeOf(context).width < 360
-                                ? 14
-                                : 15,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
-                    MotionPress(
-                      enabled: canSend,
-                      pressedScale: .90,
-                      child: InkWell(
-                        onTap: canSend ? _sendMessage : null,
-                        customBorder: const CircleBorder(),
-                        child: AnimatedContainer(
-                          duration: MotionTokens.of(context, MotionTokens.fast),
-                          curve: MotionTokens.curve,
-                          width:
-                              MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
-                          height:
-                              MediaQuery.sizeOf(context).width < 360 ? 38 : 40,
-                          decoration: BoxDecoration(
-                            color: canSend
-                                ? const Color(0xFFF2F4F7)
-                                : DMColors.composerActionBg,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Icon(
-                              Icons.arrow_upward_rounded,
-                              color: canSend
-                                  ? DMColors.textPrimary
-                                  : DMColors.textTertiary,
-                              size: 21,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
             ],
           ),

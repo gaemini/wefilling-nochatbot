@@ -7351,7 +7351,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                               : SnackChatPalette.ink,
                         ),
                       ),
-                      SizedBox(width: itemGap),
+                      const SizedBox(width: itemGap),
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.only(bottom: 2),
@@ -7421,7 +7421,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                           ),
                         ),
                       ),
-                      SizedBox(width: itemGap),
+                      const SizedBox(width: itemGap),
                       ValueListenableBuilder<TextEditingValue>(
                         valueListenable: _messageController,
                         builder: (context, value, _) {

@@ -60,5 +60,5 @@ String translationSourceLanguageLabel(BuildContext context, String? code) {
       (isKo ? koreanNames[normalized] : englishNames[normalized]) ??
           ContentTranslationService.supportedLanguages[normalized] ??
           normalized.toUpperCase();
-  return (isChineseUi(context) ? '来自${language}' : isKo ? '원문 언어 $language' : 'From $language');
+  return (isChineseUi(context) ? '来自$language' : isKo ? '원문 언어 $language' : 'From $language');
 }

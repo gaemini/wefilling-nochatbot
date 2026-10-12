@@ -216,7 +216,7 @@ class CommentService {
             ? imageCommentId!.trim()
             : _firestore.collection('comments').doc().id;
         if (commentId.contains('/')) return false;
-        await FirebaseAppCheckService.instance.ensureReady();
+        await _prepareAppCheckForUpload();
         final storage = StorageService();
         Future<void> deleteUploaded(String path) =>
             AppStorage.uploads.ref(path).delete();
@@ -255,7 +255,7 @@ class CommentService {
             .add(commentData)
             .timeout(const Duration(seconds: 10));
       } else {
-        await FirebaseAppCheckService.instance.ensureReady();
+        await _prepareAppCheckForUpload();
         final gifPath = commentData['gifStoragePath']! as String;
         final gifRef = AppStorage.uploads.ref(gifPath);
         Future<bool> matchesExistingGif() async {
@@ -361,6 +361,20 @@ class CommentService {
     } catch (e) {
       Logger.error('댓글 작성 오류: $e');
       return false;
+    }
+  }
+
+  /// 댓글 사진·GIF 업로드 전 App Check 준비. DM·스낵챗 사진 업로드처럼
+  /// 준비 실패(디버그 토큰 미등록, too_many_attempts 등)로 업로드 자체를
+  /// 막지 않는다. Storage가 App Check를 강제하면 업로드 단계에서 실패하고,
+  /// 올라간 파일 정리 흐름은 그대로 동작한다.
+  Future<void> _prepareAppCheckForUpload() async {
+    try {
+      await FirebaseAppCheckService.instance.ensureReady();
+    } on AppCheckUnavailableException {
+      Logger.warning(
+        '댓글 업로드: App Check 준비 실패(${FirebaseAppCheckService.instance.lastErrorCode}), 업로드를 계속 시도',
+      );
     }
   }
 

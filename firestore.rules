@@ -1413,6 +1413,21 @@ service cloud.firestore {
     }
 
     // 알림 컬렉션 (기존 확장)
+    // 필링(스낵 반응) 관계 기록과 서로 필링. 모두 서버(Functions)만 쓴다.
+    // 관계 기록·하루 상한은 클라이언트가 읽을 수 없고, 서로 필링 문서는
+    // 당사자만 단건 조회한다(목록은 getMyMutualFeels Callable 사용).
+    match /snapshot_feel_edges/{edgeId} {
+      allow read, write: if false;
+    }
+    match /snapshot_feel_daily/{dayId} {
+      allow read, write: if false;
+    }
+    match /snapshot_mutual_feels/{pairId} {
+      allow get: if request.auth != null
+        && request.auth.uid in resource.data.get('uids', []);
+      allow list, write: if false;
+    }
+
     match /notifications/{notificationId} {
       // 본인의 알림만 읽기 가능
       allow read: if 

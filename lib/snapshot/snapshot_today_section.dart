@@ -13,6 +13,7 @@ import '../ui/widgets/user_avatar.dart';
 import '../ui/widgets/motion_press.dart';
 import '../utils/logger.dart';
 import 'snapshot_author_profile_image.dart';
+import 'snack_feel_icon.dart';
 import 'snapshot_seen_store.dart';
 import 'snapshot_storage_image.dart';
 import 'snapshot_strings.dart';
@@ -68,8 +69,8 @@ class SnackPreviewLayout {
 TextStyle _snackLabelStyle(BuildContext context, Color color) => TextStyle(
       fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: 14,
-      height: 1.28,
+      fontSize: 12,
+      height: 16 / 12,
       fontWeight: FontWeight.w600,
       color: color,
     );
@@ -133,10 +134,26 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     WidgetsBinding.instance.addObserver(this);
     _stream = _service.watchVisibleSnapshots();
     unawaited(SnapshotSeenStore.instance.ensureLoaded());
+    // 서로 필링한 사람의 스낵을 맨 앞에 두기 위해 목록을 한 번 받아 둔다.
+    _service.mutualFeels.addListener(_handleMutualFeelsChanged);
+    _mutualIds = _service.mutualFeels.value.map((m) => m.otherUserId).toSet();
+    unawaited(_service.refreshMutualFeels());
+  }
+
+  Set<String> _mutualIds = const <String>{};
+
+  void _handleMutualFeelsChanged() {
+    if (!mounted) return;
+    final next = _service.mutualFeels.value.map((m) => m.otherUserId).toSet();
+    if (next.length == _mutualIds.length && next.containsAll(_mutualIds)) {
+      return;
+    }
+    setState(() => _mutualIds = next);
   }
 
   @override
   void dispose() {
+    _service.mutualFeels.removeListener(_handleMutualFeelsChanged);
     WidgetsBinding.instance.removeObserver(this);
     _previewGeneration++;
     _previewQueue.clear();
@@ -594,9 +611,20 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                         !latestVisibleIds.contains(item.id),
                   )
                   .toList(growable: false);
+              // 서로 필링한 사람의 스낵은 내 스낵 다음 맨 앞(순서는 안정 정렬).
               final visibleItems = <SnapshotItem>[
-                ...latestVisibleItems,
-                ...olderVisibleItems,
+                ...latestVisibleItems.where(
+                  (item) => _mutualIds.contains(item.authorId),
+                ),
+                ...olderVisibleItems.where(
+                  (item) => _mutualIds.contains(item.authorId),
+                ),
+                ...latestVisibleItems.where(
+                  (item) => !_mutualIds.contains(item.authorId),
+                ),
+                ...olderVisibleItems.where(
+                  (item) => !_mutualIds.contains(item.authorId),
+                ),
               ];
 
               // The viewer always starts with My Snack when it exists, then walks
@@ -693,6 +721,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                           profileDecodeWidth: profileDecodeWidth,
                           snapshot: item,
                           label: item.authorName,
+                          mutualFeel: _mutualIds.contains(item.authorId),
                           onTap: () => _open(viewerItems, sourceIndex),
                         ),
                       );
@@ -763,6 +792,7 @@ class _SnapshotTile extends StatelessWidget {
     required this.snapshot,
     required this.label,
     required this.onTap,
+    this.mutualFeel = false,
   });
 
   final SnackPreviewLayout layout;
@@ -771,6 +801,9 @@ class _SnapshotTile extends StatelessWidget {
   final SnapshotItem snapshot;
   final String label;
   final VoidCallback onTap;
+
+  /// 나와 서로 필링한 사람의 스낵이면 링 아래에 필링 배지를 단다.
+  final bool mutualFeel;
 
   @override
   Widget build(BuildContext context) {
@@ -836,7 +869,7 @@ class _SnapshotTile extends StatelessWidget {
                     snapshot.remainingAt(SnapshotService.instance.serverNow),
                   );
                   final outer = profileSize + 2 + _SnackRemainingRing.stroke * 2;
-                  return CustomPaint(
+                  final ring = CustomPaint(
                     key: ValueKey<String>('snack-ring-${snapshot.id}'),
                     painter: _SnackRemainingRing(
                       fraction: fraction,
@@ -859,6 +892,30 @@ class _SnapshotTile extends StatelessWidget {
                         ),
                       ),
                     ),
+                  );
+                  if (!mutualFeel) return ring;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      ring,
+                      Positioned(
+                        left: outer / 2 - 10,
+                        bottom: -8,
+                        child: Container(
+                          key: ValueKey<String>('mutual-badge-${snapshot.id}'),
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2C6BC0),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: const Center(
+                            child: SnackFeelIcon(size: 12, filled: true),
+                          ),
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),

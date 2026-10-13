@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../models/snapshot.dart';
+import '../services/content_translation_service.dart';
 import '../services/dm_service.dart';
 import '../services/report_service.dart';
 import '../services/snapshot_service.dart';
@@ -16,10 +18,9 @@ import '../snapshot/snapshot_storage_image.dart';
 import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_author_profile_image.dart';
 import '../snapshot/snapshot_strings.dart';
+import '../snapshot/snapshot_viewer_chrome.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/motion_press.dart';
-import '../ui/widgets/motion_state_icon.dart';
-import '../ui/widgets/motion_selection_pulse.dart';
 import '../utils/responsive_helper.dart';
 import 'dm_chat_screen.dart';
 import 'friend_profile_screen.dart';
@@ -144,6 +145,13 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   String? _unavailableSnapshotId;
   double _horizontalDragDistance = 0;
   int _displayedAgeMinutes = -1;
+  // 번역 칩 상태. 기존 기본값(번역문 표시)을 유지한다.
+  bool _captionTranslated = true;
+  String _targetLanguageLabel = '';
+  bool _isReplyFocused = false;
+  final ValueNotifier<int> _heartTrigger = ValueNotifier<int>(0);
+  Timer? _tapTimer;
+  DateTime? _lastTapAt;
 
   SnapshotItem get _current => _items[_index];
 
@@ -175,6 +183,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       (_) => _recheckExpiry(),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_loadTargetLanguageLabel());
       _recheckExpiry();
       if (_items.isNotEmpty && _unavailableSnapshotId != _current.id) {
         _recordCurrentView();
@@ -224,6 +233,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     unawaited(_service.cancelVideoPreloads());
     _ticker?.cancel();
     _switchTimer?.cancel();
+    _tapTimer?.cancel();
+    _heartTrigger.dispose();
     super.dispose();
   }
 
@@ -896,106 +907,207 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     }
   }
 
+  Future<void> _loadTargetLanguageLabel() async {
+    if (!mounted) return;
+    try {
+      final code = await ContentTranslationService.instance.targetLanguage(
+        uiLanguageCode: Localizations.localeOf(context).languageCode,
+      );
+      final label = ContentTranslationService.supportedLanguages[code] ?? '';
+      if (!mounted || label == _targetLanguageLabel) return;
+      setState(() => _targetLanguageLabel = label);
+    } catch (_) {
+      // 라벨이 비면 칩은 `번역`만 보인다.
+    }
+  }
+
+  /// 좌우 한 번 탭은 두 번 탭(하트)을 기다리는 250ms 뒤에 실행한다.
+  void _handleMediaTap(TapUpDetails details, double width) {
+    if (_isReplyFocused) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      return;
+    }
+    final isOwner =
+        FirebaseAuth.instance.currentUser?.uid == _current.authorId;
+    final now = DateTime.now();
+    final previous = _lastTapAt;
+    if (!isOwner &&
+        previous != null &&
+        now.difference(previous) <= const Duration(milliseconds: 250) &&
+        (_tapTimer?.isActive ?? false)) {
+      _tapTimer?.cancel();
+      _lastTapAt = null;
+      HapticFeedback.selectionClick();
+      _heartTrigger.value++;
+      return;
+    }
+    _lastTapAt = now;
+    final goPrevious = details.localPosition.dx < width / 2;
+    _tapTimer?.cancel();
+    if (isOwner) {
+      goPrevious ? _showPrevious() : _showNext();
+      return;
+    }
+    _tapTimer = Timer(const Duration(milliseconds: 250), () {
+      _lastTapAt = null;
+      if (!mounted) return;
+      goPrevious ? _showPrevious() : _showNext();
+    });
+  }
+
+  String _headerSubtitle(SnapshotStrings strings) {
+    final created = _snapshotCreatedLabel(_current, _service, strings);
+    final remaining = snapshotRemainingLabel(
+      strings,
+      _current.remainingAt(_service.serverNow),
+    );
+    return remaining == null ? created : '$created · $remaining';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_items.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.of(context).pop();
       });
-      return const Scaffold(backgroundColor: Colors.white);
+      return const Scaffold(backgroundColor: Colors.black);
     }
     final strings = SnapshotStrings.of(context);
     final interactionsEnabled =
         _unavailableSnapshotId != _current.id && _deletingSnapshotId == null;
-    final navigationEnabled =
-        _deletingSnapshotId == null && !_isComposingComment && !_isModalPaused;
+    final navigationEnabled = _deletingSnapshotId == null &&
+        !_isComposingComment &&
+        !_isModalPaused;
+    final showTranslateChip = interactionsEnabled &&
+        _current.hasTranslatedCaption &&
+        _current.translatedCaption.trim() != _current.displayCaption.trim();
+    final profile = SnapshotAuthorProfile.resolve(_current);
+    final decodeWidth =
+        (32 * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(64, 256);
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark.copyWith(
+      value: SystemUiOverlayStyle.light.copyWith(
         statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.white,
-        systemNavigationBarIconBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.black,
         resizeToAvoidBottomInset: false,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _SnapshotTopRegion(
-                snapshot: _current,
-                createdLabel: _snapshotCreatedLabel(
-                  _current,
-                  _service,
-                  strings,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: navigationEnabled || _isReplyFocused
+                  ? (details) => _handleMediaTap(
+                        details,
+                        MediaQuery.sizeOf(context).width,
+                      )
+                  : null,
+              onHorizontalDragStart:
+                  navigationEnabled ? _handleHorizontalDragStart : null,
+              onHorizontalDragUpdate:
+                  navigationEnabled ? _handleHorizontalDragUpdate : null,
+              onHorizontalDragEnd:
+                  navigationEnabled ? _handleHorizontalDragEnd : null,
+              onLongPressStart:
+                  interactionsEnabled ? (_) => _setHolding(true) : null,
+              onLongPressEnd: interactionsEnabled && !_isReplyFocused
+                  ? (_) => _setHolding(false)
+                  : null,
+              onLongPressCancel: interactionsEnabled && !_isReplyFocused
+                  ? () => _setHolding(false)
+                  : null,
+              child: TweenAnimationBuilder<double>(
+                key: ValueKey<String>('snapshot-page-${_current.id}'),
+                tween: Tween<double>(begin: 0, end: 1),
+                duration: _switchDuration,
+                curve: MotionTokens.curve,
+                builder: (context, opacity, child) => SnapshotPageTransition(
+                  progress: opacity,
+                  direction: _pageTransitionDirection,
+                  child: child!,
                 ),
-                onBack: () => Navigator.of(context).maybePop(),
-                onAuthorTap: interactionsEnabled ? _openAuthorProfile : null,
-                onMore: interactionsEnabled ? _showActions : null,
+                child: _SnapshotDetailPage(
+                  snapshot: _current,
+                  service: _service,
+                  deleting: _deletingSnapshotId == _current.id,
+                  unavailable: _unavailableSnapshotId == _current.id,
+                  manualResumeRequired: _manualResumeSnapshotId == _current.id,
+                  onMediaReady: _handleMediaReady,
+                  onVideoFirstFrame: _handleVideoFirstFrame,
+                  onSnapshotChanged: _handleSnapshotChanged,
+                  onUnavailable: _markCurrentUnavailable,
+                  onVideoPlayRequested: _handleVideoPlayRequested,
+                  onComments: () => _openComments(focusInput: true),
+                  onLetter: _openLetterComposer,
+                  onViewers: _openViewers,
+                  onSnackReply: _openSnackReplyComposer,
+                  onThread: () => _openComments(),
+                  onMeetupDraft: _openMeetupDraft,
+                  playing: _currentVideoCanPlay,
+                  captionTranslated: _captionTranslated,
+                  onMore: interactionsEnabled ? _showActions : null,
+                  heartTrigger: _heartTrigger,
+                  onReplyFocusChanged: (focused) {
+                    if (!mounted || _isReplyFocused == focused) return;
+                    setState(() => _isReplyFocused = focused);
+                    _setHolding(focused);
+                  },
+                ),
               ),
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: navigationEnabled
-                      ? (details) {
-                          final width = MediaQuery.sizeOf(context).width;
-                          if (details.localPosition.dx < width / 2) {
-                            _showPrevious();
-                          } else {
-                            _showNext();
-                          }
-                        }
-                      : null,
-                  onHorizontalDragStart:
-                      navigationEnabled ? _handleHorizontalDragStart : null,
-                  onHorizontalDragUpdate:
-                      navigationEnabled ? _handleHorizontalDragUpdate : null,
-                  onHorizontalDragEnd:
-                      navigationEnabled ? _handleHorizontalDragEnd : null,
-                  onLongPressStart:
-                      interactionsEnabled ? (_) => _setHolding(true) : null,
-                  onLongPressEnd:
-                      interactionsEnabled ? (_) => _setHolding(false) : null,
-                  onLongPressCancel:
-                      interactionsEnabled ? () => _setHolding(false) : null,
-                  child: ColoredBox(
-                    color: Colors.white,
-                    child: TweenAnimationBuilder<double>(
-                      key: ValueKey<String>('snapshot-page-${_current.id}'),
-                      tween: Tween<double>(begin: 0, end: 1),
-                      duration: _switchDuration,
-                      curve: MotionTokens.curve,
-                      builder: (context, opacity, child) =>
-                          SnapshotPageTransition(
-                        progress: opacity,
-                        direction: _pageTransitionDirection,
-                        child: child!,
+            ),
+            // 진행 막대 + 헤더. 사진 위에 얹고 상태바 안전 영역만 비킨다.
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 0, 0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: SnapshotProgressSegments(
+                          count: _items.length,
+                          index: _index,
+                        ),
                       ),
-                      child: _SnapshotDetailPage(
-                        snapshot: _current,
-                        service: _service,
-                        deleting: _deletingSnapshotId == _current.id,
-                        unavailable: _unavailableSnapshotId == _current.id,
-                        manualResumeRequired:
-                            _manualResumeSnapshotId == _current.id,
-                        onMediaReady: _handleMediaReady,
-                        onVideoFirstFrame: _handleVideoFirstFrame,
-                        onSnapshotChanged: _handleSnapshotChanged,
-                        onUnavailable: _markCurrentUnavailable,
-                        onVideoPlayRequested: _handleVideoPlayRequested,
-                        onComments: () => _openComments(focusInput: true),
-                        onLetter: _openLetterComposer,
-                        onViewers: _openViewers,
-                        onSnackReply: _openSnackReplyComposer,
-                        onThread: () => _openComments(),
-                        onMeetupDraft: _openMeetupDraft,
-                        playing: _currentVideoCanPlay,
+                      SnapshotViewerHeader(
+                        avatar: SnapshotAuthorProfileImage(
+                          profile: profile,
+                          size: 32,
+                          borderRadius: BorderRadius.circular(16),
+                          decodeWidth: decodeWidth,
+                          placeholderColor: const Color(0xFF475467),
+                          placeholderIconColor: Colors.white,
+                          placeholderIconSize: 18,
+                        ),
+                        name: _current.authorName,
+                        subtitle: _headerSubtitle(strings),
+                        onAuthorTap:
+                            interactionsEnabled ? _openAuthorProfile : null,
+                        onMore: interactionsEnabled ? _showActions : null,
+                        onClose: () => Navigator.of(context).maybePop(),
+                        translateChip: showTranslateChip
+                            ? SnapshotTranslateChip(
+                                on: _captionTranslated,
+                                languageLabel: _targetLanguageLabel,
+                                onTap: () => setState(
+                                  () => _captionTranslated = !_captionTranslated,
+                                ),
+                              )
+                            : null,
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1021,7 +1133,15 @@ class _SnapshotDetailPage extends StatefulWidget {
     required this.onThread,
     required this.onMeetupDraft,
     required this.playing,
+    required this.captionTranslated,
+    required this.onMore,
+    required this.onReplyFocusChanged,
+    required this.heartTrigger,
   });
+  final bool captionTranslated;
+  final VoidCallback? onMore;
+  final ValueChanged<bool> onReplyFocusChanged;
+  final ValueListenable<int> heartTrigger;
   final SnapshotItem snapshot;
   final SnapshotService service;
   final bool deleting;
@@ -1055,6 +1175,10 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
   late Map<String, int> _lastReportedReactionCounts;
   int _reactionStatusGeneration = 0;
   String? _confirmingReactionSnapshotId;
+  bool _replyFocused = false;
+  String? _burstEmoji;
+  int _burstSerial = 0;
+  Timer? _burstTimer;
 
   @override
   void initState() {
@@ -1071,11 +1195,53 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
     _reactionStatusResolved = cachedReaction != null;
     _hasReacted = cachedReaction ?? true;
     if (!widget.deleting) _watchReactionStatus();
+    widget.heartTrigger.addListener(_handleHeartTrigger);
+  }
+
+  bool get _isOwner =>
+      FirebaseAuth.instance.currentUser?.uid == widget.snapshot.authorId;
+
+  bool get _canReactNow =>
+      reactionAllowed(
+        deleting: widget.deleting,
+        unavailable: widget.unavailable,
+        resolved: _reactionStatusResolved,
+        hasReacted: _hasReacted,
+        reactedLocally: _reactedLocally,
+        submitting: _submittingReaction,
+      );
+
+  void _handleHeartTrigger() {
+    if (!mounted || _isOwner || !_canReactNow) return;
+    _showBurst('❤️');
+    unawaited(_submitReaction('❤️'));
+  }
+
+  void _showBurst(String emoji) {
+    _burstTimer?.cancel();
+    setState(() {
+      _burstEmoji = emoji;
+      _burstSerial++;
+    });
+    _burstTimer = Timer(const Duration(milliseconds: 760), () {
+      if (mounted) setState(() => _burstEmoji = null);
+    });
+  }
+
+  void _handleQuickReaction(String emoji) {
+    if (!_canReactNow) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    _showBurst(emoji);
+    unawaited(_submitReaction(emoji));
   }
 
   @override
   void didUpdateWidget(covariant _SnapshotDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.heartTrigger != widget.heartTrigger) {
+      oldWidget.heartTrigger.removeListener(_handleHeartTrigger);
+      widget.heartTrigger.addListener(_handleHeartTrigger);
+    }
     if (oldWidget.snapshot.id != widget.snapshot.id) {
       _accessStream = widget.service.watchSnapshot(
         widget.snapshot.id,
@@ -1162,6 +1328,8 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
 
   @override
   void dispose() {
+    widget.heartTrigger.removeListener(_handleHeartTrigger);
+    _burstTimer?.cancel();
     _reactionStatusGeneration++;
     unawaited(_reactionSubscription?.cancel());
     super.dispose();
@@ -1217,7 +1385,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData &&
             !snapshot.hasError) {
-          return const ColoredBox(color: Colors.white);
+          return const ColoredBox(color: Colors.black);
         }
         final inaccessible = snapshot.hasError ||
             (snapshot.connectionState != ConnectionState.waiting &&
@@ -1251,66 +1419,181 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
         }
         final isOwner =
             FirebaseAuth.instance.currentUser?.uid == current.authorId;
-        return Column(
+        final barHeight = _snapshotBottomBarHeight(context);
+        final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+        final selected =
+            _reactedLocally || (_reactionStatusResolved && _hasReacted);
+        final showCaption = current.hasTranslatedCaption;
+        return Stack(
+          fit: StackFit.expand,
           children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _SnapshotMediaCanvas(
-                    snapshot: current,
-                    playing: widget.playing,
-                    manualResumeRequired: widget.manualResumeRequired,
-                    onReady: () => widget.onMediaReady(current.id),
-                    onVideoFirstFrame: () =>
-                        widget.onVideoFirstFrame(current.id),
-                    onVideoPlayRequested: () =>
-                        widget.onVideoPlayRequested(current.id),
-                  ),
-                  if (!widget.deleting)
-                    _SnapshotMediaFooter(
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: barHeight,
+              child: ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(16)),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _SnapshotMediaCanvas(
                       snapshot: current,
-                      service: widget.service,
-                      isOwner: isOwner,
-                      onThread: widget.onThread,
-                      onMeetupDraft: widget.onMeetupDraft,
+                      playing: widget.playing,
+                      manualResumeRequired: widget.manualResumeRequired,
+                      onReady: () => widget.onMediaReady(current.id),
+                      onVideoFirstFrame: () =>
+                          widget.onVideoFirstFrame(current.id),
+                      onVideoPlayRequested: () =>
+                          widget.onVideoPlayRequested(current.id),
                     ),
-                  if (widget.deleting)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: ColoredBox(
-                          color: Colors.black.withValues(alpha: .18),
-                          child: const Center(
-                            child: SizedBox.square(
-                              dimension: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.2,
-                                color: Colors.white,
+                    if (!widget.deleting) ...[
+                      const Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        height: 140,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0x99000000), Colors.transparent],
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: _replyFocused ? 220 : 120,
+                        child: const IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Colors.transparent, Color(0xB3000000)],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (widget.deleting)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: ColoredBox(
+                            color: Colors.black.withValues(alpha: .18),
+                            child: const Center(
+                              child: SizedBox.square(
+                                dimension: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             if (!widget.deleting)
-              _SnapshotBottomControls(
-                snapshotId: current.id,
-                service: widget.service,
-                strings: strings,
-                isOwner: isOwner,
-                commentCount: current.commentCount,
-                reactionStatusResolved: _reactionStatusResolved,
-                hasReacted: _hasReacted,
-                reactedLocally: _reactedLocally,
-                submittingReaction: _submittingReaction,
-                onReact: _submitReaction,
-                onComments: widget.onComments,
-                onViewers: widget.onViewers,
-                responseMode: current.responseMode,
-                onSnackReply: widget.onSnackReply,
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: barHeight + 16,
+                child: MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.2,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (showCaption)
+                        _SnapshotCaptionBar(
+                          snapshot: current,
+                          showTranslated: widget.captionTranslated,
+                        ),
+                      if (!_replyFocused && !isOwner) ...[
+                        if (showCaption) const SizedBox(height: 8),
+                        _SnapshotInfoRow(
+                          snapshot: current,
+                          service: widget.service,
+                          onComments: widget.onComments,
+                          onThread: widget.onThread,
+                        ),
+                      ],
+                      if (!isOwner &&
+                          canOfferMeetupDraft(
+                            responseMode: current.responseMode,
+                            replyCount: current.commentCount,
+                            // 시간·장소 맥락은 2단계(context 필드)에서 켠다.
+                            hasTimeOrPlaceContext: false,
+                            canCreateMeetup: true,
+                          ))
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: IconButton(
+                            onPressed: widget.onMeetupDraft,
+                            tooltip:
+                                RelationshipStrings.of(context).meetupDraft,
+                            icon: const Icon(
+                              Icons.event_available_outlined,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            if (_burstEmoji != null)
+              Positioned.fill(
+                child: SnapshotReactionBurst(
+                  key: ValueKey<int>(_burstSerial),
+                  emoji: _burstEmoji!,
+                ),
+              ),
+            if (!widget.deleting)
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: keyboard > 0 ? keyboard + 8 : 0,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    top: 12,
+                    bottom: keyboard > 0
+                        ? 0
+                        : math.max(MediaQuery.paddingOf(context).bottom, 12.0),
+                  ),
+                  child: _SnapshotBottomBar(
+                    snapshot: current,
+                    service: widget.service,
+                    isOwner: isOwner,
+                    heartSelected: selected,
+                    canReact: _canReactNow,
+                    onHeart: () => _submitReaction('❤️'),
+                    onQuickReaction: _handleQuickReaction,
+                    onComments: widget.onComments,
+                    onViewers: widget.onViewers,
+                    onMore: widget.onMore,
+                    onSnackReply: widget.onSnackReply,
+                    onFocusChanged: (focused) {
+                      if (_replyFocused != focused && mounted) {
+                        setState(() => _replyFocused = focused);
+                      }
+                      widget.onReplyFocusChanged(focused);
+                    },
+                  ),
+                ),
               ),
           ],
         );
@@ -1319,299 +1602,489 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
   }
 }
 
-class _SnapshotBottomControls extends StatelessWidget {
-  const _SnapshotBottomControls({
-    required this.snapshotId,
-    required this.service,
-    required this.strings,
-    required this.isOwner,
-    required this.commentCount,
-    required this.reactionStatusResolved,
-    required this.hasReacted,
-    required this.reactedLocally,
-    required this.submittingReaction,
-    required this.onReact,
-    required this.onComments,
-    required this.onViewers,
-    required this.responseMode,
-    required this.onSnackReply,
-  });
+/// 하단 바 높이(안전 영역 제외 56 = 위 12 + 입력 44).
+double _snapshotBottomBarHeight(BuildContext context) =>
+    12 + 44 + math.max(MediaQuery.paddingOf(context).bottom, 12.0);
 
-  final String snapshotId;
-  final SnapshotService service;
-  final SnapshotStrings strings;
-  final bool isOwner;
-  final int commentCount;
-  final bool reactionStatusResolved;
-  final bool hasReacted;
-  final bool reactedLocally;
-  final bool submittingReaction;
-  final Future<void> Function(String) onReact;
-  final VoidCallback onComments;
-  final VoidCallback onViewers;
-  final SnapshotResponseMode responseMode;
-  final VoidCallback onSnackReply;
-
-  @override
-  Widget build(BuildContext context) {
-    final relationshipStrings = RelationshipStrings.of(context);
-    final selected = reactedLocally || (reactionStatusResolved && hasReacted);
-    final canReact =
-        reactionStatusResolved && !selected && !submittingReaction;
-    // 도크 순서: 가벼운 반응(댓글·하트) / A↔가 번역 답장(중앙) / 카메라 길게 누르기.
-    // 일반 댓글 입력창은 두지 않고, 공개 댓글은 작은 진입 버튼으로만 남긴다.
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.2,
-      child: SizedBox(
-        height: context.rh(62, min: 58, max: 68),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints:
-                BoxConstraints(minWidth: MediaQuery.sizeOf(context).width),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _SnapshotBottomAction(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  label: strings.comments,
-                  count: commentCount,
-                  onTap: onComments,
-                ),
-                _SnapshotBottomAction(
-                  icon: selected
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  iconColor:
-                      selected ? AppColors.pointColor : const Color(0xFF111827),
-                  label: strings.likeReaction,
-                  selected: selected,
-                  animateSelection: true,
-                  onTap: canReact ? () => onReact('❤️') : null,
-                ),
-                if (!isOwner && showSnackReplyEntry(responseMode))
-                  _SnapshotCameraAction(
-                    label: relationshipStrings.snackReply,
-                    hint: relationshipStrings.snackReplyHint,
-                    onLongPress: onSnackReply,
-                  ),
-                if (isOwner)
-                  _SnapshotViewerCountAction(
-                    key: ValueKey<String>('snapshot-viewers-$snapshotId'),
-                    snapshotId: snapshotId,
-                    service: service,
-                    strings: strings,
-                    onTap: onViewers,
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 카메라 길게 누르기로 스낵 답장을 시작한다. 짧게 누르면 사용법만 알려 주고,
-/// 길게 누르기가 어려운 사용자는 더보기 메뉴의 같은 항목으로 들어간다.
-class _SnapshotCameraAction extends StatelessWidget {
-  const _SnapshotCameraAction({
-    required this.label,
-    required this.hint,
-    required this.onLongPress,
-  });
-
-  final String label;
-  final String hint;
-  final VoidCallback onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      hint: hint,
-      onLongPress: onLongPress,
-      excludeSemantics: true,
-      child: MotionPress(
-        pressedScale: .9,
-        child: Material(
-          color: Colors.transparent,
-          child: InkResponse(
-            radius: 26,
-            onTap: () => AppSnackBar.show(
-              context,
-              message: hint,
-              type: AppSnackBarType.info,
-              duration: const Duration(seconds: 2),
-            ),
-            onLongPress: onLongPress,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 52, minHeight: 48),
-              child: Center(
-                child: Icon(
-                  Icons.videocam_outlined,
-                  color: const Color(0xFF111827),
-                  size: context.ri(25).clamp(23, 27).toDouble(),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 미디어 하단: 캡션/번역 캡션, 겹친 답장 아바타 스택, 조건부 밋업 초안 아이콘.
-/// 보일 것이 없으면 그래디언트도 그리지 않는다.
-class _SnapshotMediaFooter extends StatelessWidget {
-  const _SnapshotMediaFooter({
+/// 응답 방식에 따라 바뀌는 하단 바. 답장 알약은 기존 편지 경로
+/// (`SnapshotService.sendComment`)를 그대로 쓴다.
+class _SnapshotBottomBar extends StatefulWidget {
+  const _SnapshotBottomBar({
     required this.snapshot,
     required this.service,
     required this.isOwner,
-    required this.onThread,
-    required this.onMeetupDraft,
+    required this.heartSelected,
+    required this.canReact,
+    required this.onHeart,
+    required this.onQuickReaction,
+    required this.onComments,
+    required this.onViewers,
+    required this.onMore,
+    required this.onSnackReply,
+    required this.onFocusChanged,
   });
 
   final SnapshotItem snapshot;
   final SnapshotService service;
   final bool isOwner;
-  final VoidCallback onThread;
-  final VoidCallback onMeetupDraft;
+  final bool heartSelected;
+  final bool canReact;
+  final VoidCallback onHeart;
+  final ValueChanged<String> onQuickReaction;
+  final VoidCallback onComments;
+  final VoidCallback onViewers;
+  final VoidCallback? onMore;
+  final VoidCallback onSnackReply;
+  final ValueChanged<bool> onFocusChanged;
+
+  @override
+  State<_SnapshotBottomBar> createState() => _SnapshotBottomBarState();
+}
+
+class _SnapshotBottomBarState extends State<_SnapshotBottomBar> {
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focus = FocusNode(debugLabel: 'snapshot-reply');
+  Stream<List<SnapshotViewer>>? _viewers;
+  bool _sent = false;
+  bool _sending = false;
+  bool _toast = false;
+  bool _hasText = false;
+  Timer? _toastTimer;
+  int _generation = 0;
+
+  bool get _replyMode =>
+      !widget.isOwner && widget.snapshot.responseMode.allowsSnackReply;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_handleFocus);
+    _controller.addListener(() {
+      final has = _controller.text.trim().isNotEmpty;
+      if (has != _hasText && mounted) setState(() => _hasText = has);
+    });
+    _bind();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SnapshotBottomBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snapshot.id != widget.snapshot.id ||
+        oldWidget.isOwner != widget.isOwner) {
+      _controller.clear();
+      _sent = false;
+      _sending = false;
+      _bind();
+    }
+  }
+
+  void _bind() {
+    final generation = ++_generation;
+    if (widget.isOwner) {
+      _viewers = widget.service.watchViewers(widget.snapshot.id);
+    } else {
+      _viewers = null;
+    }
+    if (_replyMode) {
+      final id = widget.snapshot.id;
+      unawaited(widget.service.hasCommented(id).then((value) {
+        if (!mounted || generation != _generation) return;
+        setState(() => _sent = value);
+      }).catchError((Object _) {}));
+    }
+  }
+
+  void _handleFocus() {
+    widget.onFocusChanged(_focus.hasFocus);
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _toastTimer?.cancel();
+    _focus.removeListener(_handleFocus);
+    _focus.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    if (_sending || _sent) return;
+    final message = _controller.text.trim();
+    if (message.isEmpty) return;
+    final snapshotId = widget.snapshot.id;
+    final strings = SnapshotStrings.of(context);
+    setState(() => _sending = true);
+    try {
+      await widget.service.sendComment(snapshotId, message);
+      if (!mounted || widget.snapshot.id != snapshotId) return;
+      _controller.clear();
+      _focus.unfocus();
+      setState(() {
+        _sent = true;
+        _sending = false;
+        _toast = true;
+      });
+      _toastTimer?.cancel();
+      _toastTimer = snapshotAfter(const Duration(milliseconds: 1200), () {
+        if (mounted) setState(() => _toast = false);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      AppSnackBar.show(
+        context,
+        message: strings.commentFailed,
+        type: AppSnackBarType.error,
+      );
+    }
+  }
+
+  Widget _heart() => SnapshotHeartButton(
+        selected: widget.heartSelected,
+        semanticsLabel: SnapshotStrings.of(context).likeReaction,
+        onTap: widget.canReact ? widget.onHeart : null,
+      );
+
+  Widget _chipText(String text, {bool bold = true}) => Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: snapshotChromeStyle(
+          context,
+          size: 13,
+          weight: bold ? FontWeight.w600 : FontWeight.w500,
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
-    final showCaption = snapshot.hasTranslatedCaption;
-    final showReplies =
-        snapshot.responseMode.allowsSnackReply && snapshot.commentCount > 0;
-    final showMeetupDraft = canOfferMeetupDraft(
-      responseMode: snapshot.responseMode,
-      replyCount: snapshot.commentCount,
-      // 스낵에는 아직 시간·넓은 장소 메타데이터가 없어 기본적으로 숨긴다.
-      hasTimeOrPlaceContext: false,
-      canCreateMeetup: !isOwner,
-    );
-    if (!showCaption && !showReplies && !showMeetupDraft) {
-      return const SizedBox.shrink();
-    }
-    return Positioned.fill(
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: FractionallySizedBox(
-          heightFactor: .22,
-          widthFactor: 1,
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Color(0x8A000000)],
+    final strings = SnapshotStrings.of(context);
+    final relation = RelationshipStrings.of(context);
+    final mode = widget.snapshot.responseMode;
+    Widget row;
+    if (widget.isOwner) {
+      row = StreamBuilder<List<SnapshotViewer>>(
+        stream: _viewers,
+        builder: (context, result) {
+          final count = result.data?.length ?? 0;
+          return Row(
+            children: [
+              SnapshotGlassChip(
+                key: const ValueKey('snapshot_owner_viewers_chip'),
+                onTap: widget.onViewers,
+                semanticsLabel: strings.viewers,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.visibility_outlined,
+                        size: 16, color: Colors.white),
+                    const SizedBox(width: 6),
+                    _chipText(_compactCount(count)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  key: const ValueKey('snapshot_owner_activity_pill'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onViewers,
+                  child: Container(
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0x33000000),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: const Color(0x59FFFFFF)),
+                    ),
+                    child: _chipText(strings.myActivity),
+                  ),
+                ),
+              ),
+              SizedBox.square(
+                dimension: 44,
+                child: IconButton(
+                  onPressed: widget.onMore,
+                  tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+                  icon: const Icon(Icons.more_horiz_rounded,
+                      color: Colors.white, size: 26),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    } else if (mode == SnapshotResponseMode.viewOnly) {
+      row = Row(
+        children: [
+          Expanded(
+            child: Text(
+              strings.viewOnlyNotice,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: snapshotChromeStyle(
+                context,
+                size: 12,
+                weight: FontWeight.w500,
+                color: const Color(0xB3FFFFFF),
               ),
             ),
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    if (showCaption) _SnapshotCaptionBar(snapshot: snapshot),
-                    if (showReplies || showMeetupDraft)
-                      Padding(
-                        padding: EdgeInsets.only(top: showCaption ? 8 : 0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (showReplies)
-                              _SnapshotReplyAvatarStack(
-                                snapshot: snapshot,
-                                service: service,
-                                onTap: onThread,
-                              ),
-                            if (showMeetupDraft) ...[
-                              const SizedBox(width: 10),
-                              IconButton(
-                                onPressed: onMeetupDraft,
-                                tooltip:
-                                    RelationshipStrings.of(context).meetupDraft,
-                                icon: const Icon(
-                                  Icons.event_available_outlined,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                  ],
+          ),
+          _heart(),
+        ],
+      );
+    } else if (mode == SnapshotResponseMode.reactions) {
+      row = Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              key: const ValueKey('snapshot_public_comment_pill'),
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onComments,
+              child: Container(
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                alignment: Alignment.centerLeft,
+                decoration: BoxDecoration(
+                  color: const Color(0x33000000),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0x59FFFFFF)),
+                ),
+                child: Text(
+                  strings.everyoneOneLinerHint,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: snapshotChromeStyle(
+                    context,
+                    size: 15,
+                    weight: FontWeight.w500,
+                    color: const Color(0xB3FFFFFF),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+          const SizedBox(width: 4),
+          _heart(),
+        ],
+      );
+    } else {
+      final name = widget.snapshot.authorName.trim().isEmpty
+          ? strings.snapshot
+          : widget.snapshot.authorName.trim();
+      row = Row(
+        children: [
+          Expanded(
+            child: SnapshotPillInput(
+              key: const ValueKey('snapshot_reply_pill'),
+              controller: _controller,
+              focusNode: _focus,
+              enabled: !_sent && !_sending,
+              hint: _sent ? strings.alreadyRepliedHint : strings.replyToName(name),
+              onSubmitted: _send,
+              trailing: _hasText
+                  ? SizedBox.square(
+                      dimension: 36,
+                      child: IconButton(
+                        key: const ValueKey('snapshot_reply_send'),
+                        padding: EdgeInsets.zero,
+                        onPressed: _sending ? null : _send,
+                        tooltip: strings.sendComment,
+                        icon: _sending
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.arrow_upward_rounded,
+                                color: Colors.white, size: 22),
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+          if (!_focus.hasFocus) ...[
+            Semantics(
+              button: true,
+              label: relation.snackReply,
+              hint: relation.snackReplyHint,
+              excludeSemantics: true,
+              child: MotionPress(
+                pressedScale: .9,
+                child: GestureDetector(
+                  key: const ValueKey('snapshot_video_reply_button'),
+                  behavior: HitTestBehavior.opaque,
+                  // 탭 한 번으로 연다. 길게 누르기도 같은 동작으로 남긴다.
+                  onTap: widget.onSnackReply,
+                  onLongPress: widget.onSnackReply,
+                  child: const SizedBox.square(
+                    dimension: 44,
+                    child: Center(
+                      child: Icon(Icons.videocam_outlined,
+                          color: Colors.white, size: 27),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            _heart(),
+          ],
+        ],
+      );
+    }
+    final showQuick = _replyMode && _focus.hasFocus && !_sent;
+    final name = widget.snapshot.authorName.trim();
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.2,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_toast)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Center(child: SnapshotSentToast(visible: true)),
+            ),
+          if (showQuick) ...[
+            Center(
+              child: SnapshotQuickReactionRow(
+                enabled: widget.canReact,
+                onReact: widget.onQuickReaction,
+              ),
+            ),
+            if (name.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 8),
+                child: Text(
+                  strings.visibleOnlyToName(name),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: snapshotChromeStyle(
+                    context,
+                    size: 12,
+                    weight: FontWeight.w500,
+                    color: const Color(0xCCFFFFFF),
+                  ),
+                ),
+              ),
+          ],
+          row,
+        ],
       ),
     );
   }
 }
 
-/// 최대 2줄 캡션. 번역문이 본문이며 원문보다 작게 만들지 않는다.
-class _SnapshotCaptionBar extends StatefulWidget {
-  const _SnapshotCaptionBar({required this.snapshot});
+/// 하단 바 위 정보 줄: 왼쪽 한마디를 남긴 사람 아바타(최대 3), 오른쪽 `한마디 n` 칩.
+class _SnapshotInfoRow extends StatelessWidget {
+  const _SnapshotInfoRow({
+    required this.snapshot,
+    required this.service,
+    required this.onComments,
+    required this.onThread,
+  });
 
   final SnapshotItem snapshot;
-
-  @override
-  State<_SnapshotCaptionBar> createState() => _SnapshotCaptionBarState();
-}
-
-class _SnapshotCaptionBarState extends State<_SnapshotCaptionBar> {
-  bool _showOriginal = false;
+  final SnapshotService service;
+  final VoidCallback onComments;
+  final VoidCallback onThread;
 
   @override
   Widget build(BuildContext context) {
-    final strings = RelationshipStrings.of(context);
-    final original = widget.snapshot.displayCaption;
-    final translated = widget.snapshot.translatedCaption.trim();
-    final style = TextStyle(
-      fontFamily: uiFontFamily(context, 'Inter'),
-      fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: context.rf(15).clamp(14, 16).toDouble(),
-      fontWeight: FontWeight.w600,
-      color: Colors.white,
-      height: 1.3,
-      shadows: const [Shadow(color: Color(0x80000000), blurRadius: 6)],
-    );
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_showOriginal && original.isNotEmpty) ...[
-          Text(translated, maxLines: 1, overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center, style: style),
-          Text(original, maxLines: 1, overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: style.copyWith(color: const Color(0xFFE4E7EC))),
-        ] else
-          Text(translated, maxLines: 2, overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center, style: style),
-        if (original.isNotEmpty)
-          TextButton(
-            onPressed: () => setState(() => _showOriginal = !_showOriginal),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              minimumSize: const Size(44, 32),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+    final strings = SnapshotStrings.of(context);
+    final showPeople =
+        snapshot.responseMode.allowsSnackReply && snapshot.commentCount > 0;
+    final showChip = snapshot.responseMode != SnapshotResponseMode.viewOnly;
+    if (!showPeople && !showChip) return const SizedBox.shrink();
+    Widget people = const SizedBox.shrink();
+    if (showPeople) {
+      people = StreamBuilder<List<SnapshotComment>>(
+        stream: service.watchFeedComments(snapshot.id),
+        builder: (context, result) {
+          final seen = <String>{};
+          final authors = <SnapshotComment>[];
+          for (final comment in result.data ?? const <SnapshotComment>[]) {
+            if (comment.isDeleted || comment.userId.isEmpty) continue;
+            if (seen.add(comment.userId)) authors.add(comment);
+          }
+          if (authors.isEmpty) return const SizedBox.shrink();
+          final shown = authors.take(3).toList(growable: false);
+          const avatar = 24.0;
+          const step = avatar - 6;
+          final first = shown.first.authorNickname.trim();
+          final label = authors.length > 1
+              ? strings.talkedNames(first, authors.length - 1)
+              : strings.talkedName(first);
+          return GestureDetector(
+            key: const ValueKey('snapshot_info_people'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onThread,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: avatar + (shown.length - 1) * step,
+                  height: avatar,
+                  child: Stack(
+                    children: [
+                      for (var i = 0; i < shown.length; i++)
+                        Positioned(
+                          left: i * step,
+                          child: Container(
+                            padding: const EdgeInsets.all(1),
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: UserAvatar(
+                              uid: shown[i].userId,
+                              photoUrl: shown[i].authorPhotoUrl,
+                              photoVersion: 0,
+                              isAnonymous: false,
+                              size: avatar - 2,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    first.isEmpty ? '' : label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: snapshotChromeStyle(
+                      context,
+                      size: 12.5,
+                      weight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
             ),
+          );
+        },
+      );
+    }
+    return Row(
+      children: [
+        Expanded(child: Align(alignment: Alignment.centerLeft, child: people)),
+        if (showChip)
+          SnapshotGlassChip(
+            key: const ValueKey('snapshot_comment_count_chip'),
+            onTap: onThread,
+            semanticsLabel: strings.everyoneOneLiner,
             child: Text(
-              _showOriginal ? strings.showTranslation : strings.showOriginal,
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-              ),
+              snapshot.commentCount > 0
+                  ? '${strings.oneLinerChip} ${_compactCount(snapshot.commentCount)}'
+                  : strings.oneLinerChip,
+              maxLines: 1,
+              style: snapshotChromeStyle(context, size: 13),
             ),
           ),
       ],
@@ -1619,240 +2092,37 @@ class _SnapshotCaptionBarState extends State<_SnapshotCaptionBar> {
   }
 }
 
-/// 겹친 답장 아바타 스택. 숫자 대신 겹침으로 밀도를 보이고, 스레드를 열기
-/// 전에는 답장 내용을 노출하지 않는다.
-class _SnapshotReplyAvatarStack extends StatelessWidget {
-  const _SnapshotReplyAvatarStack({
+/// 캡션. 번역 칩이 켜지면 번역문, 꺼지면 원문을 제자리에서 크로스페이드한다.
+class _SnapshotCaptionBar extends StatelessWidget {
+  const _SnapshotCaptionBar({
     required this.snapshot,
-    required this.service,
-    required this.onTap,
+    required this.showTranslated,
   });
 
   final SnapshotItem snapshot;
-  final SnapshotService service;
-  final VoidCallback onTap;
+  final bool showTranslated;
 
   @override
   Widget build(BuildContext context) {
-    final strings = RelationshipStrings.of(context);
-    return StreamBuilder<List<SnapshotComment>>(
-      stream: service.watchFeedComments(snapshot.id),
-      builder: (context, result) {
-        final seen = <String>{};
-        final authors = <SnapshotComment>[];
-        for (final comment in result.data ?? const <SnapshotComment>[]) {
-          if (comment.isDeleted || comment.userId.isEmpty) continue;
-          if (seen.add(comment.userId)) authors.add(comment);
-          if (authors.length == 3) break;
-        }
-        if (authors.isEmpty) return const SizedBox.shrink();
-        const avatar = 26.0;
-        const overlap = 9.0;
-        final width = avatar + (authors.length - 1) * (avatar - overlap);
-        return Semantics(
-          button: true,
-          label: '${strings.replies}, ${strings.openThread}',
-          excludeSemantics: true,
-          child: MotionPress(
-            pressedScale: .94,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onTap,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-                decoration: BoxDecoration(
-                  color: OrbitTokens.replyDock,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: OrbitTokens.replyDockBorder),
-                ),
-                child: SizedBox(
-                  width: width,
-                  height: avatar,
-                  child: Stack(
-                    children: [
-                      for (var i = 0; i < authors.length; i++)
-                        Positioned(
-                          left: i * (avatar - overlap),
-                          child: Container(
-                            padding: const EdgeInsets.all(1.5),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            child: UserAvatar(
-                              uid: authors[i].userId,
-                              photoUrl: authors[i].authorPhotoUrl,
-                              photoVersion: 0,
-                              isAnonymous: false,
-                              size: avatar - 3,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SnapshotBottomAction extends StatelessWidget {
-  const _SnapshotBottomAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.iconColor = const Color(0xFF111827),
-    this.count,
-    this.selected = false,
-    this.animateSelection = false,
-  });
-
-  final IconData icon;
-  final Color iconColor;
-  final String label;
-  final int? count;
-  final bool selected;
-  final bool animateSelection;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final safeCount = count?.clamp(0, 1 << 30);
-    final semanticsLabel = safeCount == null ? label : '$label $safeCount';
-    return MotionPress(
-      enabled: onTap != null,
-      resetToken: selected,
-      pressedScale: animateSelection ? .88 : .9,
-      child: Semantics(
-        button: onTap != null,
-        enabled: onTap != null,
-        selected: selected,
-        label: semanticsLabel,
-        excludeSemantics: true,
-        child: Material(
-          color: Colors.transparent,
-          child: InkResponse(
-            onTap: onTap,
-            radius: 26,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 52, minHeight: 48),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 7),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (animateSelection)
-                      MotionSelectionPulse(
-                        selected: selected,
-                        child: MotionStateIcon(
-                          selected: selected,
-                          inactiveIcon: Icons.favorite_border_rounded,
-                          activeIcon: Icons.favorite_rounded,
-                          color: iconColor,
-                          size: context.ri(25).clamp(23, 27).toDouble(),
-                        ),
-                      )
-                    else
-                      Icon(
-                        icon,
-                        color: iconColor,
-                        size: context.ri(25).clamp(23, 27).toDouble(),
-                      ),
-                    if (safeCount != null) ...[
-                      const SizedBox(width: 4),
-                      _SnapshotCountTransition(
-                        count: safeCount,
-                        child: Text(
-                          _compactCount(safeCount),
-                          maxLines: 1,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            color: const Color(0xFF475467),
-                            fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SnapshotCountTransition extends StatelessWidget {
-  const _SnapshotCountTransition({required this.count, required this.child});
-  final int count;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => AnimatedSwitcher(
-        duration: MotionTokens.reduceMotion(context)
-            ? Duration.zero
-            : MotionTokens.state,
-        transitionBuilder: (child, animation) =>
-            FadeTransition(opacity: animation, child: child),
-        child: KeyedSubtree(key: ValueKey(count), child: child),
-      );
-}
-
-class _SnapshotViewerCountAction extends StatefulWidget {
-  const _SnapshotViewerCountAction({
-    super.key,
-    required this.snapshotId,
-    required this.service,
-    required this.strings,
-    required this.onTap,
-  });
-
-  final String snapshotId;
-  final SnapshotService service;
-  final SnapshotStrings strings;
-  final VoidCallback onTap;
-
-  @override
-  State<_SnapshotViewerCountAction> createState() =>
-      _SnapshotViewerCountActionState();
-}
-
-class _SnapshotViewerCountActionState
-    extends State<_SnapshotViewerCountAction> {
-  late Stream<List<SnapshotViewer>> _stream;
-
-  @override
-  void initState() {
-    super.initState();
-    _stream = widget.service.watchViewers(widget.snapshotId);
-  }
-
-  @override
-  void didUpdateWidget(covariant _SnapshotViewerCountAction oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.snapshotId != widget.snapshotId) {
-      _stream = widget.service.watchViewers(widget.snapshotId);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<SnapshotViewer>>(
-      stream: _stream,
-      builder: (context, snapshot) => _SnapshotBottomAction(
-        icon: Icons.visibility_outlined,
-        label: widget.strings.viewers,
-        count: snapshot.data?.length ?? 0,
-        onTap: widget.onTap,
+    final original = snapshot.displayCaption;
+    final translated = snapshot.translatedCaption.trim();
+    final text = showTranslated && translated.isNotEmpty ? translated : original;
+    if (text.isEmpty) return const SizedBox.shrink();
+    final style = snapshotChromeStyle(
+      context,
+      size: context.rf(15).clamp(14, 16).toDouble(),
+    ).copyWith(height: 1.3);
+    return AnimatedSwitcher(
+      duration: snapshotReduceMotion(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 180),
+      child: Text(
+        text,
+        key: ValueKey<String>(text),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: style,
       ),
     );
   }
@@ -1874,7 +2144,7 @@ class _SnapshotUnavailableView extends StatelessWidget {
           style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
-            color: const Color(0xFF667085),
+            color: const Color(0xFFD0D5DD),
             fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
             height: 1.4,
           ),
@@ -2113,7 +2383,7 @@ class _SnapshotMediaCanvas extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: Colors.white,
+      color: Colors.black,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final viewport = Size(constraints.maxWidth, constraints.maxHeight);
@@ -2146,8 +2416,8 @@ class _SnapshotMediaCanvas extends StatelessWidget {
                     SnapshotStorageImage(
                       snapshot: snapshot,
                       fit: snapshotDetailImageFit,
-                      placeholderColor: Colors.white,
-                      errorBackgroundColor: Colors.white,
+                      placeholderColor: Colors.black,
+                      errorBackgroundColor: Colors.black,
                       showLoadingIndicator: false,
                       fadeInDuration: Duration.zero,
                       decodeWidth: (canvasSize.width *
@@ -2161,177 +2431,6 @@ class _SnapshotMediaCanvas extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _SnapshotTopRegion extends StatelessWidget {
-  const _SnapshotTopRegion({
-    required this.snapshot,
-    required this.createdLabel,
-    required this.onBack,
-    required this.onAuthorTap,
-    required this.onMore,
-  });
-
-  final SnapshotItem snapshot;
-  final String createdLabel;
-  final VoidCallback onBack;
-  final VoidCallback? onAuthorTap;
-  final VoidCallback? onMore;
-
-  @override
-  Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Colors.white,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: context.rh(56, min: 54, max: 60),
-            child: Row(
-              children: [
-                SizedBox.square(
-                  dimension: 48,
-                  child: MotionPress(
-                    pressedScale: .9,
-                    child: IconButton(
-                      onPressed: onBack,
-                      icon: Icon(
-                        Icons.arrow_back_rounded,
-                        size: context.ri(22).clamp(21, 24).toDouble(),
-                        color: const Color(0xFF111827),
-                      ),
-                      tooltip: MaterialLocalizations.of(
-                        context,
-                      ).backButtonTooltip,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Semantics(
-                    button: true,
-                    enabled: onAuthorTap != null,
-                    label: snapshot.authorName,
-                    child: MotionPress(
-                      enabled: onAuthorTap != null,
-                      pressedScale: .99,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: onAuthorTap,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: _SnapshotAuthorHeader(
-                            snapshot: snapshot,
-                            createdLabel: createdLabel,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox.square(
-                  dimension: 48,
-                  child: MotionPress(
-                    enabled: onMore != null,
-                    pressedScale: .9,
-                    child: IconButton(
-                      onPressed: onMore,
-                      icon: Icon(
-                        Icons.more_horiz_rounded,
-                        size: context.ri(23).clamp(21, 25).toDouble(),
-                        color: const Color(0xFF111827),
-                      ),
-                      tooltip:
-                          MaterialLocalizations.of(context).showMenuTooltip,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-        ],
-      ),
-    );
-  }
-}
-
-class _SnapshotAuthorHeader extends StatelessWidget {
-  const _SnapshotAuthorHeader({
-    required this.snapshot,
-    required this.createdLabel,
-  });
-
-  final SnapshotItem snapshot;
-  final String createdLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final avatarRadius = context.rs(18).clamp(17, 20).toDouble();
-    final avatarSize = avatarRadius * 2;
-    final decodeWidth = (avatarSize * MediaQuery.devicePixelRatioOf(context))
-        .ceil()
-        .clamp(64, 256);
-    final profile = SnapshotAuthorProfile.resolve(snapshot);
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.2,
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(1.5),
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Color(0xFFF3F4F6),
-            ),
-            child: SnapshotAuthorProfileImage(
-              profile: profile,
-              size: avatarSize,
-              borderRadius: BorderRadius.circular(avatarSize / 2),
-              decodeWidth: decodeWidth,
-              placeholderColor: const Color(0xFF475467),
-              placeholderIconColor: Colors.white,
-              placeholderIconSize: context.ri(19).clamp(18, 21).toDouble(),
-            ),
-          ),
-          SizedBox(width: context.rs(10).clamp(8, 12).toDouble()),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  snapshot.authorName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF111827),
-                    height: isChineseUi(context) ? 1.3 : 1.18,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  createdLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF667085),
-                    height: isChineseUi(context) ? 1.3 : 1.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -2508,6 +2607,23 @@ class _ActionRow extends StatelessWidget {
     );
   }
 }
+
+/// 반응을 지금 보낼 수 있는지(이미 반응했거나 확인 전·삭제 중이면 false).
+@visibleForTesting
+bool reactionAllowed({
+  required bool deleting,
+  required bool unavailable,
+  required bool resolved,
+  required bool hasReacted,
+  required bool reactedLocally,
+  required bool submitting,
+}) =>
+    !deleting &&
+    !unavailable &&
+    resolved &&
+    !hasReacted &&
+    !reactedLocally &&
+    !submitting;
 
 int _snapshotAgeMinutes(SnapshotItem snapshot, DateTime serverNow) {
   final age = serverNow.difference(snapshot.createdAt);

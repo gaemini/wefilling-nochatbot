@@ -652,4 +652,184 @@ class SnapshotStrings {
       : isKorean
           ? '사용자를 차단했어요.'
           : 'User blocked.');
+  String remainingHoursShort(int hours) => (isChinese
+      ? '剩余$hours小时'
+      : isKorean
+          ? '$hours시간 남음'
+          : '${hours}h left');
+  String remainingMinutesShort(int minutes) => (isChinese
+      ? '剩余$minutes分钟'
+      : isKorean
+          ? '$minutes분 남음'
+          : '${minutes}m left');
+  String get translateChip => (isChinese
+      ? '翻译'
+      : isKorean
+          ? '번역'
+          : 'Translate');
+  String get closeLabel => (isChinese
+      ? '关闭'
+      : isKorean
+          ? '닫기'
+          : 'Close');
+  String replyToName(String name) => (isChinese
+      ? '回复$name'
+      : isKorean
+          ? '$name에게 답장'
+          : 'Reply to $name');
+  String visibleOnlyToName(String name) => (isChinese
+      ? '仅$name可见'
+      : isKorean
+          ? '$name에게만 보여요'
+          : 'Only $name can see this');
+  String get sentToast => (isChinese
+      ? '已发送'
+      : isKorean
+          ? '보냈어요'
+          : 'Sent');
+  String get viewOnlyNotice => (isChinese
+      ? '此限时动态仅接收表情'
+      : isKorean
+          ? '반응만 받는 스낵이에요'
+          : 'This Snack only takes reactions');
+  String get alreadyRepliedHint => (isChinese
+      ? '已发送回复'
+      : isKorean
+          ? '답장을 보냈어요'
+          : 'Reply sent');
+  String talkedNames(String name, int others) => (isChinese
+      ? '$name等$others人留言'
+      : isKorean
+          ? '$name 외 $others명이 한마디'
+          : '$name and $others more spoke up');
+  String talkedName(String name) => (isChinese
+      ? '$name留言了'
+      : isKorean
+          ? '$name님이 한마디'
+          : '$name spoke up');
+  String get oneLinerChip => (isChinese
+      ? '留言'
+      : isKorean
+          ? '한마디'
+          : 'Say');
+  String get everyoneOneLiner => (isChinese
+      ? '大家的留言'
+      : isKorean
+          ? '모두의 한마디'
+          : 'Everyone\'s words');
+  String get everyoneOneLinerHint => (isChinese
+      ? '给大家留言…'
+      : isKorean
+          ? '모두에게 한마디…'
+          : 'Say something to everyone…');
+  String disappearsWithSnack(int hours) => (isChinese
+      ? '$hours小时后与限时动态一起消失'
+      : isKorean
+          ? '$hours시간 뒤 스낵과 함께 사라져요'
+          : 'Disappears with the Snack in ${hours}h');
+  String get disappearsSoonWithSnack => (isChinese
+      ? '很快将与限时动态一起消失'
+      : isKorean
+          ? '곧 스낵과 함께 사라져요'
+          : 'Disappears with the Snack soon');
+  String replyingToName(String name) => (isChinese
+      ? '↩ 回复$name'
+      : isKorean
+          ? '↩ $name에게'
+          : '↩ To $name');
+  String get disappearsIn24h => (isChinese
+      ? '24小时后消失'
+      : isKorean
+          ? '24시간 뒤 사라져요'
+          : 'Gone in 24h');
+  String get myActivity => (isChinese
+      ? '我的动态活动'
+      : isKorean
+          ? '내 스낵 활동'
+          : 'My Snack activity');
+  String viewersTab(int n) => (isChinese
+      ? '浏览 $n'
+      : isKorean
+          ? '본 사람 $n'
+          : 'Viewers $n');
+  String reactionsTab(int n) => (isChinese
+      ? '表情 $n'
+      : isKorean
+          ? '반응 $n'
+          : 'Reactions $n');
+  String repliesTab(int n) => (isChinese
+      ? '收到的回复 $n'
+      : isKorean
+          ? '받은 답장 $n'
+          : 'Replies $n');
+  String get addFriendShort => (isChinese
+      ? '加好友'
+      : isKorean
+          ? '친구 추가'
+          : 'Add friend');
+  String get messageShort => (isChinese
+      ? '私信'
+      : isKorean
+          ? '메시지'
+          : 'Message');
+  String get replyAction => (isChinese
+      ? '回复'
+      : isKorean
+          ? '답장'
+          : 'Reply');
+  String get repliesPrivateNote => (isChinese
+      ? '回复仅自己可见'
+      : isKorean
+          ? '답장은 나만 볼 수 있어요'
+          : 'Replies are only visible to you');
+  String reactionPeople(int n) => (isChinese
+      ? '$n人'
+      : isKorean
+          ? '$n명'
+          : '$n');
+  String get noReactionsYet => (isChinese
+      ? '还没有表情'
+      : isKorean
+          ? '아직 반응이 없어요'
+          : 'No reactions yet');
+  String get noRepliesYet => (isChinese
+      ? '还没有收到回复'
+      : isKorean
+          ? '아직 받은 답장이 없어요'
+          : 'No replies yet');
+  String get receiveModeTitle => (isChinese
+      ? '接收方式'
+      : isKorean
+          ? '받는 방식'
+          : 'How people can respond');
+  String get receiveModeViewOnly => (isChinese
+      ? '仅浏览'
+      : isKorean
+          ? '보기만'
+          : 'View only');
+  String get receiveModeReactions => (isChinese
+      ? '表情'
+      : isKorean
+          ? '반응까지'
+          : 'Reactions');
+  String get receiveModeReplies => (isChinese
+      ? '回复'
+      : isKorean
+          ? '답장까지'
+          : 'Replies');
+  String get receiveModeViewOnlyHint => (isChinese
+      ? '只能浏览，不接收回应。'
+      : isKorean
+          ? '보기만 가능해요. 반응과 답장은 받지 않아요.'
+          : 'People can only view this Snack.');
+  String get receiveModeReactionsHint => (isChinese
+      ? '可以接收表情和大家的留言。'
+      : isKorean
+          ? '반응과 모두의 한마디를 받아요.'
+          : 'Reactions and public comments are on.');
+  String get receiveModeRepliesHint => (isChinese
+      ? '还可以接收只有你能看到的回复。'
+      : isKorean
+          ? '나에게만 오는 답장도 받아요.'
+          : 'Private replies come only to you.');
 }

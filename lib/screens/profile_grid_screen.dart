@@ -3,6 +3,7 @@
 // 프로필 헤더, 하이라이트 릴, 포스트 그리드 통합
 // Feature Flag로 제어되는 새로운 프로필 UI
 
+import '../ui/widgets/profile_share_sheet.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -677,36 +678,18 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
     }
   }
 
-  /// 공유 처리
+  /// 공유 처리: QR·링크 복사·시스템 공유 시트를 연다.
   Future<void> _handleShare() async {
-    final chineseUiAtStart = isChineseUi(context);
-    if (_userProfile == null || _isShareProcessing) return;
-
-    setState(() {
-      _isShareProcessing = true;
-    });
-
-    try {
-      final profileUrl = 'https://wefilling.app/profile/${_userProfile!.uid}';
-      await Clipboard.setData(ClipboardData(text: profileUrl));
-      final isKo = Localizations.localeOf(context).languageCode == 'ko';
-      _showSnackBar(
-        (chineseUiAtStart ? '资料链接已复制。' : isKo ? '프로필 링크를 복사했습니다.' : 'Profile link copied to clipboard.'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-      );
-    } catch (e) {
-      final isKo = Localizations.localeOf(context).languageCode == 'ko';
-      _showSnackBar(
-        (chineseUiAtStart ? '复制链接失败。' : isKo ? '링크를 복사할 수 없습니다.' : 'Unable to copy link.'),
-        backgroundColor: Theme.of(context).colorScheme.error,
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isShareProcessing = false;
-        });
-      }
-    }
+    final profile = _userProfile;
+    if (profile == null || _isShareProcessing) return;
+    final nickname = (profile.nickname ?? '').trim().isNotEmpty
+        ? profile.nickname!.trim()
+        : profile.displayNameOrNickname;
+    await showProfileShareSheet(
+      context,
+      uid: profile.uid,
+      nickname: nickname,
+    );
   }
 
   Future<bool> _confirmAction({

@@ -7,10 +7,10 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import '../design/tokens.dart';
 import '../models/snack_chat.dart';
 import '../services/snack_chat_service.dart';
-import '../constants/app_constants.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
 import '../ui/widgets/snack_chat_card.dart';
-import '../utils/responsive_helper.dart';
+import '../ui/widgets/tab_empty_state.dart';
+import '../l10n/group_ui_strings.dart';
 import 'snack_chat_screen.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
@@ -504,347 +504,61 @@ class SnackChatEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = GroupUiStrings.of(context);
     final media = MediaQuery.of(context);
-    final isCompact = media.size.height < 700 || context.isCompactLayout;
-    final horizontalPadding = media.size.width < 360
-        ? 14.0
-        : media.size.width < 430
-            ? 16.0
-            : 20.0;
-    final topPadding = isCompact ? 14.0 : context.rs(22).clamp(18, 26);
-    final bottomPadding = isCompact ? 18.0 : 24.0;
+    // 높이 700 미만이면 미리보기를 2줄로 줄이고, 그래도 넘치면 스크롤한다.
+    final previewRows = media.size.height < 700 ? 2 : 3;
 
     return SafeArea(
       top: false,
-      child: CustomScrollView(
-        // 내용이 화면 안에 들어오면 빈 화면이 위아래로 끌리지 않는다.
-        // 작은 화면에서 실제로 넘칠 때만 스크롤해 overflow를 피한다.
-        physics: const ClampingScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              topPadding.toDouble(),
-              horizontalPadding,
-              bottomPadding,
-            ),
-            sliver: SliverFillRemaining(
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: CustomScrollView(
+          // 내용이 화면 안에 들어오면 빈 화면이 위아래로 끌리지 않는다.
+          // 작은 화면에서 실제로 넘칠 때만 스크롤해 overflow를 피한다.
+          physics: const ClampingScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
               hasScrollBody: false,
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 560),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        (isChineseUi(context)
-                            ? '跨语言交流，时长由你定'
-                            : isKo
-                                ? '필요한 시간만 열어 두는 번역 채팅'
-                                : 'A translated chat for exactly as long as you need'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          height: 1.3,
-                          letterSpacing: -0.4,
-                          color: const Color(0xFF111827),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 16, bottom: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SnackChatEmptyPreview(
+                          rows: previewRows,
+                          sampleTitle: strings.sampleTitle,
+                          sampleRemaining: strings.sampleRemaining,
+                          sampleMessage: strings.sampleMessage,
                         ),
-                      ),
-                      SizedBox(height: context.rs(7).clamp(6, 9).toDouble()),
-                      Text(
-                        (isChineseUi(context)
-                            ? '与好友畅聊24小时，或选择不限时，\n轻松看懂不同语言的消息。'
-                            : isKo
-                                ? '친구들과 24시간 또는 종료 없이 대화하고,\n서로 다른 언어의 메시지도 바로 이해할 수 있어요.'
-                                : 'Chat with friends for 24 hours or without an end time,\nand understand messages across languages.'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          height: 1.5,
-                          color: const Color(0xFF6B7280),
+                        const SizedBox(height: 20),
+                        TabEmptyStateText(
+                          title: strings.snackChatEmptyTitle,
+                          body: strings.snackChatEmptyBody,
                         ),
-                      ),
-                      SizedBox(
-                        height: context
-                            .rs(isCompact ? 12 : 16)
-                            .clamp(10, 18)
-                            .toDouble(),
-                      ),
-                      _SnackChatWelcomeIllustration(compact: isCompact),
-                      SizedBox(
-                        height: context
-                            .rs(isCompact ? 12 : 18)
-                            .clamp(10, 20)
-                            .toDouble(),
-                      ),
-                      Text(
-                        (isChineseUi(context)
-                            ? '群聊功能'
-                            : isKo
-                                ? '스낵챗에서 할 수 있어요'
-                                : 'What Snack Chat offers'),
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          height: 1.3,
-                          color: const Color(0xFF475467),
-                        ),
-                      ),
-                      SizedBox(height: context.rs(10).clamp(8, 12).toDouble()),
-                      _FeatureRow(
-                        icon: Icons.schedule_rounded,
-                        title: (isChineseUi(context)
-                            ? '自由选择群聊时长'
-                            : isKo
-                                ? '대화 시간을 직접 선택'
-                                : 'Choose the room duration'),
-                        description: (isChineseUi(context)
-                            ? '短聊可选24小时，重要群聊可长期保留。'
-                            : isKo
-                                ? '가벼운 대화는 24시간, 계속할 대화는 종료 없이 열어요.'
-                                : 'Use 24 hours for quick chats or keep important rooms open.'),
-                      ),
-                      SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
-                      _FeatureRow(
-                        icon: Icons.translate_rounded,
-                        title: (isChineseUi(context)
-                            ? '实时多语言翻译'
-                            : isKo
-                                ? '실시간 다국어 번역'
-                                : 'Live multilingual translation'),
-                        description: (isChineseUi(context)
-                            ? '将消息即时翻译成你选择的语言。'
-                            : isKo
-                                ? '상대방 메시지를 내가 설정한 언어로 바로 번역해요.'
-                                : 'Translate messages instantly into your chosen language.'),
-                      ),
-                      SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
-                      _FeatureRow(
-                        icon: Icons.notes_rounded,
-                        title: (isChineseUi(context)
-                            ? '快速了解聊天内容'
-                            : isKo
-                                ? '놓친 대화도 빠르게 정리'
-                                : 'Catch up quickly'),
-                        description: (isChineseUi(context)
-                            ? '快速掌握未读消息和今日聊天要点。'
-                            : isKo
-                                ? '안 읽은 메시지와 오늘 대화의 중요한 내용을 정리해요.'
-                                : 'Review the key points from unread messages and today’s chat.'),
-                      ),
-                      if (onCreate != null) ...[
-                        SizedBox(
-                          height: context
-                              .rs(isCompact ? 16 : 22)
-                              .clamp(14, 24)
-                              .toDouble(),
-                        ),
-                        SizedBox(
-                          height: context.rh(48, min: 46, max: 52),
-                          child: MotionPress(
-pressedScale: .975, child: FilledButton.icon(
-                            key: const Key('snack_chat_empty_create_button'),
-                            onPressed: onCreate,
-                            icon: Icon(
-                              Icons.add_comment_outlined,
-                              size: context.ri(19).clamp(18, 21).toDouble(),
+                        if (onCreate != null) ...[
+                          const SizedBox(height: 16),
+                          Center(
+                            child: TabEmptyStateButton(
+                              key: const Key('snack_chat_empty_create_button'),
+                              label: strings.snackChatEmptyButton,
+                              onPressed: onCreate!,
                             ),
-                            label: Text(
-                              (isChineseUi(context)
-                                  ? '创建第一个群聊'
-                                  : isKo
-                                      ? '첫 스낵챗 만들기'
-                                      : 'Create your first Snack Chat'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize:
-                                    14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            style: FilledButton.styleFrom(
-                              elevation: 0,
-                              backgroundColor: AppColors.pointColor,
-                              foregroundColor: Colors.white,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          )),
-                        ),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SnackChatWelcomeIllustration extends StatelessWidget {
-  const _SnackChatWelcomeIllustration({required this.compact});
-
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final scale = compact ? 0.68 : 0.78;
-    return Center(
-      child: SizedBox(
-        width: 126 * scale,
-        height: 104 * scale,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Container(
-              width: 92 * scale,
-              height: 92 * scale,
-              decoration: const BoxDecoration(
-                color: Color(0xFFF4F8FD),
-                shape: BoxShape.circle,
-              ),
-            ),
-            Positioned(
-              left: 15 * scale,
-              top: 20 * scale,
-              child: Container(
-                width: 70 * scale,
-                height: 54 * scale,
-                decoration: BoxDecoration(
-                  color: AppColors.pointColor,
-                  borderRadius: BorderRadius.circular(18 * scale),
-                ),
-                child: Icon(
-                  Icons.chat_bubble_rounded,
-                  color: Colors.white,
-                  size: 28 * scale,
-                ),
-              ),
-            ),
-            Positioned(
-              right: 8 * scale,
-              bottom: 8 * scale,
-              child: Container(
-                width: 48 * scale,
-                height: 48 * scale,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0x12000000),
-                      blurRadius: 7,
-                      offset: Offset(0, 2),
                     ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.translate_rounded,
-                  color: const Color(0xFF087BB5),
-                  size: 22 * scale,
-                ),
-              ),
-            ),
-            Positioned(
-              right: 13 * scale,
-              top: 4 * scale,
-              child: Container(
-                width: 34 * scale,
-                height: 34 * scale,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.schedule_rounded,
-                  color: const Color(0xFF667085),
-                  size: 19 * scale,
+                  ),
                 ),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _FeatureRow extends StatelessWidget {
-  const _FeatureRow({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: context.rs(2)),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox.square(
-            dimension: context.rh(32, min: 30, max: 34),
-            child: Icon(
-              icon,
-              color: const Color(0xFF475467),
-              size: context.ri(20).clamp(19, 22).toDouble(),
-            ),
-          ),
-          SizedBox(width: context.rs(10).clamp(8, 12).toDouble()),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    height: 1.3,
-                    color: const Color(0xFF111827),
-                  ),
-                ),
-                SizedBox(height: context.rs(2).clamp(1, 3).toDouble()),
-                Text(
-                  description,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    height: 1.4,
-                    color: const Color(0xFF6B7280),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

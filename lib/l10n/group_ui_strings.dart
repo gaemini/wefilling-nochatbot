@@ -57,4 +57,54 @@ class GroupUiStrings {
   String get renameFailed =>
       _t('无法更改分组名称', '그룹 이름을 바꾸지 못했어요', 'Couldn’t rename the group');
   String get editName => _t('更改名称', '이름 변경', 'Rename');
+
+  // ---- 빈 화면 ----
+  String get snackChatEmptyTitle => _t(
+        '跨语言交流，时长由你定',
+        '필요한 시간만 열어 두는 번역 채팅',
+        'A translated chat for exactly as long as you need',
+      );
+  String get snackChatEmptyBody => _t(
+        '可开放24小时或一直开放。\n不同语言也能直接用你的语言阅读。',
+        '24시간만 열거나 계속 열어 둘 수 있어요.\n서로 다른 언어도 내 언어로 바로 읽어요.',
+        'Keep it open for 24 hours or for good.\nRead every language in yours.',
+      );
+  String get snackChatEmptyButton =>
+      _t('创建第一个群聊', '첫 스낵챗 만들기', 'Create your first Snack Chat');
+  String get sampleTitle =>
+      _t('今晚一起吃饭吗', '오늘 저녁 같이 먹을 사람', 'Dinner tonight?');
+  String get sampleRemaining => _t('剩余23小时', '23시간 남음', '23h left');
+  String get sampleMessage => _t(
+        '不吃食堂，出去吃吧？',
+        '학식 말고 밖에서 먹을래요?',
+        'Want to eat out instead?',
+      );
+  String get groupsEmptyTitle => _t(
+        '给好友分组，分享更轻松',
+        '친구를 묶어 두면 공개가 쉬워져요',
+        'Groups make sharing easier',
+      );
+  String get groupsEmptyBody => _t(
+        '快拍、动态和聚会\n可以只给所选分组看。',
+        '스낵·포스트·밋업을 고른 그룹에게만\n보여줄 수 있어요.',
+        'Show snacks, posts and meetups\nonly to the groups you pick.',
+      );
+  String get groupsNamePrompt =>
+      _t('先选个名字吧', '이름부터 골라 볼까요', 'Start with a name');
+  String get groupsNoFriends => _t(
+        '先添加好友才能创建分组',
+        '먼저 친구를 추가하면 그룹을 만들 수 있어요',
+        'Add friends first to make a group',
+      );
+  String get groupsFirstButton =>
+      _t('创建第一个分组', '첫 그룹 만들기', 'Create Your First Group');
+  String createNamedGroup(String name) =>
+      _t('创建「$name」分组', "'$name' 그룹 만들기", "Create '$name'");
+  String get findFriendsButton => _t('找好友', '친구 찾기', 'Find friends');
+  String friendsCount(int n) => _t('$n位好友', '친구 $n명', '$n friends');
+  List<String> get groupNameChips => isChinese
+      ? const ['学校', '社团', '好朋友', '室友']
+      : (isKorean
+          ? const ['학교', '동아리', '친한 친구', '룸메이트']
+          : const ['School', 'Club', 'Close friends', 'Roommates']);
 }

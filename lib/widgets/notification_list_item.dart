@@ -506,13 +506,20 @@ class _FeelSnapshotThumbnailState extends State<_FeelSnapshotThumbnail> {
     if (oldWidget.snapshotId != widget.snapshotId) _future = _load();
   }
 
-  Future<SnapshotItem?> _load() => _cache.putIfAbsent(widget.snapshotId, () async {
-        try {
-          return await SnapshotService.instance.getSnapshot(widget.snapshotId);
-        } catch (_) {
-          return null;
-        }
-      });
+  Future<SnapshotItem?> _load() {
+    final id = widget.snapshotId;
+    return _cache.putIfAbsent(id, () async {
+      SnapshotItem? item;
+      try {
+        item = await SnapshotService.instance.getSnapshot(id);
+      } catch (_) {
+        item = null;
+      }
+      // 실패(오프라인 등)는 기억하지 않아 다음에 다시 그릴 때 재시도한다.
+      if (item == null) _cache.remove(id);
+      return item;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

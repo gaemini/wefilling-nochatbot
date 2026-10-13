@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:wefilling/models/user_profile.dart';
+import 'package:wefilling/providers/relationship_provider.dart';
 import 'package:wefilling/l10n/app_localizations.dart';
 import 'package:wefilling/screens/create_category_screen.dart';
 import 'package:wefilling/screens/snack_chat_tab_view.dart';
@@ -148,17 +151,25 @@ void main() {
     });
 
     testWidgets('이름 칩의 이름이 그룹 만들기 입력에 미리 채워진다', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        locale: const Locale('ko'),
-        supportedLocales: AppLocalizations.supportedLocales,
-        localizationsDelegates: const [
-          AppLocalizations.delegate,
-          ...GlobalMaterialLocalizations.delegates,
-        ],
-        home: const CreateCategoryScreen(initialName: '룸메이트'),
+      // 새 그룹 화면은 친구 목록을 RelationshipProvider에서 읽는다(앱에서는 전역 제공).
+      await tester.pumpWidget(ChangeNotifierProvider<RelationshipProvider>.value(
+        value: _NoFriendsRelationship(),
+        child: MaterialApp(
+          locale: const Locale('ko'),
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            ...GlobalMaterialLocalizations.delegates,
+          ],
+          home: const CreateCategoryScreen(initialName: '룸메이트'),
+        ),
       ));
       await tester.pump();
-      expect(find.text('룸메이트'), findsOneWidget);
+      // 이름 칸과 같은 이름의 칩이 함께 보인다(새 그룹 화면 사양).
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('new_group_name')),
+      );
+      expect(field.controller!.text, '룸메이트');
       expect(tester.takeException(), isNull);
     });
   });
@@ -223,4 +234,18 @@ void main() {
       }
     }
   }
+}
+
+class _NoFriendsRelationship extends ChangeNotifier
+    implements RelationshipProvider {
+  @override
+  List<UserProfile> get friends => const <UserProfile>[];
+  @override
+  bool get isLoading => false;
+  @override
+  void setAuthProvider(dynamic provider) {}
+  @override
+  Future<void> loadFriends({bool silent = false}) async {}
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

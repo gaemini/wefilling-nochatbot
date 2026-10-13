@@ -211,6 +211,8 @@ class SnapshotService {
     _latestVideoSourceKeys.clear();
     _myReactionStates.clear();
     _reactionStateLoads.clear();
+    // 이전 계정의 서로 필링 배지·정렬이 남지 않게 한다.
+    mutualFeels.value = const <SnapshotMutualFeel>[];
   }
 
   Future<void> refreshServerClock() {
@@ -1093,8 +1095,12 @@ class SnapshotService {
       ValueNotifier<List<SnapshotMutualFeel>>(const <SnapshotMutualFeel>[]);
 
   Future<void> refreshMutualFeels() async {
+    final uid = _auth.currentUser?.uid;
     try {
-      mutualFeels.value = await getMyMutualFeels();
+      final list = await getMyMutualFeels();
+      // 기다리는 사이 계정이 바뀌었으면 이전 계정 결과는 버린다.
+      if (_auth.currentUser?.uid != uid) return;
+      mutualFeels.value = list;
     } catch (_) {
       // 배지·정렬만 생략된다.
     }

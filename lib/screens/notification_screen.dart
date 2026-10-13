@@ -136,6 +136,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
         await _navigateToSnapshotNotification(notification);
         break;
       case 'snapshot_mutual_feel':
+        // 푸시 경로와 같이 상대가 비어 있는 알림은 열지 않는다.
+        if ((notification.actorId ?? '').isEmpty) break;
         await showMutualFeelSheetForPair(
           context,
           otherUserId: notification.actorId ?? '',

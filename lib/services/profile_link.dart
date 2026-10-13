@@ -41,12 +41,20 @@ class ProfileLinkService {
   static final ProfileLinkService instance = ProfileLinkService._();
 
   StreamSubscription<Uri>? _subscription;
+  StreamSubscription<User?>? _authSubscription;
   String? _pendingUid;
   bool _started = false;
 
   Future<void> start() async {
     if (_started) return;
     _started = true;
+    // 로그인 전에 받은 링크는 로그인 완료 후 연다.
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null && _pendingUid != null) {
+        // 첫 화면이 그려진 뒤에 push 한다.
+        WidgetsBinding.instance.addPostFrameCallback((_) => openPending());
+      }
+    });
     try {
       final links = AppLinks();
       final initial = await links.getInitialLink();
@@ -86,6 +94,8 @@ class ProfileLinkService {
   void dispose() {
     _subscription?.cancel();
     _subscription = null;
+    _authSubscription?.cancel();
+    _authSubscription = null;
     _started = false;
   }
 }

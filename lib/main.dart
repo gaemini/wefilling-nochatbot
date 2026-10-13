@@ -3,6 +3,7 @@
 //프로바이더 설정
 // 앱 테마 및 라우팅 설정
 
+import 'services/profile_link.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
@@ -348,6 +349,7 @@ class _MeetupAppState extends State<MeetupApp> {
     super.initState();
     _loadLanguage();
     unawaited(OrganizationAccountService.instance.initialize());
+    unawaited(ProfileLinkService.instance.start());
     unawaited(
       AppUpdateService.instance.initialize().whenComplete(() {
         WidgetsBinding.instance.addPostFrameCallback((_) {

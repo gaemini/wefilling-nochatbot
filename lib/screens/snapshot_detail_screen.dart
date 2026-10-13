@@ -21,6 +21,7 @@ import '../snapshot/snapshot_seen_store.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../snapshot/snack_feature_flags.dart';
 import '../ui/sheets/mutual_feel_sheet.dart';
+import '../snapshot/snapshot_dm_reply_panel.dart';
 import '../snapshot/snapshot_feel_bar.dart';
 import '../snapshot/snapshot_viewer_chrome.dart';
 import '../models/relationship_status.dart';
@@ -153,6 +154,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   bool _captionTranslated = true;
   String _targetLanguageLabel = '';
   bool _isReplyFocused = false;
+  bool _replyToastVisible = false;
+  Timer? _replyToastTimer;
   final ValueNotifier<int> _heartTrigger = ValueNotifier<int>(0);
   Timer? _tapTimer;
   DateTime? _lastTapAt;
@@ -238,6 +241,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     _ticker?.cancel();
     _switchTimer?.cancel();
     _tapTimer?.cancel();
+    _replyToastTimer?.cancel();
     _heartTrigger.dispose();
     super.dispose();
   }
@@ -351,8 +355,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
 
   /// 친구 스낵의 글 답장. 새 전송 경로를 만들지 않고 DM 화면의 전송 흐름에
   /// 출처 한 줄(`snackReplyQuote`)과 함께 넘긴다.
-  Future<void> _sendDmTextReply(String text) async {
-    if (!mounted || _items.isEmpty) return;
+  Future<bool> _sendDmTextReply(String text) async {
+    if (!mounted || _items.isEmpty) return false;
     final item = _current;
     final relationshipStrings = RelationshipStrings.of(context);
     String? room;
@@ -361,31 +365,48 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     } catch (_) {
       room = null;
     }
-    if (!mounted) return;
+    if (!mounted) return false;
     if (room == null) {
+      // 실패하면 입력부와 글을 그대로 둔다.
       AppSnackBar.show(
         context,
         message: relationshipStrings.openConversationFailed,
         type: AppSnackBarType.error,
       );
-      return;
+      return false;
     }
+    var attempted = false;
     setState(() => _isModalPaused = true);
-    try {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => DMChatScreen(
-            conversationId: room!,
-            otherUserId: item.authorId,
-            initialReplyText: text,
-            initialReplyContext:
-                relationshipStrings.snackReplyQuote(item.displayCaption),
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isModalPaused = false);
-    }
+    // DM 화면이 입력창 전송 경로로 글을 보낸다. 돌아오면 토스트로 알린다.
+    unawaited(
+      Navigator.of(context)
+          .push<void>(
+            MaterialPageRoute(
+              builder: (_) => DMChatScreen(
+                conversationId: room!,
+                otherUserId: item.authorId,
+                initialReplyText: text,
+                initialReplyContext:
+                    relationshipStrings.snackReplyQuote(item.displayCaption),
+                onInitialReplySent: () => attempted = true,
+              ),
+            ),
+          )
+          .whenComplete(() {
+        if (!mounted) return;
+        setState(() => _isModalPaused = false);
+        if (attempted) _showReplyToast();
+      }),
+    );
+    return true;
+  }
+
+  void _showReplyToast() {
+    _replyToastTimer?.cancel();
+    setState(() => _replyToastVisible = true);
+    _replyToastTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (mounted) setState(() => _replyToastVisible = false);
+    });
   }
 
   Future<void> _sendFriendRequestTo(String userId) async {
@@ -1104,6 +1125,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                   playing: _currentVideoCanPlay,
                   captionTranslated: _captionTranslated,
                   onDmReply: _sendDmTextReply,
+                  onOpenDm: _openMessage,
                   heartTrigger: _heartTrigger,
                   onReplyFocusChanged: (focused) {
                     if (!mounted || _isReplyFocused == focused) return;
@@ -1113,6 +1135,42 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                 ),
               ),
             ),
+            if (_replyToastVisible)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 12 +
+                    44 +
+                    math.max(MediaQuery.paddingOf(context).bottom, 12.0) +
+                    16,
+                child: Center(
+                  child: GestureDetector(
+                    key: const ValueKey('dm_reply_toast'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      _replyToastTimer?.cancel();
+                      setState(() => _replyToastVisible = false);
+                      unawaited(_openMessage());
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xE6000000),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Text(
+                        '${strings.replySentToast} ›',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: snapshotChromeStyle(context, size: 13),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             // 진행 막대 + 헤더. 사진 위에 얹고 상태바 안전 영역만 비킨다.
             Positioned(
               left: 0,
@@ -1192,11 +1250,13 @@ class _SnapshotDetailPage extends StatefulWidget {
     required this.playing,
     required this.captionTranslated,
     required this.onDmReply,
+    required this.onOpenDm,
     required this.onReplyFocusChanged,
     required this.heartTrigger,
   });
   final bool captionTranslated;
-  final Future<void> Function(String text) onDmReply;
+  final Future<bool> Function(String text) onDmReply;
+  final Future<void> Function() onOpenDm;
   final ValueChanged<bool> onReplyFocusChanged;
   final ValueListenable<int> heartTrigger;
   final SnapshotItem snapshot;
@@ -1233,6 +1293,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
   int _reactionStatusGeneration = 0;
   String? _confirmingReactionSnapshotId;
   bool _replyFocused = false;
+  bool _replyOpen = false;
+  // 이 스낵을 보는 동안만 임시로 보관한다(페이지 상태가 스낵마다 새로 생긴다).
+  String _replyDraft = '';
   bool _burstActive = false;
   int _burstSerial = 0;
   Timer? _burstTimer;
@@ -1435,6 +1498,16 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
     }
   }
 
+  void _setReplyOpen(bool open) {
+    if (_replyOpen == open || !mounted) return;
+    if (!open) FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _replyOpen = open;
+      _replyFocused = open;
+    });
+    widget.onReplyFocusChanged(open);
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = SnapshotStrings.of(context);
@@ -1487,7 +1560,13 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
         final selected =
             _reactedLocally || (_reactionStatusResolved && _hasReacted);
         final showCaption = current.hasTranslatedCaption;
-        return Stack(
+        return PopScope(
+          // 답장 입력부가 열려 있으면 뒤로 가기는 입력부만 닫는다.
+          canPop: !_replyOpen,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _setReplyOpen(false);
+          },
+          child: Stack(
           fit: StackFit.expand,
           children: [
             Positioned(
@@ -1645,19 +1724,72 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
                     feelSent: selected,
                     canFeel: _canReactNow,
                     onFeel: _handleFeelTap,
-                    onDmReply: widget.onDmReply,
+                    onOpenReply: () => _setReplyOpen(true),
                     onViewers: widget.onViewers,
                     onSnackReply: widget.onSnackReply,
-                    onFocusChanged: (focused) {
-                      if (_replyFocused != focused && mounted) {
-                        setState(() => _replyFocused = focused);
+                  ),
+                ),
+              ),
+            // 친구 스낵 DM 답장: 검정 55% 막 + 화면 하단에 붙는 입력부.
+            if (_replyOpen && !widget.deleting) ...[
+              Positioned.fill(
+                child: GestureDetector(
+                  key: const ValueKey('dm_reply_scrim'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _setReplyOpen(false),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: .55),
+                    duration: MotionTokens.reduceMotion(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 200),
+                    builder: (context, alpha, _) => ColoredBox(
+                      color: Colors.black.withValues(alpha: alpha),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: keyboard,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 1, end: 0),
+                  duration: MotionTokens.reduceMotion(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, t, child) => Transform.translate(
+                    offset: Offset(0, 80 * t),
+                    child: Opacity(opacity: 1 - t * .6, child: child),
+                  ),
+                  child: SnapshotDmReplyPanel(
+                    authorName: current.authorName,
+                    thumbnail: SnapshotStorageImage(
+                      snapshot: current,
+                      decodeWidth: 120,
+                      placeholderColor: const Color(0xFF2C2C2E),
+                      errorBackgroundColor: const Color(0xFF2C2C2E),
+                      showLoadingIndicator: false,
+                    ),
+                    initialText: _replyDraft,
+                    onClose: (draft) {
+                      _replyDraft = draft;
+                      _setReplyOpen(false);
+                    },
+                    onSend: (text) async {
+                      final ok = await widget.onDmReply(text);
+                      if (ok && mounted) {
+                        _replyDraft = '';
+                        _setReplyOpen(false);
                       }
-                      widget.onReplyFocusChanged(focused);
+                      return ok;
                     },
                   ),
                 ),
               ),
+            ],
           ],
+        ),
         );
       },
     );

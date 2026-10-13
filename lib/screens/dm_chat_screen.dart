@@ -139,6 +139,9 @@ class DMChatScreen extends StatefulWidget {
   /// 새 전송 경로를 만들지 않고 기존 입력창 전송(`_sendMessage`)을 쓴다.
   final String? initialReplyText;
 
+  /// 글 답장을 입력창 전송 경로로 보낸 직후 한 번 불린다(성공 보장은 아님).
+  final VoidCallback? onInitialReplySent;
+
   const DMChatScreen({
     super.key,
     required this.conversationId,
@@ -150,6 +153,7 @@ class DMChatScreen extends StatefulWidget {
     this.initialReplyIsVideo = false,
     this.initialReplyContext,
     this.initialReplyText,
+    this.onInitialReplySent,
   });
 
   @override
@@ -5564,6 +5568,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       _messageController.text =
           contextLine.isEmpty ? replyText : '$contextLine\n$replyText';
       await _sendMessage();
+      widget.onInitialReplySent?.call();
       return;
     }
     void fillContext() {

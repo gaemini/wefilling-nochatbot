@@ -197,9 +197,9 @@ class _NameChip extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: reduce ? Duration.zero : const Duration(milliseconds: 150),
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          alignment: Alignment.center,
+          // alignment/height를 주면 Wrap 안에서 가로로 꽉 차므로 내용 크기로 둔다
+          // (테두리 1 + 위아래 7 + 글줄 18 = 높이 34).
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           decoration: BoxDecoration(
             color: selected ? Colors.black : Colors.white,
             border: Border.all(
@@ -209,6 +209,7 @@ class _NameChip extends StatelessWidget {
           ),
           child: Text(
             label,
+            maxLines: 1,
             style: TextStyle(
               fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],

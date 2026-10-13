@@ -174,6 +174,24 @@ void main() {
     });
   });
 
+  testWidgets('이름 칩은 가로로 늘어나지 않는다(높이 34, 내용 크기)', (tester) async {
+    await tester.pumpWidget(_host(
+      GroupsEmptyState(
+        friendCount: 5,
+        faces: _faces(5),
+        onCreate: (_) {},
+        onFindFriends: () {},
+      ),
+    ));
+    final chip = find.byKey(const ValueKey('groups_chip_학교'));
+    final size = tester.getSize(find.descendant(
+      of: chip,
+      matching: find.byType(AnimatedContainer),
+    ));
+    expect(size.height, 34);
+    expect(size.width, lessThan(120));
+  });
+
   testWidgets('글자 크기: 17을 넘는 글자가 없다', (tester) async {
     await tester.pumpWidget(_host(
       GroupsEmptyState(

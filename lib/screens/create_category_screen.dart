@@ -13,9 +13,13 @@ import '../l10n/ui_locale.dart';
 class CreateCategoryScreen extends StatefulWidget {
   final FriendCategory? category; // null이면 생성, 있으면 수정
 
+  /// 생성할 때 이름 입력에 미리 채울 값(빈 화면의 이름 칩). null이면 기존 동작.
+  final String? initialName;
+
   const CreateCategoryScreen({
     super.key,
     this.category,
+    this.initialName,
   });
 
   @override
@@ -30,7 +34,9 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.category?.name ?? '');
+    _nameController = TextEditingController(
+      text: widget.category?.name ?? widget.initialName ?? '',
+    );
     _selectedColor = widget.category?.color ??
         '#${AppColors.pointColor.toARGB32().toRadixString(16).substring(2)}';
     _selectedIcon = _normalizeIconName(widget.category?.iconName);

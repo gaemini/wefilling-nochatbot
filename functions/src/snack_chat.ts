@@ -9498,8 +9498,13 @@ async function applyTogetherAccepted(
     }
     const proposalRef = db().collection(TOGETHER_PROPOSALS)
       .doc(`${fromUid}_${toUid}_${togetherActivityKey(activityId)}`);
+    // 제안 문서는 같은 쌍·활동의 최신 방을 가리킨다. 늦게 온 이전 방의 수락이
+    // 새 제안을 덮어쓰지 않도록 같은 방일 때만 갱신한다(읽기 → 쓰기 순서).
+    const proposal = await transaction.get(proposalRef);
     transaction.update(roomRef, {'together.status': 'accepted'});
-    transaction.set(proposalRef, {status: 'accepted'}, {merge: true});
+    if (proposal.exists && stringValue(proposal.get('roomId')) === roomRef.id) {
+      transaction.set(proposalRef, {status: 'accepted'}, {merge: true});
+    }
     return {changed: true, fromUid, activity};
   });
 }
@@ -9510,6 +9515,14 @@ async function acceptTogetherOnReply(args: {
   eventId: string;
   senderName: string;
 }): Promise<void> {
+  // 모든 메시지 트리거가 방 문서를 잠그는 트랜잭션을 돌지 않도록, 대기 중인
+  // 같이하기 제안의 받는 사람이 보낸 메시지일 때만 트랜잭션으로 넘어간다.
+  const room = await args.roomRef.get();
+  const pending = objectValue(room.get('together'));
+  if (!room.exists || stringValue(pending.status) !== 'pending' ||
+      stringValue(pending.toUid) !== args.senderId) {
+    return;
+  }
   const outcome = await applyTogetherAccepted(args.roomRef, args.senderId);
   if (!outcome.changed) return;
   await createSystemMessage({

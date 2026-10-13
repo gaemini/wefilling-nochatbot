@@ -44,6 +44,8 @@ import '../ui/widgets/profile_image_viewer.dart';
 import '../utils/profile_photo_policy.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_selectable.dart';
+import '../ui/widgets/profile_share_sheet.dart';
+import '../utils/hanyang_verification_helper.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -63,7 +65,6 @@ class _MyPageScreenState extends State<MyPageScreen>
   late TabController _tabController;
   bool _showPostsAsGrid = false;
   // 통계 숫자(Posts/Friends/Reviews 등) 깜빡임 방지용 마지막 값 캐시
-  final Map<String, int> _statCountCache = {};
 
   String? _myPageCacheUserId;
   int _myPageLoadToken = 0;
@@ -395,7 +396,9 @@ class _MyPageScreenState extends State<MyPageScreen>
     final nickname = (userData?['nickname'] ?? '').toString().trim();
     final nationality = (userData?['nationality'] ?? '').toString().trim();
     final bio = (userData?['bio'] ?? '').toString().trim();
+    final university = (userData?['university'] ?? '').toString().trim();
     final social = SocialProfileData.fromMap(userData);
+    final isSchoolVerified = isHanyangEmailVerified(userData);
     final rawPhotoUrl = (userData?['photoURL'] ?? '').toString();
     final photoUrl = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(rawPhotoUrl)
         ? rawPhotoUrl
@@ -403,160 +406,285 @@ class _MyPageScreenState extends State<MyPageScreen>
     final profileCompletion = social.completionFor(
       hasProfilePhoto: photoUrl.isNotEmpty,
     );
-    const profileSize = 100.0;
-    const profileIconSize = 50.0;
+    final languageCode = Localizations.localeOf(context).languageCode;
+    final zh = isChineseUi(context);
+    final l10n = AppLocalizations.of(context)!;
+    final horizontalPadding =
+        MediaQuery.sizeOf(context).width < 360 ? 16.0 : 20.0;
+    const avatarSize = 76.0;
 
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-      child: Column(
-        children: [
-          // 프로필 사진(왼쪽) + 이름/국가(중앙) + 설정(오른쪽)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+    TextStyle style(double size, FontWeight weight, Color color,
+            {double? line}) =>
+        TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: size,
+          height: line == null ? null : line / size,
+          fontWeight: weight,
+          color: color,
+        );
+
+    final schoolParts = <String>[
+      if (university.isNotEmpty) university,
+      if (isSchoolVerified && social.showDepartment && social.department.isNotEmpty)
+        social.department,
+      if (isSchoolVerified && social.showGrade && social.grade.isNotEmpty)
+        social.grade,
+    ];
+
+    Widget count(String label, int? value) => Text.rich(
+          TextSpan(
             children: [
-              // 프로필 사진 - 탭 가능
-              MotionPress(
-                enabled: photoUrl.isNotEmpty,
-                pressedScale: .985,
-                child: GestureDetector(
-                  onTap: photoUrl.isNotEmpty
-                      ? () => _openProfileImageViewer(photoUrl)
-                      : null,
-                  child: Hero(
-                    tag: 'profile_image_${user?.uid ?? 'me'}',
-                    child: Container(
-                      width: profileSize,
-                      height: profileSize,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFE5E7EB),
-                        // 사진이 있을 때만 탭 가능한 느낌을 주는 그림자 추가
-                        boxShadow: photoUrl.isNotEmpty
-                            ? [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.1),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: photoUrl.isNotEmpty
-                          ? ClipOval(
-                              child: _buildCachedImage(
-                                photoUrl,
-                                fit: BoxFit.cover,
-                                errorWidget: ColoredBox(
-                                  color: const Color(0xFFE5E7EB),
-                                  child: Icon(
-                                    Icons.person,
-                                    size: profileIconSize,
-                                    color: const Color(0xFF6B7280),
-                                  ),
-                                ),
-                                placeholder: ColoredBox(
-                                  color: const Color(0xFFE5E7EB),
-                                  child: Icon(
-                                    Icons.person,
-                                    size: profileIconSize,
-                                    color: const Color(0xFF6B7280),
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Icon(
-                              Icons.person,
-                              size: profileIconSize,
-                              color: const Color(0xFF6B7280),
-                            ),
-                    ),
-                  ),
-                ),
+              TextSpan(
+                text: value == null ? '—' : '$value',
+                style: style(15, FontWeight.w700, const Color(0xFF111827)),
               ),
-
-              const SizedBox(width: 16),
-
-              // 이름과 국가 정보 (중앙)
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      nickname.isNotEmpty
-                          ? nickname
-                          : AppLocalizations.of(context)!.user,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF111827),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 8),
-                    if (nationality.isNotEmpty)
-                      Row(
-                        children: [
-                          CountryFlagCircle(
-                            nationality: nationality,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              CountryFlagHelper.getCountryInfo(nationality)
-                                      ?.getLocalizedName(
-                                          Localizations.localeOf(context)
-                                              .languageCode) ??
-                                  nationality,
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 14,
-                                fontWeight: FontWeight.w400,
-                                color: Color(0xFF6B7280),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                    // 한 줄 소개 (국기 아래)
-                    if (bio.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        bio,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                          color: Color(0xFF111827),
-                          height: 1.4,
-                        ),
-                        textAlign: TextAlign.left,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
+              TextSpan(
+                text: ' $label',
+                style: style(12, FontWeight.w400, const Color(0xFF707070)),
               ),
             ],
           ),
+        );
+    Widget dot() => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text('·',
+              style: style(12, FontWeight.w400, const Color(0xFF9A9A9A))),
+        );
 
-          if (social.interests.isNotEmpty ||
-              social.preferredActivities.isNotEmpty) ...[
-            const SizedBox(height: 18),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Wrap(
+    Widget actionButton({
+      required Key key,
+      required String label,
+      required VoidCallback onTap,
+      bool primary = false,
+    }) {
+      return SizedBox(
+        height: 38,
+        child: FilledButton(
+          key: key,
+          onPressed: onTap,
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            backgroundColor:
+                primary ? const Color(0xFF2C6BC0) : const Color(0xFFF2F2F2),
+            foregroundColor: primary ? Colors.white : const Color(0xFF111827),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style(
+              13,
+              FontWeight.w600,
+              primary ? Colors.white : const Color(0xFF111827),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final friendLabel = zh
+        ? '好友 ${_friendCount ?? 0}'
+        : languageCode == 'ko'
+            ? '친구 ${_friendCount ?? 0}'
+            : 'Friends ${_friendCount ?? 0}';
+    final shareLabel = zh ? '分享' : languageCode == 'ko' ? '공유' : 'Share';
+
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Container(
+        color: Colors.white,
+        padding: EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                MotionPress(
+                  enabled: photoUrl.isNotEmpty,
+                  pressedScale: .985,
+                  child: GestureDetector(
+                    onTap: photoUrl.isNotEmpty
+                        ? () => _openProfileImageViewer(photoUrl)
+                        : null,
+                    child: Hero(
+                      tag: 'profile_image_${user?.uid ?? 'me'}',
+                      child: Container(
+                        width: avatarSize,
+                        height: avatarSize,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFE5E7EB),
+                        ),
+                        child: photoUrl.isNotEmpty
+                            ? ClipOval(
+                                child: _buildCachedImage(
+                                  photoUrl,
+                                  fit: BoxFit.cover,
+                                  errorWidget: const ColoredBox(
+                                    color: Color(0xFFE5E7EB),
+                                    child: Icon(Icons.person,
+                                        size: 38, color: Color(0xFF6B7280)),
+                                  ),
+                                  placeholder: const ColoredBox(
+                                    color: Color(0xFFE5E7EB),
+                                    child: Icon(Icons.person,
+                                        size: 38, color: Color(0xFF6B7280)),
+                                  ),
+                                ),
+                              )
+                            : const Icon(Icons.person,
+                                size: 38, color: Color(0xFF6B7280)),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              nickname.isNotEmpty ? nickname : l10n.user,
+                              key: const ValueKey('mypage_name'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: style(18, FontWeight.w700,
+                                  const Color(0xFF111827),
+                                  line: 24),
+                            ),
+                          ),
+                          if (nationality.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            CountryFlagCircle(nationality: nationality, size: 16),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                CountryFlagHelper.getCountryInfo(nationality)
+                                        ?.getLocalizedName(languageCode) ??
+                                    nationality,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: style(13, FontWeight.w400,
+                                    const Color(0xFF707070)),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (schoolParts.isNotEmpty || isSchoolVerified) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            if (isSchoolVerified) ...[
+                              const Icon(Icons.verified_rounded,
+                                  size: 13, color: AppColors.pointColor),
+                              const SizedBox(width: 4),
+                            ],
+                            Flexible(
+                              child: Text(
+                                schoolParts.isEmpty
+                                    ? 'Hanyang University'
+                                    : schoolParts.join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: style(12, FontWeight.w400,
+                                    const Color(0xFF5F5F5F),
+                                    line: 16),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 6),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          count(l10n.posts, _userPosts?.length),
+                          dot(),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _navigateToFriendsPage,
+                            child: count(l10n.friends, _friendCount),
+                          ),
+                          dot(),
+                          count(l10n.reviews, _userReviews?.length),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (bio.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                bio,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: style(14, FontWeight.w400, const Color(0xFF111827),
+                    line: 20),
+              ),
+            ],
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  flex: 5,
+                  child: actionButton(
+                    key: const ValueKey('mypage_edit_button'),
+                    label: l10n.profileEdit,
+                    primary: true,
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ProfileEditScreen(),
+                        ),
+                      );
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 3,
+                  child: actionButton(
+                    key: const ValueKey('mypage_friends_button'),
+                    label: friendLabel,
+                    onTap: _navigateToFriendsPage,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: actionButton(
+                    key: const ValueKey('mypage_share_button'),
+                    label: shareLabel,
+                    onTap: () {
+                      final uid = user?.uid;
+                      if (uid == null) return;
+                      unawaited(showProfileShareSheet(
+                        context,
+                        uid: uid,
+                        nickname: nickname.isNotEmpty ? nickname : l10n.user,
+                      ));
+                    },
+                  ),
+                ),
+              ],
+            ),
+            if (social.interests.isNotEmpty ||
+                social.preferredActivities.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Wrap(
                 spacing: 8,
                 runSpacing: 6,
                 children: [
@@ -567,7 +695,7 @@ class _MyPageScreenState extends State<MyPageScreen>
                       label: SocialProfileCatalog.labelFor(
                         id,
                         SocialProfileCatalog.interests,
-                        Localizations.localeOf(context).languageCode,
+                        languageCode,
                       ),
                     ),
                   ),
@@ -578,125 +706,75 @@ class _MyPageScreenState extends State<MyPageScreen>
                       label: SocialProfileCatalog.labelFor(
                         id,
                         SocialProfileCatalog.activities,
-                        Localizations.localeOf(context).languageCode,
+                        languageCode,
                       ),
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
-          if (profileCompletion < 100) ...[
-            const SizedBox(height: 16),
-            InkWell(
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ProfileEditScreen(),
-                  ),
-                );
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 34,
-                      height: 34,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CircularProgressIndicator(
-                            value: profileCompletion / 100,
-                            strokeWidth: 3,
-                            backgroundColor: const Color(0xFFE2E8F0),
-                            color: AppColors.pointColor,
-                          ),
-                          Center(
-                            child: Text(
-                              '$profileCompletion',
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF475569),
+            ],
+            if (profileCompletion < 100) ...[
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ProfileEditScreen(),
+                    ),
+                  );
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 30,
+                        height: 30,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            CircularProgressIndicator(
+                              value: profileCompletion / 100,
+                              strokeWidth: 3,
+                              backgroundColor: const Color(0xFFE2E8F0),
+                              color: AppColors.pointColor,
+                            ),
+                            Center(
+                              child: Text(
+                                '$profileCompletion',
+                                style: style(10, FontWeight.w700,
+                                    const Color(0xFF475569)),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        Localizations.localeOf(context).languageCode == 'ko'
-                            ? (social.interests.isEmpty
-                                ? '관심사를 추가하면 비슷한 친구들이 더 쉽게 다가올 수 있어요.'
-                                : '대화 질문을 설정하면 첫 DM이 더 자연스러워져요.')
-                            : (social.interests.isEmpty
-                                ? 'Add interests so similar people can find you.'
-                                : 'Add a question to make the first DM easier.'),
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF475569),
-                          height: 1.4,
+                          ],
                         ),
                       ),
-                    ),
-                    const Icon(Icons.chevron_right_rounded,
-                        size: 20, color: Color(0xFF94A3B8)),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          languageCode == 'ko'
+                              ? (social.interests.isEmpty
+                                  ? '관심사를 추가하면 비슷한 친구들이 더 쉽게 다가올 수 있어요.'
+                                  : '대화 질문을 설정하면 첫 DM이 더 자연스러워져요.')
+                              : (social.interests.isEmpty
+                                  ? 'Add interests so similar people can find you.'
+                                  : 'Add a question to make the first DM easier.'),
+                          style: style(13, FontWeight.w500,
+                              const Color(0xFF475569),
+                              line: 18),
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded,
+                          size: 20, color: Color(0xFF94A3B8)),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
-
-          const SizedBox(height: 20),
-
-          // 통계 정보 (3개 컬럼)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildStatItem(
-                AppLocalizations.of(context)!.posts,
-                isPosts: true,
-                icon: Icons.article,
-                color: AppColors.pointColor,
-                showIcon: false,
-                usesCachedCount: true,
-                countValue: _userPosts?.length,
-                onTap: null,
-              ),
-              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(
-                AppLocalizations.of(context)!.friends,
-                isFriends: true,
-                icon: Icons.people,
-                color: AppColors.pointColor,
-                showIcon: false,
-                usesCachedCount: true,
-                countValue: _friendCount,
-                onTap: () => _navigateToFriendsPage(),
-              ),
-              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(
-                AppLocalizations.of(context)!.reviews,
-                icon: Icons.grid_on_rounded,
-                color: AppColors.pointColor,
-                showIcon: false,
-                usesCachedCount: true,
-                countValue: _userReviews?.length,
-                onTap: null,
-              ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1552,123 +1630,6 @@ class _MyPageScreenState extends State<MyPageScreen>
     }
   }
 
-  Widget _buildStatItem(
-    String label, {
-    bool isFriends = false,
-    bool isJoined = false,
-    bool isPosts = false,
-    required IconData icon,
-    required Color color,
-    bool showIcon = true,
-    Stream<int>? countStream,
-    bool usesCachedCount = false,
-    int? countValue,
-    int badgeCount = 0,
-    VoidCallback? onTap,
-  }) {
-    // 라벨/타입 기반으로 캐시 키 생성 (언어 변경에도 안정적으로 유지되도록 플래그 조합 사용)
-    final cacheKey =
-        'stat_${isFriends ? 'friends' : isJoined ? 'joined' : isPosts ? 'posts' : 'other'}_${showIcon ? 'icon' : 'noicon'}_${icon.codePoint}';
-    if (usesCachedCount && countValue != null) {
-      _statCountCache[cacheKey] = countValue;
-    }
-
-    final countDisplay = usesCachedCount
-        ? _buildAnimatedStatCount(
-            cacheKey,
-            countValue ?? _statCountCache[cacheKey],
-          )
-        : StreamBuilder<int>(
-            stream: countStream ??
-                (isJoined
-                    ? _userStatsService.getJoinedMeetupCount()
-                    : isPosts
-                        ? _userStatsService.getUserPostCount()
-                        : _userStatsService.getHostedMeetupCount()),
-            initialData: _statCountCache[cacheKey],
-            builder: (context, snapshot) {
-              final live = snapshot.data;
-              if (live != null) _statCountCache[cacheKey] = live;
-              return _buildAnimatedStatCount(
-                cacheKey,
-                live ?? _statCountCache[cacheKey],
-              );
-            },
-          );
-
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (showIcon) ...[
-                Icon(icon, size: 24, color: color),
-                const SizedBox(height: 8),
-              ],
-              countDisplay,
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                  color: Color(0xFF6B7280),
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAnimatedStatCount(String cacheKey, int? value) {
-    final countWidget = value != null
-        ? Text(
-            '$value',
-            key: ValueKey<String>('count_$cacheKey:$value'),
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF111827),
-            ),
-          )
-        : Text(
-            '—',
-            key: ValueKey<String>('count_$cacheKey:loading'),
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF9CA3AF),
-            ),
-          );
-
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) {
-        final fade = FadeTransition(opacity: animation, child: child);
-        return ScaleTransition(
-          scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
-          child: fade,
-        );
-      },
-      child: countWidget,
-    );
-  }
-
   void _openReviewDetail(ReviewPost review) {
     Navigator.push(
       context,
@@ -1887,23 +1848,6 @@ class _MyPageScreenState extends State<MyPageScreen>
                   ),
                 ),
                 const SizedBox(height: 20),
-                // 프로필 편집 (화면 버튼 대신 설정 시트에서 제공)
-                _buildMenuItem(
-                  context,
-                  AppLocalizations.of(context)!.profileEdit,
-                  Icons.edit_rounded,
-                  () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      this.context,
-                      MaterialPageRoute(
-                        builder: (context) => const ProfileEditScreen(),
-                      ),
-                    ).then((_) {
-                      if (mounted) setState(() {});
-                    });
-                  },
-                ),
                 _buildMenuItem(
                   context,
                   (isChineseUi(context) ? '收藏的动态' : Localizations.localeOf(context).languageCode == 'ko'
@@ -2108,22 +2052,6 @@ class MyPageSettingsSheet {
                   ),
                 ),
                 const SizedBox(height: 20),
-                _menuItem(
-                  sheetContext,
-                  AppLocalizations.of(sheetContext)!.profileEdit,
-                  Icons.edit_rounded,
-                  () {
-                    Navigator.pop(sheetContext);
-                    Navigator.push(
-                      rootContext,
-                      MaterialPageRoute(
-                        builder: (_) => const ProfileEditScreen(),
-                      ),
-                    ).then((_) {
-                      if (onProfileUpdated != null) onProfileUpdated();
-                    });
-                  },
-                ),
                 _menuItem(
                   sheetContext,
                   (isChineseUi(context) ? '收藏的动态' : Localizations.localeOf(sheetContext).languageCode == 'ko'

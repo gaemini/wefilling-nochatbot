@@ -182,14 +182,19 @@ class GroupFaceStack extends StatelessWidget {
             child: extra > 0
                 ? Padding(
                     padding: const EdgeInsets.only(left: 4),
-                    child: Text(
-                      '+$extra',
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontSize: 12,
-                        height: 17 / 12,
-                        color: const Color(0xFF8A8A8A),
+                    // 두 자리(+10 이상)·큰 글자에서도 잘리지 않게 칸 안에서 줄인다.
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '+$extra',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontSize: 12,
+                          height: 17 / 12,
+                          color: const Color(0xFF8A8A8A),
+                        ),
                       ),
                     ),
                   )

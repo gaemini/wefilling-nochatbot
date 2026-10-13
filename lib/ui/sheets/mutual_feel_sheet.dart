@@ -350,13 +350,23 @@ class _MutualFeelSheetHost extends StatelessWidget {
         theirThumbnail: _thumb(mutual?.theirs),
         onMessage: () async {
           final navigator = Navigator.of(context);
-          final room = await DMService().prepareConversationForOpen(otherUserId);
-          if (room == null || !navigator.mounted) return;
+          final route = ModalRoute.of(context);
+          String? room;
+          try {
+            room = await DMService().prepareConversationForOpen(otherUserId);
+          } catch (_) {
+            return;
+          }
+          // 연타 시 두 번째 호출은 시트가 이미 닫혀 있으므로 아래 화면을 닫지 않는다.
+          if (room == null || !navigator.mounted || route?.isCurrent != true) {
+            return;
+          }
+          final conversationId = room;
           navigator.pop();
           await navigator.push<void>(
             MaterialPageRoute(
-              builder: (_) =>
-                  DMChatScreen(conversationId: room, otherUserId: otherUserId),
+              builder: (_) => DMChatScreen(
+                  conversationId: conversationId, otherUserId: otherUserId),
             ),
           );
         },

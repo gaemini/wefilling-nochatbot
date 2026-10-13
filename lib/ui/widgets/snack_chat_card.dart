@@ -8,6 +8,7 @@ import '../../models/user_profile.dart';
 import '../../repositories/users_repository.dart';
 import '../../services/cache/app_image_cache_manager.dart';
 import 'audience_ring.dart';
+import 'motion_press.dart';
 import '../../l10n/ui_locale.dart';
 
 class SnackChatCard extends StatelessWidget {
@@ -161,10 +162,6 @@ class SnackChatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     if (isPast) return _buildPastCard(context, isKo: isKo);
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final horizontalPadding =
-        (screenWidth * 0.045).clamp(14.0, 20.0).toDouble();
-    final isCompact = screenWidth < 360;
     final is24HourChat = snackChat.activeDurationHours == 24;
     final remainingTimeLabel = _remainingTimeLabel(context, isKo: isKo);
     final isFavorited = snackChat.isFavoritedBy(currentUserId);
@@ -197,249 +194,225 @@ class SnackChatCard extends StatelessWidget {
                             : 'No messages yet'))
                     : rawLastMessage;
 
-    return Material(
-      color: BrandColors.surface,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: MediaQuery.withClampedTextScaling(
-          maxScaleFactor: 1.3,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 82),
-            padding: EdgeInsets.fromLTRB(
-              horizontalPadding,
-              10,
-              isCompact ? 10 : 12,
-              10,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (is24HourChat)
-                  AudienceRing(
-                    restricted: true,
-                    size: 52,
-                    ringWidth: 3,
-                    innerGap: 1.5,
-                    borderRadius: BorderRadius.circular(11),
-                    semanticLabel: (isChineseUi(context)
-                        ? '24小时群聊'
-                        : isKo
-                            ? '24시간 스낵챗'
-                            : '24-hour Snack Chat'),
-                    child: _ParticipantAvatarMosaic(
-                      participantIds: snackChat.participantIds,
-                      currentUserId: currentUserId,
-                    ),
-                  )
-                else
-                  _ParticipantAvatarMosaic(
-                    participantIds: snackChat.participantIds,
-                    currentUserId: currentUserId,
-                  ),
-                SizedBox(width: isCompact ? 9 : 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              snackChat.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 17,
-                                height: isChineseUi(context) ? 1.3 : 1.25,
-                                fontWeight: hasUnread
-                                    ? FontWeight.w800
-                                    : FontWeight.w700,
-                                color: BrandColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            '${snackChat.participantCount}',
-                            style: TextStyle(
-                              fontFamily: uiFontFamily(context, 'Inter'),
-                              fontFamilyFallback: ['NotoSansKR'],
-                              fontSize: 14,
-                              height: isChineseUi(context) ? 1.3 : 1.25,
-                              fontWeight: FontWeight.w600,
-                              color: BrandColors.neutral500,
-                            ),
-                          ),
-                          if (isMuted) ...[
-                            const SizedBox(width: 3),
-                            const Icon(
-                              Icons.notifications_off_rounded,
-                              size: 14,
-                              color: BrandColors.neutral500,
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        lastMessage,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 13,
-                          height: 1.35,
-                          fontWeight:
-                              hasUnread ? FontWeight.w600 : FontWeight.w400,
-                          color: rawLastMessage.isEmpty
-                              ? BrandColors.textHint
-                              : hasUnread
-                                  ? BrandColors.textPrimary
-                                  : BrandColors.neutral500,
-                        ),
-                      ),
-                      if (remainingTimeLabel != null) ...[
-                        const SizedBox(height: 2),
-                        SnackChatDurationStatus(
-                          label: remainingTimeLabel,
-                        ),
-                      ],
-                    ],
-                  ),
+    const nameColor = Color(0xFF000000);
+    const mutedColor = Color(0xFF9A9A9A);
+    const previewColor = Color(0xFF707070);
+    final lineHeight = isChineseUi(context) ? 1.3 : 1.25;
+    final mosaic = _ParticipantAvatarMosaic(
+      participantIds: snackChat.participantIds,
+      currentUserId: currentUserId,
+      size: 46,
+    );
+    final hasDetail = remainingTimeLabel != null;
+    final dateText = _formattedListTime(context);
+    final avatar = is24HourChat
+        ? AudienceRing(
+            restricted: true,
+            size: 52,
+            ringWidth: 2,
+            innerGap: 1,
+            borderRadius: BorderRadius.circular(13),
+            semanticLabel: (isChineseUi(context)
+                ? '24小时群聊'
+                : isKo
+                    ? '24시간 스낵챗'
+                    : '24-hour Snack Chat'),
+            child: mosaic,
+          )
+        : SizedBox.square(dimension: 52, child: Center(child: mosaic));
+
+    return MotionPress(
+      pressedScale: .99,
+      child: Material(
+        color: BrandColors.surface,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          highlightColor: const Color(0xFFF7F7F7),
+          splashColor: const Color(0xFFF7F7F7),
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.3,
+            child: Container(
+              height: 72,
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFFF2F2F2)),
                 ),
-                const SizedBox(width: 6),
-                SizedBox(
-                  width: 72,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        _formattedListTime(context),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 11,
-                          height: isChineseUi(context) ? 1.3 : 1.25,
-                          fontWeight:
-                              hasUnread ? FontWeight.w700 : FontWeight.w500,
-                          color: hasUnread
-                              ? BrandColors.textPrimary
-                              : BrandColors.neutral500,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          if (hasUnread) ...[
-                            Semantics(
-                              label: (isChineseUi(context)
-                                  ? '$unreadCount条未读消息'
-                                  : isKo
-                                      ? '읽지 않은 메시지 $unreadCount개'
-                                      : '$unreadCount unread messages'),
-                              excludeSemantics: true,
-                              child: Container(
-                                constraints: const BoxConstraints(
-                                  minWidth: 18,
-                                  minHeight: 18,
-                                ),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 5),
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: BrandColors.info,
-                                  borderRadius: BorderRadius.circular(9),
-                                ),
-                                child: Text(
-                                  unreadCount > 99 ? '99+' : '$unreadCount',
-                                  style: TextStyle(
-                                    fontFamily:
-                                        uiFontFamily(context, 'Inter'),
-                                    fontSize: 11,
-                                    height: 1.2,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                          ],
-                          Semantics(
-                            button: true,
-                            selected: isFavorited,
-                            label: isFavorited
-                                ? ((isChineseUi(context)
-                                    ? '取消收藏'
-                                    : isKo
-                                        ? '즐겨찾기 해제'
-                                        : 'Remove from favorites'))
-                                : ((isChineseUi(context)
-                                    ? '加入收藏'
-                                    : isKo
-                                        ? '즐겨찾기 추가'
-                                        : 'Add to favorites')),
-                            child: Tooltip(
-                              message: isFavorited
-                                  ? ((isChineseUi(context)
-                                      ? '取消收藏'
-                                      : isKo
-                                          ? '즐겨찾기 해제'
-                                          : 'Remove from favorites'))
-                                  : ((isChineseUi(context)
-                                      ? '加入收藏'
-                                      : isKo
-                                          ? '즐겨찾기 추가'
-                                          : 'Add to favorites')),
-                              child: SizedBox.square(
-                                dimension: 44,
-                                child: InkResponse(
-                                  onTap: onToggleFavorite,
-                                  radius: 22,
-                                  child: Center(
-                                    child: AnimatedSwitcher(
-                                      duration:
-                                          const Duration(milliseconds: 160),
-                                      transitionBuilder: (child, animation) =>
-                                          ScaleTransition(
-                                        scale: Tween<double>(
-                                          begin: 0.88,
-                                          end: 1,
-                                        ).animate(animation),
-                                        child: FadeTransition(
-                                          opacity: animation,
-                                          child: child,
+              ),
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                    child: Row(
+                      children: [
+                        avatar,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Padding(
+                            // 날짜·배지와 겹치지 않도록 오른쪽을 비워 둔다.
+                            padding: const EdgeInsets.only(right: 52),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        snackChat.title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontFamily:
+                                              uiFontFamily(context, 'Inter'),
+                                          fontFamilyFallback: const [
+                                            'NotoSansKR'
+                                          ],
+                                          fontSize: 15,
+                                          height: 20 / 15,
+                                          fontWeight: FontWeight.w600,
+                                          color: nameColor,
                                         ),
                                       ),
-                                      child: Icon(
-                                        isFavorited
-                                            ? Icons.star_rounded
-                                            : Icons.star_border_rounded,
-                                        key: ValueKey<bool>(isFavorited),
-                                        size: 18,
-                                        color: isFavorited
-                                            ? BrandColors.textPrimary
-                                            : BrandColors.neutral400,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      '${snackChat.participantCount}',
+                                      style: TextStyle(
+                                        fontFamily:
+                                            uiFontFamily(context, 'Inter'),
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
+                                        fontSize: 13,
+                                        height: lineHeight,
+                                        fontWeight: FontWeight.w400,
+                                        color: mutedColor,
                                       ),
                                     ),
+                                    if (isMuted) ...[
+                                      const SizedBox(width: 3),
+                                      const Icon(
+                                        Icons.notifications_off_rounded,
+                                        size: 12,
+                                        color: mutedColor,
+                                      ),
+                                    ],
+                                    // 즐겨찾기한 방만 채운 별을 보인다.
+                                    if (isFavorited) ...[
+                                      const SizedBox(width: 4),
+                                      Semantics(
+                                        label: (isChineseUi(context)
+                                            ? '已收藏'
+                                            : isKo
+                                                ? '즐겨찾기됨'
+                                                : 'Favorited'),
+                                        child: const Icon(
+                                          Icons.star_rounded,
+                                          key: ValueKey('snack_chat_favorite_star'),
+                                          size: 12,
+                                          color: nameColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      if (hasDetail)
+                                        TextSpan(
+                                          text: '$remainingTimeLabel · ',
+                                          style: const TextStyle(
+                                            color: BrandColors.info,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      TextSpan(text: lastMessage),
+                                    ],
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: uiFontFamily(context, 'Inter'),
+                                    fontFamilyFallback: const ['NotoSansKR'],
+                                    fontSize: 13,
+                                    height: 18 / 13,
+                                    fontWeight: hasUnread
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    color: rawLastMessage.isEmpty
+                                        ? BrandColors.textHint
+                                        : hasUnread
+                                            ? nameColor
+                                            : previewColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    right: 16,
+                    top: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          dateText,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: 11,
+                            height: 15 / 11,
+                            fontWeight: FontWeight.w400,
+                            color: mutedColor,
+                          ),
+                        ),
+                        if (hasUnread) ...[
+                          const SizedBox(height: 4),
+                          Semantics(
+                            label: (isChineseUi(context)
+                                ? '$unreadCount条未读消息'
+                                : isKo
+                                    ? '읽지 않은 메시지 $unreadCount개'
+                                    : '$unreadCount unread messages'),
+                            excludeSemantics: true,
+                            child: Container(
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 5),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2C6BC0),
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              child: Text(
+                                unreadCount > 99 ? '99+' : '$unreadCount',
+                                style: TextStyle(
+                                  fontFamily: uiFontFamily(context, 'Inter'),
+                                  fontSize: 11,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
                                 ),
                               ),
                             ),
                           ),
                         ],
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -674,10 +647,10 @@ class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final availableSize = constraints.biggest.shortestSide;
-              final tileSize = (availableSize - 4) / 2;
+              final tileSize = (availableSize - 2) / 2;
               return Wrap(
-                spacing: 4,
-                runSpacing: 4,
+                spacing: 2,
+                runSpacing: 2,
                 children: List.generate(4, (index) {
                   final profile =
                       index < ids.length ? profilesById[ids[index]] : null;

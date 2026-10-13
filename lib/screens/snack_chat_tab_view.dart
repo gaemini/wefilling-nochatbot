@@ -10,7 +10,6 @@ import '../services/snack_chat_service.dart';
 import '../constants/app_constants.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
 import '../ui/widgets/snack_chat_card.dart';
-import '../ui/widgets/app_fab.dart';
 import '../utils/responsive_helper.dart';
 import 'snack_chat_screen.dart';
 import '../l10n/ui_locale.dart';
@@ -252,6 +251,62 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
     }
   }
 
+  /// 길게 누르기 메뉴: `즐겨찾기` / `즐겨찾기 해제`. 해제는 기존 확인 시트를
+  /// 그대로 거치고, 저장은 `_handleToggleFavorite`가 맡는다.
+  Future<void> _showFavoriteMenu(SnackChat chat, String? currentUserId) async {
+    if (currentUserId == null || currentUserId.isEmpty) return;
+    final favorited = _effectiveFavorite(chat, currentUserId);
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final label = favorited
+        ? (isChineseUi(context)
+            ? '取消收藏'
+            : isKo
+                ? '즐겨찾기 해제'
+                : 'Remove favorite')
+        : (isChineseUi(context)
+            ? '收藏'
+            : isKo
+                ? '즐겨찾기'
+                : 'Favorite');
+    final selected = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: false,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          child: InkWell(
+            key: const ValueKey('snack_chat_favorite_menu_item'),
+            onTap: () => Navigator.pop(sheetContext, true),
+            child: Container(
+              height: 56,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(sheetContext, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF000000),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (selected == true && mounted) {
+      await _handleToggleFavorite(chat, currentUserId);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
@@ -345,6 +400,10 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         onToggleFavorite: () {
                           _handleToggleFavorite(chat, currentUserId);
                         },
+                        // 목록에서는 빈 별을 없애고 길게 눌러 즐겨찾기를 바꾼다.
+                        onLongPress: isPast
+                            ? null
+                            : () => _showFavoriteMenu(chat, currentUserId),
                       );
                     },
                   ),
@@ -353,9 +412,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                   PositionedDirectional(
                     end: 16,
                     bottom: 16 + bottomInset,
-                    child: AppFab.extended(
-                      onPressed: widget.onCreateSnackChat!,
-                      icon: Icons.add_rounded,
+                    child: _CreateSnackChatButton(
                       label: isChineseUi(context)
                           ? '创建群聊'
                           : isKo
@@ -366,12 +423,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                           : isKo
                               ? '스낵챗 만들기'
                               : 'Create Snack Chat'),
-                      tooltip: (isChineseUi(context)
-                          ? '创建群聊'
-                          : isKo
-                              ? '스낵챗 만들기'
-                              : 'Create Snack Chat'),
-                      heroTag: 'create_snack_chat_fab',
+                      onPressed: widget.onCreateSnackChat!,
                     ),
                   ),
               ],
@@ -391,7 +443,7 @@ class _PastSnackChatsHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 7),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
       child: Row(
         children: [
           Text(
@@ -404,8 +456,8 @@ class _PastSnackChatsHeader extends StatelessWidget {
               fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
               fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: BrandColors.neutral500,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF8A8A8A),
             ),
           ),
           const Spacer(),
@@ -495,7 +547,7 @@ class SnackChatEmptyState extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(21).clamp(18, 22).toDouble(),
+                          fontSize: 15,
                           fontWeight: FontWeight.w800,
                           height: 1.3,
                           letterSpacing: -0.4,
@@ -513,7 +565,7 @@ class SnackChatEmptyState extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(13.5).clamp(12.5, 14).toDouble(),
+                          fontSize: 13,
                           fontWeight: FontWeight.w500,
                           height: 1.5,
                           color: const Color(0xFF6B7280),
@@ -541,7 +593,7 @@ class SnackChatEmptyState extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                          fontSize: 13,
                           fontWeight: FontWeight.w800,
                           height: 1.3,
                           color: const Color(0xFF475467),
@@ -618,7 +670,7 @@ pressedScale: .975, child: FilledButton.icon(
                                 fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
                                 fontSize:
-                                    context.rf(14).clamp(13, 15).toDouble(),
+                                    14,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -771,7 +823,7 @@ class _FeatureRow extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                     height: 1.3,
                     color: const Color(0xFF111827),
@@ -783,7 +835,7 @@ class _FeatureRow extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                    fontSize: 13,
                     fontWeight: FontWeight.w500,
                     height: 1.4,
                     color: const Color(0xFF6B7280),
@@ -821,6 +873,84 @@ pressedScale: .985, child: TextButton.icon(
                   : 'Could not load. Retry'),
         ),
       )),
+    );
+  }
+}
+
+/// 스낵챗 열기 버튼: 높이 46, `+` 20 / 400 + 라벨 15 / 600.
+class _CreateSnackChatButton extends StatelessWidget {
+  const _CreateSnackChatButton({
+    required this.label,
+    required this.semanticLabel,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String semanticLabel;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Semantics(
+        button: true,
+        label: semanticLabel,
+        excludeSemantics: true,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(23),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x4D2C6BC0),
+                blurRadius: 14,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Material(
+            color: const Color(0xFF2C6BC0),
+            borderRadius: BorderRadius.circular(23),
+            child: InkWell(
+              key: const ValueKey('create_snack_chat_button'),
+              borderRadius: BorderRadius.circular(23),
+              onTap: onPressed,
+              child: Container(
+                height: 46,
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '+',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontSize: 20,
+                        height: 1.1,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 15,
+                        height: 20 / 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

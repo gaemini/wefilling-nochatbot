@@ -140,6 +140,9 @@ class DMChatScreen extends StatefulWidget {
   /// 새 전송 경로를 만들지 않고 기존 입력창 전송(`_sendMessage`)을 쓴다.
   final String? initialReplyText;
 
+  /// 입력창에 미리 채워 두는 초안(자동 전송하지 않는다). 예: 질문 [답하기].
+  final String? initialDraftText;
+
   /// 글 답장을 입력창 전송 경로로 보낸 직후 한 번 불린다(성공 보장은 아님).
   final VoidCallback? onInitialReplySent;
 
@@ -155,6 +158,7 @@ class DMChatScreen extends StatefulWidget {
     this.initialReplyContext,
     this.initialReplyText,
     this.onInitialReplySent,
+    this.initialDraftText,
   });
 
   @override
@@ -518,6 +522,13 @@ class _DMChatScreenState extends State<DMChatScreen>
         (widget.initialReplyText ?? '').trim().isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => unawaited(_sendInitialSnackReply()),
+      );
+    }
+    final draft = (widget.initialDraftText ?? '').trim();
+    if (draft.isNotEmpty) {
+      _messageController.text = widget.initialDraftText!;
+      _messageController.selection = TextSelection.collapsed(
+        offset: _messageController.text.length,
       );
     }
     _translationLanguageRevision = _translationService.languageRevision;

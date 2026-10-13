@@ -7153,7 +7153,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   languageCode: Localizations.localeOf(context).languageCode,
                 ),
               // 같이하기 제안: 가장 오래된 메시지(대화 맨 위) 앞에 한 번.
-              if (index == _messages.length - 1 && !_hasMore)
+              // 메시지가 적어 스크롤이 생기지 않으면 _hasMore가 내려가지 않으므로
+              // 방의 첫 메시지(sequence 1)도 맨 위로 본다.
+              if (index == _messages.length - 1 &&
+                  (!_hasMore || message.sequence == 1))
                 _buildTogetherBanner(),
               // 밀어서 답장: KeyedSubtree(스크롤 앵커 GlobalKey) 안쪽에서 감싼다.
               // 활성 조건은 _beginReply의 가드와 같다(미디어 메시지 포함).

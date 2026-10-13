@@ -61,11 +61,12 @@ void main() {
 
       expect(find.text('조회한 사람'), findsOneWidget);
       expect(find.text('2명이 이 스낵을 확인했어요'), findsOneWidget);
+      // v3: 필링 여부(하트)는 본 사람 목록에 표시하지 않는다.
       expect(
         find.byKey(
           const ValueKey<String>('snapshot-viewer-reaction-viewer-1'),
         ),
-        findsOneWidget,
+        findsNothing,
       );
       expect(tester.takeException(), isNull, reason: 'width=$width');
     }

@@ -234,8 +234,8 @@ class _ViewerRow extends StatelessWidget {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: Semantics(
-        label: '${viewer.displayName}, $viewedAt'
-            '${viewer.reaction.isEmpty ? '' : ', ${strings.likeReaction}'}',
+        // 필링 여부는 서로 필링 전까지 작성자에게 보이지 않는다.
+        label: '${viewer.displayName}, $viewedAt',
         button: canOpenProfile,
         enabled: canOpenProfile,
         excludeSemantics: true,
@@ -299,20 +299,6 @@ class _ViewerRow extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (viewer.reaction.isNotEmpty) ...[
-                      Tooltip(
-                        message: strings.likeReaction,
-                        child: Icon(
-                          Icons.favorite_rounded,
-                          key: ValueKey<String>(
-                            'snapshot-viewer-reaction-${viewer.userId}',
-                          ),
-                          size: context.ri(16).clamp(15, 18).toDouble(),
-                          color: const Color(0xFF2D9CDB),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
                     Text(
                       viewedAt,
                       maxLines: 1,

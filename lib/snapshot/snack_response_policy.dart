@@ -22,3 +22,8 @@ bool canOfferMeetupDraft({
     replyCount > 0 &&
     hasTimeOrPlaceContext &&
     canCreateMeetup;
+
+/// 친구에게만 DM으로 답장할 수 있다(`친구 답장도`). 이전 `view_only`는
+/// 필링만 받는 스낵(`reactions`)처럼 다룬다.
+bool allowsFriendReply(SnapshotResponseMode responseMode) =>
+    responseMode == SnapshotResponseMode.replies;

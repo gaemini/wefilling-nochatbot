@@ -121,6 +121,8 @@ class GroupFaceStack extends StatelessWidget {
     this.overlap = 7,
     this.maxShown = 4,
     this.reserveOverflowSlot = true,
+    this.borderWidth = 2,
+    this.placeholderCount = 1,
   });
 
   final List<GroupMember>? members;
@@ -129,12 +131,18 @@ class GroupFaceStack extends StatelessWidget {
   final int maxShown;
   final bool reserveOverflowSlot;
 
+  /// 얼굴 바깥의 흰 테두리 두께(전체 크기 [avatarSize]는 그대로).
+  final double borderWidth;
+
+  /// 로딩 중(members == null)에 보여 줄 회색 자리 수.
+  final int placeholderCount;
+
   @override
   Widget build(BuildContext context) {
     final list = members;
     final shown = (list ?? const <GroupMember>[]).take(maxShown).toList();
     final extra = list == null ? 0 : (list.length - shown.length);
-    final count = list == null ? 1 : shown.length;
+    final count = list == null ? placeholderCount : shown.length;
     final width = count == 0
         ? 0.0
         : avatarSize + (count - 1) * (avatarSize - overlap);
@@ -148,26 +156,22 @@ class GroupFaceStack extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               if (list == null)
-                Positioned(
-                  left: 0,
-                  child: GroupMemberAvatar(member: null, size: avatarSize),
-                )
+                for (var i = 0; i < placeholderCount; i++)
+                  Positioned(
+                    left: i * (avatarSize - overlap),
+                    child: _bordered(GroupMemberAvatar(
+                      member: null,
+                      size: avatarSize - borderWidth * 2,
+                    )),
+                  )
               else
                 for (var i = 0; i < shown.length; i++)
                   Positioned(
                     left: i * (avatarSize - overlap),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius:
-                            BorderRadius.circular((avatarSize + 4) * 0.3),
-                      ),
-                      padding: const EdgeInsets.all(0),
-                      child: GroupMemberAvatar(
-                        member: shown[i],
-                        size: avatarSize,
-                      ),
-                    ),
+                    child: _bordered(GroupMemberAvatar(
+                      member: shown[i],
+                      size: avatarSize - borderWidth * 2,
+                    )),
                   ),
             ],
           ),
@@ -194,6 +198,19 @@ class GroupFaceStack extends StatelessWidget {
       ],
     );
   }
+}
+
+extension on GroupFaceStack {
+  Widget _bordered(Widget avatar) => Container(
+        width: avatarSize,
+        height: avatarSize,
+        padding: EdgeInsets.all(borderWidth),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(avatarSize * 0.3),
+        ),
+        child: avatar,
+      );
 }
 
 /// 그룹 한 줄(높이 64): 이름·인원·멤버 이름 요약 + 얼굴 묶음 + `›`.

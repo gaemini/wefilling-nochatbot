@@ -7,9 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
-import '../constants/app_constants.dart';
 import '../design/tokens.dart';
-import '../ui/widgets/category_shapes_illustration.dart';
+import '../ui/widgets/tab_empty_state.dart';
+import 'unified_search_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/relationship_provider.dart';
 import '../models/user_profile.dart';
@@ -21,7 +21,6 @@ import 'create_snack_chat_screen.dart';
 import 'snack_chat_tab_view.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
-import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/motion_selectable.dart';
@@ -48,6 +47,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
   AuthProvider? _authProvider;
   static const int _maxCategories = FriendCategoryService.maxCategoriesPerUser;
   late TabController _tabController;
+
+  /// 그룹 빈 화면에서 고른 이름 칩(한 번에 하나).
+  String? _selectedEmptyName;
 
   /// 카테고리 스트림 구독 – 마지막 데이터를 state에 보관해
   /// TabBarView 탭 전환 시에도 로딩 스피너 없이 즉시 표시된다.
@@ -221,12 +223,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     );
   }
 
-  void _handleCreateCategory() {
+  void _handleCreateCategory({String? initialName}) {
     if (_categories.length >= _maxCategories) {
       _showCategoryLimitReachedSnackBar();
       return;
     }
-    _showCreateCategoryDialog();
+    _showCreateCategoryDialog(initialName: initialName);
   }
 
   Widget _buildGroupsTab() {
@@ -426,158 +428,140 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
   }
 
   Widget _buildGroupsEmptyState() {
-    final l10n = AppLocalizations.of(context)!;
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final media = MediaQuery.of(context);
-    final compact = media.size.height < 700 || context.isCompactLayout;
-    final horizontal = media.size.width < 360
-        ? 14.0
-        : media.size.width < 430
-            ? 16.0
-            : 20.0;
-    final topPadding = compact ? 14.0 : context.rs(22).clamp(18, 26);
+    final strings = GroupUiStrings.of(context);
+    final ready = context.select<RelationshipProvider, bool>(
+      (provider) => provider.relationshipStreamsReady,
+    );
+    final profiles = context.select<RelationshipProvider, List<UserProfile>>(
+      (provider) => provider.friends,
+    );
+    final friendCount = ready ? profiles.length : null;
+    final noFriends = ready && profiles.isEmpty;
+    final List<GroupMember>? faces = ready
+        ? [
+            for (final profile in profiles.take(6))
+              GroupMember(
+                uid: profile.uid,
+                name: profile.displayNameOrNickname,
+                photoUrl: profile.photoURL ?? '',
+              ),
+          ]
+        : null;
+    final chips = strings.groupNameChips;
+    final selected = _selectedEmptyName;
 
     return SafeArea(
       top: false,
-      child: CustomScrollView(
-        physics: const ClampingScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              horizontal,
-              topPadding.toDouble(),
-              horizontal,
-              compact ? 18 : 24,
-            ),
-            sliver: SliverFillRemaining(
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: CustomScrollView(
+          physics: const ClampingScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
               hasScrollBody: false,
-              child: Center(
+              child: Align(
+                alignment: Alignment.topCenter,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 560),
-                  child: MediaQuery.withClampedTextScaling(
-                    maxScaleFactor: 1.25,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 44, bottom: 24),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          l10n.createFirstCategory,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: context.rf(21).clamp(18, 22).toDouble(),
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF111827),
-                            height: 1.35,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        SizedBox(height: context.rs(7).clamp(6, 9).toDouble()),
-                        Text(
-                          l10n.createFirstCategoryDescription,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize:
-                                context.rf(13.5).clamp(12.5, 14).toDouble(),
-                            fontWeight: FontWeight.w500,
-                            color: const Color(0xFF6B7280),
-                            height: 1.5,
-                          ),
-                        ),
-                        SizedBox(
-                          height: context
-                              .rs(compact ? 12 : 16)
-                              .clamp(10, 18)
-                              .toDouble(),
-                        ),
-                        Center(
-                          child: CategoryShapesIllustration(
-                            size: compact ? 58 : 66,
-                          ),
-                        ),
-                        SizedBox(
-                          height: context
-                              .rs(compact ? 12 : 18)
-                              .clamp(10, 20)
-                              .toDouble(),
-                        ),
-                        Text(
-                          (isChineseUi(context) ? '好友分组功能' : isKo ? '친구 그룹으로 할 수 있어요' : 'What friend groups offer'),
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: context.rf(13).clamp(12, 14).toDouble(),
-                            fontWeight: FontWeight.w800,
-                            height: 1.3,
-                            color: const Color(0xFF475467),
-                          ),
-                        ),
-                        SizedBox(
-                            height: context.rs(10).clamp(8, 12).toDouble()),
-                        _GroupFeatureRow(
-                          icon: Icons.people_outline_rounded,
-                          title: (isChineseUi(context) ? '按你的方式管理好友' : isKo
-                              ? '친구를 목적에 맞게 정리'
-                              : 'Organize friends your way'),
-                          description: (isChineseUi(context) ? '按学校、聚会或社交圈整理好友。' : isKo
-                              ? '학교, 모임, 친한 친구처럼 필요한 기준으로 묶어요.'
-                              : 'Group friends by school, meetup, or any circle you need.'),
-                        ),
-                        SizedBox(
-                            height: context.rs(12).clamp(10, 14).toDouble()),
-                        _GroupFeatureRow(
-                          icon: Icons.visibility_outlined,
-                          title: (isChineseUi(context) ? '选择谁能看到内容' : isKo
-                              ? '공개할 사람을 간편하게 선택'
-                              : 'Choose who can see your content'),
-                          description: (isChineseUi(context) ? '发布动态和聚会时，可重复使用已有分组。' : isKo
-                              ? '포스트와 밋업을 만들 때 같은 그룹을 바로 사용해요.'
-                              : 'Reuse the same groups when creating posts and meetups.'),
-                        ),
-                        SizedBox(
-                          height: context
-                              .rs(compact ? 16 : 22)
-                              .clamp(14, 24)
-                              .toDouble(),
-                        ),
-                        SizedBox(
-                          height: context.rh(48, min: 46, max: 52),
-                          child: MotionPress(
-                            pressedScale: .975,
-                            child: FilledButton.icon(
-                            key: const Key('groups_empty_create_button'),
-                            onPressed: _handleCreateCategory,
-                            icon: Icon(
-                              Icons.group_add_outlined,
-                              size: context.ri(19).clamp(18, 21).toDouble(),
-                            ),
-                            label: Text(
-                              l10n.newCategoryCreate,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize:
-                                    context.rf(14).clamp(13, 15).toDouble(),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            style: FilledButton.styleFrom(
-                              elevation: 0,
-                              backgroundColor: AppColors.pointColor,
-                              foregroundColor: Colors.white,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
+                        if (!noFriends) ...[
+                          Semantics(
+                            label: friendCount == null
+                                ? null
+                                : strings.friendsCount(friendCount),
+                            child: ExcludeSemantics(
+                              child: Row(
+                                key: const ValueKey('groups_empty_faces'),
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  GroupFaceStack(
+                                    members: faces,
+                                    avatarSize: 36,
+                                    overlap: 9,
+                                    maxShown: 6,
+                                    borderWidth: 2.5,
+                                    reserveOverflowSlot: false,
+                                    placeholderCount: 6,
+                                  ),
+                                  if (friendCount != null) ...[
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      strings.friendsCount(friendCount),
+                                      style: TextStyle(
+                                        fontFamily:
+                                            uiFontFamily(context, 'Inter'),
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
+                                        fontSize: 13,
+                                        height: 19 / 13,
+                                        color: const Color(0xFF8A8A8A),
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ),
+                          const SizedBox(height: 6),
+                        ],
+                        TabEmptyStateText(
+                          title: strings.groupsEmptyTitle,
+                          body: noFriends
+                              ? strings.groupsNoFriends
+                              : strings.groupsEmptyBody,
+                        ),
+                        if (!noFriends) ...[
+                          const SizedBox(height: 26),
+                          Text(
+                            strings.groupsNamePrompt,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: 12,
+                              height: 16 / 12,
+                              color: const Color(0xFF8A8A8A),
+                            ),
                           ),
+                          const SizedBox(height: 10),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final name in chips)
+                                  _NameChip(
+                                    key: ValueKey<String>('groups_chip_$name'),
+                                    label: name,
+                                    selected: selected == name,
+                                    onTap: () => setState(
+                                      () => _selectedEmptyName =
+                                          selected == name ? null : name,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        TabEmptyStateButton(
+                          key: const Key('groups_empty_create_button'),
+                          label: noFriends
+                              ? strings.findFriendsButton
+                              : (selected == null
+                                  ? strings.groupsFirstButton
+                                  : strings.createNamedGroup(selected)),
+                          onPressed: noFriends
+                              ? _openFriendSearch
+                              : () => _handleCreateCategory(
+                                    initialName: selected,
+                                  ),
                         ),
                       ],
                     ),
@@ -585,25 +569,34 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  void _showCreateCategoryDialog() {
-    _navigateToCreateCategory();
+  void _openFriendSearch() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const UnifiedSearchScreen(initialTabIndex: 0),
+      ),
+    );
+  }
+
+  void _showCreateCategoryDialog({String? initialName}) {
+    _navigateToCreateCategory(initialName: initialName);
   }
 
   void _showEditCategoryDialog(FriendCategory category) {
     _navigateToEditCategory(category);
   }
 
-  Future<void> _navigateToCreateCategory() async {
+  Future<void> _navigateToCreateCategory({String? initialName}) async {
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
-        builder: (context) => const CreateCategoryScreen(),
+        builder: (context) => CreateCategoryScreen(initialName: initialName),
       ),
     );
 
@@ -873,62 +866,55 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
   }
 }
 
-class _GroupFeatureRow extends StatelessWidget {
-  const _GroupFeatureRow({
-    required this.icon,
-    required this.title,
-    required this.description,
+/// 그룹 빈 화면의 이름 칩: 높이 34, 모서리 17. 고르면 검정 바탕 + 흰 글자.
+class _NameChip extends StatelessWidget {
+  const _NameChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
   });
 
-  final IconData icon;
-  final String title;
-  final String description;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox.square(
-          dimension: context.rh(32, min: 30, max: 34),
-          child: Icon(
-            icon,
-            color: const Color(0xFF475467),
-            size: context.ri(20).clamp(19, 22).toDouble(),
+    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: reduce ? Duration.zero : const Duration(milliseconds: 150),
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? Colors.black : Colors.white,
+            border: Border.all(
+              color: selected ? Colors.black : const Color(0xFFE3E3E3),
+            ),
+            borderRadius: BorderRadius.circular(17),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 13,
+              height: 18 / 13,
+              fontWeight: FontWeight.w500,
+              color: selected ? Colors.white : Colors.black,
+            ),
           ),
         ),
-        SizedBox(width: context.rs(10).clamp(8, 12).toDouble()),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                  fontWeight: FontWeight.w800,
-                  height: 1.3,
-                  color: const Color(0xFF111827),
-                ),
-              ),
-              SizedBox(height: context.rs(2).clamp(1, 3).toDouble()),
-              Text(
-                description,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(12).clamp(11, 13).toDouble(),
-                  fontWeight: FontWeight.w500,
-                  height: 1.4,
-                  color: const Color(0xFF6B7280),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

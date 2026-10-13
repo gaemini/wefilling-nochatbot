@@ -38,6 +38,32 @@ class ProfileShareSheet extends StatelessWidget {
   final String uid;
   final String nickname;
 
+  /// 시스템 공유 시트를 연다. 열지 못하면(플러그인 미적용 등) 링크를 복사해
+  /// 아무 반응이 없는 상태로 두지 않는다.
+  static Future<void> _shareSystem(
+    BuildContext context, {
+    required String text,
+    required String link,
+    required String copiedMessage,
+  }) async {
+    final box = context.findRenderObject() as RenderBox?;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          text: text,
+          // iPad 팝오버 기준 위치(시트 영역).
+          sharePositionOrigin: box == null || !box.hasSize
+              ? null
+              : box.localToGlobal(Offset.zero) & box.size,
+        ),
+      );
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: link));
+      messenger?.showSnackBar(SnackBar(content: Text(copiedMessage)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final strings = ProfileShareStrings.of(context);
@@ -87,7 +113,7 @@ class ProfileShareSheet extends StatelessWidget {
               child: QrImageView(
                 key: const ValueKey('profile_share_qr'),
                 data: link,
-                size: 180,
+                size: (mq.size.height * 0.26).clamp(130.0, 190.0),
                 backgroundColor: Colors.white,
                 semanticsLabel: link,
               ),
@@ -140,17 +166,12 @@ class ProfileShareSheet extends StatelessWidget {
                     height: 44,
                     child: FilledButton(
                       key: const ValueKey('profile_share_system'),
-                      onPressed: () {
-                        final box = context.findRenderObject() as RenderBox?;
-                        SharePlus.instance.share(
-                          ShareParams(
-                            text: strings.shareText(nickname, link),
-                            sharePositionOrigin: box == null
-                                ? null
-                                : box.localToGlobal(Offset.zero) & box.size,
-                          ),
-                        );
-                      },
+                      onPressed: () => _shareSystem(
+                        context,
+                        text: strings.shareText(nickname, link),
+                        link: link,
+                        copiedMessage: strings.copied,
+                      ),
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF2C6BC0),
                         shape: RoundedRectangleBorder(

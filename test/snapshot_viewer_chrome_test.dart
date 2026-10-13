@@ -86,23 +86,6 @@ void main() {
     expect(find.text('번역'), findsNothing);
   });
 
-  testWidgets('빠른 반응: 세 이모지가 콜백으로 전달되고 비활성이면 무시', (tester) async {
-    final got = <String>[];
-    var enabled = true;
-    await tester.pumpWidget(StatefulBuilder(builder: (context, set) {
-      return _host(Center(
-        child: SnapshotQuickReactionRow(
-          enabled: enabled,
-          onReact: got.add,
-        ),
-      ));
-    }));
-    for (final e in ['❤️', '👏', '😊']) {
-      await tester.tap(find.byKey(ValueKey('snapshot_quick_reaction_$e')));
-    }
-    expect(got, ['❤️', '👏', '😊']);
-  });
-
   for (final width in const [320.0, 375.0, 430.0]) {
     for (final scale in const [1.0, 1.3, 2.0]) {
       testWidgets('헤더 오버플로우 없음 $width/$scale', (tester) async {

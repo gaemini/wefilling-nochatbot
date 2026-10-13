@@ -54,17 +54,22 @@ class SnapshotCommentsSheet extends StatefulWidget {
     required this.snapshot,
     this.focusCommentId,
     this.focusInput = false,
+    this.readOnly = false,
   });
 
   final SnapshotItem snapshot;
   final String? focusCommentId;
   final bool focusInput;
 
+  /// 스낵 v3: 새 댓글은 받지 않는다. 알림으로 들어온 기존 댓글을 읽기만 한다.
+  final bool readOnly;
+
   static Future<void> show(
     BuildContext context, {
     required SnapshotItem snapshot,
     String? focusCommentId,
     bool focusInput = false,
+    bool readOnly = false,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -75,6 +80,7 @@ class SnapshotCommentsSheet extends StatefulWidget {
         snapshot: snapshot,
         focusCommentId: focusCommentId,
         focusInput: focusInput,
+        readOnly: readOnly,
       ),
     );
   }
@@ -410,6 +416,21 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                       ],
                     ),
                   ),
+                if (widget.readOnly)
+                  Padding(
+                    key: const ValueKey('snapshot_comments_read_only'),
+                    padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 8),
+                    child: Text(
+                      strings.feelOnlyNotice,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 12,
+                        height: 17 / 12,
+                        color: const Color(0xFF707070),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: StreamBuilder<List<SnapshotComment>>(
                     stream: _stream,
@@ -494,6 +515,7 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                     },
                   ),
                 ),
+                if (!widget.readOnly) ...[
                 const Divider(height: 1, color: Color(0xFFEAECF0)),
                 SafeArea(
                   top: false,
@@ -710,6 +732,7 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                     ],
                   ),
                 ),
+                ],
               ],
             ),
           ),

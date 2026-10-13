@@ -135,6 +135,10 @@ class DMChatScreen extends StatefulWidget {
   final bool initialReplyIsVideo;
   final String? initialReplyContext;
 
+  /// 스낵 답장(글): 대화방을 열자마자 출처 한 줄과 함께 보낼 텍스트.
+  /// 새 전송 경로를 만들지 않고 기존 입력창 전송(`_sendMessage`)을 쓴다.
+  final String? initialReplyText;
+
   const DMChatScreen({
     super.key,
     required this.conversationId,
@@ -145,6 +149,7 @@ class DMChatScreen extends StatefulWidget {
     this.initialReplyMedia,
     this.initialReplyIsVideo = false,
     this.initialReplyContext,
+    this.initialReplyText,
   });
 
   @override
@@ -504,7 +509,8 @@ class _DMChatScreenState extends State<DMChatScreen>
 
     // ✅ 현재 보고 있는 DM 대화방 추적 (포그라운드 DM 알림 억제에 사용)
     _setActiveConversationId(widget.conversationId);
-    if (widget.initialReplyMedia != null) {
+    if (widget.initialReplyMedia != null ||
+        (widget.initialReplyText ?? '').trim().isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => unawaited(_sendInitialSnackReply()),
       );
@@ -5547,11 +5553,19 @@ class _DMChatScreenState extends State<DMChatScreen>
     if (_initialReplyHandled) return;
     _initialReplyHandled = true;
     final media = widget.initialReplyMedia;
-    if (media == null) return;
+    final replyText = (widget.initialReplyText ?? '').trim();
+    if (media == null && replyText.isEmpty) return;
     // 상대 계정 상태 등 첫 로딩이 자리 잡을 시간을 준다.
     await Future<void>.delayed(const Duration(milliseconds: 450));
     if (!mounted) return;
     final contextLine = (widget.initialReplyContext ?? '').trim();
+    if (media == null) {
+      // 글 답장: 출처 한 줄과 본문을 한 메시지로 보낸다.
+      _messageController.text =
+          contextLine.isEmpty ? replyText : '$contextLine\n$replyText';
+      await _sendMessage();
+      return;
+    }
     void fillContext() {
       if (contextLine.isEmpty) return;
       if (_messageController.text.trim().isEmpty) {

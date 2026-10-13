@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
 
 import '../config/app_backend.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -15,6 +15,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/snapshot.dart';
 import '../models/snapshot_comment_letter.dart';
+import '../models/snapshot_mutual_feel.dart';
 import '../security/frozen_audience_policy.dart';
 import 'content_hide_service.dart';
 import 'content_filter_service.dart';
@@ -990,104 +991,57 @@ class SnapshotService {
     }
   }
 
-  /// 작성자에게 조회 영수증과 반응 영수증을 하나의 사용자 목록으로 합친다.
-  /// 두 문서는 모두 사용자 UID가 ID이므로 빠른 연속 반응에도 중복 행이 없다.
+  /// 작성자에게 본 사람 목록을 준다. 필링은 서로 필링이 되기 전까지 작성자에게
+  /// 보이지 않으므로 반응 영수증은 읽지 않는다(행에 필링 여부가 없다).
   Stream<List<SnapshotViewer>> _watchSnapshotActivity(
     String snapshotId,
     String ownerId,
   ) {
-    final viewers = <String, SnapshotViewer>{};
-    final reactions = <String, Map<String, dynamic>>{};
     StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? viewsSub;
-    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? reactionsSub;
     late final StreamController<List<SnapshotViewer>> controller;
-    var viewsReady = false;
-    var reactionsReady = false;
     var closed = false;
 
-    void emit() {
-      if (closed || !viewsReady || !reactionsReady) return;
-      final merged = <SnapshotViewer>[];
-      final userIds = <String>{...viewers.keys, ...reactions.keys};
-      for (final userId in userIds) {
-        final viewer = viewers[userId];
-        final reactionData = reactions[userId];
-        final reaction = (reactionData?['reaction'] ?? '').toString().trim();
-        if (viewer != null) {
-          merged.add(viewer.copyWith(reaction: reaction));
-          continue;
-        }
-        if (reactionData == null) continue;
-        merged.add(SnapshotViewer.fromMap(userId, reactionData));
-      }
-      merged.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
-      controller.add(List<SnapshotViewer>.unmodifiable(merged));
-      unawaited(_archive.updateActivity(
-        snapshotId: snapshotId,
-        viewerCount: merged.length,
-        viewers: merged,
-      ));
-    }
-
-    Future<void> fail(Object error, StackTrace stackTrace) async {
-      if (closed) return;
-      closed = true;
-      controller.addError(error, stackTrace);
-      await viewsSub?.cancel();
-      await reactionsSub?.cancel();
-      await controller.close();
-    }
-
-    Future<void> start() async {
-      final snapshotRef = _firestore.collection('snapshots').doc(snapshotId);
-      viewsSub = snapshotRef.collection('views').snapshots().listen(
-        (snapshot) {
-          viewers.clear();
-          for (final document in snapshot.docs) {
-            try {
-              viewers[document.id] = SnapshotViewer.fromFirestore(document);
-            } catch (error, stackTrace) {
-              Logger.error(
-                '스낵 조회자 파싱 실패 '
-                '(snapshotId=$snapshotId, ownerId=$ownerId, '
-                'viewerId=${document.id})',
-                error,
-                stackTrace,
-              );
-            }
-          }
-          viewsReady = true;
-          emit();
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          unawaited(fail(error, stackTrace));
-        },
-      );
-      reactionsSub = snapshotRef.collection('reactions').snapshots().listen(
-        (snapshot) {
-          reactions
-            ..clear()
-            ..addEntries(snapshot.docs.map((document) {
-              final data = Map<String, dynamic>.from(document.data());
-              data['userId'] = (data['userId'] ?? document.id).toString();
-              data['viewedAt'] = data['viewedAt'] ?? data['createdAt'];
-              return MapEntry(document.id, data);
-            }));
-          reactionsReady = true;
-          emit();
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          unawaited(fail(error, stackTrace));
-        },
-      );
-    }
-
     controller = StreamController<List<SnapshotViewer>>(
-      onListen: start,
+      onListen: () {
+        final snapshotRef = _firestore.collection('snapshots').doc(snapshotId);
+        viewsSub = snapshotRef.collection('views').snapshots().listen(
+          (snapshot) {
+            if (closed) return;
+            final merged = <SnapshotViewer>[];
+            for (final document in snapshot.docs) {
+              try {
+                final viewer = SnapshotViewer.fromFirestore(document);
+                merged.add(viewer.copyWith(reaction: ''));
+              } catch (error, stackTrace) {
+                Logger.error(
+                  '스낵 조회자 파싱 실패 '
+                  '(snapshotId=$snapshotId, ownerId=$ownerId, '
+                  'viewerId=${document.id})',
+                  error,
+                  stackTrace,
+                );
+              }
+            }
+            merged.sort((a, b) => b.viewedAt.compareTo(a.viewedAt));
+            controller.add(List<SnapshotViewer>.unmodifiable(merged));
+            unawaited(_archive.updateActivity(
+              snapshotId: snapshotId,
+              viewerCount: merged.length,
+              viewers: merged,
+            ));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (closed) return;
+            closed = true;
+            controller.addError(error, stackTrace);
+            unawaited(viewsSub?.cancel());
+            unawaited(controller.close());
+          },
+        );
+      },
       onCancel: () async {
         closed = true;
         await viewsSub?.cancel();
-        await reactionsSub?.cancel();
       },
     );
     return controller.stream;
@@ -1099,8 +1053,11 @@ class SnapshotService {
   ) async {
     final result = await _functions
         .httpsCallable('getSnapshotViewers')
-        .call(<String, dynamic>{'snapshotId': snapshotId}).timeout(
-            const Duration(seconds: 12));
+        .call(<String, dynamic>{
+      'snapshotId': snapshotId,
+      // 필링은 서로 필링 전까지 작성자에게 보이지 않는다.
+      'includeReaction': false,
+    }).timeout(const Duration(seconds: 12));
     final resultData = result.data;
     if (resultData is! Map) {
       throw const FormatException('Invalid snapshot viewer response.');
@@ -1129,6 +1086,39 @@ class SnapshotService {
       }
     }
     return List<SnapshotViewer>.unmodifiable(viewers);
+  }
+
+  /// 홈 트레이가 쓰는 서로 필링 캐시. [refreshMutualFeels]로만 갱신한다.
+  final ValueNotifier<List<SnapshotMutualFeel>> mutualFeels =
+      ValueNotifier<List<SnapshotMutualFeel>>(const <SnapshotMutualFeel>[]);
+
+  Future<void> refreshMutualFeels() async {
+    try {
+      mutualFeels.value = await getMyMutualFeels();
+    } catch (_) {
+      // 배지·정렬만 생략된다.
+    }
+  }
+
+  /// 내 서로 필링 목록(최근 30일). [snapshotId]가 있으면 그 스낵 관련만.
+  Future<List<SnapshotMutualFeel>> getMyMutualFeels({String? snapshotId}) async {
+    if (_auth.currentUser == null) return const <SnapshotMutualFeel>[];
+    final result = await _functions
+        .httpsCallable('getMyMutualFeels')
+        .call(<String, dynamic>{
+      if (snapshotId != null && snapshotId.isNotEmpty) 'snapshotId': snapshotId,
+    }).timeout(const Duration(seconds: 12));
+    final data = result.data;
+    if (data is! Map || data['mutuals'] is! List) {
+      return const <SnapshotMutualFeel>[];
+    }
+    final list = <SnapshotMutualFeel>[];
+    for (final raw in data['mutuals'] as List) {
+      if (raw is! Map) continue;
+      final parsed = SnapshotMutualFeel.tryParse(Map<String, dynamic>.from(raw));
+      if (parsed != null) list.add(parsed);
+    }
+    return List<SnapshotMutualFeel>.unmodifiable(list);
   }
 
   Future<void> deleteSnapshot(String snapshotId) async {

@@ -8,6 +8,7 @@ import '../models/snapshot.dart';
 import '../models/snapshot_comment_letter.dart';
 import '../services/snapshot_service.dart';
 import '../services/notification_service.dart';
+import '../snapshot/snack_feature_flags.dart';
 import '../snapshot/snapshot_storage_image.dart';
 import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
@@ -199,6 +200,7 @@ class _SnapshotCommentLetterScreenState
     final showComposer = !_isLoading &&
         _loadError == null &&
         letter != null &&
+        SnackFeatureFlags.letters &&
         letter.canReply &&
         !letter.hasReply;
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -273,7 +275,9 @@ class _SnapshotCommentLetterScreenState
             : 24.0;
     return SafeArea(
       top: false,
-      bottom: !letter.canReply || letter.hasReply,
+      bottom: !SnackFeatureFlags.letters ||
+          !letter.canReply ||
+          letter.hasReply,
       child: LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(

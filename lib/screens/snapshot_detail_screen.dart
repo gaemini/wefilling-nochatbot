@@ -19,7 +19,10 @@ import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_author_profile_image.dart';
 import '../snapshot/snapshot_seen_store.dart';
 import '../snapshot/snapshot_strings.dart';
+import '../snapshot/snack_feature_flags.dart';
+import '../snapshot/snack_feel_icon.dart';
 import '../snapshot/snapshot_viewer_chrome.dart';
+import '../models/relationship_status.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/motion_press.dart';
 import '../utils/responsive_helper.dart';
@@ -346,6 +349,45 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     }
   }
 
+  /// 친구 스낵의 글 답장. 새 전송 경로를 만들지 않고 DM 화면의 전송 흐름에
+  /// 출처 한 줄(`snackReplyQuote`)과 함께 넘긴다.
+  Future<void> _sendDmTextReply(String text) async {
+    if (!mounted || _items.isEmpty) return;
+    final item = _current;
+    final relationshipStrings = RelationshipStrings.of(context);
+    String? room;
+    try {
+      room = await _dmService.prepareConversationForOpen(item.authorId);
+    } catch (_) {
+      room = null;
+    }
+    if (!mounted) return;
+    if (room == null) {
+      AppSnackBar.show(
+        context,
+        message: relationshipStrings.openConversationFailed,
+        type: AppSnackBarType.error,
+      );
+      return;
+    }
+    setState(() => _isModalPaused = true);
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => DMChatScreen(
+            conversationId: room!,
+            otherUserId: item.authorId,
+            initialReplyText: text,
+            initialReplyContext:
+                relationshipStrings.snackReplyQuote(item.displayCaption),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isModalPaused = false);
+    }
+  }
+
   Future<void> _sendFriendRequestTo(String userId) async {
     final relationshipProvider = context.read<RelationshipProvider>();
     final success = await relationshipProvider.sendFriendRequest(userId);
@@ -469,6 +511,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         snapshot: snapshot,
         focusCommentId: focusCommentId,
         focusInput: focusInput,
+        // 스낵에는 필링만 남긴다. 플래그가 꺼져 있으면 기존 댓글만 읽는다.
+        readOnly: !SnackFeatureFlags.publicComments,
       );
     } finally {
       if (mounted) {
@@ -741,11 +785,12 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                 label: strings.message,
                 onTap: () => Navigator.pop(sheetContext, 'message'),
               ),
-              _ActionRow(
-                icon: Icons.mail_outline_rounded,
-                label: strings.snackLetter,
-                onTap: () => Navigator.pop(sheetContext, 'letter'),
-              ),
+              if (SnackFeatureFlags.letters)
+                _ActionRow(
+                  icon: Icons.mail_outline_rounded,
+                  label: strings.snackLetter,
+                  onTap: () => Navigator.pop(sheetContext, 'letter'),
+                ),
               if (item.responseMode.allowsSnackReply)
                 _ActionRow(
                   icon: Icons.videocam_outlined,
@@ -988,6 +1033,11 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         _current.hasTranslatedCaption &&
         _current.translatedCaption.trim() != _current.displayCaption.trim();
     final profile = SnapshotAuthorProfile.resolve(_current);
+    final authorIsFriend = context.select<RelationshipProvider, bool>(
+      (provider) =>
+          provider.feedRelationshipStatus(_current.authorId) ==
+          RelationshipStatus.friends,
+    );
     final decodeWidth =
         (32 * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(64, 256);
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -1053,7 +1103,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                   onMeetupDraft: _openMeetupDraft,
                   playing: _currentVideoCanPlay,
                   captionTranslated: _captionTranslated,
-                  onMore: interactionsEnabled ? _showActions : null,
+                  onDmReply: _sendDmTextReply,
                   heartTrigger: _heartTrigger,
                   onReplyFocusChanged: (focused) {
                     if (!mounted || _isReplyFocused == focused) return;
@@ -1098,6 +1148,7 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
                             interactionsEnabled ? _openAuthorProfile : null,
                         onMore: interactionsEnabled ? _showActions : null,
                         onClose: () => Navigator.of(context).maybePop(),
+                        badgeLabel: authorIsFriend ? strings.friendBadge : null,
                         translateChip: showTranslateChip
                             ? SnapshotTranslateChip(
                                 on: _captionTranslated,
@@ -1140,12 +1191,12 @@ class _SnapshotDetailPage extends StatefulWidget {
     required this.onMeetupDraft,
     required this.playing,
     required this.captionTranslated,
-    required this.onMore,
+    required this.onDmReply,
     required this.onReplyFocusChanged,
     required this.heartTrigger,
   });
   final bool captionTranslated;
-  final VoidCallback? onMore;
+  final Future<void> Function(String text) onDmReply;
   final ValueChanged<bool> onReplyFocusChanged;
   final ValueListenable<int> heartTrigger;
   final SnapshotItem snapshot;
@@ -1182,7 +1233,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
   int _reactionStatusGeneration = 0;
   String? _confirmingReactionSnapshotId;
   bool _replyFocused = false;
-  String? _burstEmoji;
+  bool _burstActive = false;
   int _burstSerial = 0;
   Timer? _burstTimer;
 
@@ -1219,26 +1270,26 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
 
   void _handleHeartTrigger() {
     if (!mounted || _isOwner || !_canReactNow) return;
-    _showBurst('❤️');
+    _showBurst();
     unawaited(_submitReaction('❤️'));
   }
 
-  void _showBurst(String emoji) {
+  void _showBurst() {
     _burstTimer?.cancel();
     setState(() {
-      _burstEmoji = emoji;
+      _burstActive = true;
       _burstSerial++;
     });
-    _burstTimer = Timer(const Duration(milliseconds: 760), () {
-      if (mounted) setState(() => _burstEmoji = null);
+    _burstTimer = Timer(const Duration(milliseconds: 620), () {
+      if (mounted) setState(() => _burstActive = false);
     });
   }
 
-  void _handleQuickReaction(String emoji) {
+  /// 알약/버튼 탭: 효과와 함께 기존 `_submitReaction('❤️')`(서버 값은 그대로).
+  void _handleFeelTap() {
     if (!_canReactNow) return;
-    FocusManager.instance.primaryFocus?.unfocus();
-    _showBurst(emoji);
-    unawaited(_submitReaction(emoji));
+    _showBurst();
+    unawaited(_submitReaction('❤️'));
   }
 
   @override
@@ -1527,7 +1578,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
                           snapshot: current,
                           showTranslated: widget.captionTranslated,
                         ),
-                      if (!_replyFocused && !isOwner) ...[
+                      if (!_replyFocused &&
+                          !isOwner &&
+                          SnackFeatureFlags.publicComments) ...[
                         if (showCaption) const SizedBox(height: 8),
                         _SnapshotInfoRow(
                           snapshot: current,
@@ -1561,11 +1614,10 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
                   ),
                 ),
               ),
-            if (_burstEmoji != null)
+            if (_burstActive)
               Positioned.fill(
                 child: SnapshotReactionBurst(
                   key: ValueKey<int>(_burstSerial),
-                  emoji: _burstEmoji!,
                 ),
               ),
             if (!widget.deleting)
@@ -1584,13 +1636,11 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
                     snapshot: current,
                     service: widget.service,
                     isOwner: isOwner,
-                    heartSelected: selected,
-                    canReact: _canReactNow,
-                    onHeart: () => _submitReaction('❤️'),
-                    onQuickReaction: _handleQuickReaction,
-                    onComments: widget.onComments,
+                    feelSent: selected,
+                    canFeel: _canReactNow,
+                    onFeel: _handleFeelTap,
+                    onDmReply: widget.onDmReply,
                     onViewers: widget.onViewers,
-                    onMore: widget.onMore,
                     onSnackReply: widget.onSnackReply,
                     onFocusChanged: (focused) {
                       if (_replyFocused != focused && mounted) {
@@ -1612,20 +1662,20 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
 double _snapshotBottomBarHeight(BuildContext context) =>
     12 + 44 + math.max(MediaQuery.paddingOf(context).bottom, 12.0);
 
-/// 응답 방식에 따라 바뀌는 하단 바. 답장 알약은 기존 편지 경로
-/// (`SnapshotService.sendComment`)를 그대로 쓴다.
+/// 필링 하나로 반응하는 하단 바.
+/// - 작성자: `필링 n · 본 사람 m` 알약(활동 시트)
+/// - 친구 + 친구 답장도: [DM 답장 입력] [사진·영상 답장] [필링]
+/// - 그 밖: [필링] 알약 하나(보낸 뒤 비활성, 취소 없음)
 class _SnapshotBottomBar extends StatefulWidget {
   const _SnapshotBottomBar({
     required this.snapshot,
     required this.service,
     required this.isOwner,
-    required this.heartSelected,
-    required this.canReact,
-    required this.onHeart,
-    required this.onQuickReaction,
-    required this.onComments,
+    required this.feelSent,
+    required this.canFeel,
+    required this.onFeel,
+    required this.onDmReply,
     required this.onViewers,
-    required this.onMore,
     required this.onSnackReply,
     required this.onFocusChanged,
   });
@@ -1633,13 +1683,13 @@ class _SnapshotBottomBar extends StatefulWidget {
   final SnapshotItem snapshot;
   final SnapshotService service;
   final bool isOwner;
-  final bool heartSelected;
-  final bool canReact;
-  final VoidCallback onHeart;
-  final ValueChanged<String> onQuickReaction;
-  final VoidCallback onComments;
+  final bool feelSent;
+  final bool canFeel;
+  final VoidCallback onFeel;
+
+  /// DM으로 보낼 글. 기존 DM 화면의 전송 경로를 쓴다.
+  final Future<void> Function(String text) onDmReply;
   final VoidCallback onViewers;
-  final VoidCallback? onMore;
   final VoidCallback onSnackReply;
   final ValueChanged<bool> onFocusChanged;
 
@@ -1649,17 +1699,10 @@ class _SnapshotBottomBar extends StatefulWidget {
 
 class _SnapshotBottomBarState extends State<_SnapshotBottomBar> {
   final TextEditingController _controller = TextEditingController();
-  final FocusNode _focus = FocusNode(debugLabel: 'snapshot-reply');
+  final FocusNode _focus = FocusNode(debugLabel: 'snapshot-dm-reply');
   Stream<List<SnapshotViewer>>? _viewers;
-  bool _sent = false;
   bool _sending = false;
-  bool _toast = false;
   bool _hasText = false;
-  Timer? _toastTimer;
-  int _generation = 0;
-
-  bool get _replyMode =>
-      !widget.isOwner && widget.snapshot.responseMode.allowsSnackReply;
 
   @override
   void initState() {
@@ -1678,26 +1721,15 @@ class _SnapshotBottomBarState extends State<_SnapshotBottomBar> {
     if (oldWidget.snapshot.id != widget.snapshot.id ||
         oldWidget.isOwner != widget.isOwner) {
       _controller.clear();
-      _sent = false;
       _sending = false;
       _bind();
     }
   }
 
   void _bind() {
-    final generation = ++_generation;
-    if (widget.isOwner) {
-      _viewers = widget.service.watchViewers(widget.snapshot.id);
-    } else {
-      _viewers = null;
-    }
-    if (_replyMode) {
-      final id = widget.snapshot.id;
-      unawaited(widget.service.hasCommented(id).then((value) {
-        if (!mounted || generation != _generation) return;
-        setState(() => _sent = value);
-      }).catchError((Object _) {}));
-    }
+    _viewers = widget.isOwner
+        ? widget.service.watchViewers(widget.snapshot.id)
+        : null;
   }
 
   void _handleFocus() {
@@ -1707,7 +1739,6 @@ class _SnapshotBottomBarState extends State<_SnapshotBottomBar> {
 
   @override
   void dispose() {
-    _toastTimer?.cancel();
     _focus.removeListener(_handleFocus);
     _focus.dispose();
     _controller.dispose();
@@ -1715,272 +1746,314 @@ class _SnapshotBottomBarState extends State<_SnapshotBottomBar> {
   }
 
   Future<void> _send() async {
-    if (_sending || _sent) return;
     final message = _controller.text.trim();
-    if (message.isEmpty) return;
-    final snapshotId = widget.snapshot.id;
-    final strings = SnapshotStrings.of(context);
+    if (_sending || message.isEmpty) return;
     setState(() => _sending = true);
+    _focus.unfocus();
     try {
-      await widget.service.sendComment(snapshotId, message);
-      if (!mounted || widget.snapshot.id != snapshotId) return;
-      _controller.clear();
-      _focus.unfocus();
-      setState(() {
-        _sent = true;
-        _sending = false;
-        _toast = true;
-      });
-      _toastTimer?.cancel();
-      _toastTimer = snapshotAfter(const Duration(milliseconds: 1200), () {
-        if (mounted) setState(() => _toast = false);
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _sending = false);
-      AppSnackBar.show(
-        context,
-        message: strings.commentFailed,
-        type: AppSnackBarType.error,
-      );
+      await widget.onDmReply(message);
+      if (mounted) _controller.clear();
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
-  Widget _heart() => SnapshotHeartButton(
-        selected: widget.heartSelected,
-        semanticsLabel: SnapshotStrings.of(context).likeReaction,
-        onTap: widget.canReact ? widget.onHeart : null,
-      );
+  TextStyle _text(double size, FontWeight weight, {double alpha = 1}) =>
+      snapshotChromeStyle(context, size: size, weight: weight)
+          .copyWith(color: Colors.white.withValues(alpha: alpha));
 
-  Widget _chipText(String text, {bool bold = true}) => Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: snapshotChromeStyle(
-          context,
-          size: 13,
-          weight: bold ? FontWeight.w600 : FontWeight.w500,
+  /// 필링 알약. 보내기 전은 유리 알약, 보낸 뒤는 #2C6BC0 채움.
+  Widget _feelPill(SnapshotStrings strings) {
+    final sent = widget.feelSent;
+    return Semantics(
+      button: true,
+      enabled: widget.canFeel,
+      selected: sent,
+      label: sent ? strings.feelSent : strings.feel,
+      excludeSemantics: true,
+      child: MotionPress(
+        enabled: widget.canFeel,
+        pressedScale: .97,
+        child: GestureDetector(
+          key: const ValueKey('snapshot_feel_pill'),
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.canFeel ? widget.onFeel : null,
+          child: AnimatedContainer(
+            duration: snapshotReduceMotion(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 180),
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: sent ? snapshotAccent : const Color(0x1FFFFFFF),
+              borderRadius: BorderRadius.circular(22),
+              border: sent
+                  ? null
+                  : Border.all(color: const Color(0x73FFFFFF)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _FeelPop(
+                  sent: sent,
+                  child: SnackFeelIcon(size: 20, filled: sent),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  sent ? strings.feelSent : strings.feel,
+                  style: _text(14, FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
         ),
-      );
+      ),
+    );
+  }
+
+  /// 친구 화면의 필링 아이콘 버튼(26). 보낸 뒤 #2C6BC0 채움.
+  Widget _feelButton(SnapshotStrings strings) {
+    final sent = widget.feelSent;
+    return Semantics(
+      button: true,
+      enabled: widget.canFeel,
+      selected: sent,
+      label: sent ? strings.feelSent : strings.feel,
+      excludeSemantics: true,
+      child: MotionPress(
+        enabled: widget.canFeel,
+        pressedScale: .9,
+        child: GestureDetector(
+          key: const ValueKey('snapshot_feel_button'),
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.canFeel ? widget.onFeel : null,
+          child: SizedBox.square(
+            dimension: 44,
+            child: Center(
+              child: _FeelPop(
+                sent: sent,
+                child: SnackFeelIcon(
+                  size: 26,
+                  filled: sent,
+                  color: sent ? snapshotAccent : Colors.white,
+                  lensColor: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final strings = SnapshotStrings.of(context);
     final relation = RelationshipStrings.of(context);
-    final mode = widget.snapshot.responseMode;
+    final snapshot = widget.snapshot;
     Widget row;
+    var typing = false;
     if (widget.isOwner) {
+      final feels =
+          snapshot.reactionCounts.values.fold<int>(0, (sum, v) => sum + v);
       row = StreamBuilder<List<SnapshotViewer>>(
         stream: _viewers,
-        builder: (context, result) {
-          final count = result.data?.length ?? 0;
-          return Row(
-            children: [
-              SnapshotGlassChip(
-                key: const ValueKey('snapshot_owner_viewers_chip'),
-                onTap: widget.onViewers,
-                semanticsLabel: strings.viewers,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.visibility_outlined,
-                        size: 16, color: Colors.white),
-                    const SizedBox(width: 6),
-                    _chipText(_compactCount(count)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GestureDetector(
-                  key: const ValueKey('snapshot_owner_activity_pill'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: widget.onViewers,
-                  child: Container(
-                    height: 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0x33000000),
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: const Color(0x59FFFFFF)),
-                    ),
-                    child: _chipText(strings.myActivity),
-                  ),
-                ),
-              ),
-              SizedBox.square(
-                dimension: 44,
-                child: IconButton(
-                  onPressed: widget.onMore,
-                  tooltip: MaterialLocalizations.of(context).showMenuTooltip,
-                  icon: const Icon(Icons.more_horiz_rounded,
-                      color: Colors.white, size: 26),
-                ),
-              ),
-            ],
-          );
-        },
-      );
-    } else if (mode == SnapshotResponseMode.viewOnly) {
-      row = Row(
-        children: [
-          Expanded(
+        builder: (context, result) => GestureDetector(
+          key: const ValueKey('snapshot_owner_activity_pill'),
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onViewers,
+          child: Container(
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0x1FFFFFFF),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: const Color(0x73FFFFFF)),
+            ),
             child: Text(
-              strings.viewOnlyNotice,
+              strings.feelAndViewers(feels, result.data?.length ?? 0),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: snapshotChromeStyle(
-                context,
-                size: 12,
-                weight: FontWeight.w500,
-                color: const Color(0xB3FFFFFF),
-              ),
+              style: _text(14, FontWeight.w600),
             ),
           ),
-          _heart(),
-        ],
-      );
-    } else if (mode == SnapshotResponseMode.reactions) {
-      row = Row(
-        children: [
-          Expanded(
-            child: GestureDetector(
-              key: const ValueKey('snapshot_public_comment_pill'),
-              behavior: HitTestBehavior.opaque,
-              onTap: widget.onComments,
-              child: Container(
-                height: 44,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                alignment: Alignment.centerLeft,
-                decoration: BoxDecoration(
-                  color: const Color(0x33000000),
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: const Color(0x59FFFFFF)),
-                ),
-                child: Text(
-                  strings.everyoneOneLinerHint,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: snapshotChromeStyle(
-                    context,
-                    size: 15,
-                    weight: FontWeight.w500,
-                    color: const Color(0xB3FFFFFF),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          _heart(),
-        ],
+        ),
       );
     } else {
-      final name = widget.snapshot.authorName.trim().isEmpty
-          ? strings.snapshot
-          : widget.snapshot.authorName.trim();
-      row = Row(
+      return Selector<RelationshipProvider, RelationshipStatus?>(
+        selector: (_, provider) =>
+            provider.feedRelationshipStatus(snapshot.authorId),
+        builder: (context, status, _) {
+          final friendReply = status == RelationshipStatus.friends &&
+              allowsFriendReply(snapshot.responseMode);
+          return _viewerBar(context, strings, relation, friendReply);
+        },
+      );
+    }
+    return _frame(typing, strings, row);
+  }
+
+  Widget _viewerBar(
+    BuildContext context,
+    SnapshotStrings strings,
+    RelationshipStrings relation,
+    bool friendReply,
+  ) {
+    final snapshot = widget.snapshot;
+    if (!friendReply) {
+      return _frame(false, strings, _feelPill(strings));
+    }
+    final name = snapshot.authorName.trim().isEmpty
+        ? strings.snapshot
+        : snapshot.authorName.trim();
+    final typing = _focus.hasFocus;
+    final input = Container(
+      height: typing ? 40 : 44,
+      padding: const EdgeInsets.only(left: 16, right: 4),
+      decoration: BoxDecoration(
+        color: typing ? const Color(0xFF2C2C2E) : const Color(0x33000000),
+        borderRadius: BorderRadius.circular(typing ? 20 : 22),
+        border: typing ? null : Border.all(color: const Color(0x59FFFFFF)),
+      ),
+      child: Row(
         children: [
           Expanded(
-            child: SnapshotPillInput(
-              key: const ValueKey('snapshot_reply_pill'),
+            child: TextField(
+              key: const ValueKey('snapshot_dm_reply_input'),
               controller: _controller,
               focusNode: _focus,
-              enabled: !_sent && !_sending,
-              hint: _sent ? strings.alreadyRepliedHint : strings.replyToName(name),
-              onSubmitted: _send,
-              trailing: _hasText
-                  ? SizedBox.square(
-                      dimension: 36,
-                      child: IconButton(
-                        key: const ValueKey('snapshot_reply_send'),
-                        padding: EdgeInsets.zero,
-                        onPressed: _sending ? null : _send,
-                        tooltip: strings.sendComment,
-                        icon: _sending
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.arrow_upward_rounded,
-                                color: Colors.white, size: 22),
-                      ),
-                    )
-                  : null,
+              enabled: !_sending,
+              maxLines: 1,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => unawaited(_send()),
+              cursorColor: Colors.white,
+              style: _text(14, FontWeight.w400),
+              decoration: InputDecoration(
+                isCollapsed: true,
+                border: InputBorder.none,
+                hintText: strings.replyByDm(name),
+                hintStyle: _text(14, FontWeight.w400, alpha: .7),
+              ),
             ),
           ),
-          if (!_focus.hasFocus) ...[
-            Semantics(
-              button: true,
-              label: relation.snackReply,
-              hint: relation.snackReplyHint,
-              excludeSemantics: true,
-              child: MotionPress(
-                pressedScale: .9,
-                child: GestureDetector(
-                  key: const ValueKey('snapshot_video_reply_button'),
-                  behavior: HitTestBehavior.opaque,
-                  // 탭 한 번으로 연다. 길게 누르기도 같은 동작으로 남긴다.
-                  onTap: widget.onSnackReply,
-                  onLongPress: widget.onSnackReply,
-                  child: const SizedBox.square(
-                    dimension: 44,
-                    child: Center(
-                      child: Icon(Icons.videocam_outlined,
-                          color: Colors.white, size: 27),
+          if (_hasText)
+            GestureDetector(
+              key: const ValueKey('snapshot_dm_reply_send'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _sending ? null : () => unawaited(_send()),
+              child: Container(
+                width: 32,
+                height: 32,
+                margin: EdgeInsets.only(right: typing ? 0 : 2),
+                decoration: const BoxDecoration(
+                  color: snapshotAccent,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.arrow_upward_rounded,
+                  size: 20,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+    final row = Row(
+      children: [
+        Expanded(child: input),
+        if (!typing) ...[
+          Semantics(
+            button: true,
+            label: relation.snackReply,
+            hint: relation.snackReplyHint,
+            excludeSemantics: true,
+            child: MotionPress(
+              pressedScale: .9,
+              child: GestureDetector(
+                key: const ValueKey('snapshot_video_reply_button'),
+                behavior: HitTestBehavior.opaque,
+                // 탭 한 번으로 연다(이전: 탭은 안내, 길게 눌러야 열림).
+                onTap: widget.onSnackReply,
+                onLongPress: widget.onSnackReply,
+                child: const SizedBox.square(
+                  dimension: 44,
+                  child: Center(
+                    child: Icon(
+                      Icons.videocam_outlined,
+                      color: Colors.white,
+                      size: 26,
                     ),
                   ),
                 ),
               ),
             ),
-            _heart(),
-          ],
+          ),
+          _feelButton(strings),
         ],
-      );
-    }
-    final showQuick = _replyMode && _focus.hasFocus && !_sent;
-    final name = widget.snapshot.authorName.trim();
+      ],
+    );
+    return _frame(
+      typing,
+      strings,
+      row,
+      hint: typing ? strings.replyDmHint(name) : null,
+    );
+  }
+
+  Widget _frame(
+    bool typing,
+    SnapshotStrings strings,
+    Widget row, {
+    String? hint,
+  }) {
     return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.2,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_toast)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Center(child: SnapshotSentToast(visible: true)),
-            ),
-          if (showQuick) ...[
-            Center(
-              child: SnapshotQuickReactionRow(
-                enabled: widget.canReact,
-                onReact: widget.onQuickReaction,
-              ),
-            ),
-            if (name.isNotEmpty)
+      maxScaleFactor: 1.25,
+      child: Container(
+        color: hint != null ? const Color(0xFF1C1C1E) : Colors.transparent,
+        padding: hint != null
+            ? const EdgeInsets.fromLTRB(4, 8, 4, 4)
+            : EdgeInsets.zero,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (hint != null)
               Padding(
-                padding: const EdgeInsets.only(top: 6, bottom: 8),
+                padding: const EdgeInsets.only(bottom: 8, left: 8),
                 child: Text(
-                  strings.visibleOnlyToName(name),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
+                  hint,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: snapshotChromeStyle(
-                    context,
-                    size: 12,
-                    weight: FontWeight.w500,
-                    color: const Color(0xCCFFFFFF),
-                  ),
+                  style: _text(12, FontWeight.w400, alpha: .6),
                 ),
               ),
+            row,
           ],
-          row,
-        ],
+        ),
       ),
+    );
+  }
+}
+
+/// 보낸 순간 1.2배로 튀는 효과(250ms).
+class _FeelPop extends StatelessWidget {
+  const _FeelPop({required this.sent, required this.child});
+
+  final bool sent;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!sent || snapshotReduceMotion(context)) return child;
+    return TweenAnimationBuilder<double>(
+      key: const ValueKey('feel-pop'),
+      tween: Tween<double>(begin: 1.2, end: 1),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutBack,
+      builder: (context, scale, child) =>
+          Transform.scale(scale: scale, child: child),
+      child: child,
     );
   }
 }

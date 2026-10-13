@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
+import 'snack_feel_icon.dart';
 import 'snapshot_strings.dart';
 
 const Color snapshotAccent = Color(0xFF2C6BC0);
@@ -208,6 +209,7 @@ class SnapshotViewerHeader extends StatelessWidget {
     required this.onMore,
     required this.onClose,
     this.translateChip,
+    this.badgeLabel,
   });
 
   final Widget avatar;
@@ -217,6 +219,9 @@ class SnapshotViewerHeader extends StatelessWidget {
   final VoidCallback? onMore;
   final VoidCallback onClose;
   final Widget? translateChip;
+
+  /// 이름 옆 작은 배지(예: `친구`). 11/600.
+  final String? badgeLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -251,15 +256,44 @@ class SnapshotViewerHeader extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: snapshotChromeStyle(
-                                context,
-                                size: 15,
-                                weight: FontWeight.w600,
-                              ),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: snapshotChromeStyle(
+                                      context,
+                                      size: 14,
+                                      weight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                if (badgeLabel != null) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    key: const ValueKey('snapshot_friend_badge'),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0x33FFFFFF),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      badgeLabel!,
+                                      maxLines: 1,
+                                      style: snapshotChromeStyle(
+                                        context,
+                                        size: 11,
+                                        weight: FontWeight.w600,
+                                      ).copyWith(height: 15 / 11),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                             if (subtitle.isNotEmpty)
                               Text(
@@ -338,64 +372,10 @@ class _HeaderIconButton extends StatelessWidget {
   }
 }
 
-/// 답장 입력 위에 뜨는 빠른 반응 줄(❤️ 👏 😊).
-class SnapshotQuickReactionRow extends StatelessWidget {
-  const SnapshotQuickReactionRow({
-    super.key,
-    required this.onReact,
-    required this.enabled,
-  });
-
-  static const List<String> reactions = <String>['❤️', '👏', '😊'];
-
-  final ValueChanged<String> onReact;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0x99000000),
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final emoji in reactions)
-                SizedBox(
-                  width: 52,
-                  height: 44,
-                  child: Semantics(
-                    button: true,
-                    enabled: enabled,
-                    label: emoji,
-                    excludeSemantics: true,
-                    child: InkResponse(
-                      key: ValueKey('snapshot_quick_reaction_$emoji'),
-                      onTap: enabled ? () => onReact(emoji) : null,
-                      child: Center(
-                        child: Text(emoji, style: const TextStyle(fontSize: 24)),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 화면 가운데에서 커졌다가 떠오르며 사라지는 반응 이모지(700ms).
+/// 화면 가운데에서 0.4 → 1.1 → 1.0으로 커지며 30pt 떠오르고 사라지는 필링
+/// 아이콘(88, 600ms).
 class SnapshotReactionBurst extends StatefulWidget {
-  const SnapshotReactionBurst({super.key, required this.emoji});
-
-  final String emoji;
+  const SnapshotReactionBurst({super.key});
 
   @override
   State<SnapshotReactionBurst> createState() => _SnapshotReactionBurstState();
@@ -405,7 +385,7 @@ class _SnapshotReactionBurstState extends State<SnapshotReactionBurst>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 700),
+    duration: const Duration(milliseconds: 600),
   )..forward();
 
   @override
@@ -422,147 +402,24 @@ class _SnapshotReactionBurstState extends State<SnapshotReactionBurst>
         animation: _controller,
         builder: (context, _) {
           final t = reduce ? 0.5 : _controller.value;
-          final scale = 0.6 + 0.9 * Curves.easeOutBack.transform(t.clamp(0, 1));
+          // 0.4 → 1.1(40%) → 1.0
+          final scale = t < .4
+              ? 0.4 + (1.1 - 0.4) * Curves.easeOut.transform(t / .4)
+              : 1.1 - 0.1 * ((t - .4) / .6);
           final opacity = t < .6 ? 1.0 : (1 - (t - .6) / .4).clamp(0.0, 1.0);
           return Center(
             child: Transform.translate(
-              offset: Offset(0, -60 * t),
+              offset: Offset(0, -30 * t),
               child: Opacity(
                 opacity: opacity,
                 child: Transform.scale(
                   scale: scale,
-                  child: Text(
-                    widget.emoji,
-                    style: const TextStyle(fontSize: 72),
-                  ),
+                  child: const SnackFeelIcon(size: 88, filled: true),
                 ),
               ),
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-/// 하트가 눌릴 때 1.25배로 튀는 효과(250ms).
-class SnapshotHeartButton extends StatelessWidget {
-  const SnapshotHeartButton({
-    super.key,
-    required this.selected,
-    required this.onTap,
-    required this.semanticsLabel,
-  });
-
-  final bool selected;
-  final VoidCallback? onTap;
-  final String semanticsLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final reduce = snapshotReduceMotion(context);
-    return Semantics(
-      button: true,
-      enabled: onTap != null,
-      selected: selected,
-      label: semanticsLabel,
-      excludeSemantics: true,
-      child: MotionPress(
-        enabled: onTap != null,
-        pressedScale: .9,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: SizedBox.square(
-            dimension: 44,
-            child: Center(
-              child: TweenAnimationBuilder<double>(
-                key: ValueKey<bool>(selected),
-                tween: Tween<double>(begin: selected && !reduce ? 1.25 : 1, end: 1),
-                duration: reduce
-                    ? Duration.zero
-                    : const Duration(milliseconds: 250),
-                curve: Curves.easeOutBack,
-                builder: (context, scale, child) =>
-                    Transform.scale(scale: scale, child: child),
-                child: Icon(
-                  selected
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  size: 28,
-                  color: selected ? snapshotHeart : Colors.white,
-                  shadows: const [
-                    Shadow(color: Color(0x66000000), blurRadius: 4),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 입력 알약(높이 44, 모서리 22, 흰색 35% 테두리).
-class SnapshotPillInput extends StatelessWidget {
-  const SnapshotPillInput({
-    super.key,
-    required this.controller,
-    required this.focusNode,
-    required this.hint,
-    required this.onSubmitted,
-    this.enabled = true,
-    this.onChanged,
-    this.trailing,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final String hint;
-  final VoidCallback onSubmitted;
-  final bool enabled;
-  final ValueChanged<String>? onChanged;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.only(left: 16, right: 4),
-      decoration: BoxDecoration(
-        color: const Color(0x33000000),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0x59FFFFFF)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: controller,
-              focusNode: focusNode,
-              enabled: enabled,
-              maxLines: 1,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => onSubmitted(),
-              onChanged: onChanged,
-              cursorColor: Colors.white,
-              style: snapshotChromeStyle(context, size: 15, weight: FontWeight.w500),
-              decoration: InputDecoration(
-                isCollapsed: true,
-                border: InputBorder.none,
-                hintText: hint,
-                hintStyle: snapshotChromeStyle(
-                  context,
-                  size: 15,
-                  weight: FontWeight.w500,
-                  color: const Color(0xB3FFFFFF),
-                ),
-              ),
-            ),
-          ),
-          if (trailing != null) trailing!,
-        ],
       ),
     );
   }

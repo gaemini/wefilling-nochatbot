@@ -922,4 +922,114 @@ class SnapshotStrings {
       : isKorean
           ? '알림 보기'
           : 'Open notifications');
+  String get feel => (isChinese
+      ? '心动'
+      : isKorean
+          ? '필링'
+          : 'Feel');
+  String get feelSent => (isChinese
+      ? '已心动'
+      : isKorean
+          ? '필링을 보냈어요'
+          : 'Feel sent');
+  String feelCountLabel(int n) => (isChinese
+      ? '心动 $n'
+      : isKorean
+          ? '필링 $n'
+          : '$n feels');
+  String get feelHiddenHint => (isChinese
+      ? '互相心动后才能看到是谁'
+      : isKorean
+          ? '서로 필링이 되면 누가 보냈는지 알 수 있어요'
+          : 'You\'ll see who once you feel each other');
+  String get feelNotifTitle => (isChinese
+      ? '有人对你的限时动态心动'
+      : isKorean
+          ? '누군가 내 스낵에 필링했어요'
+          : 'Someone felt your Snack');
+  String feelNotifCount(int n) => (isChinese
+      ? '心动 $n 个'
+      : isKorean
+          ? '필링 $n개'
+          : '$n feels');
+  String get mutualFeel => (isChinese
+      ? '你们互相心动了'
+      : isKorean
+          ? '서로 필링했어요'
+          : 'You felt each other');
+  String mutualFeelWith(String name) => (isChinese
+      ? '你和$name互相心动了'
+      : isKorean
+          ? '$name님과 서로 필링했어요'
+          : 'You and $name felt each other');
+  String get mutualFeelPrompt => (isChinese
+      ? '先打个招呼吧？'
+      : isKorean
+          ? '먼저 인사해 볼까요?'
+          : 'Say hi first?');
+  String mutualFeelTheyToo(String name) => (isChinese
+      ? '$name也对你的限时动态心动了。'
+      : isKorean
+          ? '$name님도 내 스낵에 필링했어요.'
+          : '$name felt your Snack too.');
+  String get sayHi => (isChinese
+      ? '打招呼'
+      : isKorean
+          ? '인사하기'
+          : 'Say hi');
+  String get mutualFeelSection => (isChinese
+      ? '互相心动'
+      : isKorean
+          ? '서로 필링'
+          : 'Felt each other');
+  String get mutualFeelWithSnack => (isChinese
+      ? '你们互相对对方的动态心动了'
+      : isKorean
+          ? '서로의 스낵에 필링했어요'
+          : 'You felt each other\'s Snacks');
+  String replyByDm(String name) => (isChinese
+      ? '私信回复$name'
+      : isKorean
+          ? '$name에게 DM으로 답장'
+          : 'Reply to $name by DM');
+  String replyDmHint(String name) => (isChinese
+      ? '将通过私信发送给$name · 附带动态卡片'
+      : isKorean
+          ? '$name에게 DM으로 가요 · 스낵 카드가 함께 붙어요'
+          : 'Goes to $name by DM · Snack card attached');
+  String get replySentToast => (isChinese
+      ? '已发送 · 在私信中继续'
+      : isKorean
+          ? '보냈어요 · DM에서 이어서 대화해요'
+          : 'Sent · Continue in DM');
+  String get viewersNoFeel => (isChinese
+      ? '此列表不显示心动'
+      : isKorean
+          ? '본 사람 목록에는 필링 여부가 표시되지 않아요'
+          : 'Feels aren\'t shown in this list');
+  String get feelOnlyNotice => (isChinese
+      ? '现在只能对限时动态心动'
+      : isKorean
+          ? '이제 스낵에는 필링만 남길 수 있어요'
+          : 'Snacks now take feels only');
+  String get friendBadge => (isChinese
+      ? '好友'
+      : isKorean
+          ? '친구'
+          : 'Friend');
+  String feelAndViewers(int feels, int viewers) => (isChinese
+      ? '心动 $feels · 浏览 $viewers'
+      : isKorean
+          ? '필링 $feels · 본 사람 $viewers'
+          : '$feels feels · $viewers viewers');
+  String get feelRequested => (isChinese
+      ? '已申请'
+      : isKorean
+          ? '요청됨'
+          : 'Requested');
+  String get sendMessageButton => (isChinese
+      ? '发私信'
+      : isKorean
+          ? '메시지 보내기'
+          : 'Send message');
 }

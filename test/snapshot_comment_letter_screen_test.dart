@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/models/snapshot_comment_letter.dart';
 import 'package:wefilling/screens/snapshot_comment_letter_screen.dart';
+import 'package:wefilling/snapshot/snack_feature_flags.dart';
 
 SnapshotCommentLetter _letter({required bool replied}) {
   return SnapshotCommentLetter(
@@ -29,6 +30,9 @@ SnapshotCommentLetter _letter({required bool replied}) {
 }
 
 void main() {
+  // 스낵 v3에서 편지 답장은 기본으로 꺼져 있다. 이 파일은 답장 화면 자체를 검증한다.
+  setUp(() => SnackFeatureFlags.apply(letters: true));
+  tearDown(() => SnackFeatureFlags.apply(letters: false));
   testWidgets('작은 화면에서도 답장을 한 번만 보내고 입력창을 닫는다', (tester) async {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);

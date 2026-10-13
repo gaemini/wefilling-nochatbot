@@ -8,6 +8,42 @@ import '../l10n/ui_locale.dart';
 List<Object?> _safeSnackChatList(Object? raw) =>
     raw is List ? List<Object?>.from(raw) : const <Object?>[];
 
+/// 같이하기 제안 상태(서버가 쓰는 `together` 필드).
+enum SnackChatTogetherStatus { pending, accepted, later }
+
+class SnackChatTogether {
+  const SnackChatTogether({
+    required this.fromUid,
+    required this.toUid,
+    required this.activity,
+    required this.status,
+  });
+
+  final String fromUid;
+  final String toUid;
+  final String activity;
+  final SnackChatTogetherStatus status;
+
+  static SnackChatTogether? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final from = (raw['fromUid'] ?? '').toString();
+    final to = (raw['toUid'] ?? '').toString();
+    final activity = (raw['activity'] ?? '').toString();
+    if (from.isEmpty || to.isEmpty || activity.isEmpty) return null;
+    final status = switch ((raw['status'] ?? '').toString()) {
+      'accepted' => SnackChatTogetherStatus.accepted,
+      'later' => SnackChatTogetherStatus.later,
+      _ => SnackChatTogetherStatus.pending,
+    };
+    return SnackChatTogether(
+      fromUid: from,
+      toUid: to,
+      activity: activity,
+      status: status,
+    );
+  }
+}
+
 class SnackChat {
   static final DateTime noExpirationDate = DateTime.utc(9999, 12, 31);
   static const int currentParticipantIntegrityVersion = 3;
@@ -37,6 +73,9 @@ class SnackChat {
   final String? postId;
   final bool allowPostJoin;
 
+  /// 같이하기(프로필 제안)로 만들어진 1:1 방이면 제안 정보. 아니면 null.
+  final SnackChatTogether? together;
+
   const SnackChat({
     required this.id,
     required this.title,
@@ -61,6 +100,7 @@ class SnackChat {
     this.allowMeetupJoin = false,
     this.postId,
     this.allowPostJoin = false,
+    this.together,
   }) : assert(
           activeDurationHours == 0 || activeDurationHours == 24,
           'Snack Chat duration must be 0 or 24 hours.',
@@ -189,6 +229,7 @@ class SnackChat {
           ? null
           : data['postId'].toString().trim(),
       allowPostJoin: data['allowPostJoin'] == true,
+      together: SnackChatTogether.tryParse(data['together']),
     );
   }
 
@@ -261,6 +302,7 @@ class SnackChat {
       allowMeetupJoin: allowMeetupJoin ?? this.allowMeetupJoin,
       postId: postId ?? this.postId,
       allowPostJoin: allowPostJoin ?? this.allowPostJoin,
+      together: together,
     );
   }
 

@@ -25,7 +25,7 @@ import '../ui/widgets/motion_press.dart';
 import '../utils/responsive_helper.dart';
 import 'dm_chat_screen.dart';
 import 'friend_profile_screen.dart';
-import 'snapshot_viewers_screen.dart';
+import 'snapshot_activity_sheet.dart';
 import 'snapshot_comments_sheet.dart';
 import '../l10n/ui_locale.dart';
 import '../l10n/relationship_strings.dart';
@@ -511,14 +511,13 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
         FirebaseAuth.instance.currentUser?.uid != _current.authorId) {
       return;
     }
-    final snapshotId = _current.id;
+    final item = _current;
     setState(() => _isModalPaused = true);
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => SnapshotViewersScreen(snapshotId: snapshotId),
-      ),
-    );
-    if (mounted) setState(() => _isModalPaused = false);
+    try {
+      await SnapshotActivitySheet.show(context, snapshot: item);
+    } finally {
+      if (mounted) setState(() => _isModalPaused = false);
+    }
   }
 
   Future<void> _openAuthorProfile() async {

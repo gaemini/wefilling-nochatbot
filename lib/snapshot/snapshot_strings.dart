@@ -837,4 +837,24 @@ class SnapshotStrings {
       : isKorean
           ? '기록 안내'
           : 'About records');
+  String get friendRequestedShort => (isChinese
+      ? '已申请'
+      : isKorean
+          ? '요청함'
+          : 'Requested');
+  String get repliesTabPlain => (isChinese
+      ? '收到的回复'
+      : isKorean
+          ? '받은 답장'
+          : 'Replies');
+  String get repliesInNotifications => (isChinese
+      ? '收到的回复可以在通知中打开。'
+      : isKorean
+          ? '받은 답장은 알림에서 열어 볼 수 있어요.'
+          : 'Open received replies from Notifications.');
+  String get openNotifications => (isChinese
+      ? '查看通知'
+      : isKorean
+          ? '알림 보기'
+          : 'Open notifications');
 }

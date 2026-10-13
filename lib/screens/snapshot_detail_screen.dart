@@ -666,6 +666,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
   void _moveTo(int targetIndex, {bool haptic = true}) {
     if (_isSwitching ||
         _isComposingComment ||
+        // DM 답장 입력 중에는 넘기지 않는다(넘기면 입력 상태·일시정지가 남는다).
+        _isReplyFocused ||
         _isModalPaused ||
         targetIndex < 0 ||
         targetIndex >= _items.length) {
@@ -2010,7 +2012,13 @@ class _SnapshotLetterComposerSheetState
 
   Future<void> _loadStatus() async {
     final snapshotId = widget.snapshotId;
-    final hasSent = await widget.service.hasCommented(snapshotId);
+    bool hasSent;
+    try {
+      hasSent = await widget.service.hasCommented(snapshotId);
+    } catch (_) {
+      // 확인 실패 시 보내지 않은 것으로 가정하지 않는다(중복 전송 방지).
+      hasSent = true;
+    }
     if (!mounted || widget.snapshotId != snapshotId) return;
     setState(() {
       _hasSent = hasSent;

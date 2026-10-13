@@ -1,7 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/l10n/app_localizations.dart';
+import 'package:wefilling/models/friend_category.dart';
 import 'package:wefilling/screens/create_category_screen.dart';
+
+// 생성 모드는 새 그룹 화면(new_group_screen_test)이 맡는다. 이 파일은 수정 모드의
+// 색·도형 편집 화면을 검증한다.
+final _editing = FriendCategory(
+  id: 'c1',
+  name: '',
+  description: '',
+  color: '#2C6BC0',
+  iconName: 'shape_circle',
+  createdAt: DateTime(2026),
+  updatedAt: DateTime(2026),
+  userId: 'me',
+  friendIds: const <String>[],
+);
 
 Future<void> _pumpScreen(
   WidgetTester tester, {
@@ -27,7 +42,7 @@ Future<void> _pumpScreen(
           viewInsets: EdgeInsets.only(bottom: bottomInset),
           textScaler: TextScaler.linear(textScale),
         ),
-        child: const CreateCategoryScreen(),
+        child: CreateCategoryScreen(category: _editing),
       ),
     ),
   );
@@ -45,7 +60,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('New Group'), findsOneWidget);
+    expect(find.text('Edit Group'), findsOneWidget);
     expect(find.text('Group Name'), findsOneWidget);
     expect(find.byIcon(Icons.close_rounded), findsOneWidget);
     expect(find.byIcon(Icons.check_rounded), findsWidgets);
@@ -70,7 +85,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Create'), findsOneWidget);
+    expect(find.text('Edit'), findsOneWidget);
     expect(find.text('Select Color'), findsOneWidget);
     expect(find.text('Select Icon'), findsOneWidget);
 
@@ -93,7 +108,7 @@ void main() {
             onPressed: () async {
               savedResult = await Navigator.of(context).push<Object?>(
                 MaterialPageRoute<void>(
-                  builder: (_) => const CreateCategoryScreen(),
+                  builder: (_) => CreateCategoryScreen(category: _editing),
                 ),
               );
             },
@@ -108,7 +123,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'University Friends');
     await tester.tap(find.bySemanticsLabel('Green'));
     await tester.tap(find.bySemanticsLabel('triangle'));
-    await tester.tap(find.text('Create'));
+    await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();
 
     expect(

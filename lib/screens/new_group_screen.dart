@@ -69,9 +69,8 @@ class _NewGroupScreenState extends State<NewGroupScreen> {
       final index = chips.indexOf(_nameController.text.trim());
       if (index >= 0) setState(() => _chipIndex = index);
       try {
-        final auth = context.read<AuthProvider>();
         final relationship = context.read<RelationshipProvider>();
-        relationship.setAuthProvider(auth);
+        relationship.setAuthProvider(context.read<AuthProvider>());
         if (relationship.friends.isEmpty && !relationship.isLoading) {
           relationship.loadFriends();
         }

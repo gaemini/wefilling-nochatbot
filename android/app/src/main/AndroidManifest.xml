@@ -96,14 +96,14 @@
                     android:scheme="wefilling"
                     android:host="organization-invite" />
             </intent-filter>
-            <!-- 프로필 공유 링크: https://wefilling.app/u/{uid} (App Links) -->
+            <!-- 프로필 공유 링크: https://flutterproject3-af322.web.app/u/{uid} (App Links).
+                 autoVerify 필터의 호스트는 모두 검증돼야 하므로(Android 11 이하) 실제 호스팅 중인 도메인만 둔다. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:pathPrefix="/u/" />
                 <data android:host="flutterproject3-af322.web.app" />
-                <data android:host="wefilling.app" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

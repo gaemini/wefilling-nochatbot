@@ -51,6 +51,8 @@ class ProfileLinkService {
 
   StreamSubscription<Uri>? _subscription;
   String? _pendingUid;
+  String? _lastLink;
+  DateTime? _lastLinkAt;
   bool _started = false;
 
   Future<void> start() async {
@@ -71,6 +73,16 @@ class ProfileLinkService {
   void _handle(Uri uri) {
     final uid = ProfileLink.parseUid(uri);
     if (uid == null) return;
+    // 콜드 스타트 링크는 getInitialLink와 uriLinkStream으로 두 번 올 수 있다.
+    final now = DateTime.now();
+    final key = uri.toString();
+    if (_lastLink == key &&
+        _lastLinkAt != null &&
+        now.difference(_lastLinkAt!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastLink = key;
+    _lastLinkAt = now;
     _pendingUid = uid;
     openPending();
   }

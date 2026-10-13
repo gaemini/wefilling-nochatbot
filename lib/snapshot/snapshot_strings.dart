@@ -1032,4 +1032,54 @@ class SnapshotStrings {
       : isKorean
           ? '메시지 보내기'
           : 'Send message');
+  String get groupVisibilityHint => (isChinese
+      ? '仅所选分组中的好友可见'
+      : isKorean
+          ? '고른 그룹에 있는 친구만 볼 수 있어요'
+          : 'Only friends in the groups you pick can see this');
+  String groupMemberCount(int n) => (isChinese
+      ? '$n人'
+      : isKorean
+          ? '$n명'
+          : '$n people');
+  String audienceCount(int n) => (isChinese
+      ? '$n人可见'
+      : isKorean
+          ? '볼 수 있는 사람 $n명'
+          : '$n can see this');
+  String get audienceEmpty => (isChinese
+      ? '选择分组后会在这里显示可见的人'
+      : isKorean
+          ? '그룹을 고르면 볼 수 있는 사람이 여기 보여요'
+          : 'Pick a group to see who can view it');
+  String shareSnackCount(int n) => (isChinese
+      ? '分享快拍 · $n人'
+      : isKorean
+          ? '스낵 공유하기 · $n명'
+          : 'Share snack · $n');
+  String replyContextTitle(String name) => (isChinese
+      ? '回复$name的快拍'
+      : isKorean
+          ? '$name의 스낵에 답장'
+          : 'Replying to $name\'s snack');
+  String get replyContextSub => (isChinese
+      ? '将以私信发送'
+      : isKorean
+          ? 'DM으로 보내져요'
+          : 'Sent as a DM');
+  String get replyInputHint => (isChinese
+      ? '发消息…'
+      : isKorean
+          ? '메시지 보내기…'
+          : 'Message…');
+  String get closeButtonLabel => (isChinese
+      ? '关闭'
+      : isKorean
+          ? '닫기'
+          : 'Close');
+  String get sendButtonLabel => (isChinese
+      ? '发送'
+      : isKorean
+          ? '보내기'
+          : 'Send');
 }

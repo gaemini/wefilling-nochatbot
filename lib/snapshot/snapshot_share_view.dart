@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../l10n/ui_locale.dart';
 import '../models/friend_category.dart';
 import '../models/snapshot.dart';
+import '../ui/widgets/user_avatar.dart';
 import 'snapshot_strings.dart';
 
 const Color _accent = Color(0xFF2C6BC0);
@@ -30,6 +31,10 @@ class ShareTextSpec {
   static const choiceOff = ShareTextSpec(14, 20, FontWeight.w500, .4);
   static const groupOn = ShareTextSpec(13, 18, FontWeight.w600, 1);
   static const groupOff = ShareTextSpec(13, 18, FontWeight.w500, .4);
+  static const groupName = ShareTextSpec(14, 20, FontWeight.w600, 1);
+  static const groupCount = ShareTextSpec(12, 17, FontWeight.w400, .45);
+  static const audienceTitle = ShareTextSpec(12, 17, FontWeight.w400, .55);
+  static const audienceName = ShareTextSpec(11, 15, FontWeight.w400, .8);
   static const hint = ShareTextSpec(12, 17, FontWeight.w400, .55);
   static const button = ShareTextSpec(15, 20, FontWeight.w600, 1);
 }
@@ -49,6 +54,53 @@ TextStyle shareTextStyle(
       color: color ?? Colors.white.withValues(alpha: spec.alpha),
     );
 
+/// 그룹 공개 대상 한 명(표시용). 업로드 값에는 쓰지 않는다.
+class ShareAudienceMember {
+  const ShareAudienceMember({
+    required this.uid,
+    required this.name,
+    this.photoUrl = '',
+  });
+
+  final String uid;
+  final String name;
+  final String photoUrl;
+}
+
+/// 그룹의 멤버 중 지금도 친구인 사람만(서버 조회 없음, 구독 중인 친구 목록 기준).
+/// [friends]가 null이면 아직 로딩 중이다.
+@visibleForTesting
+List<ShareAudienceMember>? shareCategoryMembers(
+  FriendCategory category,
+  List<ShareAudienceMember>? friends,
+) {
+  if (friends == null) return null;
+  final ids = category.friendIds.toSet();
+  return friends.where((friend) => ids.contains(friend.uid)).toList();
+}
+
+/// 선택한 그룹 멤버의 합집합(uid 중복 제거). 선택한 그룹 순서, 그룹 안에서는
+/// 친구 목록 순서를 유지한다.
+@visibleForTesting
+List<ShareAudienceMember>? shareAudience(
+  List<FriendCategory> categories,
+  List<String> selectedIds,
+  List<ShareAudienceMember>? friends,
+) {
+  if (friends == null) return null;
+  final byId = {for (final category in categories) category.id: category};
+  final seen = <String>{};
+  final result = <ShareAudienceMember>[];
+  for (final id in selectedIds) {
+    final category = byId[id];
+    if (category == null) continue;
+    for (final member in shareCategoryMembers(category, friends)!) {
+      if (seen.add(member.uid)) result.add(member);
+    }
+  }
+  return result;
+}
+
 class SnapshotShareView extends StatelessWidget {
   const SnapshotShareView({
     super.key,
@@ -64,7 +116,11 @@ class SnapshotShareView extends StatelessWidget {
     required this.onResponseModeChanged,
     required this.onToggleCategory,
     required this.onShare,
+    this.friends,
   });
+
+  /// 구독 중인 친구 목록(표시용). null이면 로딩 중.
+  final List<ShareAudienceMember>? friends;
 
   /// 사진/영상. 이 위젯이 틀(가로 꽉, cover)을 만든다.
   final Widget media;
@@ -106,7 +162,15 @@ class SnapshotShareView extends StatelessWidget {
           final maxByNeed = height + 50 - buttonArea - settingsNeed;
           photoHeight = math.max(300.0, math.min(photoHeight, maxByNeed));
           photoHeight = math.min(photoHeight, math.max(120.0, height - buttonArea));
-          return Stack(
+          // 그룹을 고르면 사진을 250으로 줄여 목록이 들어갈 자리를 만든다.
+          final groupMode = visibility == SnapshotVisibility.category;
+          final targetPhoto = groupMode ? 250.0 : photoHeight;
+          final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+          return TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: targetPhoto),
+            duration: reduce ? Duration.zero : const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+            builder: (context, photoHeight, _) => Stack(
             fit: StackFit.expand,
             children: [
               Positioned(
@@ -208,7 +272,7 @@ class SnapshotShareView extends StatelessWidget {
               Positioned(
                 left: 0,
                 right: 0,
-                top: photoHeight - 50,
+                top: photoHeight - (groupMode ? 44 : 50),
                 bottom: buttonArea,
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -223,6 +287,7 @@ class SnapshotShareView extends StatelessWidget {
                 child: _shareButton(context, strings),
               ),
             ],
+          ),
           );
         },
       ),
@@ -230,18 +295,18 @@ class SnapshotShareView extends StatelessWidget {
   }
 
   Widget _settings(BuildContext context, SnapshotStrings strings, double maxWidth) {
+    final audience = shareAudience(categories, selectedCategoryIds, friends);
     final visibilityHint = switch (visibility) {
       SnapshotVisibility.public => strings.publicDescription,
       SnapshotVisibility.friends => strings.friendsDescription,
       SnapshotVisibility.category => categories.isEmpty
           ? strings.noGroups
-          : (selectedCategoryIds.isEmpty
-              ? strings.groupRequired
-              : strings.groupsDescription),
+          : strings.groupVisibilityHint,
     };
     final responseHint = responseMode == SnapshotResponseMode.reactions
         ? strings.responseFeelOnlyHint
         : strings.responseFriendReplyHint;
+    final groupMode = visibility == SnapshotVisibility.category;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -257,24 +322,29 @@ class SnapshotShareView extends StatelessWidget {
           ],
           onChanged: onVisibilityChanged,
         ),
-        _GroupChoices(
-          visible: visibility == SnapshotVisibility.category &&
-              categories.isNotEmpty,
-          categories: categories,
-          selectedIds: selectedCategoryIds,
-          onToggle: onToggleCategory,
-        ),
         Text(
           visibilityHint,
           key: const ValueKey('share_visibility_hint'),
-          style: shareTextStyle(
-            context,
-            ShareTextSpec.hint,
-            color: _groupMissing && categories.isNotEmpty
-                ? const Color(0xFFFFB4A9)
-                : null,
-          ),
+          style: shareTextStyle(context, ShareTextSpec.hint),
         ),
+        if (groupMode && categories.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          for (var i = 0; i < categories.length; i++)
+            _AudienceGroupRow(
+              key: ValueKey<String>('share-group-${categories[i].id}'),
+              category: categories[i],
+              members: shareCategoryMembers(categories[i], friends),
+              selected: selectedCategoryIds.contains(categories[i].id),
+              showDivider: i > 0,
+              onTap: () => onToggleCategory(categories[i].id),
+            ),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: Colors.white.withValues(alpha: .12),
+          ),
+          _AudiencePreviewStrip(audience: audience),
+        ],
         const SizedBox(height: 14),
         Divider(
           height: 1,
@@ -303,9 +373,15 @@ class SnapshotShareView extends StatelessWidget {
   }
 
   Widget _shareButton(BuildContext context, SnapshotStrings strings) {
+    final audience = shareAudience(categories, selectedCategoryIds, friends);
+    final showCount = visibility == SnapshotVisibility.category &&
+        audience != null &&
+        audience.isNotEmpty;
     final label = uploading
         ? strings.sharingProgress((uploadProgress.clamp(0, 1) * 100).round())
-        : strings.shareSnackButton;
+        : (showCount
+            ? strings.shareSnackCount(audience.length)
+            : strings.shareSnackButton);
     return Semantics(
       button: true,
       enabled: canShare,
@@ -530,73 +606,318 @@ class _Choice extends StatelessWidget {
   }
 }
 
-/// 그룹 이름을 글자 버튼으로 펼친다. 선택된 그룹 앞에는 `✓` 글자를 붙인다.
-class _GroupChoices extends StatelessWidget {
-  const _GroupChoices({
-    required this.visible,
-    required this.categories,
-    required this.selectedIds,
-    required this.onToggle,
+/// 그룹 한 줄: 선택 원 + 이름/인원 + 오른쪽 멤버 사진(최대 4, 겹침).
+class _AudienceGroupRow extends StatelessWidget {
+  const _AudienceGroupRow({
+    super.key,
+    required this.category,
+    required this.members,
+    required this.selected,
+    required this.showDivider,
+    required this.onTap,
   });
 
-  final bool visible;
-  final List<FriendCategory> categories;
-  final List<String> selectedIds;
-  final ValueChanged<String> onToggle;
+  final FriendCategory category;
+
+  /// null이면 친구 목록 로딩 중.
+  final List<ShareAudienceMember>? members;
+  final bool selected;
+  final bool showDivider;
+  final VoidCallback onTap;
+
+  static const double _avatar = 24;
+  static const double _overlap = 7;
 
   @override
   Widget build(BuildContext context) {
+    final strings = SnapshotStrings.of(context);
     final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    final duration = reduce ? Duration.zero : const Duration(milliseconds: 180);
-    return AnimatedSize(
-      duration: duration,
-      alignment: Alignment.topCenter,
-      child: AnimatedOpacity(
-        opacity: visible ? 1 : 0,
-        duration: duration,
-        child: visible
-            ? SingleChildScrollView(
-                key: const ValueKey('share_groups'),
-                scrollDirection: Axis.horizontal,
-                child: Row(
+    final list = members;
+    final count = list?.length;
+    final countLabel = count == null ? '…' : strings.groupMemberCount(count);
+    final shown = (list ?? const <ShareAudienceMember>[]).take(4).toList();
+    final extra = count == null ? 0 : math.max(0, count - shown.length);
+    final avatarsWidth = shown.isEmpty
+        ? (count == null ? _avatar : 0.0)
+        : _avatar + (shown.length - 1) * (_avatar - _overlap);
+    return Semantics(
+      checked: selected,
+      inMutuallyExclusiveGroup: false,
+      button: true,
+      label: '${category.name}, $countLabel',
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 56),
+          decoration: BoxDecoration(
+            border: showDivider
+                ? Border(
+                    top: BorderSide(
+                      color: Colors.white.withValues(alpha: .08),
+                    ),
+                  )
+                : null,
+          ),
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration:
+                    reduce ? Duration.zero : const Duration(milliseconds: 150),
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected ? Colors.white : Colors.transparent,
+                  border: Border.all(
+                    color: selected
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: .35),
+                    width: 1.5,
+                  ),
+                ),
+                child: selected
+                    ? const Icon(Icons.check_rounded,
+                        size: 12, color: Colors.black)
+                    : null,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    for (final category in categories)
-                      _group(context, category),
+                    Text(
+                      category.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: shareTextStyle(context, ShareTextSpec.groupName),
+                    ),
+                    Text(
+                      countLabel,
+                      key: ValueKey<String>('group-count-${category.id}'),
+                      maxLines: 1,
+                      style: shareTextStyle(context, ShareTextSpec.groupCount),
+                    ),
                   ],
                 ),
-              )
-            : const SizedBox(width: double.infinity),
+              ),
+              const SizedBox(width: 8),
+              if (count == null)
+                Container(
+                  width: _avatar,
+                  height: _avatar,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF3A3A3C),
+                    shape: BoxShape.circle,
+                  ),
+                )
+              else if (shown.isNotEmpty)
+                SizedBox(
+                  width: avatarsWidth,
+                  height: _avatar,
+                  child: Stack(
+                    children: [
+                      for (var i = 0; i < shown.length; i++)
+                        Positioned(
+                          left: i * (_avatar - _overlap),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border:
+                                  Border.all(color: Colors.black, width: 2),
+                            ),
+                            child: UserAvatar(
+                              uid: shown[i].uid,
+                              photoUrl: shown[i].photoUrl,
+                              photoVersion: 0,
+                              isAnonymous: false,
+                              size: _avatar - 4,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (extra > 0) ...[
+                const SizedBox(width: 6),
+                Text(
+                  '+$extra',
+                  maxLines: 1,
+                  style: shareTextStyle(
+                    context,
+                    const ShareTextSpec(12, 17, FontWeight.w400, .55),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
+}
 
-  Widget _group(BuildContext context, FriendCategory category) {
-    final selected = selectedIds.contains(category.id);
-    final spec = selected ? ShareTextSpec.groupOn : ShareTextSpec.groupOff;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: category.name,
-      excludeSemantics: true,
-      child: GestureDetector(
-        key: ValueKey<String>('share-group-${category.id}'),
-        behavior: HitTestBehavior.opaque,
-        onTap: () => onToggle(category.id),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
-          child: Padding(
-            padding: const EdgeInsets.only(right: 14),
-            child: Center(
-              widthFactor: 1,
-              child: Text(
-                selected ? '✓ ${category.name}' : category.name,
-                maxLines: 1,
-                softWrap: false,
-                style: shareTextStyle(context, spec),
-              ),
-            ),
-          ),
+/// 선택한 그룹으로 볼 수 있는 사람(합집합)을 가로 스크롤로 보여 준다. 표시 전용.
+class _AudiencePreviewStrip extends StatefulWidget {
+  const _AudiencePreviewStrip({required this.audience});
+
+  /// null이면 로딩 중(자리 표시).
+  final List<ShareAudienceMember>? audience;
+
+  @override
+  State<_AudiencePreviewStrip> createState() => _AudiencePreviewStripState();
+}
+
+class _AudiencePreviewStripState extends State<_AudiencePreviewStrip> {
+  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+  late List<ShareAudienceMember> _items;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = List<ShareAudienceMember>.of(
+      widget.audience ?? const <ShareAudienceMember>[],
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _AudiencePreviewStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.audience ?? const <ShareAudienceMember>[];
+    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final duration = reduce ? Duration.zero : const Duration(milliseconds: 200);
+    final list = _listKey.currentState;
+    if (list == null) {
+      _items = List<ShareAudienceMember>.of(next);
+      return;
+    }
+    final nextIds = next.map((m) => m.uid).toSet();
+    // 빠진 사람은 페이드로 지운다(뒤에서부터 인덱스가 어긋나지 않게).
+    for (var i = _items.length - 1; i >= 0; i--) {
+      if (nextIds.contains(_items[i].uid)) continue;
+      final removed = _items.removeAt(i);
+      list.removeItem(
+        i,
+        (context, animation) => FadeTransition(
+          opacity: animation,
+          child: _AudiencePerson(member: removed),
         ),
+        duration: duration,
+      );
+    }
+    // 새로 생긴 사람은 새 순서의 위치에 0.8 → 1로 나타낸다.
+    for (var i = 0; i < next.length; i++) {
+      if (i < _items.length && _items[i].uid == next[i].uid) continue;
+      final existing = _items.indexWhere((m) => m.uid == next[i].uid);
+      if (existing >= 0) {
+        // 순서만 바뀐 경우: 위치를 옮긴다.
+        _items.removeAt(existing);
+        list.removeItem(existing, (c, a) => const SizedBox.shrink(),
+            duration: Duration.zero);
+      }
+      _items.insert(i, next[i]);
+      list.insertItem(i, duration: duration);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = SnapshotStrings.of(context);
+    final audience = widget.audience;
+    final count = audience?.length;
+    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final title = count == null
+        ? '…'
+        : (count == 0 ? strings.audienceEmpty : strings.audienceCount(count));
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            key: const ValueKey('audience_title'),
+            style: shareTextStyle(context, ShareTextSpec.audienceTitle),
+          ),
+          if (count == null || count > 0) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 40 + 6 + 15 + 4,
+              child: count == null
+                  ? Row(
+                      children: [
+                        for (var i = 0; i < 4; i++)
+                          Container(
+                            width: 40,
+                            height: 40,
+                            margin: const EdgeInsets.only(right: 12),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF3A3A3C),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                      ],
+                    )
+                  : AnimatedList(
+                      key: _listKey,
+                      scrollDirection: Axis.horizontal,
+                      initialItemCount: _items.length,
+                      itemBuilder: (context, index, animation) {
+                        if (index >= _items.length) {
+                          return const SizedBox.shrink();
+                        }
+                        final person = _AudiencePerson(member: _items[index]);
+                        return FadeTransition(
+                          opacity: animation,
+                          child: reduce
+                              ? person
+                              : ScaleTransition(
+                                  scale: Tween<double>(begin: .8, end: 1)
+                                      .animate(animation),
+                                  child: person,
+                                ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AudiencePerson extends StatelessWidget {
+  const _AudiencePerson({required this.member});
+
+  final ShareAudienceMember member;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: ValueKey<String>('audience-${member.uid}'),
+      width: 52,
+      margin: const EdgeInsets.only(right: 12),
+      child: Column(
+        children: [
+          UserAvatar(
+            uid: member.uid,
+            photoUrl: member.photoUrl,
+            photoVersion: 0,
+            isAnonymous: false,
+            size: 40,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            member.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: shareTextStyle(context, ShareTextSpec.audienceName),
+          ),
+        ],
       ),
     );
   }

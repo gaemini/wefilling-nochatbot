@@ -18,11 +18,14 @@ import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../models/friend_category.dart';
 import '../models/snapshot.dart';
+import '../models/user_profile.dart';
 import '../services/friend_category_service.dart';
 import '../services/snapshot_archive_service.dart';
 import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_share_view.dart';
+import '../providers/relationship_provider.dart';
+import 'package:provider/provider.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/motion_press.dart';
@@ -171,6 +174,17 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       });
     });
     unawaited(_loadRecentPhotos());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        unawaited(
+          context
+              .read<RelationshipProvider>()
+              .ensureInitialized()
+              .catchError((Object _) {}),
+        );
+      } catch (_) {}
+    });
   }
 
   @override
@@ -2782,8 +2796,26 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         ),
       );
     }
+    // 그룹 멤버 표시는 이미 구독 중인 친구 목록만 쓴다(그룹마다 서버 조회 없음).
+    final streamsReady = context.select<RelationshipProvider, bool>(
+      (provider) => provider.relationshipStreamsReady,
+    );
+    final friendProfiles = context.select<RelationshipProvider, List<UserProfile>>(
+      (provider) => provider.friends,
+    );
+    final List<ShareAudienceMember>? audienceFriends = streamsReady
+        ? [
+            for (final friend in friendProfiles)
+              ShareAudienceMember(
+                uid: friend.uid,
+                name: friend.displayNameOrNickname,
+                photoUrl: friend.photoURL ?? '',
+              ),
+          ]
+        : null;
     return SnapshotShareView(
       key: const ValueKey('snapshot_preview'),
+      friends: audienceFriends,
       media: media,
       visibility: _visibility,
       responseMode: _responseMode,

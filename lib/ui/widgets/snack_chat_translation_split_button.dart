@@ -44,7 +44,7 @@ class SnackChatTranslationSplitButton extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback onOpenLanguage;
 
-  static const double height = 36;
+  static const double height = 32;
   static const double toggleWidth = 40;
   static const double minTouch = 44;
 

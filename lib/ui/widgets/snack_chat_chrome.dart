@@ -1,3 +1,4 @@
+import '../chat/chat_metrics.dart';
 import 'package:flutter/material.dart';
 
 import '../../utils/responsive_helper.dart';
@@ -104,7 +105,7 @@ class SnackChatHeaderTitle extends StatelessWidget {
   /// 이미 로드된 참여자 아바타(16px). 비어 있으면 글자만 표시한다.
   final List<Widget> participantAvatars;
 
-  static const double avatarSize = 16;
+  static const double avatarSize = ChatMetrics.headerAvatar;
 
   @override
   Widget build(BuildContext context) {
@@ -127,10 +128,12 @@ class SnackChatHeaderTitle extends StatelessWidget {
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: context.rf(16).clamp(15, 17).toDouble(),
-                fontWeight: FontWeight.w700,
+                fontSize: ChatMetrics.titleSize,
+                fontWeight: ChatMetrics.titleWeight,
                 color: SnackChatPalette.ink,
-                height: isChineseUi(context) ? 1.3 : 1.2,
+                height: isChineseUi(context)
+                    ? 1.3
+                    : ChatMetrics.titleLine / ChatMetrics.titleSize,
               ),
             ),
             const SizedBox(height: 2),
@@ -167,10 +170,12 @@ class SnackChatHeaderTitle extends StatelessWidget {
                     style: TextStyle(
                       fontFamily: uiFontFamily(context, 'Inter'),
                       fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 11,
+                      fontSize: ChatMetrics.subtitleSize,
                       fontWeight: FontWeight.w400,
                       color: SnackChatPalette.inkTertiary,
-                      height: isChineseUi(context) ? 1.36 : 15 / 11,
+                      height: isChineseUi(context)
+                          ? 1.36
+                          : ChatMetrics.subtitleLine / ChatMetrics.subtitleSize,
                     ),
                   ),
                 ),

@@ -421,10 +421,10 @@ class _NewGroupScreenState extends State<NewGroupScreen> {
                 key: ValueKey<String>('new_group_chip_$i'),
                 behavior: HitTestBehavior.opaque,
                 onTap: () => _onChip(i, chips[i]),
+                // alignment를 주면 Wrap 안에서 가로로 늘어나므로 내용 크기로 둔다.
                 child: Container(
-                  height: 30,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  alignment: Alignment.center,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(
                     color: _chipIndex == i ? Colors.black : Colors.white,
                     border: Border.all(
@@ -436,10 +436,12 @@ class _NewGroupScreenState extends State<NewGroupScreen> {
                   ),
                   child: Text(
                     chips[i],
+                    maxLines: 1,
                     style: _style(
                       13,
                       FontWeight.w500,
                       _chipIndex == i ? Colors.white : const Color(0xFF333333),
+                      line: 18,
                     ),
                   ),
                 ),

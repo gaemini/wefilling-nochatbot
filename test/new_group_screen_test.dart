@@ -201,6 +201,19 @@ void main() {
     expect((chip.decoration as BoxDecoration).color, Colors.black);
   });
 
+  testWidgets('칩은 내용 크기이고 한 줄에 여러 개가 들어간다', (tester) async {
+    await _open(
+      tester,
+      _app(screen: (_) => NewGroupScreen(categoryService: _FakeService())),
+    );
+    final first = tester.getSize(find.byKey(const ValueKey('new_group_chip_0')));
+    final second =
+        tester.getTopLeft(find.byKey(const ValueKey('new_group_chip_1')));
+    expect(first.height, 30);
+    expect(first.width, lessThan(120));
+    expect(second.dy, tester.getTopLeft(find.byKey(const ValueKey('new_group_chip_0'))).dy);
+  });
+
   testWidgets('지정한 친구는 목록 위쪽에 모이지만 선택되지는 않는다', (tester) async {
     await _open(
       tester,

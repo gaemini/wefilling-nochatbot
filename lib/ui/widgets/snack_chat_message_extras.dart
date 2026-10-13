@@ -1,3 +1,4 @@
+import '../chat/chat_metrics.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
@@ -530,8 +531,8 @@ class SnackChatReplyPreviewView extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: uiFontFamily(context, 'Inter'),
                           fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
+                          fontSize: ChatMetrics.replyNameSize,
+                          fontWeight: FontWeight.w600,
                           color: foreground,
                         ),
                       ),
@@ -544,7 +545,7 @@ class SnackChatReplyPreviewView extends StatelessWidget {
                           context,
                           color: foreground.withValues(alpha: 0.86),
                           fontWeight: FontWeight.w500,
-                        ).copyWith(fontSize: 11.5),
+                        ).copyWith(fontSize: ChatMetrics.replyTextSize),
                       ),
                     ],
                   ),

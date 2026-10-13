@@ -79,6 +79,7 @@ import '../l10n/translation_source_language.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/chat_pill_composer.dart';
 import '../utils/chat_message_typography.dart';
+import '../ui/chat/chat_metrics.dart';
 import '../utils/avatar_image.dart';
 
 @visibleForTesting
@@ -252,8 +253,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const int _translationAdjacentPrefetchLimit = 2;
   static const Duration _translationMicroBatchWindow =
       Duration(milliseconds: 70);
-  static const double _senderAvatarSize = 28;
-  static const double _senderAvatarGap = 8;
+  static const double _senderAvatarSize = ChatMetrics.avatar;
+  static const double _senderAvatarGap = ChatMetrics.avatarGap;
 
   final SnackChatService _snackChatService = SnackChatService();
   final UsersRepository _usersRepository = UsersRepository();
@@ -6745,6 +6746,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 화면 글자는 1.3배까지, 메시지 본문만 1.6배까지(ChatTextScope).
+    return ChatTextScope(
+      child: Builder(builder: _buildChatScreen),
+    );
+  }
+
+  Widget _buildChatScreen(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final l10n = AppLocalizations.of(context)!;
     return StreamBuilder<SnackChat?>(
@@ -6830,7 +6838,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
               surfaceTintColor: Colors.white,
               elevation: 0,
               scrolledUnderElevation: 0,
-              toolbarHeight: context.rh(58, min: 56, max: 62),
+              toolbarHeight: ChatMetrics.headerHeight,
               leadingWidth: 48,
               centerTitle: false,
               titleSpacing: 0,
@@ -7044,7 +7052,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                  fontSize: 14,
                   color: _secondaryText,
                   height: 1.5,
                 ),
@@ -7537,11 +7545,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       decoration: TextDecoration.underline,
       decorationColor: isMe ? textStyle.color : SnackChatPalette.pointStrong,
     );
-    Widget linkified(String text) => Linkify(
-          text: text,
-          onOpen: (link) => _openExternalUrl(link.url),
-          style: textStyle,
-          linkStyle: linkStyle,
+    Widget linkified(String text) => ChatTextScope.body(
+          context,
+          child: Linkify(
+            text: text,
+            onOpen: (link) => _openExternalUrl(link.url),
+            style: textStyle,
+            linkStyle: linkStyle,
+          ),
         );
     final original = linkified(message.text);
     if (view.state == SnackChatTranslationState.none && isMe) return original;
@@ -7646,34 +7657,21 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         !hasFile;
     final isAnonymousSender = _isAnonymousSnackChatMessage(message);
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final maxBubbleWidth = (screenWidth * (hasImage || hasFile ? 0.76 : 0.70))
+    final maxBubbleWidth = (screenWidth *
+            (hasImage || hasFile
+                ? ChatMetrics.mediaBubbleWidthFactor
+                : ChatMetrics.textBubbleWidthFactor))
         .clamp(160.0, 420.0)
         .toDouble();
     final horizontalPadding = context.rs(2).clamp(0, 4).toDouble();
-    final bottomSpacing = groupedWithNewer ? 3.0 : 10.0;
-    final bubblePadding = EdgeInsets.fromLTRB(
-      hasImage
-          ? 6
-          : hasFile
-              ? 10
-              : 12,
-      hasImage
-          ? 6
-          : hasFile
-              ? 10
-              : 7,
-      hasImage
-          ? 6
-          : hasFile
-              ? 10
-              : 12,
-      hasImage
-          ? 6
-          : hasFile
-              ? 10
-              : 7,
-    );
-    // 스낵챗·DM 공통 메시지 글꼴(15.5/21, w500).
+    final bottomSpacing =
+        groupedWithNewer ? ChatMetrics.groupGap : ChatMetrics.senderGap;
+    final bubblePadding = hasImage
+        ? const EdgeInsets.all(6)
+        : hasFile
+            ? const EdgeInsets.all(10)
+            : ChatMetrics.bubblePadding;
+    // 스낵챗·DM 공통 메시지 글꼴(15/20, w400).
     final textStyle = chatMessageTextStyle(
       context,
       color: isMe ? Colors.white : _incomingText,
@@ -7855,7 +7853,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       children: [
         if (!isMe && showSenderName)
           Padding(
-            padding: const EdgeInsets.only(left: 2, bottom: 4),
+            padding: const EdgeInsets.only(
+              left: 2,
+              bottom: ChatMetrics.senderNameBottom,
+            ),
             child: FutureBuilder<String>(
               future: isAnonymousSender
                   ? null
@@ -7872,10 +7873,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _incomingText,
-                  height: isChineseUi(context) ? 1.38 : 18 / 13,
+                  fontSize: ChatMetrics.senderNameSize,
+                  fontWeight: ChatMetrics.senderNameWeight,
+                  color: ChatMetrics.senderNameColor,
+                  height: isChineseUi(context)
+                      ? 1.38
+                      : ChatMetrics.senderNameLine / ChatMetrics.senderNameSize,
                 ),
               ),
             ),
@@ -8109,7 +8112,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
+                        fontSize: 14,
                         height: isChineseUi(context) ? 1.3 : 1.25,
                         fontWeight: FontWeight.w700,
                         color: expired ? _tertiaryText : foreground,
@@ -8222,7 +8225,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           style: TextStyle(
             fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: context.rf(11.5).clamp(10.5, 12.5).toDouble(),
+            fontSize: ChatMetrics.systemMessageSize,
             fontWeight: FontWeight.w600,
             color: _secondaryText,
             height: 1.4,
@@ -8465,7 +8468,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
+                        fontSize: ChatMetrics.readCountSize,
                         fontWeight: FontWeight.w700,
                         color: _readCountText,
                         height: 1,
@@ -8486,10 +8489,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         style: TextStyle(
           fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: 11,
+          fontSize: ChatMetrics.timeSize,
           fontWeight: FontWeight.w400,
-          color: _tertiaryText,
-          height: isChineseUi(context) ? 1.36 : 15 / 11,
+          color: ChatMetrics.timeColor,
+          height: isChineseUi(context)
+              ? 1.36
+              : ChatMetrics.timeLine / ChatMetrics.timeSize,
         ),
       );
 

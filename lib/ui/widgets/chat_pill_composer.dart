@@ -6,6 +6,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../chat/chat_metrics.dart';
+
 const Color chatComposerBackground = Color(0xFF252629);
 const Color chatComposerAccent = Color(0xFF2C6BC0);
 const Color chatComposerPlaceholder = Color(0xFF8A8D93);
@@ -50,10 +52,11 @@ class ChatPillComposer extends StatelessWidget {
   final String attachLabel;
   final String sendLabel;
 
-  static const double minHeight = 52;
-  static const double radius = 26;
-  static const double button = 40;
-  static const double touch = 44;
+  // 카카오톡 수준의 밀도: 알약 44, 보이는 버튼 36(터치 영역 44 유지).
+  static const double minHeight = ChatMetrics.composerMinHeight;
+  static const double radius = ChatMetrics.composerRadius;
+  static const double button = ChatMetrics.composerButton;
+  static const double touch = ChatMetrics.composerTouch;
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +69,7 @@ class ChatPillComposer extends StatelessWidget {
             key: const ValueKey('chat-composer-send'),
             label: sendLabel,
             icon: Icons.arrow_upward_rounded,
-            iconSize: 20,
+            iconSize: 18,
             filled: true,
             onTap: enabled && canSend ? onSend : null,
           )
@@ -78,14 +81,14 @@ class ChatPillComposer extends StatelessWidget {
                 key: const ValueKey('chat-composer-gallery'),
                 label: galleryLabel,
                 icon: Icons.photo_outlined,
-                iconSize: 24,
+                iconSize: 22,
                 onTap: enabled ? onGallery : null,
               ),
               _CircleButton(
                 key: const ValueKey('chat-composer-attach'),
                 label: attachLabel,
                 icon: attachIcon,
-                iconSize: 24,
+                iconSize: 22,
                 onTap: enabled ? onAttach : null,
               ),
             ],
@@ -96,8 +99,9 @@ class ChatPillComposer extends StatelessWidget {
       child: Container(
         key: const ValueKey('chat-composer-pill'),
         constraints: const BoxConstraints(minHeight: minHeight),
-        // 안쪽 여백 6에서 버튼 터치 상자(44)가 위아래로 2씩 들어가도록 4를 쓴다.
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        // 터치 상자(44)가 알약 높이(44)를 그대로 채우므로 위아래 여백은 0이고,
+        // 좌우 여백 4에서 36짜리 버튼이 가장자리에 4씩 떨어진다.
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
           color: chatComposerBackground,
           borderRadius: BorderRadius.circular(radius),
@@ -110,7 +114,7 @@ class ChatPillComposer extends StatelessWidget {
               key: const ValueKey('chat-composer-camera'),
               label: cameraLabel,
               icon: Icons.photo_camera_rounded,
-              iconSize: 20,
+              iconSize: 18,
               filled: true,
               onTap: enabled ? onCamera : null,
             ),

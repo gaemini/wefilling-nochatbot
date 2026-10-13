@@ -5,6 +5,11 @@ import '../models/app_notification.dart';
 import '../services/user_info_cache_service.dart';
 import '../l10n/app_localizations.dart';
 import '../l10n/ui_locale.dart';
+import '../models/snapshot.dart';
+import '../services/snapshot_service.dart';
+import '../snapshot/snack_feel_icon.dart';
+import '../snapshot/snapshot_storage_image.dart';
+import '../snapshot/snapshot_strings.dart';
 
 class NotificationListItem extends StatelessWidget {
   final AppNotification notification;
@@ -23,6 +28,13 @@ class NotificationListItem extends StatelessWidget {
     this.previewImageFuture,
     this.previewImageUrl,
   });
+
+  /// 스낵 v3: 스낵당 하나로 묶인 익명 필링 알림(보낸 사람 없음).
+  bool get _isAnonymousFeel =>
+      notification.type == 'snapshot_reaction' &&
+      (notification.actorId == null || notification.actorId!.isEmpty);
+
+  bool get _isMutualFeel => notification.type == 'snapshot_mutual_feel';
 
   // actorId로부터 최신 닉네임 가져오기
   String _getLatestActorName(
@@ -59,6 +71,9 @@ class NotificationListItem extends StatelessWidget {
   }
 
   Widget _buildContent(BuildContext context, DMUserInfo? actorInfo) {
+    if (_isAnonymousFeel || _isMutualFeel) {
+      return _buildFeelContent(context, actorInfo);
+    }
     final isUnread = !notification.isRead;
     final theme = Theme.of(context);
 
@@ -214,6 +229,141 @@ class NotificationListItem extends StatelessWidget {
     );
   }
 
+  /// 필링 알림(2줄형): 1줄 14, 2줄 12.
+  Widget _buildFeelContent(BuildContext context, DMUserInfo? actorInfo) {
+    final strings = SnapshotStrings.of(context);
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final primary = dark ? AppColors.darkTextPrimary : const Color(0xFF111827);
+    final secondary =
+        dark ? AppColors.darkTextTertiary : const Color(0xFF5F5F5F);
+    TextStyle style(double size, FontWeight weight, Color color) => TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: size,
+          height: (size == 14 ? 20 : 17) / size,
+          fontWeight: weight,
+          color: color,
+        );
+    final isUnread = !notification.isRead;
+    late final Widget leading;
+    late final InlineSpan first;
+    late final String second;
+    if (_isMutualFeel) {
+      final name = _getLatestActorName(context, actorInfo).trim();
+      final line = strings.mutualFeelWith(name.isEmpty ? '…' : name);
+      final index = name.isEmpty ? -1 : line.indexOf(name);
+      first = index < 0
+          ? TextSpan(text: line, style: style(14, FontWeight.w400, primary))
+          : TextSpan(children: [
+              TextSpan(
+                text: line.substring(0, index),
+                style: style(14, FontWeight.w400, primary),
+              ),
+              TextSpan(
+                text: name,
+                style: style(14, FontWeight.w700, primary),
+              ),
+              TextSpan(
+                text: line.substring(index + name.length),
+                style: style(14, FontWeight.w400, primary),
+              ),
+            ]);
+      second = '${strings.mutualFeelPrompt} · $timeText';
+      leading = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: ClipOval(child: _buildAvatarContent(notification.actorId)),
+          ),
+          Positioned(
+            right: -6,
+            bottom: -6,
+            child: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2C6BC0),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Center(
+                child: SnackFeelIcon(size: 14, filled: true),
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      final raw = notification.data?['feelCount'];
+      final count = raw is num ? raw.toInt().clamp(1, 1 << 30) : 1;
+      first = TextSpan(
+        text: strings.feelNotifTitle,
+        style: style(14, isUnread ? FontWeight.w600 : FontWeight.w500, primary),
+      );
+      second = '${strings.feelNotifCount(count)} · $timeText';
+      leading = Container(
+        width: 40,
+        height: 40,
+        decoration: const BoxDecoration(
+          color: Color(0xFFEEF4FB),
+          shape: BoxShape.circle,
+        ),
+        child: const Center(
+          child: SnackFeelIcon(
+            size: 22,
+            filled: true,
+            color: Color(0xFF2C6BC0),
+          ),
+        ),
+      );
+    }
+    final snapshotId = (notification.data?['snapshotId'] ?? '').toString();
+    return Semantics(
+      button: true,
+      label: '${(first as TextSpan).toPlainText()}, $second',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                leading,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text.rich(
+                        first,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        second,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: style(12, FontWeight.w400, secondary),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_isAnonymousFeel && snapshotId.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  _FeelSnapshotThumbnail(snapshotId: snapshotId),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLeadingAvatar(BuildContext context) {
     // 익명 게시글인지 확인 (data에서 postIsAnonymous 플래그 확인)
     final isAnonymousPost = notification.data?['postIsAnonymous'] == true;
@@ -324,6 +474,61 @@ class NotificationListItem extends StatelessWidget {
         final url = snapshot.data;
         if (url == null || url.trim().isEmpty) return const SizedBox.shrink();
         return _NotificationPreviewImage(url: url);
+      },
+    );
+  }
+}
+
+/// 필링 알림 오른쪽의 스낵 썸네일(36×48). 만료됐거나 읽을 수 없으면 숨긴다.
+class _FeelSnapshotThumbnail extends StatefulWidget {
+  const _FeelSnapshotThumbnail({required this.snapshotId});
+
+  final String snapshotId;
+
+  @override
+  State<_FeelSnapshotThumbnail> createState() => _FeelSnapshotThumbnailState();
+}
+
+class _FeelSnapshotThumbnailState extends State<_FeelSnapshotThumbnail> {
+  static final Map<String, Future<SnapshotItem?>> _cache =
+      <String, Future<SnapshotItem?>>{};
+  late Future<SnapshotItem?> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FeelSnapshotThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snapshotId != widget.snapshotId) _future = _load();
+  }
+
+  Future<SnapshotItem?> _load() => _cache.putIfAbsent(widget.snapshotId, () async {
+        try {
+          return await SnapshotService.instance.getSnapshot(widget.snapshotId);
+        } catch (_) {
+          return null;
+        }
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<SnapshotItem?>(
+      future: _future,
+      builder: (context, result) {
+        final item = result.data;
+        if (item == null) return const SizedBox(width: 36, height: 48);
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 36,
+            height: 48,
+            child: SnapshotStorageImage(snapshot: item, decodeWidth: 120),
+          ),
+        );
       },
     );
   }

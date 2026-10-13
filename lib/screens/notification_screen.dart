@@ -22,6 +22,7 @@ import '../widgets/notification_list_item.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/navigation_service.dart';
 import 'snapshot_comment_letter_screen.dart';
+import '../ui/sheets/mutual_feel_sheet.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/ui_locale.dart';
 
@@ -131,6 +132,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
         break;
       case 'snapshot_reaction':
         await _navigateToSnapshotNotification(notification);
+        break;
+      case 'snapshot_mutual_feel':
+        await showMutualFeelSheetForPair(
+          context,
+          otherUserId: notification.actorId ?? '',
+          otherName: notification.actorName ?? '',
+          pairKey: (notification.data?['pairKey'] ?? '').toString(),
+        );
         break;
       case 'snapshot_feed_comment':
       case 'snapshot_feed_comment_reply':

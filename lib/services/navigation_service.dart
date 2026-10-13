@@ -1,6 +1,7 @@
 // lib/services/navigation_service.dart
 // 글로벌 네비게이션 및 푸시 데이터 기반 딥링크 라우팅
 
+import '../ui/sheets/mutual_feel_sheet.dart';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -246,6 +247,18 @@ class NavigationService {
               return;
             }
             break;
+          }
+        case 'snapshot_mutual_feel':
+          {
+            final otherId = _stringValue(data, 'actorId');
+            if (otherId.isEmpty) break;
+            await showMutualFeelSheetForPair(
+              nav.context,
+              otherUserId: otherId,
+              otherName: _stringValue(data, 'actorName'),
+              pairKey: _stringValue(data, 'pairKey'),
+            );
+            return;
           }
         case 'snapshot_reaction':
           {

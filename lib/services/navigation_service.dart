@@ -52,9 +52,15 @@ class NavigationService {
   static bool _routingReady = false;
   static String? _routingOwner;
 
+  /// 메인 화면으로 이동해도 되는 상태(로그인·가입 완료)인지 알린다.
+  /// 앱 링크처럼 알림이 아닌 진입 경로가 준비 시점을 기다릴 때 쓴다.
+  static final ValueNotifier<bool> routingReadyListenable =
+      ValueNotifier<bool>(false);
+
   static void setRoutingReady(bool ready, String? owner) {
     _routingReady = ready && owner != null;
     _routingOwner = _routingReady ? owner : null;
+    routingReadyListenable.value = _routingReady;
     if (_routingReady) unawaited(flushPendingPushes());
   }
 

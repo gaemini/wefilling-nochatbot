@@ -97,10 +97,9 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="https"
-                    android:host="wefilling.app"
-                    android:pathPrefix="/u/" />
+                <data android:scheme="https" android:pathPrefix="/u/" />
+                <data android:host="flutterproject3-af322.web.app" />
+                <data android:host="wefilling.app" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

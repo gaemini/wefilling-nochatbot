@@ -1,20 +1,18 @@
-# 프로필 링크 웹 파일 (`https://wefilling.app/u/{uid}`)
+# 프로필 링크 웹 파일
 
-도메인 `wefilling.app` 루트에 아래 구조 그대로 배포한다.
+공유 링크: `https://flutterproject3-af322.web.app/u/{uid}` (Firebase Hosting 기본 도메인).
+파일은 `hosting/profile_link/`에 있고, `firebase.json`의 `hosting` 설정으로 배포한다.
 
 ```
-/.well-known/assetlinks.json              # Android App Links (Content-Type: application/json)
-/.well-known/apple-app-site-association   # iOS Universal Links (확장자 없음, application/json)
-/u/index.html                             # 모든 /u/* 요청을 이 파일로 rewrite
+firebase deploy --only hosting --project flutterproject3-af322
 ```
 
-## 배포 전에 채울 값
-- `assetlinks.json` — `REPLACE_WITH_*` 두 개: 릴리스 키스토어 SHA-256, Play 앱 서명 SHA-256
-  (`keytool -list -v -keystore <keystore>` / Play Console → 앱 무결성).
-- `apple-app-site-association` — Team ID `ULTS66B6QD`(프로젝트 설정에서 확인), 번들 `com.wefilling.app`.
-- `u/index.html` — App Store 링크의 `id0000000000`을 실제 앱 ID로 교체.
+## 확인/채울 값
+- `assetlinks.json`: 업로드 키(KEYSTORE_STATUS.md)와 디버그 키 SHA-256이 들어 있다.
+  **Play 앱 서명을 쓰면 Play Console → 앱 무결성의 "앱 서명 키" SHA-256도 추가해야** 스토어 설치본에서 링크가 앱으로 바로 열린다.
+- `apple-app-site-association`: Team ID `ULTS66B6QD`, 번들 `com.wefilling.app`.
+- 도메인을 `wefilling.app`으로 옮기면 같은 폴더를 그 도메인 루트에 배포하고, `lib/services/profile_link.dart`의 `webHost`를 바꾼다(두 도메인 모두 수신은 된다).
 
-## 앱 쪽 설정
-- Android: `AndroidManifest.xml`의 `autoVerify` intent-filter (`https://wefilling.app/u/*`), `wefilling://u/{uid}`.
-- iOS: 각 entitlements의 `applinks:wefilling.app` (Xcode에서 Associated Domains capability 확인).
-- 링크 해석: `lib/services/profile_link.dart`.
+## 앱 쪽
+- Android `autoVerify` intent-filter, iOS `applinks:` entitlement, 수신: `lib/services/profile_link.dart`.
+- 로그인·가입 완료 전에 받은 링크는 보관했다가 메인 화면이 준비되면 연다.

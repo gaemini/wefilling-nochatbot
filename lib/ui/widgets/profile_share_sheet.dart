@@ -19,6 +19,7 @@ Future<void> showProfileShareSheet(
     context: context,
     useSafeArea: true,
     isScrollControlled: true,
+    showDragHandle: false,
     backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -41,6 +42,15 @@ class ProfileShareSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final strings = ProfileShareStrings.of(context);
     final link = ProfileLink.build(uid);
+    // 안드로이드 제스처/3버튼 바가 시트를 가리지 않도록 아래쪽 여백을 직접 더한다.
+    final view = View.of(context);
+    final mq = MediaQuery.of(context);
+    final bottomInset = [
+      mq.padding.bottom,
+      mq.viewPadding.bottom,
+      view.viewPadding.bottom / view.devicePixelRatio,
+      mq.systemGestureInsets.bottom,
+    ].reduce((a, b) => a > b ? a : b);
     TextStyle style(double size, FontWeight weight, Color color) => TextStyle(
           fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
@@ -51,7 +61,7 @@ class ProfileShareSheet extends StatelessWidget {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -13,7 +13,16 @@ import 'navigation_service.dart';
 class ProfileLink {
   const ProfileLink._();
 
-  static const String webHost = 'wefilling.app';
+  /// 공유 링크가 가리키는 도메인(Firebase Hosting 기본 도메인).
+  static const String webHost = 'flutterproject3-af322.web.app';
+
+  /// 링크로 인정하는 도메인. 예전에 만든 링크도 열린다.
+  static const Set<String> _acceptedHosts = {
+    webHost,
+    'flutterproject3-af322.firebaseapp.com',
+    'wefilling.app',
+    'www.wefilling.app',
+  };
 
   /// 공유용 https 링크. 앱이 없으면 웹 안내 페이지가 열린다.
   static String build(String uid) => 'https://$webHost/u/$uid';
@@ -22,7 +31,7 @@ class ProfileLink {
   static String? parseUid(Uri uri) {
     String? raw;
     if (uri.scheme == 'https' || uri.scheme == 'http') {
-      if (uri.host != webHost && uri.host != 'www.$webHost') return null;
+      if (!_acceptedHosts.contains(uri.host)) return null;
       final segments = uri.pathSegments;
       if (segments.length >= 2 && segments[0] == 'u') raw = segments[1];
     } else if (uri.scheme == 'wefilling' && uri.host == 'u') {
@@ -41,20 +50,14 @@ class ProfileLinkService {
   static final ProfileLinkService instance = ProfileLinkService._();
 
   StreamSubscription<Uri>? _subscription;
-  StreamSubscription<User?>? _authSubscription;
   String? _pendingUid;
   bool _started = false;
 
   Future<void> start() async {
     if (_started) return;
     _started = true;
-    // 로그인 전에 받은 링크는 로그인 완료 후 연다.
-    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user != null && _pendingUid != null) {
-        // 첫 화면이 그려진 뒤에 push 한다.
-        WidgetsBinding.instance.addPostFrameCallback((_) => openPending());
-      }
-    });
+    // 로그인·가입 완료 전에 받은 링크는 메인 화면이 준비되면 연다.
+    NavigationService.routingReadyListenable.addListener(_onRoutingReady);
     try {
       final links = AppLinks();
       final initial = await links.getInitialLink();
@@ -78,7 +81,12 @@ class ProfileLinkService {
     if (uid == null) return;
     final me = FirebaseAuth.instance.currentUser;
     final navigator = NavigationService.navigatorKey.currentState;
-    if (me == null || navigator == null) return;
+    // 로그인·가입 완료 전에는 보관만 한다(로그인 화면 위에 프로필을 올리지 않는다).
+    if (me == null ||
+        navigator == null ||
+        !NavigationService.routingReadyListenable.value) {
+      return;
+    }
     _pendingUid = null;
     if (me.uid == uid) return;
     navigator.push<void>(
@@ -91,11 +99,18 @@ class ProfileLinkService {
     );
   }
 
+  void _onRoutingReady() {
+    if (_pendingUid == null || !NavigationService.routingReadyListenable.value) {
+      return;
+    }
+    // 홈 화면이 먼저 그려진 뒤에 프로필을 올린다.
+    WidgetsBinding.instance.addPostFrameCallback((_) => openPending());
+  }
+
   void dispose() {
+    NavigationService.routingReadyListenable.removeListener(_onRoutingReady);
     _subscription?.cancel();
     _subscription = null;
-    _authSubscription?.cancel();
-    _authSubscription = null;
     _started = false;
   }
 }

@@ -13,6 +13,7 @@ import '../ui/widgets/user_avatar.dart';
 import '../ui/widgets/motion_press.dart';
 import '../utils/logger.dart';
 import 'snapshot_author_profile_image.dart';
+import 'snapshot_seen_store.dart';
 import 'snapshot_storage_image.dart';
 import 'snapshot_strings.dart';
 import '../l10n/ui_locale.dart';
@@ -131,6 +132,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _stream = _service.watchVisibleSnapshots();
+    unawaited(SnapshotSeenStore.instance.ensureLoaded());
   }
 
   @override
@@ -539,7 +541,29 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
 
         return ColoredBox(
           color: _snackTrayBackground,
-          child: StreamBuilder<List<SnapshotItem>>(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(horizontal, 8, horizontal, 0),
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: Text(
+                    strings.disappearsIn24h,
+                    key: const ValueKey('snack_tray_lifetime_note'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 12,
+                      color: const Color(0xFF707070),
+                    ),
+                  ),
+                ),
+              ),
+              StreamBuilder<List<SnapshotItem>>(
             stream: _stream,
             builder: (context, snapshot) {
               final items = snapshot.data ?? const <SnapshotItem>[];
@@ -677,12 +701,59 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                 ),
               );
             },
+              ),
+            ],
           ),
         );
       },
     );
   }
 }
+
+/// 남은 시간 링: 채워진 비율 = 남은 시간 / 24시간. 본 스낵은 전체 회색.
+class _SnackRemainingRing extends CustomPainter {
+  const _SnackRemainingRing({required this.fraction, required this.seen});
+
+  final double fraction;
+  final bool seen;
+
+  static const double stroke = 3;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final arcRect = rect.deflate(stroke / 2);
+    final track = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..color = seen ? const Color(0xFFD4D4D4) : const Color(0xFFD6E4F5);
+    canvas.drawArc(arcRect, 0, math.pi * 2, false, track);
+    if (seen) return;
+    final arc = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = stroke
+      ..color = const Color(0xFF2C6BC0);
+    canvas.drawArc(
+      arcRect,
+      -math.pi / 2,
+      math.pi * 2 * fraction.clamp(0.02, 1.0),
+      false,
+      arc,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SnackRemainingRing old) =>
+      old.fraction != fraction || old.seen != seen;
+}
+
+/// 남은 비율(0~1). 24시간을 기준으로 한다.
+@visibleForTesting
+double snackRemainingFraction(Duration remaining) =>
+    (remaining.inSeconds / const Duration(hours: 24).inSeconds)
+        .clamp(0.0, 1.0)
+        .toDouble();
 
 class _SnapshotTile extends StatelessWidget {
   const _SnapshotTile({
@@ -757,19 +828,39 @@ class _SnapshotTile extends StatelessWidget {
             Positioned(
               top: 8,
               left: 8,
-              child: Container(
-                width: profileSize + 2,
-                height: profileSize + 2,
-                padding: const EdgeInsets.all(1),
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                child: _SnackAuthorProfilePreview(
-                  profile: profile,
-                  size: profileSize,
-                  decodeWidth: profileDecodeWidth,
-                ),
+              child: ListenableBuilder(
+                listenable: SnapshotSeenStore.instance,
+                builder: (context, _) {
+                  final seen = SnapshotSeenStore.instance.isSeen(snapshot.id);
+                  final fraction = snackRemainingFraction(
+                    snapshot.remainingAt(SnapshotService.instance.serverNow),
+                  );
+                  final outer = profileSize + 2 + _SnackRemainingRing.stroke * 2;
+                  return CustomPaint(
+                    key: ValueKey<String>('snack-ring-${snapshot.id}'),
+                    painter: _SnackRemainingRing(
+                      fraction: fraction,
+                      seen: seen,
+                    ),
+                    child: Container(
+                      width: outer,
+                      height: outer,
+                      padding: const EdgeInsets.all(_SnackRemainingRing.stroke),
+                      child: Container(
+                        padding: const EdgeInsets.all(1),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: _SnackAuthorProfilePreview(
+                          profile: profile,
+                          size: profileSize,
+                          decodeWidth: profileDecodeWidth,
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           if (!isRestricted && snapshot.isVideo)
@@ -786,12 +877,21 @@ class _SnapshotTile extends StatelessWidget {
             right: 8,
             bottom: 10,
             child: ExcludeSemantics(
-              child: Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.start,
-                style: nameStyle,
+              child: ListenableBuilder(
+                listenable: SnapshotSeenStore.instance,
+                builder: (context, child) => Opacity(
+                  opacity: SnapshotSeenStore.instance.isSeen(snapshot.id)
+                      ? .7
+                      : 1,
+                  child: child,
+                ),
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.start,
+                  style: nameStyle,
+                ),
               ),
             ),
           ),

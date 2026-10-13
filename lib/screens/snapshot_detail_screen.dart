@@ -17,6 +17,7 @@ import '../services/active_content_registry.dart';
 import '../snapshot/snapshot_storage_image.dart';
 import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_author_profile_image.dart';
+import '../snapshot/snapshot_seen_store.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../snapshot/snapshot_viewer_chrome.dart';
 import '../ui/snackbar/app_snackbar.dart';
@@ -303,7 +304,13 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
     if (!mounted || _items.isEmpty) return;
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || uid == _current.authorId) return;
-    unawaited(_service.recordView(_current.id));
+    final viewedId = _current.id;
+    unawaited(
+      _service.recordView(viewedId).then<void>(
+        (_) => SnapshotSeenStore.instance.markSeen(viewedId),
+        onError: (Object _, StackTrace __) {},
+      ),
+    );
   }
 
   /// 스낵 답장. 친구에게는 3~5초 영상/사진을 DM으로 바로 보내고,

@@ -8,7 +8,7 @@ firebase deploy --only hosting --project flutterproject3-af322
 ```
 
 ## 확인/채울 값
-- `assetlinks.json`: 업로드 키(KEYSTORE_STATUS.md)와 디버그 키 SHA-256이 들어 있다.
+- `assetlinks.json`: Play 앱 서명 키, 업로드 키(KEYSTORE_STATUS.md), 디버그 키 SHA-256이 들어 있다.
   **Play 앱 서명을 쓰면 Play Console → 앱 무결성의 "앱 서명 키" SHA-256도 추가해야** 스토어 설치본에서 링크가 앱으로 바로 열린다.
 - `apple-app-site-association`: Team ID `ULTS66B6QD`, 번들 `com.wefilling.app`.
 - 도메인을 `wefilling.app`으로 옮기면 같은 폴더를 그 도메인 루트에 배포하고, `lib/services/profile_link.dart`의 `webHost`를 바꾼다(두 도메인 모두 수신은 된다).

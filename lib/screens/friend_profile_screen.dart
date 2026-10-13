@@ -976,6 +976,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   final Map<String, bool> _togetherLoading = <String, bool>{};
   final Map<String, String> _togetherRoomIds = <String, String>{};
 
+  /// 제안 요청·대화방 이동이 진행 중인지(다른 칩 연타로 방이 겹쳐 열리지 않게).
+  bool _togetherBusy = false;
+
   Future<void> _proposeTogether(String activityId,
       {required bool allowed}) async {
     final strings = TogetherStrings.of(context);
@@ -985,7 +988,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       );
       return;
     }
-    if (_togetherLoading[activityId] == true) return;
+    if (_togetherBusy || _togetherLoading[activityId] == true) return;
+    _togetherBusy = true;
     final done = _togetherRoomIds[activityId];
     setState(() => _togetherLoading[activityId] = true);
     try {
@@ -1024,6 +1028,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(strings.failed)),
       );
+    } finally {
+      _togetherBusy = false;
     }
   }
 
@@ -1710,15 +1716,18 @@ class _TogetherChip extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: foreground,
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: foreground,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),

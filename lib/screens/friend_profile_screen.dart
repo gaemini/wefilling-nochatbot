@@ -10,7 +10,6 @@ import '../services/dm_service.dart';
 import '../services/relationship_service.dart';
 import '../models/review_post.dart';
 import '../models/relationship_status.dart';
-import '../models/user_profile.dart';
 import '../constants/app_constants.dart';
 import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
 import '../l10n/app_localizations.dart';
@@ -1403,29 +1402,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     );
   }
 
-  Widget _buildReviewPlaceholder(ReviewPost review) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.rate_review, size: 28, color: Colors.grey[400]), // 24 → 28
-          const SizedBox(height: 6), // 4 → 6
-          Text(
-            review.meetupTitle,
-            style: TextStyle(
-              fontSize: 12, // 10 → 12
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500, // 굵기 추가
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
 
   /// 프로필 이미지 확대 뷰어 열기
   void _openProfileImageViewer(String imageUrl) {

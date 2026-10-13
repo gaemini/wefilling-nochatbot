@@ -7690,7 +7690,28 @@ function buildLocalizedNotificationText(params: {
         ? { title: '포스트에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 포스트를 좋아해요.` }
         : { title: 'New like', body: `${liker} liked your post.` };
     }
+    case 'snapshot_mutual_feel': {
+      const other = safeStringLoose(actorName ?? data?.actorName, name);
+      return lang === 'ko'
+        ? {
+          title: '서로 필링했어요',
+          body: `${other}님과 서로 필링했어요. 먼저 인사해 볼까요?`,
+        }
+        : {
+          title: 'You felt each other',
+          body: `You and ${other} felt each other. Say hi first?`,
+        };
+    }
     case 'snapshot_reaction': {
+      if (data?.anonymous === true) {
+        const feelCount = Math.max(1, Number(data?.feelCount ?? 1) || 1);
+        return lang === 'ko'
+          ? {title: '누군가 내 스낵에 필링했어요', body: `필링 ${feelCount}개`}
+          : {
+            title: 'Someone felt your Snack',
+            body: `${feelCount} ${feelCount === 1 ? 'feel' : 'feels'}`,
+          };
+      }
       const reaction = safeStringLoose(data?.reaction, '❤️');
       if (reaction === '👏') {
         return lang === 'ko'
@@ -8194,6 +8215,19 @@ async function isVerifiedSnapshotReactionRecipient(
   const snapshotId = safeStringLoose(notification.snapshotId ?? nested.snapshotId);
   const recipientId = normalizeUidLoose(notification.userId);
   const actorId = normalizeUidLoose(notification.actorId ?? nested.actorId);
+  if (!actorId && snapshotId && recipientId &&
+      notificationId === `snapshot_feel_${snapshotId}`) {
+    // 스낵당 하나로 묶인 익명 필링 알림: 수신자가 스낵 작성자인지만 확인한다.
+    const grouped = await db.collection('snapshots').doc(snapshotId).get();
+    if (!grouped.exists || safeStringLoose(grouped.get('status')) !== 'active') {
+      return false;
+    }
+    const groupedExpiresAt = firestoreTimeToMillis(grouped.get('expiresAt'));
+    if (groupedExpiresAt == null || groupedExpiresAt <= Date.now()) return false;
+    return normalizeUidLoose(
+      grouped.get('ownerId') ?? grouped.get('authorId'),
+    ) === recipientId;
+  }
   if (!snapshotId || !recipientId || !actorId || recipientId === actorId) {
     return false;
   }

@@ -34,6 +34,13 @@ const ALLOWED_REACTIONS = new Set(['❤️']);
 // 기존 스낵은 현재 동작(댓글·레터 허용)을 유지하도록 replies로 해석한다.
 const ALLOWED_RESPONSE_MODES = new Set(['view_only', 'reactions', 'replies']);
 const DEFAULT_RESPONSE_MODE = 'replies';
+// 필링(스낵 반응)의 관계 기록. 서로 7일 안에 필링하면 '서로 필링'이 열린다.
+const FEEL_EDGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MUTUAL_FEEL_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
+const FEEL_DAILY_LIMIT = 30;
+const FEEL_EDGE_COLLECTION = 'snapshot_feel_edges';
+const FEEL_DAILY_COLLECTION = 'snapshot_feel_daily';
+const MUTUAL_FEEL_COLLECTION = 'snapshot_mutual_feels';
 
 type SnapshotVisibility = 'public' | 'friends' | 'category';
 type SnapshotMediaType = 'photo' | 'video';
@@ -118,7 +125,8 @@ export function validatedSnapshotVideoInfo(info: Mp4ReadyInfo): {
   };
 }
 
-function snapshotReactionCopy(
+/** 이전 형식(보낸 사람 이름 포함) 알림 문구. 새 알림은 쓰지 않는다. */
+export function snapshotReactionCopy(
   reaction: string,
   actorName: string,
   isKorean: boolean,
@@ -157,6 +165,43 @@ function snapshotReactionCopy(
     title: 'Someone liked your Snack',
     message: `${actorName} liked your Snack.`,
   };
+}
+
+/** 스낵당 하나로 묶이는 필링 알림. 보낸 사람(actorId)은 담지 않는다. */
+export function snapshotFeelCopy(
+  feelCount: number,
+  isKorean: boolean,
+): {title: string; message: string} {
+  const n = Math.max(1, Math.floor(feelCount));
+  return isKorean ?
+    {title: '누군가 내 스낵에 필링했어요', message: `필링 ${n}개`} :
+    {title: 'Someone felt your Snack', message: `${n} ${n === 1 ? 'feel' : 'feels'}`};
+}
+
+export function mutualFeelCopy(
+  otherName: string,
+  isKorean: boolean,
+): {title: string; message: string} {
+  return isKorean ?
+    {
+      title: '서로 필링했어요',
+      message: `${otherName}님과 서로 필링했어요. 먼저 인사해 볼까요?`,
+    } :
+    {
+      title: 'You felt each other',
+      message: `You and ${otherName} felt each other. Say hi first?`,
+    };
+}
+
+/** 두 uid를 정렬해 `_`로 잇는다. */
+export function mutualFeelPairKey(a: string, b: string): string {
+  return a < b ? `${a}_${b}` : `${b}_${a}`;
+}
+
+/** KST 기준 yyyymmdd. */
+export function kstDayKey(nowMs: number): string {
+  return new Date(nowMs + 9 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10).replace(/-/g, '');
 }
 
 function prefersKoreanNotification(data: FirebaseFirestore.DocumentData): boolean {
@@ -1138,6 +1183,9 @@ export const getSnapshotViewers = callables().https.onCall(async (raw, context) 
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
+  // 새 클라이언트는 includeReaction:false를 보낸다. 필드가 없으면(이전 버전)
+  // 기존 응답 형태를 그대로 돌려준다.
+  const includeReaction = data.includeReaction !== false;
   const snapshotRef = db().collection(COL.snapshots).doc(snapshotId);
   const snapshot = await snapshotRef.get();
   if (!snapshot.exists) {
@@ -1187,7 +1235,7 @@ export const getSnapshotViewers = callables().https.onCall(async (raw, context) 
         reaction.photoVersion ?? 0) || 0),
       nationality: text(view.nationality ?? reaction.nationality),
       university: text(view.university ?? reaction.university),
-      reaction: text(reaction.reaction),
+      reaction: includeReaction ? text(reaction.reaction) : '',
       viewedAtMillis: timestampMillis(activityAt),
     };
   }).sort((a, b) => b.viewedAtMillis - a.viewedAtMillis);
@@ -1261,20 +1309,28 @@ export const toggleSnapshotReaction = callables().https.onCall(async (raw, conte
   ]);
   const actorData = actorDocument.data() ?? {};
   const actorName = text(actorData.nickname ?? actorData.name) || 'User';
-  const copy = snapshotReactionCopy(
-    reaction,
-    actorName,
-    prefersKoreanNotification(ownerDocument.data() ?? {}),
-  );
   const notifyOwner = ownerId !== uid && snapshotNotificationSettingAllows(
     ownerSettingsDocument,
     'new_like',
   );
+  const selfReaction = ownerId === uid;
   const reactionRef = ref.collection('reactions').doc(uid);
-  const notificationRef = db().collection(COL.notifications)
-    .doc(`snapshot_reaction_${snapshotId}_${uid}`);
+  // 스낵당 하나로 묶는 필링 알림. 보낸 사람이 드러나지 않는다.
+  const feelNotificationRef = db().collection(COL.notifications)
+    .doc(`snapshot_feel_${snapshotId}`);
+  const pairKey = mutualFeelPairKey(uid, ownerId);
+  const edgeRef = db().collection(FEEL_EDGE_COLLECTION).doc(`${uid}_${ownerId}`);
+  const reverseEdgeRef = db().collection(FEEL_EDGE_COLLECTION)
+    .doc(`${ownerId}_${uid}`);
+  const pairRef = db().collection(MUTUAL_FEEL_COLLECTION).doc(pairKey);
+  const dailyRef = db().collection(FEEL_DAILY_COLLECTION)
+    .doc(`${uid}_${kstDayKey(Date.now())}`);
+  const actorIsKorean = prefersKoreanNotification(actorData);
+  const ownerIsKorean = prefersKoreanNotification(ownerDocument.data() ?? {});
+  const ownerData = ownerDocument.data() ?? {};
   const result = await db().runTransaction(async (transaction) => {
     const transactionNow = admin.firestore.Timestamp.now();
+    const nowMs = transactionNow.toMillis();
     const [snapshot, previous] = await Promise.all([
       transaction.get(ref),
       transaction.get(reactionRef),
@@ -1302,6 +1358,15 @@ export const toggleSnapshotReaction = callables().https.onCall(async (raw, conte
         reaction: text(previous.get('reaction')),
       };
     }
+    // 트랜잭션은 모든 읽기를 쓰기보다 먼저 해야 한다.
+    const [feelNotification, reverseEdge, pair, daily] = selfReaction ?
+      [null, null, null, null] :
+      await Promise.all([
+        transaction.get(feelNotificationRef),
+        transaction.get(reverseEdgeRef),
+        transaction.get(pairRef),
+        transaction.get(dailyRef),
+      ]);
     const countsRaw = snapshotData.reactionCounts;
     const counts: Record<string, number> = {};
     if (countsRaw && typeof countsRaw === 'object') {
@@ -1325,28 +1390,120 @@ export const toggleSnapshotReaction = callables().https.onCall(async (raw, conte
       reactionCounts: counts,
       updatedAt: transactionNow,
     });
+    if (selfReaction) return {created: true, reaction};
+
     // 반응과 알림을 한 트랜잭션으로 저장해 반응만 남거나
     // 재시도로 푸시가 중복 생성되는 상태를 방지한다.
+    // 새 형식 알림은 스낵당 하나이며 처음에만 생성(onCreate 푸시)하고, 이후에는
+    // 개수만 올린다. actorId를 담지 않아 작성자는 보낸 사람을 알 수 없다.
     if (notifyOwner) {
-      transaction.set(notificationRef, {
-        userId: ownerId,
-        type: 'snapshot_reaction',
-        title: copy.title,
-        message: copy.message,
-        snapshotId,
-        reaction,
-        actorId: uid,
-        actorName,
-        isRead: false,
-        createdAt: transactionNow,
-        expiresAt: snapshotData.expiresAt,
-        data: {
+      const feelCount = counts[reaction];
+      const feelCopy = snapshotFeelCopy(feelCount, ownerIsKorean);
+      if (feelNotification != null && feelNotification.exists) {
+        transaction.update(feelNotificationRef, {
+          feelCount,
+          title: feelCopy.title,
+          message: feelCopy.message,
+          updatedAt: transactionNow,
+          'data.feelCount': feelCount,
+        });
+      } else {
+        transaction.set(feelNotificationRef, {
+          userId: ownerId,
+          type: 'snapshot_reaction',
+          title: feelCopy.title,
+          message: feelCopy.message,
           snapshotId,
           reaction,
-          actorId: uid,
-          actorName,
-        },
+          feelCount,
+          isRead: false,
+          createdAt: transactionNow,
+          expiresAt: snapshotData.expiresAt,
+          data: {snapshotId, reaction, feelCount, anonymous: true},
+        });
+      }
+    }
+
+    // 하루 상한을 넘으면 반응은 저장하되 관계 기록과 판정은 건너뛴다.
+    const dailyCount = Math.max(0, Number(daily?.get('count') ?? 0) || 0) + 1;
+    transaction.set(dailyRef, {
+      userId: uid,
+      count: dailyCount,
+      updatedAt: transactionNow,
+      expiresAt: admin.firestore.Timestamp.fromMillis(nowMs + 2 * 24 * 60 * 60 * 1000),
+    }, {merge: true});
+    if (dailyCount > FEEL_DAILY_LIMIT) {
+      return {created: true, reaction};
+    }
+    transaction.set(edgeRef, {
+      fromUid: uid,
+      toUid: ownerId,
+      lastSnapshotId: snapshotId,
+      lastAt: transactionNow,
+      expiresAt: admin.firestore.Timestamp.fromMillis(nowMs + FEEL_EDGE_TTL_MS),
+    });
+
+    // 서로 필링 판정: 역방향 기록이 7일 안이고, 같은 쌍의 이전 서로 필링이
+    // 30일 안이 아닐 때만 새로 연다.
+    const reverseAtMs = timestampMillis(reverseEdge?.get('lastAt'));
+    const reverseValid = reverseEdge != null && reverseEdge.exists &&
+      reverseAtMs >= nowMs - FEEL_EDGE_TTL_MS;
+    const pairCreatedMs = timestampMillis(pair?.get('createdAt'));
+    const pairCooling = pair != null && pair.exists &&
+      pairCreatedMs > nowMs - MUTUAL_FEEL_COOLDOWN_MS;
+    if (reverseValid && !pairCooling) {
+      const mySnapshotId = text(reverseEdge?.get('lastSnapshotId'));
+      transaction.set(pairRef, {
+        uids: [uid, ownerId].sort(),
+        createdAt: transactionNow,
+        snapshotIds: {[uid]: mySnapshotId, [ownerId]: snapshotId},
       });
+      const expiresAt = admin.firestore.Timestamp.fromMillis(
+        nowMs + MUTUAL_FEEL_COOLDOWN_MS,
+      );
+      const members = [
+        {
+          recipient: uid,
+          other: ownerId,
+          otherName: text(ownerData.nickname ?? ownerData.name) || 'User',
+          otherPhoto: text(ownerData.photoURL ?? ownerData.photoUrl),
+          korean: actorIsKorean,
+        },
+        {
+          recipient: ownerId,
+          other: uid,
+          otherName: actorName,
+          otherPhoto: text(actorData.photoURL ?? actorData.photoUrl),
+          korean: ownerIsKorean,
+        },
+      ];
+      for (const member of members) {
+        const mutualCopy = mutualFeelCopy(member.otherName, member.korean);
+        transaction.set(
+          db().collection(COL.notifications)
+            .doc(`snapshot_mutual_feel_${pairKey}_${member.recipient}`),
+          {
+            userId: member.recipient,
+            type: 'snapshot_mutual_feel',
+            title: mutualCopy.title,
+            message: mutualCopy.message,
+            actorId: member.other,
+            actorName: member.otherName,
+            actorPhotoUrl: member.otherPhoto,
+            pairKey,
+            snapshotIds: {[uid]: mySnapshotId, [ownerId]: snapshotId},
+            isRead: false,
+            createdAt: transactionNow,
+            expiresAt,
+            data: {
+              pairKey,
+              actorId: member.other,
+              actorName: member.otherName,
+              snapshotIds: {[uid]: mySnapshotId, [ownerId]: snapshotId},
+            },
+          },
+        );
+      }
     }
     return {created: true, reaction};
   });
@@ -1355,6 +1512,76 @@ export const toggleSnapshotReaction = callables().https.onCall(async (raw, conte
     created: result.created,
     reaction: result.reaction,
   };
+});
+
+/**
+ * 내 서로 필링 목록(최근 30일). `snapshotId`가 있으면 그 스낵이 관련된
+ * 항목만 돌려준다. 서버 전용 컬렉션을 읽어 상대 요약과 두 스낵 썸네일 경로를 준다.
+ */
+export const getMyMutualFeels = callables().https.onCall(async (raw, context) => {
+  const uid = requireUid(context);
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const filterSnapshotId = text(data.snapshotId);
+  const sinceMs = Date.now() - MUTUAL_FEEL_COOLDOWN_MS;
+  const pairs = await db().collection(MUTUAL_FEEL_COLLECTION)
+    .where('uids', 'array-contains', uid)
+    .limit(100)
+    .get();
+  const recent = pairs.docs
+    .map((doc) => ({doc, createdMs: timestampMillis(doc.get('createdAt'))}))
+    .filter((item) => item.createdMs >= sinceMs)
+    .sort((a, b) => b.createdMs - a.createdMs)
+    .slice(0, 30);
+  const mutuals: Array<Record<string, unknown>> = [];
+  for (const {doc, createdMs} of recent) {
+    const uids = Array.isArray(doc.get('uids')) ? doc.get('uids') as unknown[] : [];
+    const other = uids.map(text).find((value) => value && value !== uid);
+    if (!other) continue;
+    const ids = (doc.get('snapshotIds') ?? {}) as Record<string, unknown>;
+    const mySnapshotId = text(ids[uid]);
+    const theirSnapshotId = text(ids[other]);
+    if (filterSnapshotId &&
+        filterSnapshotId !== mySnapshotId && filterSnapshotId !== theirSnapshotId) {
+      continue;
+    }
+    if (await isBlocked(uid, other)) continue;
+    const [otherUser, mine, theirs] = await Promise.all([
+      db().collection(COL.users).doc(other).get(),
+      mySnapshotId ?
+        db().collection(COL.snapshots).doc(mySnapshotId).get() : null,
+      theirSnapshotId ?
+        db().collection(COL.snapshots).doc(theirSnapshotId).get() : null,
+    ]);
+    const otherData = otherUser.data() ?? {};
+    if (otherUser.exists && !isActiveUserData(otherData)) continue;
+    const summary = (item: FirebaseFirestore.DocumentSnapshot | null, id: string) => {
+      const itemData = item?.exists ? item.data() ?? {} : null;
+      const expiresMs = itemData ? timestampMillis(itemData.expiresAt) : 0;
+      const expired = !itemData || expiresMs <= Date.now() ||
+        text(itemData.status) !== 'active';
+      const isVideo = itemData != null && text(itemData.mediaType) === 'video';
+      return {
+        snapshotId: id,
+        expired,
+        mediaType: itemData ? text(itemData.mediaType) || 'photo' : '',
+        imageStoragePath: itemData && !expired ?
+          text(isVideo ? itemData.thumbnailStoragePath : itemData.storagePath) : '',
+        storageBucket: itemData ? text(itemData.storageBucket) : '',
+        expiresAtMillis: expiresMs,
+      };
+    };
+    mutuals.push({
+      pairKey: doc.id,
+      otherUserId: other,
+      otherName: text(otherData.nickname ?? otherData.name) || 'User',
+      otherPhotoUrl: text(otherData.photoURL ?? otherData.photoUrl),
+      otherPhotoVersion: Math.max(0, Number(otherData.photoVersion ?? 0) || 0),
+      createdAtMillis: createdMs,
+      mine: summary(mine, mySnapshotId),
+      theirs: summary(theirs, theirSnapshotId),
+    });
+  }
+  return {success: true, mutuals};
 });
 
 export const sendSnapshotComment = callables().https.onCall(async (raw, context) => {

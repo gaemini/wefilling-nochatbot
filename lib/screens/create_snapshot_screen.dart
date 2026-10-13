@@ -18,21 +18,17 @@ import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../models/friend_category.dart';
 import '../models/snapshot.dart';
-import '../models/user_profile.dart';
-import '../repositories/users_repository.dart';
 import '../services/friend_category_service.dart';
 import '../services/snapshot_archive_service.dart';
 import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_storage_video.dart';
+import '../snapshot/snapshot_share_view.dart';
 import '../snapshot/snapshot_strings.dart';
-import '../l10n/relationship_strings.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/motion_press.dart';
-import '../ui/widgets/group_audience_preview.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
-import '../ui/widgets/motion_state_icon.dart';
 
 // Short AVC/AAC clips can be uploaded as muxed. Keep the existing encoder for
 // HEVC, large clips, and other formats, but run it only after Publish is tapped.
@@ -105,7 +101,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   final GlobalKey _compositionKey = GlobalKey();
   final SnapshotService _service = SnapshotService.instance;
   final FriendCategoryService _friendCategoryService = FriendCategoryService();
-  final UsersRepository _usersRepository = UsersRepository();
 
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
 
@@ -138,10 +133,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   SnapshotResponseMode _responseMode = SnapshotResponseMode.replies;
   List<FriendCategory> _friendCategories = const <FriendCategory>[];
   List<String> _selectedCategoryIds = const <String>[];
-  List<UserProfile> _selectedAudienceUsers = const <UserProfile>[];
-  bool _isLoadingAudienceUsers = false;
-  int _audienceLoadSeq = 0;
-  bool _showCategoryRequired = false;
   bool _loadingPhoto = false;
   bool _composing = false;
   bool _uploading = false;
@@ -178,7 +169,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             .where(validIds.contains)
             .toList(growable: false);
       });
-      unawaited(_refreshSelectedAudienceUsers());
     });
     unawaited(_loadRecentPhotos());
   }
@@ -217,53 +207,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       // Keep the current gallery state. The visible retry action still lets
       // the user request access again if this platform check was interrupted.
     }
-  }
-
-  Set<String> _selectedAudienceIds() {
-    final selectedIds = _selectedCategoryIds.toSet();
-    final audienceIds = <String>{};
-    for (final category in _friendCategories) {
-      if (selectedIds.contains(category.id)) {
-        audienceIds.addAll(category.friendIds);
-      }
-    }
-    return audienceIds;
-  }
-
-  List<UserProfile> _membersForCategory(FriendCategory category) {
-    final memberIds = category.friendIds.toSet();
-    return _selectedAudienceUsers
-        .where((user) => memberIds.contains(user.uid))
-        .toList(growable: false);
-  }
-
-  Future<void> _refreshSelectedAudienceUsers() async {
-    final currentSeq = ++_audienceLoadSeq;
-    final audienceIds = _selectedAudienceIds().toList(growable: false);
-
-    if (audienceIds.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _selectedAudienceUsers = const <UserProfile>[];
-        _isLoadingAudienceUsers = false;
-      });
-      return;
-    }
-
-    if (!mounted) return;
-    setState(() => _isLoadingAudienceUsers = true);
-
-    final profiles = await _usersRepository.getUserProfilesBatch(audienceIds);
-    profiles.sort(
-      (left, right) =>
-          left.displayNameOrNickname.compareTo(right.displayNameOrNickname),
-    );
-
-    if (!mounted || currentSeq != _audienceLoadSeq) return;
-    setState(() {
-      _selectedAudienceUsers = profiles;
-      _isLoadingAudienceUsers = false;
-    });
   }
 
   Future<void> _loadRecentPhotos({bool requestPermission = true}) async {
@@ -1542,7 +1485,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     if (composedFile == null) return;
     if (_visibility == SnapshotVisibility.category &&
         _selectedCategoryIds.isEmpty) {
-      setState(() => _showCategoryRequired = true);
       AppSnackBar.show(
         context,
         message: strings.groupRequired,
@@ -1761,11 +1703,19 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         final shouldExit = await _confirmExit();
         if (shouldExit && mounted) Navigator.of(this.context).pop();
       },
-      child: Scaffold(
-        backgroundColor: Colors.white,
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: _step == 1
+            ? SystemUiOverlayStyle.light.copyWith(
+                statusBarColor: Colors.transparent,
+                systemNavigationBarColor: Colors.black,
+                systemNavigationBarIconBrightness: Brightness.light,
+              )
+            : SystemUiOverlayStyle.dark,
+        child: Scaffold(
+        backgroundColor: _step == 1 ? Colors.black : Colors.white,
         // Keep the media canvas at a stable size while the keyboard overlays it.
         resizeToAvoidBottomInset: false,
-        appBar: AppBar(
+        appBar: _step == 1 ? null : AppBar(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           elevation: 0,
@@ -1863,7 +1813,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         ),
         body: SafeArea(
           top: false,
-          minimum: const EdgeInsets.only(bottom: 8),
+          bottom: _step != 1,
+          minimum: EdgeInsets.only(bottom: _step == 1 ? 0 : 8),
           child: AnimatedSwitcher(
             // One canvas/player owns its GlobalKey at a time, including a
             // rapid preview -> editor reversal before the fade completes.
@@ -1888,6 +1839,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             ),
             child: _step == 0 ? _buildEditor(strings) : _buildPreview(strings),
           ),
+        ),
         ),
       ),
     );
@@ -2804,249 +2756,54 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
 
   Widget _buildPreview(SnapshotStrings strings) {
     final file = _composedFile;
-    return LayoutBuilder(
-      key: const ValueKey('snapshot_preview'),
-      builder: (context, constraints) {
-        final horizontal = constraints.maxWidth < 360 ? 12.0 : 16.0;
-        return ListView(
-          padding: EdgeInsets.fromLTRB(horizontal, 10, horizontal, 24),
-          children: [
-            if (_uploading) ...[
-              LinearProgressIndicator(
-                value: _uploadProgress > 0 ? _uploadProgress : null,
-                minHeight: 2,
-              ),
-              const SizedBox(height: 10),
-            ],
-            if (file != null)
-              Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: 520,
-                    maxHeight: constraints.maxHeight * .5,
-                  ),
-                  child: AspectRatio(
-                    aspectRatio: _aspectRatio,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: ColoredBox(
-                        color: Colors.white,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            if (_mediaType == SnapshotMediaType.photo)
-                              Image.file(file, fit: BoxFit.contain)
-                            else if (_previewVideoController != null &&
-                                _previewVideoController!.value.isInitialized)
-                              VideoPlayer(_previewVideoController!),
-                            if (_mediaType == SnapshotMediaType.video)
-                              IgnorePointer(
-                                child: SnapshotOverlayLayer(
-                                  overlays: _snapshotOverlays(),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+    Widget media = const ColoredBox(color: Colors.black);
+    if (file != null) {
+      // 합성 프레임 비율을 유지한 채 cover로 채운다. 영상 텍스트도 같은 틀 안에 둔다.
+      media = FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: _aspectRatio * 1000,
+          height: 1000,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_mediaType == SnapshotMediaType.photo)
+                Image.file(file, fit: BoxFit.fill)
+              else if (_previewVideoController != null &&
+                  _previewVideoController!.value.isInitialized)
+                VideoPlayer(_previewVideoController!),
+              if (_mediaType == SnapshotMediaType.video)
+                IgnorePointer(
+                  child: SnapshotOverlayLayer(overlays: _snapshotOverlays()),
                 ),
-              ),
-            SizedBox(height: context.rs(22).clamp(18, 24).toDouble()),
-            Text(
-              strings.visibilityPrompt,
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: context.rf(17).clamp(15.5, 18).toDouble(),
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF111827),
-              ),
-            ),
-            SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
-            _VisibilityRow(
-              icon: Icons.public_outlined,
-              title: strings.public,
-              description: strings.publicDescription,
-              selected: _visibility == SnapshotVisibility.public,
-              onTap: () => setState(() {
-                _visibility = SnapshotVisibility.public;
-                _showCategoryRequired = false;
-              }),
-            ),
-            const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
-            _VisibilityRow(
-              icon: Icons.group_outlined,
-              title: strings.friends,
-              description: strings.friendsDescription,
-              selected: _visibility == SnapshotVisibility.friends,
-              onTap: () => setState(() {
-                _visibility = SnapshotVisibility.friends;
-                _showCategoryRequired = false;
-              }),
-            ),
-            const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
-            _VisibilityRow(
-              icon: Icons.groups_2_outlined,
-              title: strings.groups,
-              description: strings.groupsDescription,
-              selected: _visibility == SnapshotVisibility.category,
-              onTap: () => setState(
-                () => _visibility = SnapshotVisibility.category,
-              ),
-              child: _visibility == SnapshotVisibility.category
-                  ? _buildGroupSelection(strings)
-                  : null,
-            ),
-            SizedBox(height: context.rs(22).clamp(18, 24).toDouble()),
-            ..._buildResponseModeSection(),
-          ],
-        );
+            ],
+          ),
+        ),
+      );
+    }
+    return SnapshotShareView(
+      key: const ValueKey('snapshot_preview'),
+      media: media,
+      visibility: _visibility,
+      responseMode: _responseMode,
+      categories: _friendCategories,
+      selectedCategoryIds: _selectedCategoryIds,
+      uploading: _uploading,
+      uploadProgress: _uploadProgress,
+      onBack: _uploading ? null : () => setState(() => _step = 0),
+      onVisibilityChanged: (value) => setState(() => _visibility = value),
+      onResponseModeChanged: (value) => setState(() => _responseMode = value),
+      onToggleCategory: (id) {
+        final next = List<String>.from(_selectedCategoryIds);
+        if (next.contains(id)) {
+          next.remove(id);
+        } else {
+          next.add(id);
+        }
+        setState(() => _selectedCategoryIds = next);
       },
-    );
-  }
-
-  /// '보는 사람'(공개 범위)과 분리된 '반응 문'. 텍스트와 아이콘을 함께 쓰고,
-  /// 선택을 바꾸면 비친구에게 스낵이 어떻게 보이는지 바로 미리 보인다.
-  List<Widget> _buildResponseModeSection() {
-    final strings = RelationshipStrings.of(context);
-    Widget row({
-      required IconData icon,
-      required String title,
-      required String description,
-      required SnapshotResponseMode mode,
-    }) {
-      return _VisibilityRow(
-        icon: icon,
-        title: title,
-        description: description,
-        selected: _responseMode == mode,
-        onTap: () => setState(() => _responseMode = mode),
-      );
-    }
-
-    return <Widget>[
-      Text(
-        strings.responseModeTitle,
-        style: TextStyle(
-          fontFamily: uiFontFamily(context, 'Inter'),
-          fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: context.rf(17).clamp(15.5, 18).toDouble(),
-          fontWeight: FontWeight.w800,
-          color: const Color(0xFF111827),
-        ),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        strings.responseModeDescription,
-        style: TextStyle(
-          fontFamily: uiFontFamily(context, 'Inter'),
-          fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
-          fontWeight: FontWeight.w500,
-          color: const Color(0xFF667085),
-        ),
-      ),
-      SizedBox(height: context.rs(12).clamp(10, 14).toDouble()),
-      row(
-        icon: Icons.visibility_outlined,
-        title: strings.viewOnly,
-        description: strings.viewOnlyDescription,
-        mode: SnapshotResponseMode.viewOnly,
-      ),
-      const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
-      row(
-        icon: Icons.waves_outlined,
-        title: strings.reactionsMode,
-        description: strings.reactionsModeDescription,
-        mode: SnapshotResponseMode.reactions,
-      ),
-      const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
-      row(
-        icon: Icons.chat_bubble_outline_rounded,
-        title: strings.repliesMode,
-        description: strings.repliesModeDescription,
-        mode: SnapshotResponseMode.replies,
-      ),
-      SizedBox(height: context.rs(14).clamp(12, 16).toDouble()),
-      _SnackAudiencePreview(
-        visibility: _visibility,
-        responseMode: _responseMode,
-      ),
-    ];
-  }
-
-  Widget _buildGroupSelection(SnapshotStrings strings) {
-    if (_friendCategories.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 4, bottom: 8),
-        child: Text(
-          strings.noGroups,
-          style: TextStyle(
-            fontFamily: uiFontFamily(context, 'Inter'),
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: context.rf(12).clamp(11, 13).toDouble(),
-            fontWeight: FontWeight.w500,
-            color: const Color(0xFF667085),
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          strings.groupsSelected(_selectedCategoryIds.length),
-          style: TextStyle(
-            fontFamily: uiFontFamily(context, 'Inter'),
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: context.rf(12).clamp(11, 13).toDouble(),
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF667085),
-          ),
-        ),
-        const SizedBox(height: 4),
-        for (final category in _friendCategories)
-          _CategoryRow(
-            category: category,
-            selected: _selectedCategoryIds.contains(category.id),
-            child: _selectedCategoryIds.contains(category.id)
-                ? GroupAudiencePreview(
-                    members: _membersForCategory(category),
-                    loading: _isLoadingAudienceUsers &&
-                        category.friendIds.isNotEmpty,
-                  )
-                : null,
-            onTap: () {
-              final next = List<String>.from(_selectedCategoryIds);
-              if (next.contains(category.id)) {
-                next.remove(category.id);
-              } else {
-                next.add(category.id);
-              }
-              setState(() {
-                _selectedCategoryIds = next;
-                if (next.isNotEmpty) _showCategoryRequired = false;
-              });
-              unawaited(_refreshSelectedAudienceUsers());
-            },
-          ),
-        if (_showCategoryRequired && _selectedCategoryIds.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              strings.groupRequired,
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: context.rf(12).clamp(11, 13).toDouble(),
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFFB42318),
-              ),
-            ),
-          ),
-      ],
+      onShare: _upload,
     );
   }
 }
@@ -3421,255 +3178,6 @@ class _CameraButton extends StatelessWidget {
       color: const Color(0xFFF2F4F7),
       borderRadius: BorderRadius.circular(10),
       child: Center(child: button),
-    );
-  }
-}
-
-class _VisibilityRow extends StatelessWidget {
-  const _VisibilityRow({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.selected,
-    required this.onTap,
-    this.child,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-  final bool selected;
-  final VoidCallback onTap;
-  final Widget? child;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 70),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 21, color: const Color(0xFF667085)),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedDefaultTextStyle(
-                        duration: MotionTokens.of(context, MotionTokens.state),
-                        curve: MotionTokens.curve,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 15,
-                          fontWeight:
-                              selected ? FontWeight.w800 : FontWeight.w700,
-                          color: const Color(0xFF111827),
-                        ),
-                        child: Text(title),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: ['NotoSansKR'],
-                          fontSize: 12.5,
-                          height: 1.3,
-                          color: Color(0xFF667085),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                MotionStateIcon(
-                  selected: selected,
-                  inactiveIcon: Icons.radio_button_unchecked_rounded,
-                  activeIcon: Icons.radio_button_checked_rounded,
-                  size: context.ri(23).clamp(22, 25).toDouble(),
-                  color: selected
-                      ? const Color(0xFF344054)
-                      : const Color(0xFFD0D5DD),
-                ),
-              ],
-            ),
-            if (child != null)
-              Padding(
-                padding: EdgeInsets.only(
-                  left: context.rs(35),
-                  top: context.rs(8),
-                ),
-                child: child,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoryRow extends StatelessWidget {
-  const _CategoryRow({
-    required this.category,
-    required this.selected,
-    required this.onTap,
-    this.child,
-  });
-
-  final FriendCategory category;
-  final bool selected;
-  final VoidCallback onTap;
-  final Widget? child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: onTap,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 46),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: AnimatedDefaultTextStyle(
-                      duration: MotionTokens.of(context, MotionTokens.state),
-                      curve: MotionTokens.curve,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                        fontWeight:
-                            selected ? FontWeight.w800 : FontWeight.w600,
-                        color: const Color(0xFF111827),
-                      ),
-                      child: Text(
-                        category.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  MotionStateIcon(
-                    selected: selected,
-                    inactiveIcon: Icons.circle_outlined,
-                    activeIcon: Icons.check_circle_rounded,
-                    size: context.ri(21).clamp(20, 23).toDouble(),
-                    color: selected
-                        ? const Color(0xFF475467)
-                        : const Color(0xFFD0D5DD),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (child != null) child!,
-        ],
-      ),
-    );
-  }
-}
-
-
-/// 공개 범위·반응 문을 바꿀 때 비친구에게 스낵이 어떻게 보이는지 즉시 보여 준다.
-class _SnackAudiencePreview extends StatelessWidget {
-  const _SnackAudiencePreview({
-    required this.visibility,
-    required this.responseMode,
-  });
-
-  final SnapshotVisibility visibility;
-  final SnapshotResponseMode responseMode;
-
-  @override
-  Widget build(BuildContext context) {
-    final strings = RelationshipStrings.of(context);
-    final audience = switch (visibility) {
-      SnapshotVisibility.public => strings.audiencePublic,
-      SnapshotVisibility.friends => strings.audienceFriends,
-      SnapshotVisibility.category => strings.audienceGroups,
-    };
-    final response = switch (responseMode) {
-      SnapshotResponseMode.viewOnly => strings.viewOnly,
-      SnapshotResponseMode.reactions => strings.reactionsMode,
-      SnapshotResponseMode.replies => strings.repliesMode,
-    };
-    final textStyle = TextStyle(
-      fontFamily: uiFontFamily(context, 'Inter'),
-      fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
-      fontWeight: FontWeight.w600,
-      color: const Color(0xFF344054),
-      height: 1.3,
-    );
-    return Semantics(
-      container: true,
-      label: '${strings.previewLabel}. ${strings.audienceLabel}: $audience. '
-          '${strings.responseModeTitle}: $response.',
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFEAECF0)),
-        ),
-        child: Row(
-          children: [
-            ExcludeSemantics(
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE4E7EC),
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: Icon(
-                  switch (responseMode) {
-                    SnapshotResponseMode.viewOnly => Icons.visibility_outlined,
-                    SnapshotResponseMode.reactions => Icons.waves_outlined,
-                    SnapshotResponseMode.replies =>
-                      Icons.chat_bubble_outline_rounded,
-                  },
-                  size: 20,
-                  color: const Color(0xFF475467),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    strings.previewLabel,
-                    style: textStyle.copyWith(
-                      fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
-                      color: const Color(0xFF667085),
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text('${strings.audienceLabel} · $audience', style: textStyle),
-                  Text('${strings.responseModeTitle} · $response',
-                      style: textStyle),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

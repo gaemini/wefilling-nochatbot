@@ -562,24 +562,6 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(horizontal, 8, horizontal, 0),
-                child: Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: Text(
-                    strings.disappearsIn24h,
-                    key: const ValueKey('snack_tray_lifetime_note'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 12,
-                      color: const Color(0xFF707070),
-                    ),
-                  ),
-                ),
-              ),
               StreamBuilder<List<SnapshotItem>>(
             stream: _stream,
             builder: (context, snapshot) {

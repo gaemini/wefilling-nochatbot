@@ -1,7 +1,8 @@
 // lib/utils/chat_message_typography.dart
 // 스낵챗·DM 메시지 본문(말풍선, 링크, 답장 인용, 입력창) 글꼴.
 // iOS는 iPhone 메시지 앱과 같은 시스템 글꼴, 그 밖의 플랫폼은 기존 글꼴.
-// 크기는 15/20, 굵기는 스낵챗·DM 공통 w400으로 통일한다(카카오톡 수준 밀도).
+// 크기는 15/20, 굵기는 스낵챗·DM 공통 w500(미디엄)으로 통일한다. 15/20 크기에서 w400은 얇아
+// 읽기 힘들다는 피드백이 있어 한 단계 두껍게 했다.
 // SF Pro 파일은 앱에 넣지 않는다(Apple 라이선스).
 
 import 'package:flutter/material.dart';
@@ -18,7 +19,7 @@ const double chatMessageFontSize = 15;
 const double _lineHeight = 20 / chatMessageFontSize;
 
 /// 스낵챗·DM 메시지 본문 공통 굵기.
-const FontWeight chatMessageFontWeight = FontWeight.w400;
+const FontWeight chatMessageFontWeight = FontWeight.w500;
 
 TextStyle chatMessageTextStyle(
   BuildContext context, {

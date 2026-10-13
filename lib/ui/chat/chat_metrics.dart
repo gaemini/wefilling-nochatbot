@@ -8,10 +8,10 @@ class ChatMetrics {
   const ChatMetrics._();
 
   // ---- 메시지 ----
-  /// 보낸 사람 이름: 12 / 16, w500, #5F5F5F, 말풍선 위 3.
+  /// 보낸 사람 이름: 12 / 16, w600, #5F5F5F, 말풍선 위 3.
   static const double senderNameSize = 12;
   static const double senderNameLine = 16;
-  static const FontWeight senderNameWeight = FontWeight.w500;
+  static const FontWeight senderNameWeight = FontWeight.w600;
   static const Color senderNameColor = Color(0xFF5F5F5F);
   static const double senderNameBottom = 3;
 

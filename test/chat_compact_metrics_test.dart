@@ -60,7 +60,7 @@ class _Bubble extends StatelessWidget {
 
 void main() {
   group('본문 글꼴', () {
-    testWidgets('15 / 20, w400, 중국어는 줄 높이 1.3 이상', (tester) async {
+    testWidgets('15 / 20, w500, 중국어는 줄 높이 1.3 이상', (tester) async {
       late BuildContext ctx;
       await tester.pumpWidget(_host(Builder(builder: (c) {
         ctx = c;
@@ -68,7 +68,7 @@ void main() {
       })));
       final ko = chatMessageTextStyle(ctx);
       expect(ko.fontSize, 15);
-      expect(ko.fontWeight, FontWeight.w400);
+      expect(ko.fontWeight, FontWeight.w500);
       expect(ko.height, closeTo(20 / 15, 0.001));
 
       await tester.pumpWidget(_host(

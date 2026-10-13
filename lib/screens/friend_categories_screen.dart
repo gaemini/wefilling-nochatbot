@@ -5,14 +5,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
-import '../ui/widgets/shape_icon.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/category_shapes_illustration.dart';
 import '../providers/auth_provider.dart';
+import '../providers/relationship_provider.dart';
+import '../models/user_profile.dart';
+import '../l10n/group_ui_strings.dart';
+import '../ui/widgets/group_list_row.dart';
 import 'category_detail_screen.dart';
 import 'create_category_screen.dart';
 import 'create_snack_chat_screen.dart';
@@ -42,7 +44,6 @@ class FriendCategoriesScreen extends StatefulWidget {
 class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     with SingleTickerProviderStateMixin {
   final FriendCategoryService _categoryService = FriendCategoryService();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   late VoidCallback _cleanupCallback;
   AuthProvider? _authProvider;
   static const int _maxCategories = FriendCategoryService.maxCategoriesPerUser;
@@ -53,9 +54,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
   StreamSubscription<List<FriendCategory>>? _categoriesSub;
   List<FriendCategory> _categories = [];
   bool _categoriesLoading = true;
-
-  /// 카테고리 ID → 실제 친구 수 캐시 (세션 내 재사용)
-  final Map<String, int> _friendCountCache = {};
 
   @override
   void initState() {
@@ -72,6 +70,18 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
       if (mounted) setState(() {});
     });
     _subscribeCategories();
+    // 그룹 멤버 표시는 이미 구독 중인 친구 목록만 쓴다(그룹마다 서버 조회 없음).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        unawaited(
+          context
+              .read<RelationshipProvider>()
+              .ensureInitialized()
+              .catchError((Object _) {}),
+        );
+      } catch (_) {}
+    });
 
     // 스트림 정리 콜백 등록
     _cleanupCallback = () {
@@ -125,20 +135,18 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         elevation: 0,
         backgroundColor: Colors.white,
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
+          preferredSize: const Size.fromHeight(43),
           child: MediaQuery.withClampedTextScaling(
-            maxScaleFactor: 1.25,
+            maxScaleFactor: 1.3,
             child: TabBar(
               controller: _tabController,
-              indicator: const UnderlineTabIndicator(
-                borderSide: BorderSide(
-                  color: AppColors.pointColor,
-                  width: 2.5,
-                ),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(2)),
-              ),
-              labelColor: const Color(0xFF111827),
-              unselectedLabelColor: const Color(0xFF9CA3AF),
+              // 선택 밑줄: 2pt, 폭 44, 검정(파란색을 아낀다).
+              indicator: const _FixedWidthUnderline(width: 44, thickness: 2),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: const Color(0xFFEBEBEB),
+              dividerHeight: 1,
+              labelColor: Colors.black,
+              unselectedLabelColor: const Color(0xFF8A8A8A),
               labelStyle: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -153,7 +161,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
               ),
               tabs: [
                 Tab(
-                  height: 46,
+                  height: 42,
                   child: MotionPress(
                     pressedScale: MotionSelectable.segmentScale,
                     child: Semantics(
@@ -166,7 +174,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                   ),
                 ),
                 Tab(
-                  height: 46,
+                  height: 42,
                   child: MotionPress(
                     pressedScale: MotionSelectable.segmentScale,
                     child: Semantics(
@@ -184,7 +192,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         ),
       ),
       body: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.25,
+        maxScaleFactor: 1.3,
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
@@ -231,109 +239,188 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
       return _buildGroupsEmptyState();
     }
 
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final horizontalPadding = _responsiveHorizontalPadding(context);
+    final strings = GroupUiStrings.of(context);
+    final ready = context.select<RelationshipProvider, bool>(
+      (provider) => provider.relationshipStreamsReady,
+    );
+    final profiles = context.select<RelationshipProvider, List<UserProfile>>(
+      (provider) => provider.friends,
+    );
+    final List<GroupMember>? friends = ready
+        ? [
+            for (final profile in profiles)
+              GroupMember(
+                uid: profile.uid,
+                name: profile.displayNameOrNickname,
+                photoUrl: profile.photoURL ?? '',
+              ),
+          ]
+        : null;
+    final ungrouped = ungroupedFriendsOf(_categories, friends);
 
     return SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 16),
         children: [
           Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: horizontalPadding,
-              vertical: 12,
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
             child: Text(
-              (isChineseUi(context) ? '用好友分组设置动态和聚会的可见范围。' : isKo
-                  ? '친구 그룹으로 포스트와 밋업의 공개 범위를 설정하세요.'
-                  : 'Use friend groups to set post and meetup visibility.'),
+              strings.groupsIntro,
+              key: const ValueKey('groups_intro'),
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF6B7280),
+                fontSize: 12,
+                height: 17 / 12,
+                color: const Color(0xFF8A8A8A),
               ),
             ),
           ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 16),
-              itemCount: _categories.length + 1,
-              itemBuilder: (context, index) {
-                return index == _categories.length
-                    ? _buildCreateCategoryRow()
-                    : _buildCategoryCard(_categories[index]);
-              },
+          for (final category in _categories)
+            GroupListRow(
+              key: ValueKey('friend-category-${category.id}'),
+              category: category,
+              members: groupMembersFor(category, friends),
+              onTap: () => _navigateToCategoryDetail(category),
+              // 이름 변경·삭제는 수정 화면에서 하고, 길게 누르면 기존 메뉴를 띄운다.
+              onLongPress: () => _showGroupMenu(category),
             ),
-          ),
+          if (ungrouped != null && ungrouped.isNotEmpty)
+            GroupUngroupedRow(
+              key: const ValueKey('groups_ungrouped_row'),
+              friends: ungrouped,
+              onTap: () => _handleCreateFromUngrouped(ungrouped),
+            ),
+          _buildCreateCategoryRow(strings),
         ],
       ),
     );
   }
 
-  Widget _buildCreateCategoryRow() {
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final title = isChineseUi(context)
-        ? '创建新分组'
-        : isKo
-            ? '새 그룹 만들기'
-            : 'Create a new group';
-    final subtitle = isChineseUi(context)
-        ? '选择好友并为分组命名'
-        : isKo
-            ? '친구를 골라 이름을 붙여요'
-            : 'Choose friends and give it a name';
-    final isCompact = MediaQuery.sizeOf(context).width < 360;
-
-    return MotionPress(
-      pressedScale: .99,
-      child: Material(
-      key: const ValueKey('groups_create_row'),
-      color: BrandColors.surface,
+  Widget _buildCreateCategoryRow(GroupUiStrings strings) {
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
       child: InkWell(
+        key: const ValueKey('groups_create_row'),
         onTap: _handleCreateCategory,
-        child: ListTile(
-          minTileHeight: 76,
-          minLeadingWidth: 40,
-          horizontalTitleGap: isCompact ? 8 : 10,
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: _responsiveHorizontalPadding(context),
-            vertical: 4,
-          ),
-          leading: CustomPaint(
-            painter: _DashedGroupBorderPainter(),
-            child: const SizedBox(
-              width: 40,
-              height: 40,
-              child: Icon(Icons.person_add_outlined, size: 24),
-            ),
-          ),
-          title: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        child: Container(
+          height: 52,
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            strings.newGroup,
             style: TextStyle(
               fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF111827),
-            ),
-          ),
-          subtitle: Text(
-            subtitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 13,
-              color: const Color(0xFF6B7280),
+              fontSize: 14,
+              height: 20 / 14,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF2C6BC0),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// 길게 누르기: 기존 이름 변경 / 삭제 메뉴.
+  Future<void> _showGroupMenu(FriendCategory category) async {
+    final l10n = AppLocalizations.of(context)!;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final entry in <(String, String, Color)>[
+                ('edit', l10n.editAction ?? '', Colors.black),
+                ('delete', l10n.delete, const Color(0xFFC62828)),
+              ])
+                InkWell(
+                  key: ValueKey<String>('group_menu_${entry.$1}'),
+                  onTap: () => Navigator.pop(sheetContext, entry.$1),
+                  child: Container(
+                    height: 56,
+                    alignment: Alignment.centerLeft,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      entry.$2,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(sheetContext, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: entry.$3,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'edit') {
+      _showEditCategoryDialog(category);
+    } else if (action == 'delete') {
+      _showDeleteConfirmDialog(category);
+    }
+  }
+
+  /// 그룹에 없는 친구 줄: 새 그룹 만들기 흐름을 열고, 만든 뒤 이 친구들을
+  /// 목록 위쪽에 둔 채 수정 화면으로 이어 간다(저장된 friendIds는 바꾸지 않는다).
+  Future<void> _handleCreateFromUngrouped(List<GroupMember> friends) async {
+    if (_categories.length >= _maxCategories) {
+      _showCategoryLimitReachedSnackBar();
+      return;
+    }
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(builder: (context) => const CreateCategoryScreen()),
+    );
+    if (!mounted || result == null) return;
+    final newId = await _categoryService.createCategory(
+      name: result['name'] as String,
+      description: '',
+      color: result['color'] as String,
+      iconName: result['iconName'] as String,
+    );
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    if (newId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.categoryCreateFailed)),
+      );
+      return;
+    }
+    final created = FriendCategory(
+      id: newId,
+      name: result['name'] as String,
+      description: '',
+      color: result['color'] as String,
+      iconName: result['iconName'] as String,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      userId: '',
+      friendIds: const <String>[],
+    );
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CategoryDetailScreen(
+          category: created,
+          prioritizedFriendIds:
+              friends.map((friend) => friend.uid).toList(growable: false),
+        ),
       ),
     );
   }
@@ -502,165 +589,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         ],
       ),
     );
-  }
-
-  Widget _buildCategoryCard(FriendCategory category) {
-    // 색상 안전하게 파싱 (null 체크 포함)
-    final color = _parseColor(category.color ??
-        '#${AppColors.pointColor.value.toRadixString(16).substring(2)}');
-    final iconName = _normalizeIconName(category.iconName);
-    final l10n = AppLocalizations.of(context)!;
-    final horizontalPadding = _responsiveHorizontalPadding(context);
-    final isCompact = MediaQuery.sizeOf(context).width < 360;
-
-    return Material(
-      key: ValueKey('friend-category-${category.id}'),
-      color: BrandColors.surface,
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: BrandColors.divider),
-          ),
-        ),
-        child: ListTile(
-        minTileHeight: 68,
-        minLeadingWidth: 40,
-        horizontalTitleGap: isCompact ? 8 : 10,
-        minVerticalPadding: 4,
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: horizontalPadding,
-          vertical: 2,
-        ),
-        leading: SizedBox(
-          width: 40,
-          height: 40,
-          child: Center(
-            child: ShapeIcon(
-              iconName: iconName,
-              color: color,
-              size: isCompact ? 26 : 28,
-            ),
-          ),
-        ),
-        title: Text(
-          category.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontFamily: uiFontFamily(context, 'Inter'),
-            fontFamilyFallback: const ['NotoSansKR'],
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF111827),
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: _FriendCountSubtitle(
-            key: ValueKey('friend-count-${category.id}'),
-            category: category,
-            cache: _friendCountCache,
-            firestore: _firestore,
-          ),
-        ),
-        trailing: PopupMenuButton<String>(
-          tooltip: MaterialLocalizations.of(context).showMenuTooltip,
-          child: const SizedBox(
-            width: 44,
-            height: 44,
-            child: Center(
-              child: Icon(
-                IconStyles.more,
-                color: Color(0xFF6B7280),
-                size: 20,
-              ),
-            ),
-          ),
-          padding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          elevation: 6,
-          color: Colors.white,
-          surfaceTintColor: Colors.white,
-          shadowColor: const Color(0x24000000),
-          offset: const Offset(0, 6),
-          onSelected: (value) {
-            switch (value) {
-              case 'edit':
-                _showEditCategoryDialog(category);
-                break;
-              case 'delete':
-                _showDeleteConfirmDialog(category);
-                break;
-            }
-          },
-          itemBuilder: (context) => [
-            PopupMenuItem(
-              value: 'edit',
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  const Icon(
-                    IconStyles.edit,
-                    size: 19,
-                    color: Color(0xFF6B7280),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    l10n.editAction ?? "",
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const PopupMenuDivider(height: 1),
-            PopupMenuItem(
-              value: 'delete',
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.delete_outline_rounded,
-                    size: 19,
-                    color: BrandColors.error,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    l10n.delete,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: BrandColors.error,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        onTap: () {
-          // 카테고리 상세 화면으로 이동 (친구 목록 표시)
-          _navigateToCategoryDetail(category);
-        },
-        ),
-      ),
-    );
-  }
-
-  double _responsiveHorizontalPadding(BuildContext context) {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    return (screenWidth * 0.05).clamp(16.0, 24.0).toDouble();
   }
 
   void _showCreateCategoryDialog() {
@@ -867,12 +795,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                                 if (!mounted) return;
 
                                 if (success) {
-                                  setState(() {
-                                    _friendCountCache.removeWhere(
-                                      (key, _) =>
-                                          key.startsWith('${category.id}_'),
-                                    );
-                                  });
                                   ScaffoldMessenger.of(this.context)
                                       .showSnackBar(
                                     SnackBar(
@@ -949,151 +871,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
       }
     }
   }
-
-  /// 색상 문자열을 Color 객체로 파싱 (안전한 fallback 포함)
-  Color _parseColor(String hexColor) {
-    // null 또는 빈 문자열 체크
-    if (hexColor.isEmpty) {
-      Logger.error('⚠️ 빈 색상 문자열 감지, 기본 색상 사용');
-      return const Color(0xFF6366F1); // 명시적인 기본 색상
-    }
-
-    // '#' 접두사 확인
-    if (!hexColor.startsWith('#')) {
-      Logger.error('⚠️ 잘못된 색상 포맷: $hexColor (# 없음)');
-      return const Color(0xFF6366F1);
-    }
-
-    // Hex 색상 포맷 검증 (#RRGGBB)
-    final hexPattern = RegExp(r'^#[0-9A-Fa-f]{6}$');
-    if (!hexPattern.hasMatch(hexColor)) {
-      Logger.error('⚠️ 잘못된 Hex 색상 포맷: $hexColor');
-      return const Color(0xFF6366F1);
-    }
-
-    try {
-      final colorValue = int.parse(hexColor.replaceFirst('#', '0xFF'));
-      return Color(colorValue);
-    } catch (e) {
-      Logger.error('❌ 색상 파싱 실패: $hexColor - $e');
-      return const Color(0xFF6366F1); // 안전한 fallback
-    }
-  }
-
-  String _normalizeIconName(String? iconName) {
-    const allowed = {
-      'shape_triangle',
-      'shape_circle',
-      'shape_square',
-      'shape_star',
-    };
-
-    if (iconName == null || iconName.isEmpty) return 'shape_circle';
-    if (allowed.contains(iconName)) return iconName;
-
-    // 더 이상 제공하지 않는 아이콘은 원으로 폴백
-    if (iconName == 'shape_heart' || iconName == 'shape_cross') {
-      return 'shape_circle';
-    }
-
-    // 구버전 아이콘 키 → 새 키로 매핑
-    switch (iconName) {
-      case 'shape_circle_filled':
-      case 'shape_circle_outline':
-        return 'shape_circle';
-      case 'shape_square_filled':
-      case 'shape_square_outline':
-        return 'shape_square';
-      case 'shape_star_filled':
-      case 'shape_star_outline':
-        return 'shape_star';
-      default:
-        return 'shape_circle';
-    }
-  }
-
-  /// 아이콘 이름을 IconData로 파싱 (안전한 fallback 포함)
-  IconData _parseIcon(String iconName) {
-    // 빈 문자열 체크
-    if (iconName.isEmpty) {
-      Logger.error('⚠️ 빈 아이콘 이름 감지, 기본 아이콘 사용');
-      return Icons.group;
-    }
-
-    switch (iconName) {
-      case 'shape_circle':
-        return Icons.circle;
-      case 'shape_square':
-        return Icons.stop;
-      case 'shape_star':
-        return Icons.star;
-      // 하트/십자가는 더 이상 사용하지 않음(기존 데이터는 원으로 폴백)
-      case 'shape_cross':
-        return Icons.circle;
-      case 'shape_circle_filled':
-        return Icons.circle;
-      case 'shape_circle_outline':
-        return Icons.radio_button_unchecked;
-      case 'shape_square_filled':
-        return Icons.stop;
-      case 'shape_square_outline':
-        return Icons.crop_square;
-      case 'shape_triangle':
-        return Icons.navigation;
-      case 'shape_star_filled':
-        return Icons.star;
-      case 'shape_star_outline':
-        return Icons.star_border;
-      // 하트/십자가는 더 이상 사용하지 않음(기존 데이터는 원으로 폴백)
-      case 'shape_heart':
-        return Icons.circle;
-      case 'school':
-        return Icons.school;
-      case 'work':
-        return Icons.work;
-      case 'palette':
-        return Icons.palette;
-      case 'sports':
-        return Icons.sports_soccer;
-      case 'music':
-        return Icons.music_note;
-      case 'book':
-        return Icons.book;
-      case 'home':
-        return Icons.home;
-      case 'group':
-        return Icons.group;
-      default:
-        Logger.error('⚠️ 알 수 없는 아이콘 이름: $iconName, 기본 아이콘 사용');
-        return Icons.group;
-    }
-  }
-}
-
-class _DashedGroupBorderPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-        Rect.fromLTWH(0.5, 0.5, size.width - 1, size.height - 1),
-        const Radius.circular(12),
-      ));
-    final paint = Paint()
-      ..color = const Color(0xFF8A8A8A)
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
-    for (final metric in path.computeMetrics()) {
-      for (var distance = 0.0; distance < metric.length; distance += 7) {
-        canvas.drawPath(
-          metric.extractPath(distance, (distance + 4).clamp(0, metric.length)),
-          paint,
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _GroupFeatureRow extends StatelessWidget {
@@ -1156,112 +933,36 @@ class _GroupFeatureRow extends StatelessWidget {
   }
 }
 
-/// 카테고리 카드의 친구 수 표시 위젯
-///
-/// - 캐시에 있으면 즉시 표시 (Firestore 호출 없음)
-/// - 캐시에 없으면 friendIds.length를 즉시 보여주고 백그라운드에서 실제 수를 확인
-class _FriendCountSubtitle extends StatefulWidget {
-  final FriendCategory category;
-  final Map<String, int> cache;
-  final FirebaseFirestore firestore;
+/// 탭 선택 밑줄: 탭 가운데에 고정 폭으로 그린다.
+class _FixedWidthUnderline extends Decoration {
+  const _FixedWidthUnderline({required this.width, required this.thickness});
 
-  const _FriendCountSubtitle({
-    super.key,
-    required this.category,
-    required this.cache,
-    required this.firestore,
-  });
+  final double width;
+  final double thickness;
 
   @override
-  State<_FriendCountSubtitle> createState() => _FriendCountSubtitleState();
+  BoxPainter createBoxPainter([VoidCallback? onChanged]) =>
+      _FixedWidthUnderlinePainter(width, thickness);
 }
 
-class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
-  late int _count;
+class _FixedWidthUnderlinePainter extends BoxPainter {
+  _FixedWidthUnderlinePainter(this.width, this.thickness);
 
-  /// 카테고리 ID와 실제 구성원 집합을 함께 키로 사용한다. 같은 인원 수라도
-  /// 구성원이 바뀐 경우 이전 그룹의 비동기 결과를 재사용하지 않는다.
-  String get _cacheKey {
-    final ids = widget.category.friendIds.toSet().toList()..sort();
-    return '${widget.category.id}_${Object.hashAll(ids)}';
-  }
+  final double width;
+  final double thickness;
 
   @override
-  void initState() {
-    super.initState();
-    // 캐시에 있으면 즉시 반영, 없으면 리스트 길이로 임시 표시 후 백그라운드 조회
-    _count = widget.cache[_cacheKey] ?? widget.category.friendIds.length;
-    if (!widget.cache.containsKey(_cacheKey)) {
-      _fetchAndCache();
-    }
-  }
-
-  @override
-  void didUpdateWidget(_FriendCountSubtitle oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final oldIds = oldWidget.category.friendIds.toSet().toList()..sort();
-    final newKey = _cacheKey;
-    final oldKey = '${oldWidget.category.id}_${Object.hashAll(oldIds)}';
-    if (oldKey != newKey) {
-      _count = widget.cache[newKey] ?? widget.category.friendIds.length;
-      if (!widget.cache.containsKey(newKey)) {
-        _fetchAndCache();
-      }
-    }
-  }
-
-  Future<void> _fetchAndCache() async {
-    final requestedKey = _cacheKey;
-    final requestedFriendIds =
-        widget.category.friendIds.toSet().toList(growable: false);
-    if (requestedFriendIds.isEmpty) {
-      widget.cache[requestedKey] = 0;
-      if (mounted && _cacheKey == requestedKey) setState(() => _count = 0);
-      return;
-    }
-    try {
-      // 병렬로 existence 체크
-      final results = await Future.wait(
-        requestedFriendIds.map(
-          (id) => widget.firestore.collection('users').doc(id).get(),
-        ),
-      );
-      final actual = results.where((d) => d.exists).length;
-      widget.cache[requestedKey] = actual;
-      if (mounted && _cacheKey == requestedKey) {
-        setState(() => _count = actual);
-      }
-    } catch (_) {
-      // 실패 시 리스트 길이 유지
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final baseStyle =  TextStyle(
-      fontFamily: uiFontFamily(context, 'Inter'),
-      fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: 12,
-      fontWeight: FontWeight.w500,
-      color: Color(0xFF4B5563),
-    );
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '$_count',
-            style: baseStyle.copyWith(
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF111827),
-            ),
-          ),
-          TextSpan(
-            text: (isChineseUi(context) ? '位好友' : isKo ? '명의 친구' : ' friend(s)'),
-            style: baseStyle,
-          ),
-        ],
+  void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
+    final size = configuration.size;
+    if (size == null) return;
+    final left = offset.dx + (size.width - width) / 2;
+    final top = offset.dy + size.height - thickness;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, top, width, thickness),
+        Radius.circular(thickness / 2),
       ),
+      Paint()..color = Colors.black,
     );
   }
 }

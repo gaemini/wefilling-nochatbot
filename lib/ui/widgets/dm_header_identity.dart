@@ -1,6 +1,7 @@
 // lib/ui/widgets/dm_header_identity.dart
 // DM 상단바의 신원 영역(사진 + 이름 + 보조 줄). 세 갈래(로딩·익명 게시글·일반)가 함께 쓴다.
 
+import '../chat/chat_metrics.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/ui_locale.dart';
@@ -74,10 +75,12 @@ class DmHeaderIdentity extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: base.copyWith(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            fontSize: ChatMetrics.titleSize,
+                            fontWeight: ChatMetrics.titleWeight,
                             color: Colors.black,
-                            height: zh ? 1.35 : 21 / 16,
+                            height: zh
+                                ? 1.35
+                                : ChatMetrics.titleLine / ChatMetrics.titleSize,
                           ),
                         ),
                       if (sub.isNotEmpty)
@@ -87,9 +90,12 @@ class DmHeaderIdentity extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: base.copyWith(
-                            fontSize: 12,
+                            fontSize: ChatMetrics.subtitleSize,
                             color: const Color(0xFF707070),
-                            height: zh ? 1.35 : 16 / 12,
+                            height: zh
+                                ? 1.35
+                                : ChatMetrics.subtitleLine /
+                                    ChatMetrics.subtitleSize,
                           ),
                         ),
                     ],

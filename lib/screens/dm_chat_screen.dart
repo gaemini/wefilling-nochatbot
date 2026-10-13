@@ -69,6 +69,7 @@ import '../config/app_backend.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/chat_pill_composer.dart';
 import '../utils/chat_message_typography.dart';
+import '../ui/chat/chat_metrics.dart';
 import '../ui/widgets/snack_chat_translation_split_button.dart';
 import '../ui/widgets/dm_header_identity.dart';
 import '../ui/widgets/snack_chat_translated_text.dart';
@@ -817,15 +818,19 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
-  Widget _buildDmLinkifiedText(String text, TextStyle style) => Linkify(
-        text: text,
-        options: const linkify.LinkifyOptions(humanize: false),
-        linkifiers: const [linkify.UrlLinkifier()],
-        onOpen: (link) => _openDmUrl(link.url),
-        style: style,
-        linkStyle: style.copyWith(
-          decoration: TextDecoration.underline,
-          decorationColor: style.color,
+  Widget _buildDmLinkifiedText(String text, TextStyle style) =>
+      ChatTextScope.body(
+        context,
+        child: Linkify(
+          text: text,
+          options: const linkify.LinkifyOptions(humanize: false),
+          linkifiers: const [linkify.UrlLinkifier()],
+          onOpen: (link) => _openDmUrl(link.url),
+          style: style,
+          linkStyle: style.copyWith(
+            decoration: TextDecoration.underline,
+            decorationColor: style.color,
+          ),
         ),
       );
 
@@ -2449,6 +2454,13 @@ class _DMChatScreenState extends State<DMChatScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 화면 글자는 1.3배까지, 메시지 본문만 1.6배까지(ChatTextScope).
+    return ChatTextScope(
+      child: Builder(builder: _buildDmScreen),
+    );
+  }
+
+  Widget _buildDmScreen(BuildContext context) {
     if (_currentUser == null) {
       return _readAwareRoute(
         child: Scaffold(
@@ -2538,10 +2550,10 @@ class _DMChatScreenState extends State<DMChatScreen>
   }
 
   /// AppBar 빌드
-  static const double _dmToolbarHeight = 56;
+  static const double _dmToolbarHeight = ChatMetrics.headerHeight;
 
   /// 세 갈래(로딩·익명 게시글·일반)가 함께 쓰는 상단바 틀.
-  /// 높이 56, 흰색, 아래 1px #EBEBEB, 그림자 없음.
+  /// 높이 52, 흰색, 아래 1px #EBEBEB, 그림자 없음.
   AppBar _buildDmAppBar({
     required Widget identity,
     required List<Widget> actions,
@@ -3500,8 +3512,8 @@ class _DMChatScreenState extends State<DMChatScreen>
       child: Text(
         dateText,
         style: TextStyle(
-          color: DMColors.textTertiary,
-          fontSize: 12,
+          color: const Color(0xFF8A8A8A),
+          fontSize: ChatMetrics.dateSeparatorSize,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -4187,6 +4199,18 @@ class _DMChatScreenState extends State<DMChatScreen>
                   child: Icon(Icons.broken_image_outlined))),
         );
 
+    final hasRichContent = hasImage ||
+        hasFile ||
+        hasLocalImage ||
+        hasPostContext ||
+        isImageOnly ||
+        isVideoOnly ||
+        isLocalImageOnly;
+    final bubbleMaxWidth = MediaQuery.sizeOf(context).width *
+        (hasRichContent
+            ? ChatMetrics.mediaBubbleWidthFactor
+            : ChatMetrics.textBubbleWidthFactor);
+
     if (isMine) {
       final bubbleChild = isImageOnly
           ? _buildImageBubble(
@@ -4199,13 +4223,13 @@ class _DMChatScreenState extends State<DMChatScreen>
               : isLocalImageOnly
                   ? bareLocalImage()
                   : Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              padding: ChatMetrics.bubblePadding,
               decoration: const BoxDecoration(
                 color: DMColors.myMessageBg,
                 borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(18),
-                  topRight: Radius.circular(18),
-                  bottomLeft: Radius.circular(18),
+                  topLeft: Radius.circular(ChatMetrics.bubbleRadius),
+                  topRight: Radius.circular(ChatMetrics.bubbleRadius),
+                  bottomLeft: Radius.circular(ChatMetrics.bubbleRadius),
                   bottomRight: Radius.circular(4),
                 ),
               ),
@@ -4261,8 +4285,8 @@ class _DMChatScreenState extends State<DMChatScreen>
         padding: EdgeInsets.only(
           left: MediaQuery.sizeOf(context).width < 360 ? 42 : 56,
           right: 0,
-          top: isConsecutive ? 2 : 7,
-          bottom: 2,
+          top: isConsecutive ? ChatMetrics.groupGap : ChatMetrics.senderGap,
+          bottom: 0,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.end,
@@ -4281,8 +4305,9 @@ class _DMChatScreenState extends State<DMChatScreen>
                   child: Text(
                     timeText,
                     style: TextStyle(
-                      color: DMColors.textTertiary,
-                      fontSize: 11,
+                      color: ChatMetrics.timeColor,
+                      fontSize: ChatMetrics.timeSize,
+                      height: ChatMetrics.timeLine / ChatMetrics.timeSize,
                     ),
                   ),
                 ),
@@ -4295,8 +4320,10 @@ class _DMChatScreenState extends State<DMChatScreen>
                     child: Text(
                       statusText,
                       style: TextStyle(
-                        color: DMColors.textTertiary,
-                        fontSize: 11,
+                        color: ChatMetrics.timeColor,
+                        fontSize: ChatMetrics.readCountSize,
+                        height: ChatMetrics.readCountLine /
+                            ChatMetrics.readCountSize,
                       ),
                     ),
                   ),
@@ -4310,6 +4337,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                 pressedScale: .985,
                 child: Container(
                   key: ValueKey('dm_bubble_${message.id}'),
+                  // 텍스트 말풍선은 화면 폭의 0.63, 사진·파일·카드는 0.76까지.
+                  constraints: BoxConstraints(maxWidth: bubbleMaxWidth),
                   child: bubbleChild,
                 ),
               ),
@@ -4331,14 +4360,14 @@ class _DMChatScreenState extends State<DMChatScreen>
           : isVideoOnly
               ? _buildFileBubble(message, isMine: false)
               : Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              padding: ChatMetrics.bubblePadding,
               decoration: const BoxDecoration(
                 color: DMColors.otherMessageBg,
                 borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(18),
-                  topRight: Radius.circular(18),
+                  topLeft: Radius.circular(ChatMetrics.bubbleRadius),
+                  topRight: Radius.circular(ChatMetrics.bubbleRadius),
                   bottomLeft: Radius.circular(4),
-                  bottomRight: Radius.circular(18),
+                  bottomRight: Radius.circular(ChatMetrics.bubbleRadius),
                 ),
               ),
               child: Column(
@@ -4372,8 +4401,8 @@ class _DMChatScreenState extends State<DMChatScreen>
         padding: EdgeInsets.only(
           left: 0,
           right: MediaQuery.sizeOf(context).width < 360 ? 42 : 56,
-          top: isConsecutive ? 2 : 7,
-          bottom: 2,
+          top: isConsecutive ? ChatMetrics.groupGap : ChatMetrics.senderGap,
+          bottom: 0,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.start,
@@ -4386,6 +4415,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                 pressedScale: .985,
                 child: Container(
                   key: ValueKey('dm_bubble_${message.id}'),
+                  // 텍스트 말풍선은 화면 폭의 0.63, 사진·파일·카드는 0.76까지.
+                  constraints: BoxConstraints(maxWidth: bubbleMaxWidth),
                   child: bubbleChild,
                 ),
               ),
@@ -4404,8 +4435,9 @@ class _DMChatScreenState extends State<DMChatScreen>
               child: Text(
                 timeText,
                 style: TextStyle(
-                  color: DMColors.textTertiary,
-                  fontSize: 11,
+                  color: ChatMetrics.timeColor,
+                  fontSize: ChatMetrics.timeSize,
+                  height: ChatMetrics.timeLine / ChatMetrics.timeSize,
                 ),
               ),
             ),
@@ -4514,18 +4546,18 @@ class _DMChatScreenState extends State<DMChatScreen>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
+                            fontSize: ChatMetrics.replyNameSize,
+                            fontWeight: FontWeight.w600,
                             color: secondary,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           preview,
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: ChatMetrics.replyTextSize,
                             height: 1.25,
                             fontWeight: FontWeight.w600,
                             color: foreground,

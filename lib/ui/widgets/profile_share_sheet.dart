@@ -1,0 +1,162 @@
+// lib/ui/widgets/profile_share_sheet.dart
+// 내 프로필 공유 시트: QR + 링크 복사 + 시스템 공유.
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../../l10n/profile_share_strings.dart';
+import '../../l10n/ui_locale.dart';
+import '../../services/profile_link.dart';
+
+Future<void> showProfileShareSheet(
+  BuildContext context, {
+  required String uid,
+  required String nickname,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => ProfileShareSheet(uid: uid, nickname: nickname),
+  );
+}
+
+class ProfileShareSheet extends StatelessWidget {
+  const ProfileShareSheet({
+    super.key,
+    required this.uid,
+    required this.nickname,
+  });
+
+  final String uid;
+  final String nickname;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = ProfileShareStrings.of(context);
+    final link = ProfileLink.build(uid);
+    TextStyle style(double size, FontWeight weight, Color color) => TextStyle(
+          fontFamily: uiFontFamily(context, 'Inter'),
+          fontFamilyFallback: const ['NotoSansKR'],
+          fontSize: size,
+          fontWeight: weight,
+          color: color,
+        );
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE0E0E0),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(strings.title,
+                style: style(17, FontWeight.w700, const Color(0xFF111827))),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: QrImageView(
+                key: const ValueKey('profile_share_qr'),
+                data: link,
+                size: 180,
+                backgroundColor: Colors.white,
+                semanticsLabel: link,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(nickname,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style(15, FontWeight.w600, const Color(0xFF111827))),
+            const SizedBox(height: 4),
+            Text(strings.qrCaption,
+                style: style(12, FontWeight.w400, const Color(0xFF707070))),
+            const SizedBox(height: 4),
+            Text(link,
+                key: const ValueKey('profile_share_link'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style(12, FontWeight.w400, const Color(0xFF9A9A9A))),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: OutlinedButton(
+                      key: const ValueKey('profile_share_copy'),
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: link));
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(strings.copied)),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF111827),
+                        side: const BorderSide(color: Color(0xFFD9D9D9)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: Text(strings.copy,
+                          style: style(14, FontWeight.w600,
+                              const Color(0xFF111827))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: FilledButton(
+                      key: const ValueKey('profile_share_system'),
+                      onPressed: () {
+                        final box = context.findRenderObject() as RenderBox?;
+                        SharePlus.instance.share(
+                          ShareParams(
+                            text: strings.shareText(nickname, link),
+                            sharePositionOrigin: box == null
+                                ? null
+                                : box.localToGlobal(Offset.zero) & box.size,
+                          ),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF2C6BC0),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: Text(strings.share,
+                          style: style(14, FontWeight.w600, Colors.white)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

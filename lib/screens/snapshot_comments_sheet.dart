@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +12,12 @@ import '../models/content_translation.dart';
 import '../models/snapshot.dart';
 import '../services/report_service.dart';
 import '../services/snapshot_service.dart';
+import '../services/content_translation_service.dart';
 import '../snapshot/snapshot_strings.dart';
+import '../ui/sheets/translation_language_sheet.dart';
+import '../ui/widgets/snack_chat_translation_split_button.dart';
+import '../ui/widgets/swipe_to_reply.dart';
+import '../ui/widgets/user_avatar.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/translatable_content.dart';
 import '../utils/comment_gif_input.dart';
@@ -90,6 +96,9 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
   final Set<String> _locallyHiddenCommentIds = <String>{};
   final Set<String> _locallyHiddenUserIds = <String>{};
   bool _hasTranslatableComments = false;
+  final ContentTranslationService _translationService =
+      ContentTranslationService.instance;
+  String? _languageCode;
 
   /// 번역할 다른 사람의 댓글이 있을 때만 상단 번역 토글을 보인다.
   void _syncTranslatableComments(List<SnapshotComment> comments) {
@@ -107,10 +116,33 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
   void initState() {
     super.initState();
     _stream = _service.watchFeedComments(widget.snapshot.id);
+    _translationService.addListener(_handleTranslationChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_refreshLanguageLabel());
+    });
+  }
+
+  void _handleTranslationChange() {
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_refreshLanguageLabel());
+  }
+
+  Future<void> _refreshLanguageLabel() async {
+    if (!mounted) return;
+    final revision = _translationService.languageRevision;
+    try {
+      final code = await _translationService.targetLanguage(
+        uiLanguageCode: Localizations.localeOf(context).languageCode,
+      );
+      if (!mounted || revision != _translationService.languageRevision) return;
+      if (code != _languageCode) setState(() => _languageCode = code);
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _translationService.removeListener(_handleTranslationChange);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -298,27 +330,33 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          strings.comments,
+                        child: Text.rich(
+                          TextSpan(
+                            text: strings.everyoneOneLiner,
+                            children: [
+                              if (widget.snapshot.commentCount > 0)
+                                TextSpan(
+                                  text: '  ${widget.snapshot.commentCount}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF707070),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                            ],
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontFamily: uiFontFamily(context, 'Inter'),
                             fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: context.rf(19).clamp(18, 20).toDouble(),
+                            fontSize: 17,
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFF111827),
+                            color: const Color(0xFF000000),
                             height: isChineseUi(context) ? 1.3 : 1.2,
                           ),
                         ),
                       ),
-                      if (_hasTranslatableComments)
-                        TranslationScopeToggle(
-                          scope: snapshotCommentTranslationScope(
-                            widget.snapshot.id,
-                          ),
-                          postCardHeader: true,
-                        ),
+                      if (_hasTranslatableComments) _buildTranslationSplit(),
                       IconButton(
                         onPressed: () => Navigator.pop(context),
                         tooltip: MaterialLocalizations.of(context)
@@ -332,36 +370,46 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                     ],
                   ),
                 ),
-                if (bottomInset == 0) Padding(
-                  padding: EdgeInsets.fromLTRB(horizontal, 2, horizontal, 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(top: 1),
-                        child: Icon(
-                          Icons.info_outline_rounded,
-                          size: 16,
-                          color: Color(0xFF667085),
+                if (bottomInset == 0)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(horizontal, 0, 4, 6),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.schedule_rounded,
+                          size: 15,
+                          color: Color(0xFF707070),
                         ),
-                      ),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Text(
-                          strings.authorArchiveNotice,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            color: const Color(0xFF667085),
-                            fontSize:
-                                context.rf(11.5).clamp(11, 12.5).toDouble(),
-                            height: isChineseUi(context) ? 1.45 : 1.35,
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            _disappearLabel(strings),
+                            key: const ValueKey('snapshot_comments_notice'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              color: const Color(0xFF707070),
+                              fontSize: 12,
+                              height: isChineseUi(context) ? 1.4 : 1.25,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        IconButton(
+                          key: const ValueKey('snapshot_comments_notice_info'),
+                          onPressed: _showArchiveNotice,
+                          tooltip: strings.authorArchiveNoticeTitle,
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(
+                            Icons.info_outline_rounded,
+                            size: 18,
+                            color: Color(0xFF707070),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
                 Expanded(
                   child: StreamBuilder<List<SnapshotComment>>(
                     stream: _stream,
@@ -396,9 +444,23 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                         itemCount: comments.length,
                         itemBuilder: (context, index) {
                           final comment = comments[index];
-                          final row = _CommentRow(
+                          final previous =
+                              index > 0 ? comments[index - 1] : null;
+                          final replyNick =
+                              (comment.replyToUserNickname ?? '').trim();
+                          final row = SnapshotCommentRow(
                             key: ValueKey(comment.id),
                             comment: comment,
+                            isMine: comment.userId ==
+                                FirebaseAuth.instance.currentUser?.uid,
+                            topGap: previous != null &&
+                                    previous.userId == comment.userId &&
+                                    !comment.isReply
+                                ? 2
+                                : 10,
+                            replyToLabel: comment.isReply && replyNick.isNotEmpty
+                                ? strings.replyingToName(replyNick)
+                                : null,
                             translatable: isSnapshotCommentTranslationCandidate(
                               comment,
                               FirebaseAuth.instance.currentUser?.uid,
@@ -480,16 +542,21 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                           ),
                         ),
                       if (_replyingTo != null)
-                        SizedBox(
+                        Container(
+                          key: const ValueKey('snapshot_reply_banner'),
                           height: 34,
+                          margin: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.only(left: 10),
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              left: BorderSide(
+                                color: Color(0xFF2C6BC0),
+                                width: 2,
+                              ),
+                            ),
+                          ),
                           child: Row(
                             children: [
-                              const Icon(
-                                Icons.subdirectory_arrow_right_rounded,
-                                size: 17,
-                                color: Color(0xFF667085),
-                              ),
-                              const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
                                   strings.replyingTo(
@@ -500,11 +567,8 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                                   style: TextStyle(
                                     fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
-                                    color: const Color(0xFF475467),
-                                    fontSize: context
-                                        .rf(12)
-                                        .clamp(11.5, 13)
-                                        .toDouble(),
+                                    color: const Color(0xFF5F5F5F),
+                                    fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -520,7 +584,7 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                                   icon: const Icon(
                                     Icons.close_rounded,
                                     size: 18,
-                                    color: Color(0xFF667085),
+                                    color: Color(0xFF707070),
                                   ),
                                 ),
                               ),
@@ -569,7 +633,7 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
                                   height: isChineseUi(context) ? 1.45 : 1.35,
                                 ),
                                 decoration: InputDecoration(
-                                  hintText: strings.publicCommentHint,
+                                  hintText: strings.everyoneOneLinerHint,
                                   hintStyle: TextStyle(
                                     fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
@@ -654,6 +718,55 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
     );
   }
 
+  Widget _buildTranslationSplit() {
+    final zh = isChineseUi(context);
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final scope = snapshotCommentTranslationScope(widget.snapshot.id);
+    final on = !_translationService.showsOriginal(scope);
+    final code = _languageCode;
+    return SnackChatTranslationSplitButton(
+      translationOn: on,
+      enabled: true,
+      languageLabel: code == null
+          ? ''
+          : ContentTranslationService.supportedLanguages[code] ?? '',
+      toggleSemanticLabel: on
+          ? (zh ? '查看原文' : (isKo ? '원문 보기' : 'View original'))
+          : (zh ? '查看译文' : (isKo ? '번역 보기' : 'View translation')),
+      languageSemanticLabel:
+          zh ? '翻译语言' : (isKo ? '번역 언어 설정' : 'Translation language'),
+      toggleKey: const ValueKey('snapshot_comments_translation_toggle'),
+      languageKey: const ValueKey('snapshot_comments_translation_language'),
+      onToggle: () => _translationService.toggleScope(scope),
+      onOpenLanguage: () => unawaited(showTranslationLanguageSheet(context)),
+    );
+  }
+
+  String _disappearLabel(SnapshotStrings strings) {
+    final remaining =
+        widget.snapshot.remainingAt(SnapshotService.instance.serverNow);
+    if (remaining.inHours < 1) return strings.disappearsSoonWithSnack;
+    return strings.disappearsWithSnack(remaining.inHours);
+  }
+
+  /// 기존 안내문(작성자 기기에 기록이 남을 수 있음)을 지우지 않고 정보 아이콘 뒤에 둔다.
+  Future<void> _showArchiveNotice() {
+    final strings = SnapshotStrings.of(context);
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.authorArchiveNoticeTitle),
+        content: Text(strings.authorArchiveNotice),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(MaterialLocalizations.of(context).okButtonLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<SnapshotComment> _orderedComments(List<SnapshotComment> all) {
     final visible = all
         .where((comment) =>
@@ -672,8 +785,9 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
   }
 }
 
-class _CommentRow extends StatelessWidget {
-  const _CommentRow({
+/// 한마디 시트의 대화형 말풍선 한 줄(테스트에서도 사용).
+class SnapshotCommentRow extends StatelessWidget {
+  const SnapshotCommentRow({
     super.key,
     required this.comment,
     required this.highlighted,
@@ -681,6 +795,9 @@ class _CommentRow extends StatelessWidget {
     required this.onMore,
     required this.replyLabel,
     required this.deletedLabel,
+    this.isMine = false,
+    this.topGap = 10,
+    this.replyToLabel,
     this.translatable = false,
   });
 
@@ -692,21 +809,53 @@ class _CommentRow extends StatelessWidget {
   final VoidCallback onMore;
   final String replyLabel;
   final String deletedLabel;
+  final bool isMine;
 
-  Widget _contentText(BuildContext context, String? translated) {
-    final text = comment.isDeleted
-        ? deletedLabel
-        : ((translated ?? '').trim().isNotEmpty ? translated! : comment.content);
-    return Text(
-      text,
-      style: TextStyle(
-        fontFamily: uiFontFamily(context, 'Inter'),
-        fontFamilyFallback: const ['NotoSansKR'],
-        fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
-        height: isChineseUi(context) ? 1.4 : 1.32,
-        color: comment.isDeleted
-            ? const Color(0xFF98A2B3)
-            : const Color(0xFF111827),
+  /// 같은 사람이 이어 쓰면 2, 다른 사람이면 10.
+  final double topGap;
+
+  /// `↩ {이름}에게`. 답글이 아니면 null.
+  final String? replyToLabel;
+
+  static const Color mineColor = Color(0xFF2C6BC0);
+  static const Color otherColor = Color(0xFFEEEEEE);
+
+  String _text(String? translated) => comment.isDeleted
+      ? deletedLabel
+      : ((translated ?? '').trim().isNotEmpty ? translated! : comment.content);
+
+  Widget _bubble(BuildContext context, String text) {
+    final style = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: 15,
+      height: 20 / 15,
+      color: comment.isDeleted
+          ? const Color(0xFF707070)
+          : (isMine ? Colors.white : Colors.black),
+    );
+    final maxWidth = MediaQuery.sizeOf(context).width * .72;
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: math.max(1, maxWidth - 22));
+    final multiLine = painter.computeLineMetrics().length > 1;
+    painter.dispose();
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isMine ? mineColor : otherColor,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 11,
+            vertical: multiLine ? 7 : 6,
+          ),
+          child: Text(text, style: style),
+        ),
       ),
     );
   }
@@ -714,109 +863,95 @@ class _CommentRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final horizontal = MediaQuery.sizeOf(context).width < 360 ? 12.0 : 16.0;
-    return ColoredBox(
-      color: highlighted ? const Color(0xFFF9FAFB) : Colors.transparent,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          comment.isReply ? horizontal + 32 : horizontal,
-          5,
-          4,
-          onReply != null ? 0 : 5,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              radius: context.rs(16).clamp(15, 17).toDouble(),
-              backgroundColor: const Color(0xFFF2F4F7),
-              backgroundImage: comment.authorPhotoUrl.isEmpty
-                  ? null
-                  : NetworkImage(comment.authorPhotoUrl),
-              child: comment.authorPhotoUrl.isEmpty
-                  ? const Icon(
-                      Icons.person_outline_rounded,
-                      size: 18,
-                      color: Color(0xFF667085),
-                    )
-                  : null,
-            ),
-            SizedBox(width: context.rs(10).clamp(8, 11).toDouble()),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    comment.authorNickname,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: context.rf(13).clamp(12.5, 14).toDouble(),
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF344054),
-                      height: isChineseUi(context) ? 1.35 : 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  if (comment.isDeleted || comment.content.isNotEmpty)
-                    if (translatable)
-                      TranslatableContent(
-                        key: ValueKey<String>(
-                          'snapshot-comment-translation:${comment.id}',
-                        ),
-                        request: snapshotCommentTranslationRequest(comment),
-                        scope: snapshotCommentTranslationScope(
-                          comment.snapshotId,
-                        ),
-                        showToggle: false,
-                        builder: (context, fields) =>
-                            _contentText(context, fields['content']),
-                      )
-                    else
-                      _contentText(context, null),
-                  if (!comment.isDeleted && comment.gifStoragePath.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: _CommentGif(
-                        key: ValueKey<String>('gif:${comment.id}'),
-                        comment: comment,
-                      ),
-                    ),
-                  if (onReply != null)
-                    TextButton(
-                      onPressed: onReply,
-                      style: TextButton.styleFrom(
-                        // 기본 48dp 확장 탭 영역이 댓글 사이 간격을 크게 벌려
-                        // 버튼 자체 높이로만 레이아웃한다.
-                        minimumSize: const Size(44, 28),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        alignment: Alignment.centerLeft,
-                        foregroundColor: const Color(0xFF667085),
-                        textStyle: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(12).clamp(11.5, 13).toDouble(),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      child: Text(replyLabel),
-                    ),
-                ],
+    final hasText = comment.isDeleted || comment.content.isNotEmpty;
+    final labelStyle = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: 12,
+      height: isChineseUi(context) ? 1.35 : 1.2,
+    );
+    final column = Column(
+      crossAxisAlignment:
+          isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        if (!isMine)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: Text(
+              comment.authorNickname,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: labelStyle.copyWith(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF5F5F5F),
               ),
             ),
-            IconButton(
-              onPressed: onMore,
-              tooltip: MaterialLocalizations.of(context).showMenuTooltip,
-              color: const Color(0xFF667085),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.more_horiz_rounded, size: 20),
+          ),
+        if (replyToLabel != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 3),
+            child: Text(
+              replyToLabel!,
+              key: ValueKey<String>('reply-to:${comment.id}'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: labelStyle.copyWith(color: const Color(0xFF707070)),
             ),
-          ],
+          ),
+        if (hasText)
+          if (translatable)
+            TranslatableContent(
+              key: ValueKey<String>(
+                'snapshot-comment-translation:${comment.id}',
+              ),
+              request: snapshotCommentTranslationRequest(comment),
+              scope: snapshotCommentTranslationScope(comment.snapshotId),
+              showToggle: false,
+              builder: (context, fields) =>
+                  _bubble(context, _text(fields['content'])),
+            )
+          else
+            _bubble(context, _text(null)),
+        if (!comment.isDeleted && comment.gifStoragePath.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(top: hasText ? 4 : 0),
+            child: _CommentGif(
+              key: ValueKey<String>('gif:${comment.id}'),
+              comment: comment,
+            ),
+          ),
+      ],
+    );
+    return ColoredBox(
+      color: highlighted ? const Color(0xFFF9FAFB) : Colors.transparent,
+      child: SwipeToReply(
+        enabled: onReply != null,
+        onReply: onReply,
+        semanticsLabel: replyLabel,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPress: onMore,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(horizontal, topGap, horizontal, 0),
+            child: Row(
+              mainAxisAlignment:
+                  isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!isMine) ...[
+                  UserAvatar(
+                    uid: comment.userId,
+                    photoUrl: comment.authorPhotoUrl,
+                    photoVersion: 0,
+                    isAnonymous: false,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(child: column),
+              ],
+            ),
+          ),
         ),
       ),
     );

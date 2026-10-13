@@ -832,4 +832,9 @@ class SnapshotStrings {
       : isKorean
           ? '나에게만 오는 답장도 받아요.'
           : 'Private replies come only to you.');
+  String get authorArchiveNoticeTitle => (isChinese
+      ? '关于记录保留'
+      : isKorean
+          ? '기록 안내'
+          : 'About records');
 }

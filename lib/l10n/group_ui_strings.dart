@@ -107,4 +107,31 @@ class GroupUiStrings {
       : (isKorean
           ? const ['학교', '동아리', '친한 친구', '룸메이트']
           : const ['School', 'Club', 'Close friends', 'Roommates']);
+
+  // --- 새 그룹 만들기 ---
+  String get newGroupTitle => _t('新建分组', '새 그룹', 'New group');
+  String createWithCount(int n) =>
+      _t('创建 · $n', '만들기 · $n', 'Create · $n');
+  String get create => _t('创建', '만들기', 'Create');
+  String get pickMembersHint => _t(
+        '请在下方选择要加入的好友',
+        '아래에서 그룹에 넣을 친구를 골라 주세요',
+        'Pick friends to add below',
+      );
+  String get duplicateGroupName =>
+      _t('已有同名分组', '같은 이름의 그룹이 있어요', 'You already have a group with this name');
+  List<String> get newGroupNameChips => isChinese
+      ? const ['学校', '社团', '好朋友', '室友', '学习小组']
+      : (isKorean
+          ? const ['학교', '동아리', '친한 친구', '룸메이트', '스터디']
+          : const ['School', 'Club', 'Close friends', 'Roommates', 'Study']);
+  String get discardNewGroupTitle =>
+      _t('放弃创建分组？', '그룹 만들기를 취소할까요?', 'Discard this new group?');
+  String get keepEditing => _t('继续编辑', '계속 작성', 'Keep editing');
+  String get discard => _t('放弃', '나가기', 'Discard');
+  String get groupLimitReached => _t(
+        '最多可创建10个分组。',
+        '그룹은 최대 10개까지 만들 수 있어요.',
+        'You can create up to 10 groups.',
+      );
 }

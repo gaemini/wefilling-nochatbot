@@ -52,6 +52,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
   /// TabBarView 탭 전환 시에도 로딩 스피너 없이 즉시 표시된다.
   StreamSubscription<List<FriendCategory>>? _categoriesSub;
   List<FriendCategory> _categories = [];
+
+  /// 방금 만든 그룹 줄을 잠깐 강조한다.
+  String? _highlightedId;
   bool _categoriesLoading = true;
 
   @override
@@ -227,13 +230,25 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             ),
           ),
           for (final category in _categories)
-            GroupListRow(
-              key: ValueKey('friend-category-${category.id}'),
-              category: category,
-              members: groupMembersFor(category, friends),
-              onTap: () => _navigateToCategoryDetail(category),
-              // 이름 변경·삭제는 수정 화면에서 하고, 길게 누르면 기존 메뉴를 띄운다.
-              onLongPress: () => _showGroupMenu(category),
+            TweenAnimationBuilder<Color?>(
+              key: ValueKey('friend-category-fade-${category.id}'),
+              tween: ColorTween(
+                end: _highlightedId == category.id
+                    ? const Color(0xFFF2F7FD)
+                    : Colors.white,
+              ),
+              duration: _highlightedId == category.id
+                  ? Duration.zero
+                  : const Duration(milliseconds: 1000),
+              builder: (context, color, _) => GroupListRow(
+                key: ValueKey('friend-category-${category.id}'),
+                category: category,
+                members: groupMembersFor(category, friends),
+                backgroundColor: color ?? Colors.white,
+                onTap: () => _navigateToCategoryDetail(category),
+                // 이름 변경·삭제는 수정 화면에서 하고, 길게 누르면 기존 메뉴를 띄운다.
+                onLongPress: () => _showGroupMenu(category),
+              ),
             ),
           if (ungrouped != null && ungrouped.isNotEmpty)
             GroupUngroupedRow(
@@ -333,45 +348,10 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
       _showCategoryLimitReachedSnackBar();
       return;
     }
-    final result = await Navigator.push<Map<String, dynamic>>(
-      context,
-      MaterialPageRoute(builder: (context) => const CreateCategoryScreen()),
-    );
-    if (!mounted || result == null) return;
-    final newId = await _categoryService.createCategory(
-      name: result['name'] as String,
-      description: '',
-      color: result['color'] as String,
-      iconName: result['iconName'] as String,
-    );
-    if (!mounted) return;
-    final l10n = AppLocalizations.of(context)!;
-    if (newId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.categoryCreateFailed)),
-      );
-      return;
-    }
-    final created = FriendCategory(
-      id: newId,
-      name: result['name'] as String,
-      description: '',
-      color: result['color'] as String,
-      iconName: result['iconName'] as String,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-      userId: '',
-      friendIds: const <String>[],
-    );
-    await Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CategoryDetailScreen(
-          category: created,
-          prioritizedFriendIds:
-              friends.map((friend) => friend.uid).toList(growable: false),
-        ),
-      ),
+    // 그룹에 없는 친구들은 선택하지 않은 채 목록 위쪽에 모아 보여 준다.
+    await _navigateToCreateCategory(
+      prioritizedFriendIds:
+          friends.map((friend) => friend.uid).toList(growable: false),
     );
   }
 
@@ -417,32 +397,32 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     _navigateToEditCategory(category);
   }
 
-  Future<void> _navigateToCreateCategory({String? initialName}) async {
-    final result = await Navigator.push<Map<String, dynamic>>(
+  Future<void> _navigateToCreateCategory({
+    String? initialName,
+    List<String> prioritizedFriendIds = const <String>[],
+  }) async {
+    // 생성 화면이 이름과 멤버를 함께 저장하고 만든 그룹 id만 돌려준다.
+    final newId = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (context) => CreateCategoryScreen(initialName: initialName),
-      ),
-    );
-
-    if (!mounted || result == null) return;
-
-    final success = await _categoryService.createCategory(
-      name: result['name'] as String,
-      description: '',
-      color: result['color'] as String,
-      iconName: result['iconName'] as String,
-    );
-
-    if (!mounted) return;
-    final l10n = AppLocalizations.of(context)!;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          success != null ? l10n.categoryCreated : l10n.categoryCreateFailed,
+        builder: (context) => CreateCategoryScreen(
+          initialName: initialName,
+          prioritizedFriendIds: prioritizedFriendIds,
+          existingNames: [for (final c in _categories) c.name],
         ),
       ),
     );
+    if (!mounted || newId == null) return;
+    final l10n = AppLocalizations.of(context)!;
+    setState(() => _highlightedId = newId);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l10n.categoryCreated)),
+    );
+    Future<void>.delayed(const Duration(milliseconds: 1400), () {
+      if (mounted && _highlightedId == newId) {
+        setState(() => _highlightedId = null);
+      }
+    });
   }
 
   Future<void> _navigateToEditCategory(FriendCategory category) async {

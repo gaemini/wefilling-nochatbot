@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../ui/widgets/shape_icon.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import 'new_group_screen.dart';
 
 class CreateCategoryScreen extends StatefulWidget {
   final FriendCategory? category; // null이면 생성, 있으면 수정
@@ -16,10 +17,18 @@ class CreateCategoryScreen extends StatefulWidget {
   /// 생성할 때 이름 입력에 미리 채울 값(빈 화면의 이름 칩). null이면 기존 동작.
   final String? initialName;
 
+  /// 생성할 때 목록 위쪽에 모아 보여 줄 친구 uid(선택은 하지 않는다).
+  final List<String> prioritizedFriendIds;
+
+  /// 이미 있는 그룹 이름(같은 이름 안내·최대 개수 판단).
+  final List<String> existingNames;
+
   const CreateCategoryScreen({
     super.key,
     this.category,
     this.initialName,
+    this.prioritizedFriendIds = const <String>[],
+    this.existingNames = const <String>[],
   });
 
   @override
@@ -412,6 +421,14 @@ class _CreateCategoryScreenState extends State<CreateCategoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 생성 모드는 이름·멤버를 한 화면에서 정하는 새 화면이 맡고 만든 id를 돌려준다.
+    if (!_isEdit) {
+      return NewGroupScreen(
+        initialName: widget.initialName,
+        prioritizedFriendIds: widget.prioritizedFriendIds,
+        existingNames: widget.existingNames,
+      );
+    }
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(

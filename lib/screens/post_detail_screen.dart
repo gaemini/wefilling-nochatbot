@@ -2003,6 +2003,51 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildAudienceSection() {
+    if (_currentPost.visibility == 'friends') {
+      final isCompact = MediaQuery.sizeOf(context).width < 360;
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          isCompact ? 8 : 10,
+          2,
+          isCompact ? 8 : 10,
+          8,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              AppLocalizations.of(context)!.postAudienceTitle,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontSize: isCompact ? 13.5 : 14,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF344054),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(
+                  Icons.people_outline_rounded,
+                  size: 20,
+                  color: Color(0xFF667085),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  friendsAudienceLabel(context),
+                  style: TextStyle(
+                    fontFamily: uiFontFamily(context, 'Inter'),
+                    fontSize: isCompact ? 13.5 : 14,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF344054),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
     if (_currentPost.visibility != 'category') {
       return const SizedBox.shrink();
     }

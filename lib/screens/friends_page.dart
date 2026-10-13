@@ -131,27 +131,16 @@ class _FriendsPageState extends State<FriendsPage> {
       return;
     }
 
-    final result = await Navigator.push<Map<String, dynamic>>(
+    final categoryId = await Navigator.push<String>(
       context,
-      MaterialPageRoute(builder: (_) => const CreateCategoryScreen()),
+      MaterialPageRoute(
+        builder: (_) => CreateCategoryScreen(
+          existingNames: [for (final c in _friendCategories) c.name],
+        ),
+      ),
     );
-    if (!mounted || result == null) return;
-
-    final categoryId = await _categoryService.createCategory(
-      name: result['name'] as String,
-      description: '',
-      color: result['color'] as String,
-      iconName: result['iconName'] as String,
-    );
-    if (!mounted) return;
+    if (!mounted || categoryId == null) return;
     final l10n = AppLocalizations.of(context)!;
-    if (categoryId == null) {
-      _showSnackBar(
-        l10n.categoryCreateFailed,
-        const Color(0xFFB42318),
-      );
-      return;
-    }
 
     _showSnackBar(l10n.categoryCreated, const Color(0xFF344054));
     Navigator.of(context).pushAndRemoveUntil(

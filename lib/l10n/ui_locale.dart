@@ -4,6 +4,12 @@ import 'package:flutter/widgets.dart';
 bool isChineseUi(BuildContext context) =>
     Localizations.localeOf(context).languageCode == 'zh';
 
+String friendsAudienceLabel(BuildContext context) {
+  if (isChineseUi(context)) return '好友';
+  if (Localizations.localeOf(context).languageCode == 'ko') return '친구들';
+  return 'Friends';
+}
+
 /// Message shown when a removed user tries to open or rejoin a meetup.
 /// Keep this scoped to the access guard so ordinary join failures continue
 /// using their existing localized copy.

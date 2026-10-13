@@ -1013,11 +1013,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
     }
 
     final label = switch (_currentMeetup.visibility) {
-      'friends' => (isChineseUi(context)
-          ? '仅好友'
-          : isKo
-              ? '친구만'
-              : 'Friends only'),
+      'friends' => friendsAudienceLabel(context),
       _ => (isChineseUi(context)
           ? '所有人'
           : isKo

@@ -221,9 +221,13 @@ class GroupListRow extends StatelessWidget {
     required this.members,
     required this.onTap,
     this.onLongPress,
+    this.backgroundColor = Colors.white,
   });
 
   final FriendCategory category;
+
+  /// 새로 만든 그룹을 잠깐 강조할 때 바꾼다.
+  final Color backgroundColor;
 
   /// null이면 친구 목록 로딩 중.
   final List<GroupMember>? members;
@@ -244,7 +248,7 @@ class GroupListRow extends StatelessWidget {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: Material(
-        color: Colors.white,
+        color: backgroundColor,
         child: InkWell(
           onTap: onTap,
           onLongPress: onLongPress,

@@ -56,6 +56,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   final FocusNode _nameFocus = FocusNode();
 
   bool _isSaving = false;
+  bool _isDeleting = false;
   bool _showSaved = false;
   Timer? _savedTimer;
 
@@ -82,6 +83,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _ensureFriendsLoaded();
     });
   }
@@ -314,8 +316,14 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
-    final success = await _categoryService.deleteCategory(widget.category.id);
+    if (confirmed != true || !mounted || _isDeleting) return;
+    _isDeleting = true;
+    final bool success;
+    try {
+      success = await _categoryService.deleteCategory(widget.category.id);
+    } finally {
+      _isDeleting = false;
+    }
     if (!mounted) return;
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(

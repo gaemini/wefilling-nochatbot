@@ -324,7 +324,8 @@ class _MainScreenState extends State<MainScreen>
   }) {
     final hidden = factor <= 0.01;
     return AppBar(
-      toolbarHeight: kToolbarHeight * factor,
+      // 스낵챗 탭은 로고 줄을 48로 낮춘다(다른 탭은 기존 56).
+      toolbarHeight: (_selectedIndex == 2 ? 48.0 : kToolbarHeight) * factor,
       elevation: hidden ? 0 : null,
       scrolledUnderElevation: hidden ? 0 : null,
       automaticallyImplyLeading: false,
@@ -413,7 +414,7 @@ class _MainScreenState extends State<MainScreen>
               count: snapshot.data ?? 0,
               child: AppIconButton(
                 icon: Icons.notifications_outlined,
-                iconSize: 23,
+                iconSize: _selectedIndex == 2 ? 22 : 23,
                 onPressed: () {
                   Navigator.push(
                     context,

@@ -44,7 +44,6 @@ import '../ui/widgets/profile_image_viewer.dart';
 import '../utils/profile_photo_policy.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_selectable.dart';
-import '../ui/widgets/profile_share_sheet.dart';
 import '../utils/hanyang_verification_helper.dart';
 
 class MyPageScreen extends StatefulWidget {
@@ -491,7 +490,6 @@ class _MyPageScreenState extends State<MyPageScreen>
         : languageCode == 'ko'
             ? '친구 ${_friendCount ?? 0}'
             : 'Friends ${_friendCount ?? 0}';
-    final shareLabel = zh ? '分享' : languageCode == 'ko' ? '공유' : 'Share';
 
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
@@ -660,23 +658,6 @@ class _MyPageScreenState extends State<MyPageScreen>
                     key: const ValueKey('mypage_friends_button'),
                     label: friendLabel,
                     onTap: _navigateToFriendsPage,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: actionButton(
-                    key: const ValueKey('mypage_share_button'),
-                    label: shareLabel,
-                    onTap: () {
-                      final uid = user?.uid;
-                      if (uid == null) return;
-                      unawaited(showProfileShareSheet(
-                        context,
-                        uid: uid,
-                        nickname: nickname.isNotEmpty ? nickname : l10n.user,
-                      ));
-                    },
                   ),
                 ),
               ],

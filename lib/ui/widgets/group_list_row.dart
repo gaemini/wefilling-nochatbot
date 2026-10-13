@@ -63,7 +63,7 @@ class GroupMemberAvatar extends StatelessWidget {
             style: TextStyle(
               fontFamily: uiFontFamily(context, 'Inter'),
               fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: size * 0.4,
+              fontSize: (size * 0.4).clamp(9.0, 15.0).toDouble(),
               fontWeight: FontWeight.w600,
               color: Colors.white,
             ),

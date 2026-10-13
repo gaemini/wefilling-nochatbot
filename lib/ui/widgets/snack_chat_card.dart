@@ -580,7 +580,9 @@ class _ParticipantAvatarMosaic extends StatefulWidget {
 }
 
 class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
-  static final UsersRepository _usersRepository = UsersRepository();
+  static UsersRepository? _repository;
+  static UsersRepository get _usersRepository =>
+      _repository ??= UsersRepository();
 
   List<UserProfile> _profiles = const [];
 
@@ -597,6 +599,7 @@ class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
   @override
   void initState() {
     super.initState();
+    if (_displayIds.isEmpty) return;
     _profiles = _usersRepository.getCachedUserProfiles(_displayIds);
     _loadProfiles();
   }

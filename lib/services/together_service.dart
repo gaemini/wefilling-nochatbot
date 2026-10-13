@@ -29,14 +29,14 @@ class TogetherService {
   /// 제안을 보내고 방 id를 돌려준다. 같은 쌍·활동의 열린 제안이 있으면 그 방이다.
   Future<String> propose({
     required String targetUid,
-    required String activity,
+    required String activityId,
   }) async {
     try {
       final result = await _functions
           .httpsCallable('proposeTogetherSnackChat')
           .call(<String, dynamic>{
         'targetUid': targetUid,
-        'activity': activity,
+        'activityId': activityId,
       }).timeout(const Duration(seconds: 20));
       final data = result.data;
       final id = data is Map ? (data['snackChatId'] ?? '').toString() : '';

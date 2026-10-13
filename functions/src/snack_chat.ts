@@ -9202,41 +9202,76 @@ export function togetherActivityKey(activity: string): string {
   return hash;
 }
 
-const KOREAN_TOGETHER_SENTENCES: Record<string, string> = {
-  '같이 점심 먹기': '같이 점심 먹을래요?',
-  '점심 먹기': '같이 점심 먹을래요?',
-  '카페 가기': '카페 같이 갈래요?',
-  '같이 카페 가기': '카페 같이 갈래요?',
-  '영화 보기': '영화 같이 볼래요?',
-  '같이 영화 보기': '영화 같이 볼래요?',
+/** 앱의 SocialProfileCatalog.activities와 같은 id → 문구(ko / en / zh). */
+const TOGETHER_ACTIVITIES: Record<string, {ko: string; en: string; zh: string}> = {
+  lunch: {ko: '같이 점심 먹기', en: 'Grab lunch', zh: '一起吃午饭'},
+  cafe: {ko: '카페 가기', en: 'Visit a cafe', zh: '去咖啡馆'},
+  running: {ko: '러닝', en: 'Go running', zh: '一起跑步'},
+  workout: {ko: '운동', en: 'Work out', zh: '一起运动'},
+  exam_study: {ko: '시험공부', en: 'Study for exams', zh: '备考'},
+  language_exchange: {ko: '언어 교환', en: 'Language exchange', zh: '语言交流'},
+  movie: {ko: '영화 보기', en: 'Watch a movie', zh: '看电影'},
+  exhibition: {ko: '전시 관람', en: 'See an exhibition', zh: '看展'},
+  travel: {ko: '여행', en: 'Travel', zh: '旅行'},
+  photo: {ko: '사진 찍기', en: 'Take photos', zh: '拍照'},
+  school_event: {ko: '학교 행사 참여', en: 'Join campus events', zh: '参加校园活动'},
+  club: {ko: '동아리 활동', en: 'Club activities', zh: '社团活动'},
+  chat: {ko: '편하게 이야기하기', en: 'Have a casual chat', zh: '轻松聊天'},
 };
 
-/** 활동별 자연스러운 첫 문장. 사전에 없으면 활동 이름을 인용한다. */
-export function togetherFirstMessage(activity: string): string {
-  const key = activity.trim().replace(/\s+/g, ' ');
-  const mapped = KOREAN_TOGETHER_SENTENCES[key];
-  if (mapped) return mapped;
-  if (/[가-힣]/.test(key)) return `‘${key}’ 같이 할래요?`;
-  if (/[\u4e00-\u9fff]/.test(key)) return `一起「${key}」好吗？`;
-  return `Want to do “${key}” together?`;
+const KOREAN_TOGETHER_SENTENCES: Record<string, string> = {
+  lunch: '같이 점심 먹을래요?',
+  cafe: '카페 같이 갈래요?',
+  movie: '영화 같이 볼래요?',
+};
+
+type TogetherLanguage = 'ko' | 'en' | 'zh';
+
+function togetherLanguage(data: Data): TogetherLanguage {
+  const code = stringValue(
+    data.preferredLanguage ?? data.languageCode ?? data.locale ?? data.language,
+  ).toLowerCase();
+  if (code.startsWith('en')) return 'en';
+  if (code.startsWith('zh')) return 'zh';
+  return 'ko';
 }
 
-function togetherPushCopy(name: string, activity: string): {
-  title: string;
-  message: string;
-} {
-  const korean = /[가-힣]/.test(activity);
-  const act = activity.replace(/^같이\s+/, '');
-  if (korean) {
+/** 활동별 자연스러운 첫 문장. 사전에 없으면 활동 이름을 인용한다. */
+export function togetherFirstMessage(
+  activityId: string,
+  language: TogetherLanguage = 'ko',
+): string {
+  const entry = TOGETHER_ACTIVITIES[activityId];
+  const label = entry ? entry[language] : activityId;
+  if (language === 'ko') {
+    return KOREAN_TOGETHER_SENTENCES[activityId] ?? `‘${label}’ 같이 할래요?`;
+  }
+  if (language === 'zh') return `一起「${label}」好吗？`;
+  return `Want to do “${label}” together?`;
+}
+
+function togetherPushCopy(
+  name: string,
+  activityLabel: string,
+  language: TogetherLanguage,
+): {title: string; message: string} {
+  if (language === 'ko') {
     // “같이 점심 먹기” → “같이 점심 먹자고 해요”
+    const act = activityLabel.replace(/^같이\s+/, '');
     const phrase = act.endsWith('기') ? act.slice(0, -1) + '자고' : act + ' 하자고';
     return {
       title: `${name}님이 같이 ${phrase} 해요`,
       message: '눌러서 답해 보세요 · 24시간 동안 열려 있어요',
     };
   }
+  if (language === 'zh') {
+    return {
+      title: `${name}想和你一起${activityLabel}`,
+      message: '点击回复 · 24小时内有效',
+    };
+  }
   return {
-    title: `${name} wants to ${activity} with you`,
+    title: `${name} wants to do “${activityLabel}” with you`,
     message: 'Tap to reply · open for 24 hours',
   };
 }
@@ -9254,27 +9289,28 @@ export const proposeTogetherSnackChat = callables()
     const fromData = await requireActiveUser(fromUid);
     const request = objectValue(raw);
     const toUid = firestoreId(request.targetUid, 'targetUid');
-    const activity = boundedString(request.activity, TOGETHER_ACTIVITY_MAX)
-      .trim();
-    if (!activity || toUid === fromUid) {
+    const activityId = boundedString(
+      request.activityId, TOGETHER_ACTIVITY_MAX,
+    ).trim();
+    if (!activityId || toUid === fromUid) {
       throw new functions.https.HttpsError(
         'invalid-argument',
         'A valid target and activity are required.',
       );
     }
     const toData = await requireActiveUser(toUid);
-    // 활동은 상대 프로필에 실제로 있는 값이어야 한다(클라이언트 값을 믿지 않는다).
+    // 활동은 상대 프로필(preferredActivities)에 실제로 있는 id여야 한다.
     const allowed = Array.isArray(toData.preferredActivities)
-      ? (toData.preferredActivities as unknown[])
-        .map((value) => stringValue(value).replace(/\s+/g, ' '))
+      ? (toData.preferredActivities as unknown[]).map((value) => stringValue(value))
       : [];
-    const normalizedActivity = activity.replace(/\s+/g, ' ');
-    if (!allowed.includes(normalizedActivity)) {
+    if (!allowed.includes(activityId) || !TOGETHER_ACTIVITIES[activityId]) {
       throw new functions.https.HttpsError(
         'failed-precondition',
         'The activity is not in the target profile.',
       );
     }
+    const senderLanguage = togetherLanguage(fromData);
+    const normalizedActivity = TOGETHER_ACTIVITIES[activityId][senderLanguage];
     const blocks = await db().getAll(
       db().collection(BLOCKS).doc(fromUid + '_' + toUid),
       db().collection(BLOCKS).doc(toUid + '_' + fromUid),
@@ -9293,7 +9329,7 @@ export const proposeTogetherSnackChat = callables()
       );
     }
 
-    const activityKey = togetherActivityKey(normalizedActivity);
+    const activityKey = togetherActivityKey(activityId);
     const proposalRef = db().collection(TOGETHER_PROPOSALS)
       .doc(`${fromUid}_${toUid}_${activityKey}`);
     const nowMs = Date.now();
@@ -9335,8 +9371,15 @@ export const proposeTogetherSnackChat = callables()
     const roomRef = db().collection(SNACK_CHATS).doc();
     const messageRef = roomRef.collection('messages').doc();
     const notificationRef = db().collection('notifications').doc();
-    const copy = togetherPushCopy(fromName, normalizedActivity);
-    const text = boundedString(togetherFirstMessage(normalizedActivity), 500);
+    const copy = togetherPushCopy(
+      fromName,
+      TOGETHER_ACTIVITIES[activityId][togetherLanguage(toData)],
+      togetherLanguage(toData),
+    );
+    const text = boundedString(
+      togetherFirstMessage(activityId, senderLanguage),
+      500,
+    );
 
     await db().runTransaction(async (transaction) => {
       const [fromDoc, toDoc, proposal] = await transaction.getAll(
@@ -9379,6 +9422,7 @@ export const proposeTogetherSnackChat = callables()
           fromUid,
           toUid,
           activity: normalizedActivity,
+          activityId,
           status: 'pending',
           createdAt: now,
         },
@@ -9402,6 +9446,7 @@ export const proposeTogetherSnackChat = callables()
         fromUid,
         toUid,
         activity: normalizedActivity,
+        activityId,
         activityKey,
         roomId: roomRef.id,
         status: 'pending',
@@ -9446,12 +9491,13 @@ async function applyTogetherAccepted(
     const fromUid = stringValue(together.fromUid);
     const toUid = stringValue(together.toUid);
     const activity = stringValue(together.activity);
+    const activityId = stringValue(together.activityId);
     if (!room.exists || stringValue(together.status) !== 'pending' ||
         toUid !== recipientId) {
       return {changed: false, fromUid, activity};
     }
     const proposalRef = db().collection(TOGETHER_PROPOSALS)
-      .doc(`${fromUid}_${toUid}_${togetherActivityKey(activity)}`);
+      .doc(`${fromUid}_${toUid}_${togetherActivityKey(activityId)}`);
     transaction.update(roomRef, {'together.status': 'accepted'});
     transaction.set(proposalRef, {status: 'accepted'}, {merge: true});
     return {changed: true, fromUid, activity};
@@ -9576,7 +9622,7 @@ export const respondTogetherProposal = callables()
       transaction.set(
         db().collection(TOGETHER_PROPOSALS).doc(
           `${stringValue(current.fromUid)}_${uid}_` +
-          togetherActivityKey(stringValue(current.activity)),
+          togetherActivityKey(stringValue(current.activityId)),
         ),
         {status: 'later'},
         {merge: true},

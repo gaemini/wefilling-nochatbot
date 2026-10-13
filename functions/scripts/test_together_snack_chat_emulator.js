@@ -27,24 +27,24 @@ async function friends(a, b) {
 
 async function main() {
   await user('me');
-  await user('you', {preferredActivities: ['같이 점심 먹기', '카페 가기', '영화 보기', '산책']});
-  await user('stranger', {preferredActivities: ['산책']});
-  await user('blocked', {preferredActivities: ['산책']});
+  await user('you', {preferredActivities: ['lunch', 'cafe', 'movie', 'running']});
+  await user('stranger', {preferredActivities: ['running']});
+  await user('blocked', {preferredActivities: ['running']});
   await friends('me', 'you');
   await friends('me', 'blocked');
   await db.collection('blocks').doc('blocked_me').set({blocker: 'blocked', blocked: 'me'});
 
   // 친구가 아니면 거부
-  await assert.rejects(() => propose({targetUid: 'stranger', activity: '산책'}, ctx('me')));
+  await assert.rejects(() => propose({targetUid: 'stranger', activityId: 'running'}, ctx('me')));
   // 상대 프로필에 없는 활동은 거부
-  await assert.rejects(() => propose({targetUid: 'you', activity: '번지점프'}, ctx('me')));
+  await assert.rejects(() => propose({targetUid: 'you', activityId: 'bungee'}, ctx('me')));
   // 차단은 거부
-  await assert.rejects(() => propose({targetUid: 'blocked', activity: '산책'}, ctx('me')));
+  await assert.rejects(() => propose({targetUid: 'blocked', activityId: 'running'}, ctx('me')));
   // 자기 자신 거부
-  await assert.rejects(() => propose({targetUid: 'me', activity: '산책'}, ctx('me')));
+  await assert.rejects(() => propose({targetUid: 'me', activityId: 'running'}, ctx('me')));
 
   // 성공
-  const first = await propose({targetUid: 'you', activity: '같이 점심 먹기'}, ctx('me'));
+  const first = await propose({targetUid: 'you', activityId: 'lunch'}, ctx('me'));
   assert.equal(first.success, true);
   assert.equal(first.created, true);
   const room = await db.collection('snack_chats').doc(first.snackChatId).get();
@@ -65,7 +65,7 @@ async function main() {
   assert.match(notifs.docs[0].get('title'), /me님이 같이 점심 먹자고 해요/);
 
   // 중복: 같은 방
-  const again = await propose({targetUid: 'you', activity: '같이 점심 먹기'}, ctx('me'));
+  const again = await propose({targetUid: 'you', activityId: 'lunch'}, ctx('me'));
   assert.equal(again.snackChatId, first.snackChatId);
   assert.equal(again.created, false);
   assert.equal((await db.collection('snack_chats').get()).size, 1);
@@ -87,7 +87,7 @@ async function main() {
   assert.equal((await db.collection('notifications').where('type', '==', 'snack_chat_together_accepted').get()).size, 1);
 
   // 다음에: 알림 없음, 시스템 메시지 1개
-  const second = await propose({targetUid: 'you', activity: '카페 가기'}, ctx('me'));
+  const second = await propose({targetUid: 'you', activityId: 'cafe'}, ctx('me'));
   assert.equal((await respond({roomId: second.snackChatId, response: 'later'}, ctx('you'))).status, 'later');
   const later = await db.collection('snack_chats').doc(second.snackChatId).get();
   assert.equal(later.get('together.status'), 'later');
@@ -96,13 +96,13 @@ async function main() {
   assert.equal(laterSys[0].get('metadata.systemType'), 'together_later');
 
   // 횟수 제한: 같은 상대 24시간 3회
-  await propose({targetUid: 'you', activity: '영화 보기'}, ctx('me'));
-  await assert.rejects(() => propose({targetUid: 'you', activity: '산책'}, ctx('me')));
+  await propose({targetUid: 'you', activityId: 'movie'}, ctx('me'));
+  await assert.rejects(() => propose({targetUid: 'you', activityId: 'running'}, ctx('me')));
 
   // 문장 규칙
-  assert.equal(chat.togetherFirstMessage('카페 가기'), '카페 같이 갈래요?');
-  assert.equal(chat.togetherFirstMessage('보드게임'), '‘보드게임’ 같이 할래요?');
-  assert.match(chat.togetherFirstMessage('Coffee'), /Coffee/);
+  assert.equal(chat.togetherFirstMessage('cafe'), '카페 같이 갈래요?');
+  assert.equal(chat.togetherFirstMessage('running'), '‘러닝’ 같이 할래요?');
+  assert.match(chat.togetherFirstMessage('photo', 'en'), /Take photos/);
 
   console.log('together snack chat emulator checks passed');
 }

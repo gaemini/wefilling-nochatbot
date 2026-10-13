@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Wefilling 프로필</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#111827; --sub:#707070; --pt:#2c6bc0; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#f3f4f6; --sub:#a0a0a0; } }
+  html,body { margin:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Segoe UI",sans-serif; }
+  main { max-width:420px; margin:0 auto; padding:72px 16px; text-align:center; }
+  h1 { font-size:20px; margin:0 0 8px; }
+  p { font-size:14px; line-height:1.5; color:var(--sub); margin:0 0 24px; }
+  a.btn { display:block; padding:13px 0; border-radius:10px; background:var(--pt);
+    color:#fff; text-decoration:none; font-weight:600; margin-bottom:10px; }
+  a.sub { background:transparent; color:var(--pt); border:1px solid var(--pt); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Wefilling에서 프로필을 열어요</h1>
+  <p>앱이 설치되어 있다면 자동으로 열립니다.<br>없다면 앱을 설치한 뒤 이 링크를 다시 열어 주세요.</p>
+  <a id="open" class="btn" href="#">앱에서 열기</a>
+  <a class="btn sub" href="https://apps.apple.com/app/wefilling/id0000000000" id="ios">App Store</a>
+  <a class="btn sub" href="https://play.google.com/store/apps/details?id=com.wefilling.app" id="android">Google Play</a>
+</main>
+<script>
+  // uid만 허용한다(경로 조작 방지). 개인정보는 이 페이지에 담지 않는다.
+  var m = location.pathname.match(/^\/u\/([A-Za-z0-9_-]{6,128})\/?$/);
+  var open = document.getElementById('open');
+  if (m) { open.href = 'wefilling://u/' + m[1]; } else { open.style.display = 'none'; }
+  var ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua)) document.getElementById('android').style.display = 'none';
+  else if (/Android/.test(ua)) document.getElementById('ios').style.display = 'none';
+</script>
+</body>
+</html>

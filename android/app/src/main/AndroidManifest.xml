@@ -92,6 +92,24 @@
                     android:scheme="wefilling"
                     android:host="organization-invite" />
             </intent-filter>
+            <!-- 프로필 공유 링크: https://wefilling.app/u/{uid} (App Links) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="wefilling.app"
+                    android:pathPrefix="/u/" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="wefilling"
+                    android:host="u" />
+            </intent-filter>
         </activity>
 
         <activity

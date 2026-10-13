@@ -198,14 +198,15 @@ class SnapshotActivitySheet extends StatefulWidget {
 }
 
 class _SnapshotActivitySheetState extends State<SnapshotActivitySheet> {
-  late final Stream<List<SnapshotViewer>> _viewers =
-      (widget.viewersStream ??
-              SnapshotService.instance.watchViewers(widget.snapshot.id))
-          .asBroadcastStream();
+  // 구독자는 StreamBuilder 하나뿐이다. asBroadcastStream은 시트가 닫혀도 원본
+  // 구독(조회자 리스너)을 끊지 않으므로 쓰지 않는다.
+  late final Stream<List<SnapshotViewer>> _viewers = widget.viewersStream ??
+      SnapshotService.instance.watchViewers(widget.snapshot.id);
   late Future<List<SnapshotMutualFeel>> _mutuals;
   DMService? _dmService;
   DMService get _dm => _dmService ??= DMService();
   final Set<String> _requesting = <String>{};
+  final Set<String> _opening = <String>{};
 
   @override
   void initState() {
@@ -254,6 +255,8 @@ class _SnapshotActivitySheetState extends State<SnapshotActivitySheet> {
   }
 
   Future<void> _message(String uid) async {
+    // 연타로 DM 화면이 두 번 열리지 않게 한다.
+    if (!_opening.add(uid)) return;
     try {
       final room = await _dm.prepareConversationForOpen(uid);
       if (!mounted || room == null) return;
@@ -269,6 +272,8 @@ class _SnapshotActivitySheetState extends State<SnapshotActivitySheet> {
         message: SnapshotStrings.of(context).commentFailed,
         type: AppSnackBarType.error,
       );
+    } finally {
+      _opening.remove(uid);
     }
   }
 

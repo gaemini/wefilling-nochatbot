@@ -46,8 +46,10 @@ class _NewGroupScreenState extends State<NewGroupScreen> {
   static const int _maxName = 20;
   static const String _defaultIcon = 'shape_circle';
 
-  late final FriendCategoryService _service =
-      widget.categoryService ?? FriendCategoryService();
+  /// 실제로 만들 때만 생성한다(화면을 열었다 닫기만 하면 Firestore를 건드리지 않는다).
+  FriendCategoryService? _ownedService;
+  FriendCategoryService get _service =>
+      widget.categoryService ?? (_ownedService ??= FriendCategoryService());
   final TextEditingController _nameController = TextEditingController();
   final FocusNode _nameFocus = FocusNode();
   final Set<String> _selected = <String>{};
@@ -84,7 +86,7 @@ class _NewGroupScreenState extends State<NewGroupScreen> {
   void dispose() {
     _nameController.dispose();
     _nameFocus.dispose();
-    if (widget.categoryService == null) _service.dispose();
+    _ownedService?.dispose();
     super.dispose();
   }
 

@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
 import '../design/tokens.dart';
-import '../ui/widgets/tab_empty_state.dart';
+import '../ui/widgets/groups_empty_state.dart';
 import 'unified_search_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/relationship_provider.dart';
@@ -47,9 +47,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
   AuthProvider? _authProvider;
   static const int _maxCategories = FriendCategoryService.maxCategoriesPerUser;
   late TabController _tabController;
-
-  /// 그룹 빈 화면에서 고른 이름 칩(한 번에 하나).
-  String? _selectedEmptyName;
 
   /// 카테고리 스트림 구독 – 마지막 데이터를 state에 보관해
   /// TabBarView 탭 전환 시에도 로딩 스피너 없이 즉시 표시된다.
@@ -428,150 +425,27 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
   }
 
   Widget _buildGroupsEmptyState() {
-    final strings = GroupUiStrings.of(context);
     final ready = context.select<RelationshipProvider, bool>(
       (provider) => provider.relationshipStreamsReady,
     );
     final profiles = context.select<RelationshipProvider, List<UserProfile>>(
       (provider) => provider.friends,
     );
-    final friendCount = ready ? profiles.length : null;
-    final noFriends = ready && profiles.isEmpty;
-    final List<GroupMember>? faces = ready
-        ? [
-            for (final profile in profiles.take(6))
-              GroupMember(
-                uid: profile.uid,
-                name: profile.displayNameOrNickname,
-                photoUrl: profile.photoURL ?? '',
-              ),
-          ]
-        : null;
-    final chips = strings.groupNameChips;
-    final selected = _selectedEmptyName;
-
-    return SafeArea(
-      top: false,
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.3,
-        child: CustomScrollView(
-          physics: const ClampingScrollPhysics(),
-          slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 44, bottom: 24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (!noFriends) ...[
-                          Semantics(
-                            label: friendCount == null
-                                ? null
-                                : strings.friendsCount(friendCount),
-                            child: ExcludeSemantics(
-                              child: Row(
-                                key: const ValueKey('groups_empty_faces'),
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  GroupFaceStack(
-                                    members: faces,
-                                    avatarSize: 36,
-                                    overlap: 9,
-                                    maxShown: 6,
-                                    borderWidth: 2.5,
-                                    reserveOverflowSlot: false,
-                                    placeholderCount: 6,
-                                  ),
-                                  if (friendCount != null) ...[
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      strings.friendsCount(friendCount),
-                                      style: TextStyle(
-                                        fontFamily:
-                                            uiFontFamily(context, 'Inter'),
-                                        fontFamilyFallback: const [
-                                          'NotoSansKR'
-                                        ],
-                                        fontSize: 13,
-                                        height: 19 / 13,
-                                        color: const Color(0xFF8A8A8A),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-                        TabEmptyStateText(
-                          title: strings.groupsEmptyTitle,
-                          body: noFriends
-                              ? strings.groupsNoFriends
-                              : strings.groupsEmptyBody,
-                        ),
-                        if (!noFriends) ...[
-                          const SizedBox(height: 26),
-                          Text(
-                            strings.groupsNamePrompt,
-                            style: TextStyle(
-                              fontFamily: uiFontFamily(context, 'Inter'),
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 12,
-                              height: 16 / 12,
-                              color: const Color(0xFF8A8A8A),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Wrap(
-                              alignment: WrapAlignment.center,
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                for (final name in chips)
-                                  _NameChip(
-                                    key: ValueKey<String>('groups_chip_$name'),
-                                    label: name,
-                                    selected: selected == name,
-                                    onTap: () => setState(
-                                      () => _selectedEmptyName =
-                                          selected == name ? null : name,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 16),
-                        TabEmptyStateButton(
-                          key: const Key('groups_empty_create_button'),
-                          label: noFriends
-                              ? strings.findFriendsButton
-                              : (selected == null
-                                  ? strings.groupsFirstButton
-                                  : strings.createNamedGroup(selected)),
-                          onPressed: noFriends
-                              ? _openFriendSearch
-                              : () => _handleCreateCategory(
-                                    initialName: selected,
-                                  ),
-                        ),
-                      ],
-                    ),
-                  ),
+    return GroupsEmptyState(
+      friendCount: ready ? profiles.length : null,
+      faces: ready
+          ? [
+              for (final profile in profiles.take(6))
+                GroupMember(
+                  uid: profile.uid,
+                  name: profile.displayNameOrNickname,
+                  photoUrl: profile.photoURL ?? '',
                 ),
-              ),
-            ),
-          ],
-        ),
-      ),
+            ]
+          : null,
+      // 최대 개수 검사는 기존 _handleCreateCategory가 그대로 맡는다.
+      onCreate: (name) => _handleCreateCategory(initialName: name),
+      onFindFriends: _openFriendSearch,
     );
   }
 
@@ -863,59 +737,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         );
       }
     }
-  }
-}
-
-/// 그룹 빈 화면의 이름 칩: 높이 34, 모서리 17. 고르면 검정 바탕 + 흰 글자.
-class _NameChip extends StatelessWidget {
-  const _NameChip({
-    super.key,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: reduce ? Duration.zero : const Duration(milliseconds: 150),
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? Colors.black : Colors.white,
-            border: Border.all(
-              color: selected ? Colors.black : const Color(0xFFE3E3E3),
-            ),
-            borderRadius: BorderRadius.circular(17),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 13,
-              height: 18 / 13,
-              fontWeight: FontWeight.w500,
-              color: selected ? Colors.white : Colors.black,
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 

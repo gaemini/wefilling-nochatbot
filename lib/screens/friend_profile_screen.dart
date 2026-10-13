@@ -397,7 +397,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              (isChineseUi(context) ? '资料加载失败' : isKo ? '프로필을 불러오지 못했어요' : 'Unable to load profile'),
+              (isChineseUi(context)
+                  ? '资料加载失败'
+                  : isKo
+                      ? '프로필을 불러오지 못했어요'
+                      : 'Unable to load profile'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
@@ -409,7 +413,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              (isChineseUi(context) ? '请稍后重试。' : isKo ? '잠시 후 다시 시도해 주세요.' : 'Please try again in a moment.'),
+              (isChineseUi(context)
+                  ? '请稍后重试。'
+                  : isKo
+                      ? '잠시 후 다시 시도해 주세요.'
+                      : 'Please try again in a moment.'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
@@ -422,7 +430,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             TextButton.icon(
               onPressed: _retryProfileLoad,
               icon: const Icon(Icons.refresh_rounded, size: 19),
-              label: Text((isChineseUi(context) ? '重试' : isKo ? '다시 시도' : 'Retry')),
+              label: Text((isChineseUi(context)
+                  ? '重试'
+                  : isKo
+                      ? '다시 시도'
+                      : 'Retry')),
             ),
           ],
         ),
@@ -492,9 +504,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              (isChineseUi(context) ? '此账号已不可用。' : isKo
-                  ? '탈퇴하여 더 이상 조회할 수 없는 계정입니다.'
-                  : 'This account is no longer available.'),
+              (isChineseUi(context)
+                  ? '此账号已不可用。'
+                  : isKo
+                      ? '탈퇴하여 더 이상 조회할 수 없는 계정입니다.'
+                      : 'This account is no longer available.'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
@@ -535,7 +549,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              (isChineseUi(context) ? '无法查看资料' : isKo ? '프로필을 볼 수 없어요' : 'Profile unavailable'),
+              (isChineseUi(context)
+                  ? '无法查看资料'
+                  : isKo
+                      ? '프로필을 볼 수 없어요'
+                      : 'Profile unavailable'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
@@ -547,9 +565,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              (isChineseUi(context) ? '账号被拉黑时，资料和好友列表将隐藏。' : isKo
-                  ? '차단 관계에서는 프로필과 친구 목록이 표시되지 않아요.'
-                  : 'Profiles and friend lists are hidden when an account is blocked.'),
+              (isChineseUi(context)
+                  ? '账号被拉黑时，资料和好友列表将隐藏。'
+                  : isKo
+                      ? '차단 관계에서는 프로필과 친구 목록이 표시되지 않아요.'
+                      : 'Profiles and friend lists are hidden when an account is blocked.'),
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
@@ -648,7 +668,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     // 학교 줄: [인증 배지] 학교 · 학과 · 학번(공개 설정을 따른다, 인증 표시는 한 번).
     final schoolParts = <String>[
       if (university.isNotEmpty) university,
-      if (isSchoolVerified && social.showDepartment && social.department.isNotEmpty)
+      if (isSchoolVerified &&
+          social.showDepartment &&
+          social.department.isNotEmpty)
         social.department,
       if (isSchoolVerified && social.showGrade && social.grade.isNotEmpty)
         social.grade,
@@ -686,12 +708,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       );
     }
 
-
     final hasPhoto = photoURL != null && photoURL.toString().isNotEmpty;
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 12),
+        padding:
+            EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -747,8 +769,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                               key: const ValueKey('profile_name'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: style(18, FontWeight.w700,
-                                  const Color(0xFF111827),
+                              style: style(
+                                  18, FontWeight.w700, const Color(0xFF111827),
                                   line: 24),
                             ),
                           ),
@@ -810,12 +832,28 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                         runSpacing: 2,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          stat(zh ? '好友' : languageCode == 'ko' ? '친구' : 'Friends', 'friend_profile_friends',
+                          stat(
+                              zh
+                                  ? '好友'
+                                  : languageCode == 'ko'
+                                      ? '친구'
+                                      : 'Friends',
+                              'friend_profile_friends',
                               friends: true),
-                          stat(zh ? '聚会' : languageCode == 'ko' ? '모임' : 'Meetups',
+                          stat(
+                              zh
+                                  ? '聚会'
+                                  : languageCode == 'ko'
+                                      ? '모임'
+                                      : 'Meetups',
                               'friend_profile_joined_meetups',
                               joined: true),
-                          stat(zh ? '动态' : languageCode == 'ko' ? '글' : 'Posts',
+                          stat(
+                              zh
+                                  ? '动态'
+                                  : languageCode == 'ko'
+                                      ? '글'
+                                      : 'Posts',
                               'friend_profile_written_posts',
                               posts: true),
                         ],
@@ -860,7 +898,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                           ),
                         ),
                         child: Text(
-                          zh ? '发消息' : languageCode == 'ko' ? '메시지' : 'Message',
+                          zh
+                              ? '发消息'
+                              : languageCode == 'ko'
+                                  ? '메시지'
+                                  : 'Message',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: style(14, FontWeight.w600, Colors.white),
@@ -896,7 +938,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                             )
                           : Text(
                               isFriends
-                                  ? (zh ? '好友 ✓' : languageCode == 'ko' ? '친구 ✓' : 'Friends ✓')
+                                  ? (zh
+                                      ? '好友 ✓'
+                                      : languageCode == 'ko'
+                                          ? '친구 ✓'
+                                          : 'Friends ✓')
                                   : isPending
                                       ? l10n.requestPending
                                       : hasIncomingRequest
@@ -912,8 +958,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                                                   : 'Add friend'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: style(13, FontWeight.w600,
-                                  const Color(0xFF111827)),
+                              style: style(
+                                  13, FontWeight.w600, const Color(0xFF111827)),
                             ),
                     ),
                   ),
@@ -930,7 +976,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   final Map<String, bool> _togetherLoading = <String, bool>{};
   final Map<String, String> _togetherRoomIds = <String, String>{};
 
-  Future<void> _proposeTogether(String activityId, {required bool allowed}) async {
+  Future<void> _proposeTogether(String activityId,
+      {required bool allowed}) async {
     final strings = TogetherStrings.of(context);
     if (!allowed) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1007,7 +1054,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     final languageCode = Localizations.localeOf(context).languageCode;
     final zh = isChineseUi(context);
     final strings = TogetherStrings.of(context);
-    final nickname = (_userData?['nickname'] ?? widget.nickname ?? '').toString();
+    final nickname =
+        (_userData?['nickname'] ?? widget.nickname ?? '').toString();
     final horizontalPadding =
         MediaQuery.sizeOf(context).width < 360 ? 16.0 : 20.0;
     TextStyle style(double size, FontWeight weight, Color color,
@@ -1031,7 +1079,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              zh ? '最近感兴趣' : languageCode == 'ko' ? '요즘 관심 있는 것' : 'Into these days',
+              zh
+                  ? '最近感兴趣'
+                  : languageCode == 'ko'
+                      ? '요즘 관심 있는 것'
+                      : 'Into these days',
               style: style(12, FontWeight.w600, const Color(0xFF707070)),
             ),
             const SizedBox(height: 8),
@@ -1085,7 +1137,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                       maxLines: 1,
                       textAlign: TextAlign.end,
                       overflow: TextOverflow.ellipsis,
-                      style: style(11, FontWeight.w400, const Color(0xFF8A8A8A)),
+                      style:
+                          style(11, FontWeight.w400, const Color(0xFF8A8A8A)),
                     ),
                   ),
               ],
@@ -1150,7 +1203,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                 child: Center(
                   widthFactor: 1,
                   child: Text(
-                    zh ? '回答' : languageCode == 'ko' ? '답하기' : 'Answer',
+                    zh
+                        ? '回答'
+                        : languageCode == 'ko'
+                            ? '답하기'
+                            : 'Answer',
                     style: style(14, FontWeight.w500, const Color(0xFF2C6BC0)),
                   ),
                 ),
@@ -1164,7 +1221,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, 8),
+        padding:
+            EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: sections,
@@ -1306,7 +1364,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              (isChineseUi(context) ? '一起聚会的瞬间' : isKo ? '함께한 모임 후기' : 'Meetup moments together'),
+              (isChineseUi(context)
+                  ? '一起聚会的瞬间'
+                  : isKo
+                      ? '함께한 모임 후기'
+                      : 'Meetup moments together'),
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
@@ -1319,7 +1381,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             const SizedBox(height: 10),
             if (_reviewPreview.isEmpty)
               Text(
-                (isChineseUi(context) ? '还没有一起参加的聚会回顾' : isKo ? '아직 함께한 모임 후기가 없어요' : 'No meetup reviews together yet'),
+                (isChineseUi(context)
+                    ? '还没有一起参加的聚会回顾'
+                    : isKo
+                        ? '아직 함께한 모임 후기가 없어요'
+                        : 'No meetup reviews together yet'),
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
@@ -1343,8 +1409,16 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         '${review.createdAt.month.toString().padLeft(2, '0')}.'
         '${review.createdAt.day.toString().padLeft(2, '0')}';
     final role = review.participationRole == 'host'
-        ? ((isChineseUi(context) ? '发起人' : isKo ? '모임장' : 'Host'))
-        : ((isChineseUi(context) ? '参与者' : isKo ? '참여자' : 'Participant'));
+        ? ((isChineseUi(context)
+            ? '发起人'
+            : isKo
+                ? '모임장'
+                : 'Host'))
+        : ((isChineseUi(context)
+            ? '参与者'
+            : isKo
+                ? '참여자'
+                : 'Participant'));
     final imageSize = MediaQuery.sizeOf(context).width < 360 ? 68.0 : 76.0;
     return InkWell(
       onTap: () => Navigator.push(
@@ -1431,7 +1505,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       child: Icon(Icons.groups_2_outlined, color: Color(0xFF94A3B8)),
     );
   }
-
 
   /// 프로필 이미지 확대 뷰어 열기
   void _openProfileImageViewer(String imageUrl) {
@@ -1662,13 +1735,12 @@ class _TogetherChip extends StatelessWidget {
                           padding: const EdgeInsets.all(6),
                           child: CircularProgressIndicator(
                             strokeWidth: 1.8,
-                            color: done ? const Color(0xFF2C6BC0) : Colors.white,
+                            color:
+                                done ? const Color(0xFF2C6BC0) : Colors.white,
                           ),
                         )
                       : Icon(
-                          done
-                              ? Icons.check_rounded
-                              : Icons.north_east_rounded,
+                          done ? Icons.check_rounded : Icons.north_east_rounded,
                           size: 13,
                           color: done ? const Color(0xFF2C6BC0) : Colors.white,
                         ),

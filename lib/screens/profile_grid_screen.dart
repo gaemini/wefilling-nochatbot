@@ -685,11 +685,16 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
     final nickname = (profile.nickname ?? '').trim().isNotEmpty
         ? profile.nickname!.trim()
         : profile.displayNameOrNickname;
-    await showProfileShareSheet(
-      context,
-      uid: profile.uid,
-      nickname: nickname,
-    );
+    setState(() => _isShareProcessing = true);
+    try {
+      await showProfileShareSheet(
+        context,
+        uid: profile.uid,
+        nickname: nickname,
+      );
+    } finally {
+      if (mounted) setState(() => _isShareProcessing = false);
+    }
   }
 
   Future<bool> _confirmAction({

@@ -168,10 +168,13 @@ async function main() {
   await db.collection('snapshots').doc(s1).collection('views').doc('a').set({
     viewedAt: admin.firestore.Timestamp.now(), displayName: 'a',
   });
-  const withReaction = await viewers({snapshotId: s1}, ctx('owner'));
+  const withReaction = await viewers({snapshotId: s1, includeReaction: true}, ctx('owner'));
   assert.equal(withReaction.viewers.find((v) => v.userId === 'a').reaction, '❤️');
   const hidden = await viewers({snapshotId: s1, includeReaction: false}, ctx('owner'));
   assert.equal(hidden.viewers.find((v) => v.userId === 'a').reaction, '');
+  // 기본값(필드 없음)은 반응을 돌려주지 않는다
+  const byDefault = await viewers({snapshotId: s1}, ctx('owner'));
+  assert.equal(byDefault.viewers.find((v) => v.userId === 'a').reaction, '');
 
   console.log('snapshot feel emulator checks passed');
 }

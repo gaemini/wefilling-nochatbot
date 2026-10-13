@@ -1183,9 +1183,10 @@ export const getSnapshotViewers = callables().https.onCall(async (raw, context) 
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
-  // 새 클라이언트는 includeReaction:false를 보낸다. 필드가 없으면(이전 버전)
-  // 기존 응답 형태를 그대로 돌려준다.
-  const includeReaction = data.includeReaction !== false;
+  // 필링은 서로 필링 전까지 작성자에게 보이지 않는다. 호출자가 명시적으로
+  // includeReaction:true를 보낼 때만 반응을 돌려준다(이전 버전 앱 호환은
+  // 최소 지원 버전 상향 뒤 이 기본값으로 전환).
+  const includeReaction = data.includeReaction === true;
   const snapshotRef = db().collection(COL.snapshots).doc(snapshotId);
   const snapshot = await snapshotRef.get();
   if (!snapshot.exists) {

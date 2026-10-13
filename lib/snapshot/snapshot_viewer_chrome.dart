@@ -188,7 +188,7 @@ class SnapshotTranslateChip extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: snapshotChromeStyle(context, size: 12.5),
+                style: snapshotChromeStyle(context, size: 12),
               ),
             ),
           ],

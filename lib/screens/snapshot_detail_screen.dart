@@ -1749,7 +1749,7 @@ class _SnapshotInfoRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: snapshotChromeStyle(
                       context,
-                      size: 12.5,
+                      size: 12,
                       weight: FontWeight.w500,
                     ),
                   ),
@@ -1773,7 +1773,7 @@ class _SnapshotInfoRow extends StatelessWidget {
                   ? '${strings.oneLinerChip} ${_compactCount(snapshot.commentCount)}'
                   : strings.oneLinerChip,
               maxLines: 1,
-              style: snapshotChromeStyle(context, size: 13),
+              style: snapshotChromeStyle(context, size: 12),
             ),
           ),
       ],
@@ -1797,10 +1797,8 @@ class _SnapshotCaptionBar extends StatelessWidget {
     final translated = snapshot.translatedCaption.trim();
     final text = showTranslated && translated.isNotEmpty ? translated : original;
     if (text.isEmpty) return const SizedBox.shrink();
-    final style = snapshotChromeStyle(
-      context,
-      size: context.rf(15).clamp(14, 16).toDouble(),
-    ).copyWith(height: 1.3);
+    // 스낵 v3: 화면 비례 글자 크기를 쓰지 않는다(본문 14).
+    final style = snapshotChromeStyle(context, size: 14).copyWith(height: 20 / 14);
     return AnimatedSwitcher(
       duration: snapshotReduceMotion(context)
           ? Duration.zero
@@ -1834,7 +1832,7 @@ class _SnapshotUnavailableView extends StatelessWidget {
             fontFamily: uiFontFamily(context, 'Inter'),
             fontFamilyFallback: const ['NotoSansKR'],
             color: const Color(0xFFD0D5DD),
-            fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
+            fontSize: 14,
             height: 1.4,
           ),
         ),

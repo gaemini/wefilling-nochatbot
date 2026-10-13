@@ -122,21 +122,23 @@ void main() {
     TextStyle styleOn(WidgetTester tester) => chatMessageTextStyle(
         tester.element(find.byKey(const ValueKey('input'))));
 
-    testWidgets('iOS는 시스템 글꼴 15.5pt w500, 폴백 비움', (tester) async {
+    testWidgets('iOS는 시스템 글꼴 15pt w400, 폴백 비움', (tester) async {
       await pump(tester, platform: TargetPlatform.iOS);
       final style = styleOn(tester);
       expect(style.fontFamily, chatSystemFontFamily);
       expect(style.fontFamilyFallback, isEmpty);
-      expect(style.fontSize, 15.5);
-      expect(style.fontWeight, FontWeight.w500);
+      expect(style.fontSize, 15);
+      expect(style.fontWeight, FontWeight.w400);
+      expect(style.height, closeTo(20 / 15, 0.001));
     });
 
-    testWidgets('Android는 기존 글꼴(Inter) 15.5pt w500', (tester) async {
+    testWidgets('Android는 기존 글꼴(Inter) 15pt w400', (tester) async {
       await pump(tester, platform: TargetPlatform.android);
       final style = styleOn(tester);
       expect(style.fontFamily, 'Inter');
-      expect(style.fontSize, 15.5);
-      expect(style.fontWeight, FontWeight.w500);
+      expect(style.fontSize, 15);
+      expect(style.fontWeight, FontWeight.w400);
+      expect(style.height, closeTo(20 / 15, 0.001));
     });
   });
 

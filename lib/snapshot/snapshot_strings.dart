@@ -417,6 +417,71 @@ class SnapshotStrings {
       : isKorean
           ? '사진이나 짧은 영상이 24시간 동안 보여요.'
           : 'A photo or short video, visible for 24 hours.');
+  String get shareBack => (isChinese
+      ? '编辑'
+      : isKorean
+          ? '편집'
+          : 'Edit');
+  String get shareLifetimeNote => (isChinese
+      ? '24小时后消失'
+      : isKorean
+          ? '24시간 뒤 사라져요'
+          : 'Gone in 24h');
+  String get shareVisibilityTitle => (isChinese
+      ? '公开范围'
+      : isKorean
+          ? '공개 범위'
+          : 'Visibility');
+  String get shareResponseTitle => (isChinese
+      ? '接收方式'
+      : isKorean
+          ? '받는 방식'
+          : 'Replies');
+  String get shareChoicePublic => (isChinese
+      ? '所有人'
+      : isKorean
+          ? '전체'
+          : 'Everyone');
+  String get shareChoiceFriends => (isChinese
+      ? '好友'
+      : isKorean
+          ? '친구'
+          : 'Friends');
+  String get shareChoiceGroups => (isChinese
+      ? '分组'
+      : isKorean
+          ? '그룹'
+          : 'Groups');
+  String get responseFeelOnly => (isChinese
+      ? '仅心动'
+      : isKorean
+          ? '필링만'
+          : 'Feel only');
+  String get responseFriendReply => (isChinese
+      ? '好友可回复'
+      : isKorean
+          ? '친구 답장도'
+          : 'Friend replies');
+  String get responseFeelOnlyHint => (isChinese
+      ? '任何人都可以心动。互相心动前不会显示是谁。'
+      : isKorean
+          ? '누구나 필링을 보낼 수 있어요. 보낸 사람은 서로 필링 전까지 가려져요'
+          : 'Anyone can send a feel. Who sent it stays hidden until you feel each other.');
+  String get responseFriendReplyHint => (isChinese
+      ? '好友还可以通过私信回复。'
+      : isKorean
+          ? '필링에 더해, 친구는 DM으로 답장할 수 있어요'
+          : 'Friends can also reply by DM.');
+  String get shareSnackButton => (isChinese
+      ? '分享限时动态'
+      : isKorean
+          ? '스낵 공유하기'
+          : 'Share Snack');
+  String sharingProgress(int percent) => (isChinese
+      ? '分享中 $percent%'
+      : isKorean
+          ? '공유 중 $percent%'
+          : 'Sharing $percent%');
   String get add => (isChinese
       ? '添加'
       : isKorean

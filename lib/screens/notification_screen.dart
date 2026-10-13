@@ -2,6 +2,7 @@
 // 알림 목록 화면
 // 알림 표시 및 읽음 처리
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/app_notification.dart';
 import '../services/notification_service.dart';

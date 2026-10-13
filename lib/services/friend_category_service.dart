@@ -62,12 +62,22 @@ class FriendCategoryService {
     });
   }
 
+  /// 공백·빈 값·본인을 빼고 중복을 없앤다(순서는 처음 등장한 순).
+  static List<String> normalizeFriendIds(Iterable<String> ids, String ownerUid) {
+    return ids
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty && id != ownerUid)
+        .toSet()
+        .toList(growable: false);
+  }
+
   // 카테고리 생성
   Future<String?> createCategory({
     required String name,
     required String description,
     required String color,
     required String iconName,
+    List<String> initialFriendIds = const <String>[],
   }) async {
     try {
       final user = _auth.currentUser;
@@ -91,7 +101,8 @@ class FriendCategoryService {
         'color': color,
         'iconName': iconName,
         'userId': user.uid,
-        'friendIds': <String>[],
+        // 만들기와 멤버 저장이 따로 실패하지 않도록 한 번에 저장한다.
+        'friendIds': normalizeFriendIds(initialFriendIds, user.uid),
         'createdAt': Timestamp.fromDate(now),
         'updatedAt': Timestamp.fromDate(now),
       };
@@ -204,11 +215,7 @@ class FriendCategoryService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
-      final normalizedFriendIds = friendIds
-          .map((id) => id.trim())
-          .where((id) => id.isNotEmpty && id != user.uid)
-          .toSet()
-          .toList(growable: false);
+      final normalizedFriendIds = normalizeFriendIds(friendIds, user.uid);
       final categoryRef =
           _firestore.collection('friend_categories').doc(categoryId);
       await _firestore.runTransaction((transaction) async {

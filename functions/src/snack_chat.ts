@@ -8789,6 +8789,18 @@ export const onSnackChatMessageCreatedSecure = triggers()
       `durationMs=${Date.now() - functionStartedAt}`,
     );
     const senderName = await senderNamePromise;
+    // 같이하기: 받는 사람이 답장을 보내면 제안을 수락한 것으로 처리한다.
+    await acceptTogetherOnReply({
+      roomRef,
+      senderId,
+      eventId: context.eventId,
+      senderName,
+    }).catch((error) => {
+      console.error('together implicit accept failed', error);
+    });
+    // 같이하기 첫 메시지는 전용 알림(snack_chat_together)이 이미 나가므로
+    // 일반 채팅 푸시를 중복으로 보내지 않는다.
+    if (message.togetherProposal === true) return null;
     if (stringValue(message.type) === 'poll') {
       const poll = objectValue(message.poll);
       const question = boundedString(
@@ -9165,4 +9177,420 @@ export const onSnackChatVoteWritten = triggers()
       });
     });
     return null;
+  });
+
+// ---------------------------------------------------------------------------
+// 같이하기(프로필의 "같이 하고 싶은 것" → 1:1 24시간 스낵챗 제안)
+// ---------------------------------------------------------------------------
+
+const TOGETHER_PROPOSALS = 'together_proposals';
+const TOGETHER_PAIR_LIMIT_24H = 3;
+const TOGETHER_DAILY_LIMIT = 20;
+/** false면 친구에게만 제안할 수 있다. true면 비친구에게도 허용한다. */
+const TOGETHER_ALLOW_NON_FRIENDS = false;
+const TOGETHER_NON_FRIEND_PAIR_LIMIT_24H = 1;
+const TOGETHER_ACTIVITY_MAX = 40;
+const TOGETHER_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
+/** 같은 활동을 같은 키로 모으기 위한 정규화(공백·대소문자 무시). */
+export function togetherActivityKey(activity: string): string {
+  const normalized = activity.normalize('NFKC').toLowerCase()
+    .replace(/\s+/g, ' ').trim();
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const hash = require('crypto').createHash('sha1')
+    .update(normalized).digest('hex').slice(0, 16);
+  return hash;
+}
+
+const KOREAN_TOGETHER_SENTENCES: Record<string, string> = {
+  '같이 점심 먹기': '같이 점심 먹을래요?',
+  '점심 먹기': '같이 점심 먹을래요?',
+  '카페 가기': '카페 같이 갈래요?',
+  '같이 카페 가기': '카페 같이 갈래요?',
+  '영화 보기': '영화 같이 볼래요?',
+  '같이 영화 보기': '영화 같이 볼래요?',
+};
+
+/** 활동별 자연스러운 첫 문장. 사전에 없으면 활동 이름을 인용한다. */
+export function togetherFirstMessage(activity: string): string {
+  const key = activity.trim().replace(/\s+/g, ' ');
+  const mapped = KOREAN_TOGETHER_SENTENCES[key];
+  if (mapped) return mapped;
+  if (/[가-힣]/.test(key)) return `‘${key}’ 같이 할래요?`;
+  if (/[\u4e00-\u9fff]/.test(key)) return `一起「${key}」好吗？`;
+  return `Want to do “${key}” together?`;
+}
+
+function togetherPushCopy(name: string, activity: string): {
+  title: string;
+  message: string;
+} {
+  const korean = /[가-힣]/.test(activity);
+  const act = activity.replace(/^같이\s+/, '');
+  if (korean) {
+    // “같이 점심 먹기” → “같이 점심 먹자고 해요”
+    const phrase = act.endsWith('기') ? act.slice(0, -1) + '자고' : act + ' 하자고';
+    return {
+      title: `${name}님이 같이 ${phrase} 해요`,
+      message: '눌러서 답해 보세요 · 24시간 동안 열려 있어요',
+    };
+  }
+  return {
+    title: `${name} wants to ${activity} with you`,
+    message: 'Tap to reply · open for 24 hours',
+  };
+}
+
+async function areFriends(a: string, b: string): Promise<boolean> {
+  const id = [a, b].sort().join('__');
+  return (await db().collection('friendships').doc(id).get()).exists;
+}
+
+/** 같이하기 제안: 상대 프로필의 활동만, 1:1 24시간 방 + 첫 메시지 + 전용 알림. */
+export const proposeTogetherSnackChat = callables()
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const fromUid = requireUid(context);
+    const fromData = await requireActiveUser(fromUid);
+    const request = objectValue(raw);
+    const toUid = firestoreId(request.targetUid, 'targetUid');
+    const activity = boundedString(request.activity, TOGETHER_ACTIVITY_MAX)
+      .trim();
+    if (!activity || toUid === fromUid) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'A valid target and activity are required.',
+      );
+    }
+    const toData = await requireActiveUser(toUid);
+    // 활동은 상대 프로필에 실제로 있는 값이어야 한다(클라이언트 값을 믿지 않는다).
+    const allowed = Array.isArray(toData.preferredActivities)
+      ? (toData.preferredActivities as unknown[])
+        .map((value) => stringValue(value).replace(/\s+/g, ' '))
+      : [];
+    const normalizedActivity = activity.replace(/\s+/g, ' ');
+    if (!allowed.includes(normalizedActivity)) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'The activity is not in the target profile.',
+      );
+    }
+    const blocks = await db().getAll(
+      db().collection(BLOCKS).doc(fromUid + '_' + toUid),
+      db().collection(BLOCKS).doc(toUid + '_' + fromUid),
+    );
+    if (blocks.some((snapshot) => snapshot.exists)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'A blocked user cannot be invited to a Snack Chat.',
+      );
+    }
+    const friends = await areFriends(fromUid, toUid);
+    if (!friends && !TOGETHER_ALLOW_NON_FRIENDS) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Only friends can send a together proposal.',
+      );
+    }
+
+    const activityKey = togetherActivityKey(normalizedActivity);
+    const proposalRef = db().collection(TOGETHER_PROPOSALS)
+      .doc(`${fromUid}_${toUid}_${activityKey}`);
+    const nowMs = Date.now();
+
+    // 열린 제안 중복: 같은 쌍·활동이면 기존 방을 돌려준다.
+    const existing = await proposalRef.get();
+    if (existing.exists &&
+        stringValue(existing.get('status')) === 'pending' &&
+        timestampMillis(existing.get('expiresAt')) > nowMs) {
+      return {
+        success: true,
+        snackChatId: stringValue(existing.get('roomId')),
+        created: false,
+      };
+    }
+
+    // 보내는 횟수 제한: 같은 상대 24시간, 하루 전체.
+    const since = Timestamp.fromMillis(nowMs - TOGETHER_LIFETIME_MS);
+    const recent = await db().collection(TOGETHER_PROPOSALS)
+      .where('fromUid', '==', fromUid)
+      .where('createdAt', '>=', since)
+      .get();
+    const toSame = recent.docs
+      .filter((doc) => stringValue(doc.get('toUid')) === toUid).length;
+    const pairLimit = friends
+      ? TOGETHER_PAIR_LIMIT_24H
+      : TOGETHER_NON_FRIEND_PAIR_LIMIT_24H;
+    if (toSame >= pairLimit || recent.size >= TOGETHER_DAILY_LIMIT) {
+      throw new functions.https.HttpsError(
+        'resource-exhausted',
+        'Too many together proposals.',
+      );
+    }
+
+    const fromName = boundedString(
+      fromData.nickname ?? fromData.name ?? 'User',
+      80,
+    ) || 'User';
+    const roomRef = db().collection(SNACK_CHATS).doc();
+    const messageRef = roomRef.collection('messages').doc();
+    const notificationRef = db().collection('notifications').doc();
+    const copy = togetherPushCopy(fromName, normalizedActivity);
+    const text = boundedString(togetherFirstMessage(normalizedActivity), 500);
+
+    await db().runTransaction(async (transaction) => {
+      const [fromDoc, toDoc, proposal] = await transaction.getAll(
+        db().collection(USERS).doc(fromUid),
+        db().collection(USERS).doc(toUid),
+        proposalRef,
+      );
+      assertActiveUserSnapshot(fromDoc);
+      assertActiveUserSnapshot(toDoc);
+      if (proposal.exists &&
+          stringValue(proposal.get('status')) === 'pending' &&
+          timestampMillis(proposal.get('expiresAt')) > nowMs) {
+        return;
+      }
+      const now = Timestamp.now();
+      const expiresAt = Timestamp.fromMillis(
+        now.toMillis() + TOGETHER_LIFETIME_MS,
+      );
+      // 기존 방 생성(createSnackChatSecure)과 같은 필드·무결성 버전을 쓴다.
+      transaction.create(roomRef, {
+        title: normalizedActivity,
+        creatorId: fromUid,
+        participantIds: [fromUid, toUid],
+        visibleToCategoryIds: [],
+        createdAt: now,
+        listPolicyVersion: CURRENT_LIST_POLICY_VERSION,
+        participantIntegrityVersion: CURRENT_PARTICIPANT_INTEGRITY_VERSION,
+        activeDurationHours: 24,
+        expiresAt,
+        favoriteUserIds: [],
+        lastMessage: text,
+        lastMessageId: messageRef.id,
+        lastMessageTime: now,
+        lastMessageSenderId: fromUid,
+        lastMessageType: 'text',
+        lastMessageSequence: 1,
+        unreadCount: {[fromUid]: 0, [toUid]: 0},
+        updatedAt: now,
+        together: {
+          fromUid,
+          toUid,
+          activity: normalizedActivity,
+          status: 'pending',
+          createdAt: now,
+        },
+      });
+      transaction.create(messageRef, {
+        senderId: fromUid,
+        messageScope: 'snack_chat',
+        chatId: roomRef.id,
+        type: 'text',
+        text,
+        createdAt: now,
+        sequence: 1,
+        recipientIds: [toUid],
+        readBy: [fromUid],
+        isDeleted: false,
+        linkPreviewRemoved: true,
+        reactionCounts: {},
+        togetherProposal: true,
+      });
+      transaction.set(proposalRef, {
+        fromUid,
+        toUid,
+        activity: normalizedActivity,
+        activityKey,
+        roomId: roomRef.id,
+        status: 'pending',
+        createdAt: now,
+        expiresAt,
+      });
+      transaction.create(notificationRef, {
+        userId: toUid,
+        title: copy.title,
+        message: copy.message,
+        type: 'snack_chat_together',
+        meetupId: null,
+        postId: null,
+        actorId: fromUid,
+        actorName: fromName,
+        data: {
+          snackChatId: roomRef.id,
+          actorId: fromUid,
+          actorName: fromName,
+          activity: normalizedActivity,
+        },
+        createdAt: FieldValue.serverTimestamp(),
+        isRead: false,
+      });
+    });
+    const confirmed = await proposalRef.get();
+    return {
+      success: true,
+      snackChatId: stringValue(confirmed.get('roomId')),
+      created: stringValue(confirmed.get('roomId')) === roomRef.id,
+    };
+  });
+
+/** pending 제안을 accepted로 바꾼다(받는 사람만). 이미 처리됐으면 false. */
+async function applyTogetherAccepted(
+  roomRef: FirebaseFirestore.DocumentReference,
+  recipientId: string,
+): Promise<{changed: boolean; fromUid: string; activity: string}> {
+  return db().runTransaction(async (transaction) => {
+    const room = await transaction.get(roomRef);
+    const together = objectValue(room.get('together'));
+    const fromUid = stringValue(together.fromUid);
+    const toUid = stringValue(together.toUid);
+    const activity = stringValue(together.activity);
+    if (!room.exists || stringValue(together.status) !== 'pending' ||
+        toUid !== recipientId) {
+      return {changed: false, fromUid, activity};
+    }
+    const proposalRef = db().collection(TOGETHER_PROPOSALS)
+      .doc(`${fromUid}_${toUid}_${togetherActivityKey(activity)}`);
+    transaction.update(roomRef, {'together.status': 'accepted'});
+    transaction.set(proposalRef, {status: 'accepted'}, {merge: true});
+    return {changed: true, fromUid, activity};
+  });
+}
+
+async function acceptTogetherOnReply(args: {
+  roomRef: FirebaseFirestore.DocumentReference;
+  senderId: string;
+  eventId: string;
+  senderName: string;
+}): Promise<void> {
+  const outcome = await applyTogetherAccepted(args.roomRef, args.senderId);
+  if (!outcome.changed) return;
+  await createSystemMessage({
+    roomRef: args.roomRef,
+    sourceEventId: args.eventId,
+    discriminator: 'together-accepted',
+    text: `같이 ${outcome.activity} · 수락했어요`,
+    metadata: {
+      systemType: 'together_accepted',
+      userId: args.senderId,
+      userName: args.senderName,
+      activity: outcome.activity,
+    },
+  });
+  await db().collection('notifications').add({
+    userId: outcome.fromUid,
+    title: `${args.senderName}님이 수락했어요`,
+    message: outcome.activity,
+    type: 'snack_chat_together_accepted',
+    meetupId: null,
+    postId: null,
+    actorId: args.senderId,
+    actorName: args.senderName,
+    data: {
+      snackChatId: args.roomRef.id,
+      actorId: args.senderId,
+      actorName: args.senderName,
+      activity: outcome.activity,
+    },
+    createdAt: FieldValue.serverTimestamp(),
+    isRead: false,
+  });
+}
+
+/** 받는 사람의 응답: 좋아요(accept) / 다음에(later). */
+export const respondTogetherProposal = callables()
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (raw, context) => {
+    const uid = requireUid(context);
+    await requireActiveUser(uid);
+    const request = objectValue(raw);
+    const roomId = firestoreId(request.roomId, 'roomId');
+    const response = stringValue(request.response);
+    if (response !== 'accept' && response !== 'later') {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'response must be accept or later.',
+      );
+    }
+    const roomRef = db().collection(SNACK_CHATS).doc(roomId);
+    const room = await roomRef.get();
+    const together = objectValue(room.get('together'));
+    if (!room.exists || stringValue(together.toUid) !== uid) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only the recipient can respond.',
+      );
+    }
+    const userName = boundedString(
+      (await db().collection(USERS).doc(uid).get()).get('nickname'),
+      80,
+    ) || 'User';
+    if (response === 'accept') {
+      const outcome = await applyTogetherAccepted(roomRef, uid);
+      if (!outcome.changed) {
+        return {success: true, status: stringValue(together.status)};
+      }
+      await createSystemMessage({
+        roomRef,
+        sourceEventId: 'respond:' + roomId + ':' + uid,
+        discriminator: 'together-accepted',
+        text: `같이 ${outcome.activity} · 수락했어요`,
+        metadata: {
+          systemType: 'together_accepted',
+          userId: uid,
+          userName,
+          activity: outcome.activity,
+        },
+      });
+      await db().collection('notifications').add({
+        userId: outcome.fromUid,
+        title: `${userName}님이 수락했어요`,
+        message: outcome.activity,
+        type: 'snack_chat_together_accepted',
+        meetupId: null,
+        postId: null,
+        actorId: uid,
+        actorName: userName,
+        data: {
+          snackChatId: roomId,
+          actorId: uid,
+          actorName: userName,
+          activity: outcome.activity,
+        },
+        createdAt: FieldValue.serverTimestamp(),
+        isRead: false,
+      });
+      return {success: true, status: 'accepted'};
+    }
+
+    // later: 보낸 사람에게는 같은 문구만 보이고 푸시는 없다.
+    const changed = await db().runTransaction(async (transaction) => {
+      const fresh = await transaction.get(roomRef);
+      const current = objectValue(fresh.get('together'));
+      if (stringValue(current.status) !== 'pending' ||
+          stringValue(current.toUid) !== uid) {
+        return false;
+      }
+      transaction.update(roomRef, {'together.status': 'later'});
+      transaction.set(
+        db().collection(TOGETHER_PROPOSALS).doc(
+          `${stringValue(current.fromUid)}_${uid}_` +
+          togetherActivityKey(stringValue(current.activity)),
+        ),
+        {status: 'later'},
+        {merge: true},
+      );
+      return true;
+    });
+    if (changed) {
+      await createSystemMessage({
+        roomRef,
+        sourceEventId: 'respond:' + roomId + ':' + uid,
+        discriminator: 'together-later',
+        text: '다음에 하기로 했어요',
+        metadata: {systemType: 'together_later', userId: uid, userName},
+      });
+    }
+    return {success: true, status: changed ? 'later' : stringValue(together.status)};
   });

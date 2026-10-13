@@ -128,6 +128,7 @@ export {
   getSnapshotCommentStatus,
   getSnapshotCommentLetter,
   toggleSnapshotReaction,
+  getMyMutualFeels,
   sendSnapshotComment,
   createSnapshotFeedComment,
   deleteSnapshotFeedComment,
@@ -174,6 +175,8 @@ export {
   onSnackChatMessageCreatedSecure as onSnackChatMessageCreated,
   notifyClosedSnackChatPolls,
   onSnackChatReactionWritten,
+  proposeTogetherSnackChat,
+  respondTogetherProposal,
   onSnackChatVoteWritten,
 } from './snack_chat';
 

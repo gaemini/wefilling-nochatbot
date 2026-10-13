@@ -1401,6 +1401,14 @@ service cloud.firestore {
     }
 
     // 알림 컬렉션 (기존 확장)
+    // 같이하기 제안 기록은 서버(Functions)만 쓰고, 당사자만 단건 조회한다.
+    match /together_proposals/{proposalId} {
+      allow get: if request.auth != null
+        && (request.auth.uid == resource.data.get('fromUid', '')
+          || request.auth.uid == resource.data.get('toUid', ''));
+      allow list, write: if false;
+    }
+
     // 필링(스낵 반응) 관계 기록과 서로 필링. 모두 서버(Functions)만 쓴다.
     // 관계 기록·하루 상한은 클라이언트가 읽을 수 없고, 서로 필링 문서는
     // 당사자만 단건 조회한다(목록은 getMyMutualFeels Callable 사용).

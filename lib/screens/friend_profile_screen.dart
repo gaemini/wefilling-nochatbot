@@ -686,11 +686,6 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
       );
     }
 
-    Widget dot() => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Text('·',
-              style: style(12, FontWeight.w400, const Color(0xFF9A9A9A))),
-        );
 
     final hasPhoto = photoURL != null && photoURL.toString().isNotEmpty;
     return MediaQuery.withClampedTextScaling(
@@ -811,16 +806,16 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                       const SizedBox(height: 6),
                       // 숫자 한 줄. 글 숫자는 탭 동작이 없다.
                       Wrap(
+                        spacing: 14,
+                        runSpacing: 2,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          stat(l10n.friends, 'friend_profile_friends',
+                          stat(zh ? '好友' : languageCode == 'ko' ? '친구' : 'Friends', 'friend_profile_friends',
                               friends: true),
-                          dot(),
-                          stat(l10n.joinedMeetups,
+                          stat(zh ? '聚会' : languageCode == 'ko' ? '모임' : 'Meetups',
                               'friend_profile_joined_meetups',
                               joined: true),
-                          dot(),
-                          stat(l10n.writtenPosts,
+                          stat(zh ? '动态' : languageCode == 'ko' ? '글' : 'Posts',
                               'friend_profile_written_posts',
                               posts: true),
                         ],
@@ -836,15 +831,15 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                 bio.toString(),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
-                style: style(14, FontWeight.w400, const Color(0xFF111827),
-                    line: 20),
+                style: style(15, FontWeight.w500, const Color(0xFF111827),
+                    line: 21),
               ),
             ],
             if (social.friendshipPrompt.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
                 social.friendshipPrompt,
-                style: style(13, FontWeight.w400, const Color(0xFF5F5F5F),
+                style: style(13, FontWeight.w400, const Color(0xFF707070),
                     line: 18),
               ),
             ],
@@ -865,7 +860,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                           ),
                         ),
                         child: Text(
-                          l10n.sendMessage,
+                          zh ? '发消息' : languageCode == 'ko' ? '메시지' : 'Message',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: style(14, FontWeight.w600, Colors.white),
@@ -1037,7 +1032,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
           children: [
             Text(
               zh ? '最近感兴趣' : languageCode == 'ko' ? '요즘 관심 있는 것' : 'Into these days',
-              style: style(12, FontWeight.w600, const Color(0xFF8A8A8A)),
+              style: style(12, FontWeight.w600, const Color(0xFF707070)),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -1045,17 +1040,22 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
               runSpacing: 8,
               children: [
                 for (final id in profile.interests)
-                  Container(
-                    height: 28,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    alignment: Alignment.center,
+                  // Wrap 안에서 가로로 늘어나지 않도록 alignment 없이 내용 크기로 둔다.
+                  DecoratedBox(
                     decoration: BoxDecoration(
                       color: const Color(0xFFF2F2F2),
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Text(
-                      '#${label(id, SocialProfileCatalog.interests)}',
-                      style: style(13, FontWeight.w400, const Color(0xFF333333)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 7),
+                      child: Text(
+                        '#${label(id, SocialProfileCatalog.interests)}',
+                        maxLines: 1,
+                        style: style(
+                            13, FontWeight.w500, const Color(0xFF333333),
+                            line: 18),
+                      ),
                     ),
                   ),
               ],
@@ -1075,7 +1075,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                 Expanded(
                   child: Text(
                     strings.sectionTitle,
-                    style: style(12, FontWeight.w600, const Color(0xFF8A8A8A)),
+                    style: style(12, FontWeight.w600, const Color(0xFF707070)),
                   ),
                 ),
                 if (canPropose)
@@ -1083,8 +1083,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                     child: Text(
                       strings.hint,
                       maxLines: 1,
+                      textAlign: TextAlign.end,
                       overflow: TextOverflow.ellipsis,
-                      style: style(11, FontWeight.w400, const Color(0xFF9A9A9A)),
+                      style: style(11, FontWeight.w400, const Color(0xFF8A8A8A)),
                     ),
                   ),
               ],
@@ -1127,14 +1128,14 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                         : languageCode == 'ko'
                             ? '$nickname의 질문'
                             : "$nickname's question",
-                    style: style(12, FontWeight.w600, const Color(0xFF8A8A8A)),
+                    style: style(12, FontWeight.w600, const Color(0xFF707070)),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     profile.conversationStarter,
                     key: const ValueKey('profile_question'),
-                    style: style(15, FontWeight.w600, const Color(0xFF111827),
-                        line: 21),
+                    style: style(16, FontWeight.w700, const Color(0xFF111827),
+                        line: 22),
                   ),
                 ],
               ),
@@ -1150,7 +1151,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                   widthFactor: 1,
                   child: Text(
                     zh ? '回答' : languageCode == 'ko' ? '답하기' : 'Answer',
-                    style: style(13, FontWeight.w600, const Color(0xFF2C6BC0)),
+                    style: style(14, FontWeight.w500, const Color(0xFF2C6BC0)),
                   ),
                 ),
               ),
@@ -1190,23 +1191,31 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         .toList();
     final rest = (count - names.length).clamp(0, 1 << 20);
     final joined = zh ? names.join('、') : names.join(', ');
-    final text = names.isEmpty
-        ? (zh
-            ? '$count位共同好友'
-            : languageCode == 'ko'
-                ? '함께 아는 친구 $count명'
-                : '$count mutual friends')
-        : rest > 0
-            ? (zh
-                ? '$joined等$rest人是共同好友'
-                : languageCode == 'ko'
-                    ? '$joined 외 $rest명과 함께 아는 친구'
-                    : '$joined and $rest more mutual friends')
-            : (zh
-                ? '$joined是共同好友'
-                : languageCode == 'ko'
-                    ? '$joined님과 함께 아는 친구'
-                    : '$joined are mutual friends');
+    // 이름은 굵게, 나머지 문구는 보통 두께로 이어 붙인다.
+    final String boldPart;
+    final String plainPart;
+    if (names.isEmpty) {
+      boldPart = '';
+      plainPart = zh
+          ? '$count位共同好友'
+          : languageCode == 'ko'
+              ? '함께 아는 친구 $count명'
+              : '$count mutual friends';
+    } else if (rest > 0) {
+      boldPart = joined;
+      plainPart = zh
+          ? ' 等$rest人是共同好友'
+          : languageCode == 'ko'
+              ? ' 외 $rest명과 함께 아는 친구'
+              : ' and $rest more mutual friends';
+    } else {
+      boldPart = joined;
+      plainPart = zh
+          ? ' 是共同好友'
+          : languageCode == 'ko'
+              ? '님과 함께 아는 친구'
+              : ' are mutual friends';
+    }
     final horizontalPadding =
         MediaQuery.sizeOf(context).width < 360 ? 16.0 : 20.0;
     final faces = mutual.take(4).toList();
@@ -1216,40 +1225,54 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         key: const ValueKey('profile_mutual_row'),
         onTap: _navigateToFriendsList,
         child: Container(
-          height: 44,
+          height: 52,
           padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE))),
+          ),
           child: Row(
             children: [
               SizedBox(
-                width: faces.isEmpty ? 0 : 24.0 + (faces.length - 1) * 18,
-                height: 24,
+                width: faces.isEmpty ? 0 : 26.0 + (faces.length - 1) * 20,
+                height: 26,
                 child: Stack(
                   children: [
                     for (var i = 0; i < faces.length; i++)
                       Positioned(
-                        left: i * 18.0,
+                        left: i * 20.0,
                         child: GroupMemberAvatar(
                           member: GroupMember(
                             uid: faces[i].profile.uid,
                             name: faces[i].profile.displayNameOrNickname,
                             photoUrl: faces[i].profile.photoURL ?? '',
                           ),
-                          size: 24,
+                          size: 26,
                         ),
                       ),
                   ],
                 ),
               ),
-              if (faces.isNotEmpty) const SizedBox(width: 8),
+              if (faces.isNotEmpty) const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  text,
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      if (boldPart.isNotEmpty)
+                        TextSpan(
+                          text: boldPart,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      TextSpan(text: plainPart),
+                    ],
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 12,
+                    height: 16 / 12,
+                    fontWeight: FontWeight.w400,
                     color: const Color(0xFF111827),
                   ),
                 ),
@@ -1272,9 +1295,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         MediaQuery.sizeOf(context).width < 360 ? 16.0 : 20.0;
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.2,
-      child: Padding(
+      child: Container(
+        margin: const EdgeInsets.only(top: 16),
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: Color(0xFFEEEEEE))),
+        ),
         padding:
-            EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 28),
+            EdgeInsets.fromLTRB(horizontalPadding, 18, horizontalPadding, 28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1283,20 +1310,23 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: ['NotoSansKR'],
-                fontSize: 17,
+                fontSize: 15,
+                height: 21 / 15,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF111827),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             if (_reviewPreview.isEmpty)
               Text(
-                (isChineseUi(context) ? '暂无公开聚会回顾。' : isKo ? '아직 공개된 모임 후기가 없어요.' : 'No public meetup reviews yet.'),
+                (isChineseUi(context) ? '还没有一起参加的聚会回顾' : isKo ? '아직 함께한 모임 후기가 없어요' : 'No meetup reviews together yet'),
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: ['NotoSansKR'],
                   fontSize: 13,
-                  color: Color(0xFF94A3B8),
+                  height: 18 / 13,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF9A9A9A),
                 ),
               )
             else
@@ -1598,8 +1628,8 @@ class _TogetherChip extends StatelessWidget {
           onTap: loading ? null : onTap,
           child: AnimatedContainer(
             duration: duration,
-            height: 34,
-            padding: const EdgeInsets.only(left: 13, right: 5),
+            height: 36,
+            padding: const EdgeInsets.only(left: 14, right: 6),
             decoration: BoxDecoration(
               color: background,
               borderRadius: BorderRadius.circular(17),
@@ -1635,14 +1665,12 @@ class _TogetherChip extends StatelessWidget {
                             color: done ? const Color(0xFF2C6BC0) : Colors.white,
                           ),
                         )
-                      : AnimatedRotation(
-                          turns: done ? .125 : 0,
-                          duration: duration,
-                          child: Icon(
-                            Icons.arrow_upward_rounded,
-                            size: 12,
-                            color: done ? const Color(0xFF2C6BC0) : Colors.white,
-                          ),
+                      : Icon(
+                          done
+                              ? Icons.check_rounded
+                              : Icons.north_east_rounded,
+                          size: 13,
+                          color: done ? const Color(0xFF2C6BC0) : Colors.white,
                         ),
                 ),
               ],

@@ -3,6 +3,7 @@
 // 통일된 디자인 시스템 적용
 
 import 'package:flutter/material.dart';
+import 'create_action_button.dart';
 import 'package:flutter/services.dart';
 import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
@@ -148,45 +149,15 @@ class AppFab extends StatelessWidget {
   Widget build(BuildContext context) {
     final effectiveEnabled = enabled && onPressed != null;
     if (extended) {
-      // 확장형 FAB
-      return Semantics(
-          button: true,
-          enabled: effectiveEnabled,
-          label: semanticLabel,
-          child: MotionPress(
-            enabled: effectiveEnabled,
-            pressedScale: .975,
-            child: FloatingActionButton.extended(
-              onPressed: effectiveEnabled ? _handleTap : null,
-              icon: showIcon ? Icon(icon, size: 21) : null,
-              label: Text(
-                label!,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.1,
-                  shadows: const [
-                    Shadow(
-                      color: Color(0x330B335D),
-                      offset: Offset(0, 1),
-                      blurRadius: 1,
-                    ),
-                  ],
-                ),
-              ),
-              backgroundColor: const Color(0xFF2D74C4),
-              foregroundColor: Colors.white,
-              elevation: DesignTokens.elevation4,
-              highlightElevation: DesignTokens.elevation2,
-              heroTag: heroTag,
-              tooltip: tooltip,
-              shape: const StadiumBorder(
-                side: BorderSide(color: Color(0x66FFFFFF), width: 1),
-              ),
-            ),
-          ));
+      // 확장형 FAB: 스낵챗 열기 버튼과 같은 크기·모양(CreateActionButton).
+      return CreateActionButton(
+        label: label!,
+        onPressed: effectiveEnabled ? onPressed : null,
+        semanticLabel: semanticLabel,
+        tooltip: tooltip,
+        showPlus: showIcon,
+        enabled: effectiveEnabled,
+      );
     } else {
       // 일반 FAB
       return Semantics(

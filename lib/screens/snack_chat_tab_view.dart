@@ -9,6 +9,7 @@ import '../models/snack_chat.dart';
 import '../services/snack_chat_service.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
 import '../ui/widgets/snack_chat_card.dart';
+import '../ui/widgets/create_action_button.dart';
 import '../ui/widgets/tab_empty_state.dart';
 import '../l10n/group_ui_strings.dart';
 import 'snack_chat_screen.dart';
@@ -410,9 +411,9 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                 ),
                 if (widget.onCreateSnackChat != null)
                   PositionedDirectional(
-                    end: 16,
-                    bottom: 16 + bottomInset,
-                    child: _CreateSnackChatButton(
+                    end: kCreateActionMargin,
+                    bottom: kCreateActionMargin + bottomInset,
+                    child: CreateActionButton(
                       label: isChineseUi(context)
                           ? '创建群聊'
                           : isKo
@@ -424,6 +425,11 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                               ? '스낵챗 만들기'
                               : 'Create Snack Chat'),
                       onPressed: widget.onCreateSnackChat!,
+                      tooltip: isChineseUi(context)
+                          ? '创建群聊'
+                          : isKo
+                              ? '스낵챗 만들기'
+                              : 'Create Snack Chat',
                     ),
                   ),
               ],
@@ -587,84 +593,6 @@ pressedScale: .985, child: TextButton.icon(
                   : 'Could not load. Retry'),
         ),
       )),
-    );
-  }
-}
-
-/// 스낵챗 열기 버튼: 높이 46, `+` 20 / 400 + 라벨 15 / 600.
-class _CreateSnackChatButton extends StatelessWidget {
-  const _CreateSnackChatButton({
-    required this.label,
-    required this.semanticLabel,
-    required this.onPressed,
-  });
-
-  final String label;
-  final String semanticLabel;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.3,
-      child: Semantics(
-        button: true,
-        label: semanticLabel,
-        excludeSemantics: true,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(23),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x4D2C6BC0),
-                blurRadius: 14,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Material(
-            color: const Color(0xFF2C6BC0),
-            borderRadius: BorderRadius.circular(23),
-            child: InkWell(
-              key: const ValueKey('create_snack_chat_button'),
-              borderRadius: BorderRadius.circular(23),
-              onTap: onPressed,
-              child: Container(
-                height: 46,
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '+',
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontSize: 20,
-                        height: 1.1,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      label,
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 15,
-                        height: 20 / 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

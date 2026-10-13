@@ -245,17 +245,14 @@ class _DMListScreenState extends State<DMListScreen> {
   Widget? _buildFloatingActionButtons() {
     if (_filter == DMFilter.requests) return null;
     if (_filter == DMFilter.friends) {
-      return SafeArea(
-        top: false,
-        minimum: const EdgeInsets.only(bottom: 8),
-        child: AppFab.extended(
-          onPressed: _openRecipientSelection,
-          icon: Icons.add_rounded,
-          label: AppLocalizations.of(context)!.newMessage,
-          semanticLabel: AppLocalizations.of(context)!.newMessage,
-          tooltip: AppLocalizations.of(context)!.newMessage,
-          heroTag: 'create_dm_fab',
-        ),
+      // 스낵챗 열기 버튼과 같은 크기·위치(오른쪽 16, 아래 16).
+      return AppFab.extended(
+        onPressed: _openRecipientSelection,
+        icon: Icons.add_rounded,
+        label: AppLocalizations.of(context)!.newMessage,
+        semanticLabel: AppLocalizations.of(context)!.newMessage,
+        tooltip: AppLocalizations.of(context)!.newMessage,
+        heroTag: 'create_dm_fab',
       );
     }
 

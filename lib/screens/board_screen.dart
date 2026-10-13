@@ -843,24 +843,21 @@ class BoardScreenState extends State<BoardScreen> {
           ),
         ),
       ),
-      floatingActionButton: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.only(bottom: 8),
-        child: _ScrollAwareCreateButton(
-          visible: _showCreateButton,
-          child: AppFab.extended(
-            onPressed: _openCreatePost,
-            icon: Icons.add_rounded,
-            showIcon: false,
-            label: isChineseUi(context)
-                ? '分享'
-                : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '공유하기'
-                    : 'Share',
-            semanticLabel: AppLocalizations.of(context)!.createPost,
-            tooltip: AppLocalizations.of(context)!.createPost,
-            heroTag: 'board_write_fab',
-          ),
+      // 스낵챗 열기 버튼과 같은 크기·위치(오른쪽 16, 아래 16).
+      floatingActionButton: _ScrollAwareCreateButton(
+        visible: _showCreateButton,
+        child: AppFab.extended(
+          onPressed: _openCreatePost,
+          icon: Icons.add_rounded,
+          showIcon: false,
+          label: isChineseUi(context)
+              ? '分享'
+              : Localizations.localeOf(context).languageCode == 'ko'
+                  ? '공유하기'
+                  : 'Share',
+          semanticLabel: AppLocalizations.of(context)!.createPost,
+          tooltip: AppLocalizations.of(context)!.createPost,
+          heroTag: 'board_write_fab',
         ),
       ),
     );

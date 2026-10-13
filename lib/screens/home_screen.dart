@@ -1597,14 +1597,11 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
           },
         ),
       ),
-      floatingActionButton: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.only(bottom: 8),
-        child: AppFab.createMeetup(
-          onPressed: _navigateToCreateMeetup,
-          label: AppLocalizations.of(context)!.createMeetup,
-          heroTag: 'meetup_home_create_fab',
-        ),
+      // 스낵챗 열기 버튼과 같은 크기·위치(오른쪽 16, 아래 16).
+      floatingActionButton: AppFab.createMeetup(
+        onPressed: _navigateToCreateMeetup,
+        label: AppLocalizations.of(context)!.createMeetup,
+        heroTag: 'meetup_home_create_fab',
       ),
     );
   }

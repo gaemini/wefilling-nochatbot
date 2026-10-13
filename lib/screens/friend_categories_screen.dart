@@ -9,6 +9,7 @@ import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/groups_empty_state.dart';
+import '../ui/widgets/snack_chat_groups_tab_bar.dart';
 import 'unified_search_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/relationship_provider.dart';
@@ -22,11 +23,10 @@ import 'snack_chat_tab_view.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../l10n/ui_locale.dart';
-import '../ui/widgets/motion_press.dart';
-import '../ui/widgets/motion_selectable.dart';
 
 /// Stable internal tab mapping used by direct-entry routes.
 const int snackChatTabIndex = 0;
+
 const int groupsTabIndex = 1;
 
 class FriendCategoriesScreen extends StatefulWidget {
@@ -133,61 +133,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         toolbarHeight: 0,
         elevation: 0,
         backgroundColor: Colors.white,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(43),
-          child: MediaQuery.withClampedTextScaling(
-            maxScaleFactor: 1.3,
-            child: TabBar(
-              controller: _tabController,
-              // 선택 밑줄: 2pt, 폭 44, 검정(파란색을 아낀다).
-              indicator: const _FixedWidthUnderline(width: 44, thickness: 2),
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: const Color(0xFFEBEBEB),
-              dividerHeight: 1,
-              labelColor: Colors.black,
-              unselectedLabelColor: const Color(0xFF8A8A8A),
-              labelStyle: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-              unselectedLabelStyle: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-              tabs: [
-                Tab(
-                  height: 42,
-                  child: MotionPress(
-                    pressedScale: MotionSelectable.segmentScale,
-                    child: Semantics(
-                      label: l10n.snackChatTabSemantic,
-                      selected: _tabController.index == snackChatTabIndex,
-                      button: true,
-                      excludeSemantics: true,
-                      child: Text(l10n.snackChat),
-                    ),
-                  ),
-                ),
-                Tab(
-                  height: 42,
-                  child: MotionPress(
-                    pressedScale: MotionSelectable.segmentScale,
-                    child: Semantics(
-                      label: l10n.groupsTabSemantic,
-                      selected: _tabController.index == groupsTabIndex,
-                      button: true,
-                      excludeSemantics: true,
-                      child: Text(l10n.groups),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        bottom: SnackChatGroupsTabBar(
+          controller: _tabController,
+          snackChatLabel: l10n.snackChat,
+          groupsLabel: l10n.groups,
+          snackChatSemantic: l10n.snackChatTabSemantic,
+          groupsSemantic: l10n.groupsTabSemantic,
         ),
       ),
       body: MediaQuery.withClampedTextScaling(
@@ -737,39 +688,5 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         );
       }
     }
-  }
-}
-
-/// 탭 선택 밑줄: 탭 가운데에 고정 폭으로 그린다.
-class _FixedWidthUnderline extends Decoration {
-  const _FixedWidthUnderline({required this.width, required this.thickness});
-
-  final double width;
-  final double thickness;
-
-  @override
-  BoxPainter createBoxPainter([VoidCallback? onChanged]) =>
-      _FixedWidthUnderlinePainter(width, thickness);
-}
-
-class _FixedWidthUnderlinePainter extends BoxPainter {
-  _FixedWidthUnderlinePainter(this.width, this.thickness);
-
-  final double width;
-  final double thickness;
-
-  @override
-  void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
-    final size = configuration.size;
-    if (size == null) return;
-    final left = offset.dx + (size.width - width) / 2;
-    final top = offset.dy + size.height - thickness;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, top, width, thickness),
-        Radius.circular(thickness / 2),
-      ),
-      Paint()..color = Colors.black,
-    );
   }
 }

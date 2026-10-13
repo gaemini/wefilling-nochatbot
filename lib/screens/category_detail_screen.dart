@@ -611,40 +611,44 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       (strings.shareMeetup, _openCreateMeetup),
       (strings.shareSnackChat, _openCreateSnackChat),
     ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Text(
-            strings.toThisGroup,
-            style: _style(12, FontWeight.w400, const Color(0xFF8A8A8A)),
-          ),
-          for (final item in items)
-            MotionPress(
-              pressedScale: .97,
-              child: GestureDetector(
-                key: ValueKey<String>('group_share_${item.$1}'),
-                behavior: HitTestBehavior.opaque,
-                onTap: item.$2,
-                child: Container(
-                  height: 32,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFFE3E3E3)),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    item.$1,
-                    style: _style(13, FontWeight.w500, Colors.black),
+    // 한 줄: `이 그룹에게` + 글자 버튼 4개. 좁은 화면에서는 가로로 스크롤한다.
+    return SizedBox(
+      height: 32 + 20,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+        child: Row(
+          children: [
+            Text(
+              strings.toThisGroup,
+              style: _style(12, FontWeight.w400, const Color(0xFF8A8A8A)),
+            ),
+            for (final item in items) ...[
+              const SizedBox(width: 8),
+              MotionPress(
+                pressedScale: .97,
+                child: GestureDetector(
+                  key: ValueKey<String>('group_share_${item.$1}'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: item.$2,
+                  child: Container(
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFFE3E3E3)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      item.$1,
+                      style: _style(13, FontWeight.w500, Colors.black),
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -796,8 +800,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     ),
                     // 빼기 버튼: 눈에 보이는 지름 18, 터치 영역 32.
                     Positioned(
-                      right: -7,
-                      top: -7,
+                      right: -8,
+                      top: -8,
                       child: GestureDetector(
                         key: ValueKey<String>('group_remove_${friend.uid}'),
                         behavior: HitTestBehavior.opaque,

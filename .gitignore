@@ -89,3 +89,6 @@ release/remoteconfig.candidate.json
 .env.*.local
 functions/.env.local
 functions/.secret.local
+
+# Firebase CLI 배포 캐시
+.firebase/

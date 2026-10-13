@@ -52,9 +52,17 @@ Widget snapshotEditorMotionLayout(Widget? current, List<Widget> previous) =>
     current ?? const SizedBox.shrink();
 
 class CreateSnapshotScreen extends StatefulWidget {
-  const CreateSnapshotScreen({super.key, this.onCreated});
+  const CreateSnapshotScreen({
+    super.key,
+    this.onCreated,
+    this.initialAudienceCategory,
+  });
 
   final VoidCallback? onCreated;
+
+  /// 그룹 화면에서 `스낵`으로 들어온 경우: 공개 범위를 그룹, 이 카테고리 선택으로
+  /// 미리 채운다. 없으면(null) 기존 동작이다.
+  final FriendCategory? initialAudienceCategory;
 
   @override
   State<CreateSnapshotScreen> createState() => _CreateSnapshotScreenState();
@@ -168,6 +176,11 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final initialAudience = widget.initialAudienceCategory;
+    if (initialAudience != null) {
+      _visibility = SnapshotVisibility.category;
+      _selectedCategoryIds = <String>[initialAudience.id];
+    }
     _categoriesSubscription =
         _friendCategoryService.getCategoriesStream().listen((categories) {
       if (!mounted) return;

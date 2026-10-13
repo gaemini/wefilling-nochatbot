@@ -35,7 +35,7 @@ class _Log {
   int feels = 0;
   int cameras = 0;
   int viewers = 0;
-  final List<String> dm = [];
+  int opens = 0;
 }
 
 Future<_Log> _pump(
@@ -78,10 +78,9 @@ Future<_Log> _pump(
                 feelSent: feelSent,
                 canFeel: canFeel,
                 onFeel: () => log.feels++,
-                onDmReply: (text) async => log.dm.add(text),
+                onOpenReply: () => log.opens++,
                 onViewers: () => log.viewers++,
                 onSnackReply: () => log.cameras++,
-                onFocusChanged: (_) {},
               ),
             ),
           ),
@@ -96,7 +95,7 @@ Future<_Log> _pump(
 void main() {
   const pill = ValueKey('snapshot_feel_pill');
   const friendButton = ValueKey('snapshot_feel_button');
-  const input = ValueKey('snapshot_dm_reply_input');
+  const input = ValueKey('snapshot_dm_reply_pill');
   const camera = ValueKey('snapshot_video_reply_button');
 
   testWidgets('친구가 아니면 필링 알약 하나(모드 무관)', (tester) async {
@@ -141,14 +140,13 @@ void main() {
     expect(log.feels, 0);
   });
 
-  testWidgets('글 답장은 DM 전송 콜백으로 전달된다', (tester) async {
+  testWidgets('답장 알약을 누르면 하단 입력부 열기 콜백(사진 위 상자 없음)', (tester) async {
     final log = await _pump(tester,
         mode: SnapshotResponseMode.replies, status: RelationshipStatus.friends);
-    await tester.enterText(find.byKey(input), '안녕하세요');
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('snapshot_dm_reply_send')));
-    await tester.pump();
-    expect(log.dm, ['안녕하세요']);
+    // 바 안에는 입력 필드가 없다(입력은 화면 하단 패널이 맡는다).
+    expect(find.byType(TextField), findsNothing);
+    await tester.tap(find.byKey(input));
+    expect(log.opens, 1);
   });
 
   testWidgets('작성자: 필링 n · 본 사람 m 알약만 보이고 개수 노출은 작성자에게만',
@@ -171,8 +169,8 @@ void main() {
   testWidgets('글자 크기: 표를 넘는 글자가 없다', (tester) async {
     await _pump(tester,
         mode: SnapshotResponseMode.replies, status: RelationshipStatus.friends);
-    for (final text in tester.widgetList<EditableText>(find.byType(EditableText))) {
-      expect(text.style.fontSize, lessThanOrEqualTo(15));
+    for (final text in tester.widgetList<Text>(find.byType(Text))) {
+      expect(text.style?.fontSize ?? 14, lessThanOrEqualTo(15));
     }
     await _pump(tester,
         mode: SnapshotResponseMode.reactions, status: RelationshipStatus.none);

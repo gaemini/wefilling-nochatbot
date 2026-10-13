@@ -5,7 +5,8 @@ import 'package:wefilling/models/friend_category.dart';
 import 'package:wefilling/models/snapshot.dart';
 import 'package:wefilling/snapshot/snapshot_share_view.dart';
 
-FriendCategory _cat(String id, String name) => FriendCategory(
+FriendCategory _cat(String id, String name, [List<String> ids = const []]) =>
+    FriendCategory(
       id: id,
       name: name,
       description: '',
@@ -14,7 +15,7 @@ FriendCategory _cat(String id, String name) => FriendCategory(
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
       userId: 'me',
-      friendIds: const [],
+      friendIds: ids,
     );
 
 class _Harness {
@@ -26,6 +27,7 @@ class _Harness {
   double progress = 0;
   int shares = 0;
   int backs = 0;
+  List<ShareAudienceMember>? friends = const [];
 }
 
 Future<_Harness> _pump(
@@ -57,6 +59,7 @@ Future<_Harness> _pump(
             visibility: state.visibility,
             responseMode: state.mode,
             categories: state.categories,
+            friends: state.friends,
             selectedCategoryIds: state.selected,
             uploading: state.uploading,
             uploadProgress: state.progress,
@@ -102,32 +105,116 @@ void main() {
     expect(find.text('필링에 더해, 친구는 DM으로 답장할 수 있어요'), findsOneWidget);
   });
 
-  testWidgets('그룹: 0개면 안내와 버튼 비활성, 고르면 ✓와 활성', (tester) async {
+  testWidgets('그룹: 0개면 안내 문구와 버튼 비활성', (tester) async {
     final h = _Harness()..visibility = SnapshotVisibility.category;
     await _pump(tester, h: h);
     expect(find.text('선택할 친구 그룹이 없어요.'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('share_button')), warnIfMissed: false);
     expect(h.shares, 0);
+  });
 
-    final h2 = _Harness()
+  List<ShareAudienceMember> people(List<String> ids) =>
+      [for (final id in ids) ShareAudienceMember(uid: id, name: 'n_$id')];
+
+  testWidgets('그룹 목록: 세로 행·인원 수는 친구 목록과의 교집합', (tester) async {
+    final h = _Harness()
       ..visibility = SnapshotVisibility.category
-      ..categories = [_cat('g1', '국악 동아리'), _cat('g2', '룸메이트')];
-    await _pump(tester, h: h2);
-    expect(find.text('공개할 그룹을 하나 이상 선택해 주세요.'), findsOneWidget);
+      ..categories = [
+        _cat('g1', '협곡 원정대', ['a', 'b', 'c', 'gone']),
+        _cat('g2', '161', ['b', 'd']),
+      ]
+      ..friends = people(['a', 'b', 'c', 'd', 'e']);
+    await _pump(tester, h: h);
+    expect(find.text('협곡 원정대'), findsOneWidget);
+    // 'gone'은 더 이상 친구가 아니므로 인원에서 뺀다.
+    expect(find.text('3명'), findsOneWidget);
+    expect(find.text('2명'), findsOneWidget);
+    // 세로 목록: 두 번째 행이 첫 번째 아래에 있다.
+    final first = tester.getRect(find.byKey(const ValueKey('share-group-g1')));
+    final second = tester.getRect(find.byKey(const ValueKey('share-group-g2')));
+    expect(second.top, greaterThanOrEqualTo(first.bottom - 1));
+    expect(first.height, greaterThanOrEqualTo(56));
+    // 기본 설명 유지, 경고 색 없음, 아무 그룹도 안 고르면 빈 상태 문구
+    expect(find.text('고른 그룹에 있는 친구만 볼 수 있어요'), findsOneWidget);
+    expect(find.text('그룹을 고르면 볼 수 있는 사람이 여기 보여요'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('share_button')), warnIfMissed: false);
-    expect(h2.shares, 0);
+    expect(h.shares, 0);
+  });
+
+  testWidgets('볼 수 있는 사람: 합집합·중복 제거·인원과 버튼 문구', (tester) async {
+    final h = _Harness()
+      ..visibility = SnapshotVisibility.category
+      ..categories = [
+        _cat('g1', '협곡 원정대', ['a', 'b', 'c']),
+        _cat('g2', '161', ['b', 'd']),
+      ]
+      ..friends = people(['a', 'b', 'c', 'd', 'e']);
+    await _pump(tester, h: h);
     await tester.tap(find.byKey(const ValueKey('share-group-g1')));
     await tester.pumpAndSettle();
-    expect(find.text('✓ 국악 동아리'), findsOneWidget);
-    expect(h2.selected, ['g1']);
+    expect(find.text('볼 수 있는 사람 3명'), findsOneWidget);
+    expect(find.text('스낵 공유하기 · 3명'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('share-group-g2')));
+    await tester.pumpAndSettle();
+    // b가 겹치므로 a,b,c,d 네 명.
+    expect(find.text('볼 수 있는 사람 4명'), findsOneWidget);
+    expect(find.byKey(const ValueKey('audience-b')), findsOneWidget);
+    expect(find.text('스낵 공유하기 · 4명'), findsOneWidget);
+    expect(h.selected, ['g1', 'g2']);
+    // 그룹을 빼면 그 그룹에만 있던 사람이 빠진다.
+    await tester.tap(find.byKey(const ValueKey('share-group-g1')));
+    await tester.pumpAndSettle();
+    expect(find.text('볼 수 있는 사람 2명'), findsOneWidget);
+    expect(find.byKey(const ValueKey('audience-a')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('share_button')));
-    expect(h2.shares, 1);
+    expect(h.shares, 1);
+  });
+
+  testWidgets('친구 목록 로딩 중이면 인원 수는 …', (tester) async {
+    final h = _Harness()
+      ..visibility = SnapshotVisibility.category
+      ..categories = [_cat('g1', '협곡 원정대', ['a'])]
+      ..friends = null;
+    await _pump(tester, h: h);
+    expect(find.text('…'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('사진 높이: 그룹이면 250, 아니면 원래 높이', (tester) async {
+    final h = _Harness();
+    await _pump(tester, h: h);
+    Size media() => tester.getSize(find.byType(ClipRect).first);
+    final normal = media().height;
+    expect(normal, greaterThan(250));
+    await tester.tap(find.byKey(const ValueKey('visibility-choice-SnapshotVisibility.category')));
+    await tester.pumpAndSettle();
+    expect(media().height, 250);
+    await tester.tap(find.byKey(const ValueKey('visibility-choice-SnapshotVisibility.friends')));
+    await tester.pumpAndSettle();
+    expect(media().height, normal);
+  });
+
+  test('shareAudience 순수 계산', () {
+    final friends = [
+      const ShareAudienceMember(uid: 'a', name: 'a'),
+      const ShareAudienceMember(uid: 'b', name: 'b'),
+      const ShareAudienceMember(uid: 'c', name: 'c'),
+    ];
+    final cats = [_cat('x', 'x', ['c', 'a', 'z']), _cat('y', 'y', ['b', 'c'])];
+    // 선택한 그룹 순서, 그룹 안에서는 친구 목록 순서, 친구 아닌 z 제외, 중복 제거
+    expect(
+      shareAudience(cats, ['y', 'x'], friends)!.map((m) => m.uid),
+      ['b', 'c', 'a'],
+    );
+    expect(shareAudience(cats, [], friends), isEmpty);
+    expect(shareAudience(cats, ['x'], null), isNull);
   });
 
   testWidgets('글자 크기는 표의 고정값이고 15를 넘는 글자가 없다', (tester) async {
     final h = _Harness()
       ..visibility = SnapshotVisibility.category
-      ..categories = [_cat('g1', '국악 동아리')]
+      ..categories = [_cat('g1', '국악 동아리', ['a'])]
+      ..friends = [const ShareAudienceMember(uid: 'a', name: 'a_name')]
       ..selected = ['g1'];
     await _pump(tester, h: h);
     double sizeOf(String text) =>
@@ -137,9 +224,10 @@ void main() {
     expect(sizeOf('공개 범위'), 14);
     expect(sizeOf('받는 방식'), 14);
     expect(sizeOf('전체'), 14);
-    expect(sizeOf('✓ 국악 동아리'), 13);
-    expect(sizeOf('선택한 친구 그룹에만 보여요.'), 12);
-    expect(sizeOf('스낵 공유하기'), 15);
+    expect(sizeOf('국악 동아리'), 14);
+    expect(sizeOf('고른 그룹에 있는 친구만 볼 수 있어요'), 12);
+    expect(sizeOf('스낵 공유하기 · 1명'), 15);
+    expect(sizeOf('a_name'), 11);
     for (final t in tester.widgetList<Text>(find.byType(Text))) {
       expect(t.style?.fontSize ?? 14, lessThanOrEqualTo(15));
     }

@@ -80,6 +80,9 @@ import '../l10n/ui_locale.dart';
 import '../ui/widgets/chat_pill_composer.dart';
 import '../utils/chat_message_typography.dart';
 import '../ui/chat/chat_metrics.dart';
+import '../l10n/together_strings.dart';
+import '../services/together_service.dart';
+import '../ui/widgets/together_proposal_banner.dart';
 import '../utils/avatar_image.dart';
 
 @visibleForTesting
@@ -2389,7 +2392,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       }
       if (entry.canAdvanceReadCursor && !_accountInvalidated) {
         unawaited(NotificationService().markRelatedNotificationsAsRead(
-          types: const {'snack_chat_invite'},
+          types: const {
+            'snack_chat_invite',
+            'snack_chat_together',
+            'snack_chat_together_accepted',
+          },
           targets: {'snackChatId': widget.snackChatId},
         ));
       }
@@ -7145,6 +7152,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   date: message.createdAt,
                   languageCode: Localizations.localeOf(context).languageCode,
                 ),
+              // 같이하기 제안: 가장 오래된 메시지(대화 맨 위) 앞에 한 번.
+              if (index == _messages.length - 1 && !_hasMore)
+                _buildTogetherBanner(),
               // 밀어서 답장: KeyedSubtree(스크롤 앵커 GlobalKey) 안쪽에서 감싼다.
               // 활성 조건은 _beginReply의 가드와 같다(미디어 메시지 포함).
               SwipeToReply(
@@ -7907,6 +7917,58 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       ),
       child: messageContent,
     );
+  }
+
+  bool _togetherBusy = false;
+
+  /// 같이하기 제안 표시. 방에 `together`가 없으면 아무것도 그리지 않는다.
+  Widget _buildTogetherBanner() {
+    final together = _lastRoom?.together;
+    final me = _uid;
+    if (together == null || me == null) return const SizedBox.shrink();
+    final isRecipient = together.toUid == me;
+    if (!isRecipient && together.fromUid != me) return const SizedBox.shrink();
+    final otherId = isRecipient ? together.fromUid : together.toUid;
+    Widget avatar(String id) => ValueListenableBuilder<DMUserInfo?>(
+          valueListenable: _senderProfileNotifier(id),
+          builder: (context, profile, _) => UserAvatar(
+            uid: id,
+            photoUrl: profile?.photoURL ?? '',
+            photoVersion: profile?.photoVersion ?? 0,
+            isAnonymous: false,
+            size: 36,
+            placeholderIcon: Icons.person_outline_rounded,
+          ),
+        );
+    return FutureBuilder<String>(
+      future: _senderNameFuture(otherId, null),
+      initialData: _senderNameCache[otherId] ?? _genericUserLabel,
+      builder: (context, snapshot) => TogetherProposalBanner(
+        together: together,
+        isRecipient: isRecipient,
+        otherName: snapshot.data ?? _genericUserLabel,
+        myAvatar: avatar(me),
+        otherAvatar: avatar(otherId),
+        busy: _togetherBusy,
+        onAccept: () => unawaited(_respondTogether(accept: true)),
+        onLater: () => unawaited(_respondTogether(accept: false)),
+      ),
+    );
+  }
+
+  Future<void> _respondTogether({required bool accept}) async {
+    if (_togetherBusy) return;
+    setState(() => _togetherBusy = true);
+    try {
+      await TogetherService.instance.respond(
+        roomId: widget.snackChatId,
+        accept: accept,
+      );
+    } catch (_) {
+      if (mounted) _showNotice(TogetherStrings.of(context).failed);
+    } finally {
+      if (mounted) setState(() => _togetherBusy = false);
+    }
   }
 
   Widget _buildSenderAvatarSlot({

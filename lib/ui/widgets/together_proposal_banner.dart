@@ -64,11 +64,28 @@ class TogetherProposalBanner extends StatelessWidget {
           const Color(0xFF2C6BC0),
         );
       case SnackChatTogetherStatus.later:
-        content = _pill(
-          context,
-          strings.laterDone,
-          const Color(0xFFF2F2F2),
-          const Color(0xFF707070),
+        content = Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _pill(
+              context,
+              strings.laterDone,
+              const Color(0xFFF2F2F2),
+              const Color(0xFF707070),
+            ),
+            if (isRecipient)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Text(
+                  strings.laterNote(otherName),
+                  key: const ValueKey('together_later_note'),
+                  textAlign: TextAlign.center,
+                  style: _style(context, 11, FontWeight.w400,
+                      const Color(0xFF9A9A9A),
+                      line: 15),
+                ),
+              ),
+          ],
         );
       case SnackChatTogetherStatus.pending:
         content = _card(context, strings);
@@ -223,6 +240,15 @@ class TogetherProposalBanner extends StatelessWidget {
                   const Color(0xFF8A8A8A),
                   line: 17),
             ),
+          const SizedBox(height: 8),
+          Text(
+            isRecipient ? strings.replyAccepts : strings.senderNote,
+            key: const ValueKey('together_note'),
+            textAlign: TextAlign.center,
+            style: _style(context, 11, FontWeight.w400,
+                const Color(0xFF9A9A9A),
+                line: 15),
+          ),
         ],
       ),
     );

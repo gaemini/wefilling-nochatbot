@@ -66,7 +66,10 @@ class NavigationService {
     final dmRoom = _stringValue(data, 'conversationId');
     final snackRoom = _stringValue(data, 'snackChatId');
     if (type == 'dm_received' && dmRoom.isNotEmpty) return 'dm:$dmRoom';
-    if ((type == 'snack_chat_message' || type == 'snack_chat_invite') &&
+    if ((type == 'snack_chat_message' ||
+            type == 'snack_chat_invite' ||
+            type == 'snack_chat_together' ||
+            type == 'snack_chat_together_accepted') &&
         snackRoom.isNotEmpty) return 'snack:$snackRoom';
     final postId = _stringValue(data, 'postId');
     if (postId.isNotEmpty && const {
@@ -178,7 +181,10 @@ class NavigationService {
     final navigationKey = '$owner:${destinationKey(data)}';
     if (_openPushDestinations.contains(navigationKey) ||
         (type == 'dm_received' && DMActiveConversation.isActive(dmRoom)) ||
-        ((type == 'snack_chat_message' || type == 'snack_chat_invite') &&
+        ((type == 'snack_chat_message' ||
+                type == 'snack_chat_invite' ||
+                type == 'snack_chat_together' ||
+                type == 'snack_chat_together_accepted') &&
             SnackChatActiveConversation.isActive(snackRoom))) {
       return;
     }
@@ -409,6 +415,8 @@ class NavigationService {
             return;
           }
         case 'snack_chat_invite':
+        case 'snack_chat_together':
+        case 'snack_chat_together_accepted':
           {
             final snackChatId = _stringValue(data, 'snackChatId');
             if (snackChatId.isEmpty) break;

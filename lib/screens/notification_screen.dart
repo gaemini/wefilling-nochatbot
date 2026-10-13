@@ -22,6 +22,7 @@ import '../widgets/notification_list_item.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/navigation_service.dart';
 import 'snapshot_comment_letter_screen.dart';
+import '../l10n/together_strings.dart';
 import '../ui/sheets/mutual_feel_sheet.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/ui_locale.dart';
@@ -166,6 +167,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
         await _navigateToAdShowcase();
         break;
       case 'snack_chat_invite':
+      case 'snack_chat_together':
+      case 'snack_chat_together_accepted':
         await _navigateToSnackChat(notification);
         break;
       case 'review_approval_request':
@@ -215,6 +218,27 @@ class _NotificationScreenState extends State<NotificationScreen> {
         isError: true,
       );
       return;
+    }
+
+    // 같이하기 제안은 24시간 방이라 이미 끝났으면 이동하지 않고 알려 준다.
+    if (notification.type.startsWith('snack_chat_together')) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('snack_chats')
+            .doc(snackChatId)
+            .get();
+        final expiresAt = doc.data()?['expiresAt'];
+        final expired = expiresAt is Timestamp &&
+            !DateTime.now().isBefore(expiresAt.toDate());
+        if (!doc.exists || expired) {
+          if (mounted) {
+            _showStyledSnackBar(TogetherStrings.of(context).ended);
+          }
+          return;
+        }
+      } catch (_) {
+        // 확인하지 못하면 방 화면의 기존 처리에 맡긴다.
+      }
     }
 
     if (!mounted) return;

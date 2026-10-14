@@ -3499,7 +3499,7 @@ abstract class AppLocalizations {
   /// No description provided for @googleLoginDescription.
   ///
   /// In ko, this message translates to:
-  /// **'원하는 방법으로 로그인하고\n위필링을 시작해 보세요.'**
+  /// **'로그인하고 위필링을 시작해 보세요.'**
   String get googleLoginDescription;
 
   /// No description provided for @googleLogin.

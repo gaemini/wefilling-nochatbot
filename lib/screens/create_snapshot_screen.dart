@@ -14,7 +14,6 @@ import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
-import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../models/friend_category.dart';
 import '../models/snapshot.dart';
@@ -23,6 +22,7 @@ import '../services/friend_category_service.dart';
 import '../services/snapshot_archive_service.dart';
 import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_storage_video.dart';
+import '../snapshot/snapshot_create_widgets.dart';
 import '../snapshot/snapshot_share_view.dart';
 import '../providers/relationship_provider.dart';
 import 'package:provider/provider.dart';
@@ -160,6 +160,12 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   bool _galleryPermissionLimited = false;
   bool _galleryLoadFailed = false;
   int _galleryLoadSequence = 0;
+
+  /// 고르기 그리드에서 고른 사진(미리보기). 없으면 가장 최근 항목을 보여 준다.
+  AssetEntity? _pickedAsset;
+
+  /// 편집 단계 영상 자르기 편집기 펼침 여부.
+  bool _trimOpen = false;
 
   double get _aspectRatio {
     if (_sourceWidth <= 0 || _sourceHeight <= 0) return .8;
@@ -1257,6 +1263,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       _selectedTextLayerId = null;
       _editingTextLayerId = null;
       _transformingTextLayerId = null;
+      _trimOpen = false;
     });
     await _disposeVideoControllers();
     unawaited(_loadRecentPhotos(requestPermission: false));
@@ -1709,8 +1716,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   @override
   Widget build(BuildContext context) {
     final strings = SnapshotStrings.of(context);
-    final compactUploadAction = MediaQuery.sizeOf(context).width < 340 ||
-        MediaQuery.textScalerOf(context).scale(14) > 24;
     return PopScope(
       canPop: _sourceFile == null && !_uploading,
       onPopInvokedWithResult: (didPop, _) async {
@@ -1731,117 +1736,19 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         if (shouldExit && mounted) Navigator.of(this.context).pop();
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: _step == 1
-            ? SystemUiOverlayStyle.light.copyWith(
-                statusBarColor: Colors.transparent,
-                systemNavigationBarColor: Colors.black,
-                systemNavigationBarIconBrightness: Brightness.light,
-              )
-            : SystemUiOverlayStyle.dark,
+        // 고르기·편집·공유 세 단계 모두 검정 바탕(상태바 아이콘 흰색)이다.
+        value: SystemUiOverlayStyle.light.copyWith(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.black,
+          systemNavigationBarIconBrightness: Brightness.light,
+        ),
         child: Scaffold(
-        backgroundColor: _step == 1 ? Colors.black : Colors.white,
+        backgroundColor: Colors.black,
         // Keep the media canvas at a stable size while the keyboard overlays it.
         resizeToAvoidBottomInset: false,
-        appBar: _step == 1 ? null : AppBar(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          elevation: 0,
-          centerTitle: true,
-          toolbarHeight: _snapshotToolbarHeight,
-          automaticallyImplyLeading: false,
-          leadingWidth: 48,
-          leading: IconButton(
-            onPressed: _uploading
-                ? null
-                : () async {
-                    if (_step == 0 && _editingTextLayerId != null) {
-                      await _finishOverlayEditing();
-                      return;
-                    }
-                    if (_step == 1) {
-                      setState(() => _step = 0);
-                    } else if (_sourceFile != null) {
-                      await _returnToMediaSelection();
-                    } else if (await _confirmExit() && context.mounted) {
-                      Navigator.of(context).pop();
-                    }
-                  },
-            icon: Icon(
-              _step == 0 && _sourceFile == null
-                  ? Icons.close_rounded
-                  : Icons.arrow_back_rounded,
-              color: const Color(0xFF111827),
-              size: context.ri(22).clamp(21, 24).toDouble(),
-            ),
-            tooltip: _step == 0 && _sourceFile == null
-                ? MaterialLocalizations.of(context).closeButtonTooltip
-                : MaterialLocalizations.of(context).backButtonTooltip,
-          ),
-          flexibleSpace: _buildCenteredSnapshotTitle(strings.createSnapshot),
-          actions: [
-            if (_step == 1 && compactUploadAction)
-              MotionPress(
-                enabled: !_uploading,
-                pressedScale: .94,
-                child: SizedBox.square(
-                  dimension: 48,
-                  child: IconButton(
-                    onPressed: _uploading ? null : _upload,
-                    tooltip: strings.upload,
-                    icon: _uploading
-                        ? const SizedBox.square(
-                            dimension: 15,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            Icons.check_rounded,
-                            size: context.ri(21).clamp(20, 23).toDouble(),
-                          ),
-                  ),
-                ),
-              )
-            else if (_step == 1)
-              MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.15,
-                child: MotionPress(
-                  enabled: !_uploading,
-                  pressedScale: .94,
-                  child: TextButton.icon(
-                    onPressed: _uploading ? null : _upload,
-                    icon: _uploading
-                        ? const SizedBox.square(
-                            dimension: 15,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            Icons.check_rounded,
-                            size: context.ri(18).clamp(17, 20).toDouble(),
-                          ),
-                    label: Text(
-                      strings.upload,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF111827),
-                      disabledForegroundColor: const Color(0xFF9CA3AF),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: const Size(44, 44),
-                    ),
-                  ),
-                ),
-              ),
-            const SizedBox(width: 4),
-          ],
-        ),
         body: SafeArea(
           top: false,
-          bottom: _step != 1,
-          minimum: EdgeInsets.only(bottom: _step == 1 ? 0 : 8),
+          bottom: false,
           child: AnimatedSwitcher(
             // One canvas/player owns its GlobalKey at a time, including a
             // rapid preview -> editor reversal before the fade completes.
@@ -1867,45 +1774,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             child: _step == 0 ? _buildEditor(strings) : _buildPreview(strings),
           ),
         ),
-        ),
-      ),
-    );
-  }
-
-  double get _snapshotToolbarHeight {
-    final base = context.rh(56, min: 54, max: 60);
-    final scaledTitle = MediaQuery.textScalerOf(context).scale(
-      context.rf(18).clamp(16, 19).toDouble(),
-    );
-    final accessible = scaledTitle * 1.2 + 24;
-    return accessible > base ? accessible.clamp(base, 96).toDouble() : base;
-  }
-
-  Widget _buildCenteredSnapshotTitle(String title) {
-    final clearance = MediaQuery.sizeOf(context).width < 360 ? 88.0 : 104.0;
-    return SafeArea(
-      bottom: false,
-      child: IgnorePointer(
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: clearance),
-            child: MediaQuery.withClampedTextScaling(
-              maxScaleFactor: 1.2,
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(18).clamp(16, 19).toDouble(),
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF111827),
-                ),
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -1983,23 +1851,19 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
               ),
             ),
           );
-    final showSelectionChrome = selected && !_composing;
+    final showSelectionChrome = (selected || editing) && !_composing;
     final selectedTextContent = Stack(
+      clipBehavior: Clip.none,
       children: [
         textContent,
+        // 편집·선택 중인 레이어: 1.5pt 흰 70% 점선, 4pt 띄움(합성에는 그리지 않음).
         if (showSelectionChrome)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: AppColors.pointColor,
-                    width: 1.2,
-                  ),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ),
+          const Positioned(
+            left: -4,
+            top: -4,
+            right: -4,
+            bottom: -4,
+            child: SnapshotDashedFrame(),
           ),
       ],
     );
@@ -2096,8 +1960,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             child: IconButton(
               onPressed: controller == null ? null : _toggleSourceVideoPreview,
               padding: const EdgeInsets.all(9),
-              color: const Color(0xFF111827),
-              disabledColor: const Color(0xFF98A2B3),
+              color: Colors.white,
+              disabledColor: Colors.white.withValues(alpha: .4),
               tooltip: strings.videoPreview,
               icon: controller == null
                   ? const Icon(Icons.play_arrow_rounded, size: 24)
@@ -2141,9 +2005,9 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                 style: TextStyle(
                   fontFamily: uiFontFamily(context, 'Inter'),
                   fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(11).clamp(10.5, 12).toDouble(),
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF475467),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: .7),
                 ),
               ),
             ),
@@ -2278,29 +2142,31 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             onHorizontalDragEnd: (_) => _trimDragTarget = null,
             onHorizontalDragCancel: () => _trimDragTarget = null,
             child: SizedBox(
-              height: 44,
+              height: 48,
               child: Stack(
                 alignment: Alignment.centerLeft,
                 children: [
+                  // 프레임 줄(높이 48, 모서리 10). 위치 계산은 기존과 같다.
                   Positioned(
                     left: trackStart,
                     width: usableWidth,
                     child: Container(
-                      height: 3,
+                      height: 48,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFD0D5DD),
-                        borderRadius: BorderRadius.circular(99),
+                        color: Colors.white.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                   ),
+                  // 선택 창: 2.5pt 흰 테두리.
                   Positioned(
                     left: startX,
                     width: selectedWidth < 2 ? 2 : selectedWidth,
                     child: Container(
-                      height: 9,
+                      height: 48,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF111827),
-                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(color: Colors.white, width: 2.5),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                   ),
@@ -2461,74 +2327,24 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     );
   }
 
-  Widget _buildEditorControls(
+  /// 글자 편집 패널: 밝게/어둡게 ↔ lightText, 작게/보통/크게 ↔ fontScale(세 값으로
+  /// 설정만 하고 핀치 조절은 그대로 둔다).
+  Widget _buildTextEditPanel(
     SnapshotStrings strings,
-  ) {
-    return SizedBox(
-      height: 72,
-      child: _videoDuration > Duration.zero
-          ? _buildVideoTrimEditor(strings)
-          : const SizedBox.shrink(),
-    );
-  }
-
-  Widget _buildTextEditingToolbar(
-    SnapshotStrings strings,
-    _SnapshotTextLayer layer,
-  ) {
+    _SnapshotTextLayer layer, {
+    required double bottomPadding,
+  }) {
     return TextFieldTapRegion(
-      child: Material(
-        color: Colors.white,
-        elevation: 2,
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          height: 56,
-          child: Row(
-            children: [
-              SizedBox.square(
-                dimension: 48,
-                child: IconButton(
-                  tooltip:
-                      layer.lightText ? strings.darkText : strings.lightText,
-                  onPressed: () => setState(
-                    () => layer.lightText = !layer.lightText,
-                  ),
-                  icon: const Icon(
-                    Icons.contrast_rounded,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Semantics(
-                  label: strings.textSize,
-                  child: Slider(
-                    min: .25,
-                    max: 1.75,
-                    divisions: 30,
-                    value: layer.fontScale.clamp(.25, 1.75).toDouble(),
-                    activeColor: AppColors.pointColor,
-                    semanticFormatterCallback: (value) =>
-                        '${(value * 100).round()}%',
-                    onChanged: (value) =>
-                        _setTextLayerFontScale(layer.id, value),
-                  ),
-                ),
-              ),
-              SizedBox.square(
-                dimension: 48,
-                child: IconButton(
-                  tooltip: MaterialLocalizations.of(context).okButtonLabel,
-                  onPressed: () => unawaited(_finishOverlayEditing()),
-                  icon: const Icon(
-                    Icons.check_rounded,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      child: SnapshotTextEditPanel(
+        strings: strings,
+        lightText: layer.lightText,
+        fontScale: layer.fontScale,
+        showBringForward: _textLayers.length > 1,
+        bottomPadding: bottomPadding,
+        onLightChanged: (light) => setState(() => layer.lightText = light),
+        onScaleChanged: (scale) => _setTextLayerFontScale(layer.id, scale),
+        onBringForward: _bringSelectedTextLayerForward,
+        onDone: () => unawaited(_finishOverlayEditing()),
       ),
     );
   }
@@ -2536,249 +2352,319 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   Widget _buildEditor(SnapshotStrings strings) {
     return LayoutBuilder(
       key: const ValueKey('snapshot_editor'),
-      builder: (context, constraints) {
-        final horizontal = constraints.maxWidth < 360 ? 12.0 : 16.0;
-        final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
-        final compactActions = constraints.maxWidth < 340 ||
-            MediaQuery.textScalerOf(context).scale(14) > 21;
-        final editingLayer = _textLayerById(_editingTextLayerId);
-        final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-        final safeBottom = MediaQuery.paddingOf(context).bottom;
-        final toolbarBottom = (keyboardInset - safeBottom + 8)
-            .clamp(
-                8.0, (constraints.maxHeight - 64).clamp(8.0, double.infinity))
-            .toDouble();
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Column(
+      builder: (context, constraints) => _sourceFile == null
+          ? _buildPicker(strings, constraints)
+          : _buildMediaEditor(strings, constraints),
+    );
+  }
+
+  /// 고르기: 위쪽 미리보기 + 탭 줄 + 4열 그리드 + [카메라][다음].
+  Widget _buildPicker(SnapshotStrings strings, BoxConstraints constraints) {
+    final padding = MediaQuery.paddingOf(context);
+    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final previewHeight =
+        (constraints.maxHeight * .5).clamp(0.0, 420.0).toDouble();
+    final picked = _pickedAsset != null &&
+            _recentPhotos.any((photo) => photo.id == _pickedAsset!.id)
+        ? _pickedAsset
+        : (_recentPhotos.isNotEmpty ? _recentPhotos.first : null);
+    final busy = _loadingPhoto || _uploading;
+
+    return ColoredBox(
+      color: Colors.black,
+      child: Column(
+        children: [
+          SizedBox(
+            height: previewHeight,
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                Expanded(
-                  child: _sourceFile == null
-                      ? Padding(
-                          padding: EdgeInsets.symmetric(horizontal: horizontal),
-                          child: _RecentPhotoGallery(
-                            loading: _loadingGallery,
-                            selecting: _loadingPhoto,
-                            permissionDenied: _galleryPermissionDenied,
-                            permissionLimited: _galleryPermissionLimited,
-                            loadFailed: _galleryLoadFailed,
-                            photos: _recentPhotos,
-                            hasMore: _recentPhotos.length < _galleryTotalCount,
-                            loadingMore: _loadingMoreGallery,
-                            cameraLabel: strings.camera,
-                            galleryLabel: strings.choosePhoto,
-                            videoLabel: strings.chooseVideo,
-                            addPhotosLabel: strings.addPhotos,
-                            settingsLabel: strings.settings,
-                            permissionMessage:
-                                strings.galleryPermissionRequired,
-                            loadFailedMessage: strings.photoFailed,
-                            retryLabel: strings.retry,
-                            onCamera: _chooseCameraMedia,
-                            onGallery: () => _pickImage(ImageSource.gallery),
-                            onVideo: () => _pickVideo(ImageSource.gallery),
-                            onAddPhotos: _selectMorePhotos,
-                            onRetry: _loadRecentPhotos,
-                            onOpenSettings: PhotoManager.openSetting,
-                            onLoadMore: _loadMoreRecentPhotos,
-                            onPhotoTap: _selectRecentPhoto,
-                          ),
+                AnimatedSwitcher(
+                  duration: reduce
+                      ? Duration.zero
+                      : const Duration(milliseconds: 150),
+                  child: picked == null
+                      ? const ColoredBox(
+                          key: ValueKey('snapshot_picker_preview_empty'),
+                          color: Colors.black,
                         )
-                      : ColoredBox(
-                          color: Colors.white,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Center(
-                                child: ConstrainedBox(
-                                  constraints:
-                                      const BoxConstraints(maxWidth: 640),
-                                  child: AspectRatio(
-                                    aspectRatio: _aspectRatio,
-                                    child: RepaintBoundary(
-                                      key: _compositionKey,
-                                      child: LayoutBuilder(
-                                        builder: (context, mediaConstraints) {
-                                          final width =
-                                              mediaConstraints.maxWidth;
-                                          final height =
-                                              mediaConstraints.maxHeight;
-                                          return Stack(
-                                            fit: StackFit.expand,
-                                            children: [
-                                              GestureDetector(
-                                                behavior:
-                                                    HitTestBehavior.opaque,
-                                                onTap: _handlePhotoTap,
-                                                child: _mediaType ==
-                                                        SnapshotMediaType.photo
-                                                    ? Image.file(
-                                                        _sourceFile!,
-                                                        fit: BoxFit.contain,
-                                                      )
-                                                    : _sourceVideoController !=
-                                                                null &&
-                                                            _sourceVideoController!
-                                                                .value
-                                                                .isInitialized
-                                                        ? FittedBox(
-                                                            fit: BoxFit.contain,
-                                                            child: SizedBox(
-                                                              width:
-                                                                  _sourceVideoController!
-                                                                      .value
-                                                                      .size
-                                                                      .width,
-                                                              height:
-                                                                  _sourceVideoController!
-                                                                      .value
-                                                                      .size
-                                                                      .height,
-                                                              child:
-                                                                  VideoPlayer(
-                                                                _sourceVideoController!,
-                                                              ),
-                                                            ),
-                                                          )
-                                                        : const SizedBox
-                                                            .expand(),
-                                              ),
-                                              for (final layer in _textLayers)
-                                                _buildTextLayer(
-                                                  layer,
-                                                  width,
-                                                  height,
-                                                  strings,
-                                                ),
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (_textLayers.isNotEmpty &&
-                                  _editingTextLayerId == null &&
-                                  !_composing)
-                                Positioned(
-                                  top: 12,
-                                  right: horizontal,
-                                  bottom: 12,
-                                  child: SingleChildScrollView(
-                                    child: _buildMediaTextActions(strings),
-                                  ),
-                                ),
-                            ],
+                      : Image(
+                          key: ValueKey('snapshot_picker_preview_${picked.id}'),
+                          image: AssetEntityImageProvider(
+                            picked,
+                            isOriginal: false,
+                            thumbnailSize: const ThumbnailSize.square(1080),
                           ),
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: double.infinity,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, __, ___) =>
+                              const ColoredBox(color: Colors.black),
                         ),
                 ),
-                if (_sourceFile != null &&
-                    _mediaType == SnapshotMediaType.video)
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: horizontal),
-                    child: Visibility(
-                      visible: !keyboardOpen,
-                      maintainAnimation: true,
-                      maintainSize: true,
-                      maintainState: true,
-                      child: _buildEditorControls(strings),
-                    ),
+                const _SnapshotEdgeFades(top: 110, bottom: 120),
+                Positioned(
+                  top: padding.top + 6,
+                  left: 0,
+                  right: 0,
+                  child: SnapshotCreateTopBar(
+                    icon: Icons.close_rounded,
+                    label: null,
+                    semanticLabel:
+                        MaterialLocalizations.of(context).closeButtonTooltip,
+                    lifetime: strings.shareLifetimeNote,
+                    onBack: _uploading
+                        ? null
+                        : () async {
+                            if (await _confirmExit() && mounted) {
+                              Navigator.of(this.context).pop();
+                            }
+                          },
                   ),
-                if (_sourceFile != null)
-                  Visibility(
-                    visible: !keyboardOpen,
-                    maintainAnimation: true,
-                    maintainSize: true,
-                    maintainState: true,
-                    child: Padding(
-                      padding:
-                          EdgeInsets.fromLTRB(horizontal, 8, horizontal, 8),
-                      child: SizedBox(
-                        height: 52,
-                        child: Row(
-                          children: [
-                            if (compactActions)
-                              IconButton(
-                                onPressed: _textLayers.length < 5 && !_composing
-                                    ? _addTextLayer
-                                    : null,
-                                tooltip:
-                                    '${strings.addText} (${_textLayers.length}/5)',
-                                icon: const Icon(Icons.text_fields_rounded),
-                              )
-                            else
-                              TextButton.icon(
-                                onPressed: _textLayers.length < 5 && !_composing
-                                    ? _addTextLayer
-                                    : null,
-                                icon: const Icon(Icons.text_fields_rounded),
-                                label: Text(strings.addText),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: const Color(0xFF111827),
-                                  minimumSize: const Size(48, 48),
-                                  textStyle: TextStyle(
-                                    fontFamily: uiFontFamily(context, 'Inter'),
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize:
-                                        context.rf(14).clamp(13, 15).toDouble(),
-                                    fontWeight: FontWeight.w700,
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: SnapshotPickerTabRow(
+                    strings: strings,
+                    onPhotos:
+                        busy ? null : () => _pickImage(ImageSource.gallery),
+                    onVideos:
+                        busy ? null : () => _pickVideo(ImageSource.gallery),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _RecentPhotoGallery(
+              loading: _loadingGallery,
+              selecting: _loadingPhoto,
+              permissionDenied: _galleryPermissionDenied,
+              permissionLimited: _galleryPermissionLimited,
+              loadFailed: _galleryLoadFailed,
+              photos: _recentPhotos,
+              picked: picked,
+              hasMore: _recentPhotos.length < _galleryTotalCount,
+              loadingMore: _loadingMoreGallery,
+              addPhotosLabel: strings.addPhotos,
+              settingsLabel: strings.openSettings,
+              permissionMessage: strings.galleryPermissionRequired,
+              loadFailedMessage: strings.photoFailed,
+              retryLabel: strings.retry,
+              onAddPhotos: _selectMorePhotos,
+              onRetry: _loadRecentPhotos,
+              onOpenSettings: PhotoManager.openSetting,
+              onLoadMore: _loadMoreRecentPhotos,
+              onPhotoTap: (photo) => setState(() => _pickedAsset = photo),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, padding.bottom + 20),
+            child: Row(
+              children: [
+                SnapshotCameraCircle(
+                  label: strings.camera,
+                  onTap: busy ? null : _chooseCameraMedia,
+                  onLongPress:
+                      busy ? null : () => _pickVideo(ImageSource.camera),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SnapshotPillButton(
+                    key: const ValueKey('snapshot_picker_next'),
+                    label: strings.next,
+                    busy: _loadingPhoto,
+                    onPressed: picked == null || _uploading
+                        ? null
+                        : () => _selectRecentPhoto(picked),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 편집: 미디어(위는 상태바 뒤까지, 아래는 하단 바 위 104에서 끝남) + 도구 줄.
+  /// 합성 캔버스(_compositionKey 아래 AspectRatio)는 그대로 두고 둘레만 바꾼다.
+  Widget _buildMediaEditor(
+    SnapshotStrings strings,
+    BoxConstraints constraints,
+  ) {
+    final padding = MediaQuery.paddingOf(context);
+    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final editingLayer = _textLayerById(_editingTextLayerId);
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final mediaBottom = 104 + padding.bottom;
+    final isVideo = _mediaType == SnapshotMediaType.video &&
+        _videoDuration > Duration.zero;
+    final showTrim = isVideo && _trimOpen && editingLayer == null;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: mediaBottom,
+          child: ClipRRect(
+            borderRadius:
+                const BorderRadius.vertical(bottom: Radius.circular(16)),
+            child: ColoredBox(
+              color: const Color(0xFF111111),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: AspectRatio(
+                        aspectRatio: _aspectRatio,
+                        child: RepaintBoundary(
+                          key: _compositionKey,
+                          child: LayoutBuilder(
+                            builder: (context, mediaConstraints) {
+                              final width = mediaConstraints.maxWidth;
+                              final height = mediaConstraints.maxHeight;
+                              return Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: _handlePhotoTap,
+                                    child: _buildSourceMedia(),
                                   ),
-                                ),
-                              ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: MotionPress(
-                                enabled: !_composing,
-                                pressedScale: .94,
-                                child: FilledButton(
-                                  onPressed:
-                                      _composing ? null : _continueFromEditor,
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: AppColors.pointColor,
-                                    foregroundColor: Colors.white,
-                                    textStyle: TextStyle(
-                                      fontFamily:
-                                          uiFontFamily(context, 'Inter'),
-                                      fontFamilyFallback: const ['NotoSansKR'],
-                                      fontSize: context
-                                          .rf(15)
-                                          .clamp(14, 16)
-                                          .toDouble(),
-                                      fontWeight: FontWeight.w700,
+                                  for (final layer in _textLayers)
+                                    _buildTextLayer(
+                                      layer,
+                                      width,
+                                      height,
+                                      strings,
                                     ),
-                                  ),
-                                  child: _composing
-                                      ? const SizedBox.square(
-                                          dimension: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : Text(strings.next),
-                                ),
-                              ),
-                            ),
-                          ],
+                                ],
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
                   ),
-              ],
-            ),
-            if (editingLayer != null && keyboardOpen)
-              Positioned(
-                left: horizontal,
-                right: horizontal,
-                bottom: toolbarBottom,
-                child: _buildTextEditingToolbar(strings, editingLayer),
+                  const _SnapshotEdgeFades(top: 110, bottom: 0),
+                  if (_textLayers.isNotEmpty &&
+                      _editingTextLayerId == null &&
+                      !_composing)
+                    Positioned(
+                      top: padding.top + 56,
+                      right: 12,
+                      bottom: 12,
+                      child: SingleChildScrollView(
+                        child: _buildMediaTextActions(strings),
+                      ),
+                    ),
+                ],
               ),
-          ],
-        );
-      },
+            ),
+          ),
+        ),
+        Positioned(
+          top: padding.top + 6,
+          left: 0,
+          right: 0,
+          child: SnapshotCreateTopBar(
+            icon: Icons.chevron_left_rounded,
+            label: strings.repick,
+            lifetime: strings.shareLifetimeNote,
+            onBack: _uploading || _composing
+                ? null
+                : () => unawaited(_returnToMediaSelection()),
+          ),
+        ),
+        if (showTrim)
+          Positioned(
+            key: const ValueKey('snapshot_trim_panel'),
+            left: 0,
+            right: 0,
+            bottom: mediaBottom,
+            child: Container(
+              color: Colors.black.withValues(alpha: .55),
+              padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
+              child: _buildVideoTrimEditor(strings),
+            ),
+          ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: AnimatedSwitcher(
+            duration: reduce ? Duration.zero : const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            transitionBuilder: (child, animation) => SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, .25),
+                end: Offset.zero,
+              ).animate(animation),
+              child: FadeTransition(opacity: animation, child: child),
+            ),
+            child: editingLayer != null
+                ? Padding(
+                    key: const ValueKey('snapshot_text_panel_slot'),
+                    padding: EdgeInsets.only(bottom: keyboardInset),
+                    child: _buildTextEditPanel(
+                      strings,
+                      editingLayer,
+                      bottomPadding: keyboardInset > 0 ? 0 : padding.bottom,
+                    ),
+                  )
+                : Padding(
+                    key: const ValueKey('snapshot_tool_row_slot'),
+                    padding:
+                        EdgeInsets.fromLTRB(16, 12, 20, padding.bottom + 20),
+                    child: SnapshotEditorToolRow(
+                      strings: strings,
+                      isVideo: isVideo,
+                      trimOpen: _trimOpen,
+                      busy: _composing,
+                      onAddText: _textLayers.length < 5 && !_composing
+                          ? _addTextLayer
+                          : null,
+                      onToggleTrim: () =>
+                          setState(() => _trimOpen = !_trimOpen),
+                      onNext: _composing
+                          ? null
+                          : () {
+                              if (_trimOpen) setState(() => _trimOpen = false);
+                              unawaited(_continueFromEditor());
+                            },
+                    ),
+                  ),
+          ),
+        ),
+      ],
     );
+  }
+
+  Widget _buildSourceMedia() {
+    if (_mediaType == SnapshotMediaType.photo) {
+      return Image.file(_sourceFile!, fit: BoxFit.contain);
+    }
+    final controller = _sourceVideoController;
+    if (controller != null && controller.value.isInitialized) {
+      return FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: controller.value.size.width,
+          height: controller.value.size.height,
+          child: VideoPlayer(controller),
+        ),
+      );
+    }
+    return const SizedBox.expand();
   }
 
   Widget _buildPreview(SnapshotStrings strings) {
@@ -2853,6 +2739,56 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   }
 }
 
+class _SnapshotEdgeFades extends StatelessWidget {
+  const _SnapshotEdgeFades({required this.top, required this.bottom});
+
+  final double top;
+  final double bottom;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (top > 0)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: top,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x8C000000), Color(0x00000000)],
+                  ),
+                ),
+              ),
+            ),
+          if (bottom > 0)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: bottom,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x00000000), Color(0xFF000000)],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TrimHandle extends StatelessWidget {
   const _TrimHandle({required this.diameter});
 
@@ -2864,14 +2800,17 @@ class _TrimHandle extends StatelessWidget {
       dimension: diameter,
       child: const DecoratedBox(
         decoration: BoxDecoration(
-          color: Color(0xFF111827),
+          color: Colors.white,
           shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black45, blurRadius: 3)],
         ),
       ),
     );
   }
 }
 
+/// 고르기 그리드: 4열·간격 2·정사각, 한 장만 고른다. 페이징·권한 거부·
+/// 불러오기 실패·제한 접근(사진 더 보기) 경로는 기존과 같다.
 class _RecentPhotoGallery extends StatelessWidget {
   const _RecentPhotoGallery({
     required this.loading,
@@ -2880,19 +2819,14 @@ class _RecentPhotoGallery extends StatelessWidget {
     required this.permissionLimited,
     required this.loadFailed,
     required this.photos,
+    required this.picked,
     required this.hasMore,
     required this.loadingMore,
-    required this.cameraLabel,
-    required this.galleryLabel,
-    required this.videoLabel,
     required this.addPhotosLabel,
     required this.settingsLabel,
     required this.permissionMessage,
     required this.loadFailedMessage,
     required this.retryLabel,
-    required this.onCamera,
-    required this.onGallery,
-    required this.onVideo,
     required this.onAddPhotos,
     required this.onRetry,
     required this.onOpenSettings,
@@ -2906,19 +2840,14 @@ class _RecentPhotoGallery extends StatelessWidget {
   final bool permissionLimited;
   final bool loadFailed;
   final List<AssetEntity> photos;
+  final AssetEntity? picked;
   final bool hasMore;
   final bool loadingMore;
-  final String cameraLabel;
-  final String galleryLabel;
-  final String videoLabel;
   final String addPhotosLabel;
   final String settingsLabel;
   final String permissionMessage;
   final String loadFailedMessage;
   final String retryLabel;
-  final VoidCallback onCamera;
-  final VoidCallback onGallery;
-  final VoidCallback onVideo;
   final VoidCallback onAddPhotos;
   final VoidCallback onRetry;
   final VoidCallback onOpenSettings;
@@ -2929,111 +2858,33 @@ class _RecentPhotoGallery extends StatelessWidget {
   Widget build(BuildContext context) {
     if (loading) {
       return const Center(
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
       );
     }
 
     if (permissionDenied) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _CameraButton(
-                label: cameraLabel,
-                enabled: !selecting,
-                onPressed: onCamera,
-              ),
-              const SizedBox(height: 14),
-              OutlinedButton.icon(
-                onPressed: selecting ? null : onGallery,
-                icon: const Icon(Icons.photo_library_outlined, size: 19),
-                label: Text(galleryLabel),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: selecting ? null : onVideo,
-                icon: const Icon(Icons.video_library_outlined, size: 19),
-                label: Text(videoLabel),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                permissionMessage,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: ['NotoSansKR'],
-                  fontSize: 14,
-                  height: 1.45,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF667085),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  TextButton(onPressed: onRetry, child: Text(retryLabel)),
-                  const SizedBox(width: 4),
-                  TextButton(
-                    onPressed: onOpenSettings,
-                    child: Text(settingsLabel),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+      return SnapshotPickerNotice(
+        message: permissionMessage,
+        primaryLabel: settingsLabel,
+        onPrimary: onOpenSettings,
+        secondaryLabel: retryLabel,
+        onSecondary: onRetry,
       );
     }
 
     if (loadFailed) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _CameraButton(
-                label: cameraLabel,
-                enabled: !selecting,
-                onPressed: onCamera,
-              ),
-              const SizedBox(height: 14),
-              OutlinedButton.icon(
-                onPressed: selecting ? null : onGallery,
-                icon: const Icon(Icons.photo_library_outlined, size: 19),
-                label: Text(galleryLabel),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: selecting ? null : onVideo,
-                icon: const Icon(Icons.video_library_outlined, size: 19),
-                label: Text(videoLabel),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                loadFailedMessage,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: ['NotoSansKR'],
-                  fontSize: 14,
-                  height: 1.45,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF667085),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(onPressed: onRetry, child: Text(retryLabel)),
-            ],
-          ),
-        ),
+      return SnapshotPickerNotice(
+        message: loadFailedMessage,
+        primaryLabel: retryLabel,
+        onPrimary: onRetry,
       );
     }
 
-    final leadingItemCount = permissionLimited ? 3 : 2;
+    final leadingItemCount = permissionLimited ? 1 : 0;
+    final cacheWidth =
+        (MediaQuery.sizeOf(context).width / 4 * MediaQuery.devicePixelRatioOf(context))
+            .ceil()
+            .clamp(120, 360);
     return Stack(
       children: [
         NotificationListener<ScrollNotification>(
@@ -3046,67 +2897,82 @@ class _RecentPhotoGallery extends StatelessWidget {
             return false;
           },
           child: GridView.builder(
-            padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
+            key: const ValueKey('snapshot_picker_grid'),
+            padding: const EdgeInsets.only(top: 2),
             physics: const BouncingScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              mainAxisSpacing: 3,
-              crossAxisSpacing: 3,
+              crossAxisCount: 4,
+              mainAxisSpacing: 2,
+              crossAxisSpacing: 2,
             ),
             itemCount: photos.length + leadingItemCount + (loadingMore ? 1 : 0),
             itemBuilder: (context, index) {
-              if (index == 0) {
-                return _CameraButton(
-                  label: cameraLabel,
-                  enabled: !selecting,
-                  onPressed: onCamera,
-                  fillCell: true,
-                );
-              }
-              if (index == 1) {
-                return _PhotoActionCell(
-                  label: videoLabel,
-                  icon: Icons.video_library_outlined,
-                  enabled: !selecting,
-                  onPressed: onVideo,
-                );
-              }
-              if (permissionLimited && index == 2) {
-                return _PhotoActionCell(
+              if (permissionLimited && index == 0) {
+                return Semantics(
+                  button: true,
                   label: addPhotosLabel,
-                  icon: Icons.add_photo_alternate_outlined,
-                  enabled: !selecting,
-                  onPressed: onAddPhotos,
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: selecting ? null : onAddPhotos,
+                    child: ColoredBox(
+                      color: Colors.white.withValues(alpha: .08),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add_rounded,
+                          size: 24,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
                 );
               }
               final photoIndex = index - leadingItemCount;
               if (photoIndex >= photos.length) {
                 return const Center(
                   child: SizedBox.square(
-                    dimension: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    dimension: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
                   ),
                 );
               }
               final photo = photos[photoIndex];
+              final selected = picked?.id == photo.id;
               return Semantics(
                 button: true,
+                selected: selected,
                 label: '${photoIndex + 1}',
-                child: Material(
-                  color: const Color(0xFFF2F4F7),
-                  borderRadius: BorderRadius.circular(10),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: selecting ? null : () => onPhotoTap(photo),
-                    child: Image(
-                      image: AssetEntityImageProvider(
-                        photo,
-                        isOriginal: false,
-                        thumbnailSize: const ThumbnailSize.square(420),
+                excludeSemantics: true,
+                child: GestureDetector(
+                  key: ValueKey<String>('snapshot_picker_cell_${photo.id}'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: selecting ? null : () => onPhotoTap(photo),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ColoredBox(
+                        color: const Color(0xFF1A1A1A),
+                        child: Image(
+                          image: ResizeImage(
+                            AssetEntityImageProvider(
+                              photo,
+                              isOriginal: false,
+                              thumbnailSize: const ThumbnailSize.square(360),
+                            ),
+                            width: cacheWidth,
+                          ),
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.medium,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink(),
+                        ),
                       ),
-                      fit: BoxFit.cover,
-                      filterQuality: FilterQuality.medium,
-                    ),
+                      SnapshotGridSelection(selected: selected),
+                    ],
                   ),
                 ),
               );
@@ -3116,113 +2982,16 @@ class _RecentPhotoGallery extends StatelessWidget {
         if (selecting)
           Positioned.fill(
             child: ColoredBox(
-              color: Colors.white.withValues(alpha: .6),
+              color: Colors.black.withValues(alpha: .5),
               child: const Center(
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
       ],
-    );
-  }
-}
-
-class _PhotoActionCell extends StatelessWidget {
-  const _PhotoActionCell({
-    required this.label,
-    required this.icon,
-    required this.enabled,
-    required this.onPressed,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool enabled;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: Material(
-        color: const Color(0xFFF2F4F7),
-        borderRadius: BorderRadius.circular(10),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: enabled ? onPressed : null,
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 27, color: const Color(0xFF111827)),
-                const SizedBox(height: 7),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: ['NotoSansKR'],
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF344054),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CameraButton extends StatelessWidget {
-  const _CameraButton({
-    required this.label,
-    required this.enabled,
-    required this.onPressed,
-    this.fillCell = false,
-  });
-
-  final String label;
-  final bool enabled;
-  final VoidCallback onPressed;
-  final bool fillCell;
-
-  @override
-  Widget build(BuildContext context) {
-    final button = Semantics(
-      button: true,
-      label: label,
-      child: Material(
-        color: const Color(0xFF111827),
-        shape: const CircleBorder(),
-        child: InkWell(
-          onTap: enabled ? onPressed : null,
-          customBorder: const CircleBorder(),
-          child: SizedBox.square(
-            dimension: context.rs(50).clamp(46, 56).toDouble(),
-            child: const Icon(
-              Icons.photo_camera_outlined,
-              size: 24,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ),
-    );
-
-    if (!fillCell) return button;
-    return Material(
-      color: const Color(0xFFF2F4F7),
-      borderRadius: BorderRadius.circular(10),
-      child: Center(child: button),
     );
   }
 }

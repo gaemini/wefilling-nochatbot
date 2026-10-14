@@ -1487,7 +1487,7 @@ extension AppThemeExtensions on AppTheme {
 
   /// 화면 크기에 따른 동적 텍스트 크기 조정
   static double getResponsiveFontSize(BuildContext context, double baseFontSize) {
-    final screenWidth = MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.sizeOf(context).width;
     
     if (screenWidth < 360) {
       // 작은 화면 (- 10%)
@@ -1559,7 +1559,8 @@ extension AppThemeExtensions on AppTheme {
   static Duration getAccessibleDuration(BuildContext context, Duration baseDuration) {
     // 시스템의 애니메이션 감소 설정 확인
     final bool disableAnimations = MediaQuery.disableAnimationsOf(context);
-    final bool reduceMotion = MediaQuery.of(context).accessibleNavigation;
+    final bool reduceMotion =
+        MediaQuery.maybeAccessibleNavigationOf(context) ?? false;
     
     if (disableAnimations || reduceMotion) {
       return Duration.zero; // 애니메이션 비활성화
@@ -1570,7 +1571,8 @@ extension AppThemeExtensions on AppTheme {
 
   /// 접근성을 고려한 스케일 값 가져오기
   static double getAccessibleScale(BuildContext context, double baseScale) {
-    final bool reduceMotion = MediaQuery.of(context).accessibleNavigation;
+    final bool reduceMotion =
+        MediaQuery.maybeAccessibleNavigationOf(context) ?? false;
     
     if (reduceMotion) {
       // 모션 감소 시 스케일 효과를 줄임
@@ -1590,10 +1592,9 @@ extension AppThemeExtensions on AppTheme {
   /// 디바이스 성능에 따른 애니메이션 복잡도 조정
   static bool shouldUseComplexAnimations(BuildContext context) {
     // 화면 크기와 픽셀 밀도로 성능 추정
-    final MediaQueryData mediaQuery = MediaQuery.of(context);
-    final double pixelCount = mediaQuery.size.width * 
-                             mediaQuery.size.height * 
-                             mediaQuery.devicePixelRatio;
+    final size = MediaQuery.sizeOf(context);
+    final double pixelCount =
+        size.width * size.height * MediaQuery.devicePixelRatioOf(context);
     
     // 고해상도 디바이스에서는 복잡한 애니메이션 제한
     return pixelCount < 2000000; // 약 FHD 이하

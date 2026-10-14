@@ -11,7 +11,7 @@ class AccessibilityUtils {
 
   /// Reduce Motion 설정 확인
   static bool isReduceMotionEnabled(BuildContext context) {
-    return MediaQuery.of(context).disableAnimations;
+    return MediaQuery.disableAnimationsOf(context);
   }
 
   /// 텍스트 스케일 팩터 가져오기

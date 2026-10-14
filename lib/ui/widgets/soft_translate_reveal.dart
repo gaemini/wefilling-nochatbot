@@ -86,9 +86,9 @@ class _SoftTranslateRevealState extends State<SoftTranslateReveal> {
   }
 
   bool get _reduceMotion {
-    final media = MediaQuery.maybeOf(context);
-    return media?.disableAnimations == true ||
-        media?.accessibleNavigation == true;
+    // 항목별 구독(키보드 애니메이션 중 재빌드 방지).
+    return MediaQuery.maybeDisableAnimationsOf(context) == true ||
+        MediaQuery.maybeAccessibleNavigationOf(context) == true;
   }
 
   void _schedulePendingIfNeeded() {

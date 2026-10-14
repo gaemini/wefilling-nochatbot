@@ -132,9 +132,10 @@ class MotionTokens {
   static const Curve decelerate = Curves.easeOut;
 
   static bool reduceMotion(BuildContext context) {
-    final media = MediaQuery.maybeOf(context);
-    return media?.disableAnimations == true ||
-        media?.accessibleNavigation == true;
+    // 필요한 항목만 구독한다. MediaQuery 전체를 구독하면 키보드가 오르내리는
+    // 매 프레임마다 이 값을 쓰는 모든 위젯이 다시 그려진다.
+    return MediaQuery.maybeDisableAnimationsOf(context) == true ||
+        MediaQuery.maybeAccessibleNavigationOf(context) == true;
   }
 
   /// [duration] under normal motion, zero under reduced motion. Use for every

@@ -276,7 +276,7 @@ class _FriendsPageState extends State<FriendsPage> {
       );
     }
 
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
     return ListView.builder(
       padding: EdgeInsets.only(
         top: 8,
@@ -1499,7 +1499,7 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 친구 목록 위젯
   Widget _buildFriendsList() {
     // 안드로이드 하단 네비게이션 바 높이 감지
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
 
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isCompact = screenWidth < 360;

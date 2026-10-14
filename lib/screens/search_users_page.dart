@@ -413,7 +413,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   /// 검색 결과 목록
   Widget _buildSearchResults(RelationshipProvider provider) {
     // 안드로이드 하단 네비게이션 바 높이 감지
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
 
     return ListView.builder(
       padding: EdgeInsets.only(

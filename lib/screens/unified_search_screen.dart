@@ -918,7 +918,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           );
         }
 
-        final bottomPadding = MediaQuery.of(context).padding.bottom;
+        final bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
         if (!organizationsEnabled) {
           return ListView(
             controller: _userResultsController,
@@ -1440,7 +1440,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       );
     }
 
-    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    final bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
     return ListView.builder(
       padding: EdgeInsets.only(top: 6, bottom: bottomPadding + 12),
       itemCount: _postResults.length,
@@ -1497,7 +1497,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     final width = MediaQuery.sizeOf(context).width;
     final horizontal = (width * 0.045).clamp(14.0, 24.0).toDouble();
     final compact = width < 360;
-    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    final bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
     return ListView.separated(
       padding: EdgeInsets.only(top: 4, bottom: bottomPadding + 12),
       itemCount: _meetupResults.length,

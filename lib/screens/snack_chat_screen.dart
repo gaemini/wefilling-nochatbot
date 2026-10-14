@@ -85,6 +85,7 @@ import '../services/together_service.dart';
 import '../ui/widgets/together_proposal_banner.dart';
 import '../utils/avatar_image.dart';
 import '../services/clipboard_image_service.dart';
+import '../ui/widgets/translate_hints.dart';
 
 @visibleForTesting
 bool isSnackChatMessageMeaningfullyVisible({
@@ -279,6 +280,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
   String? _targetLanguageCode;
+  // 번역 선택 항목(기본 꺼짐 플래그): 메시지 하나만 번역, 처음 알림 줄.
+  final Set<String> _singleTranslateIds = <String>{};
+  final Set<String> _singleTranslateLoading = <String>{};
+  bool _translateHintDismissed = true;
 
   bool _isUploadingImage = false;
   static final _imageUploadQueue = ChatWorkQueue();
@@ -469,6 +474,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   @override
   void initState() {
     super.initState();
+    if (TranslateHintFlags.firstHint) unawaited(_loadTranslateHintState());
     _accountSubscription =
         FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user?.uid == _screenOwnerUid) return;
@@ -652,6 +658,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     setState(() {
       _translationLanguageRevision = revision;
       _translationShowsOriginal = showingOriginal;
+      // 방 번역 상태가 바뀌면 메시지 하나씩 켠 번역은 방 설정을 따른다.
+      _singleTranslateIds.clear();
+      _singleTranslateLoading.clear();
       _translationProviderRetryExhausted = retryExhausted;
       _translationProviderRetryAvailable = retryAvailable;
       if (languageChanged) {
@@ -7016,6 +7025,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     return SnackChatTranslationSplitButton(
       translationOn: translationOn,
       enabled: _translationModeReady,
+      // 번역을 켠 뒤 첫 요청이 진행 중이고 아직 번역된 메시지가 없을 때.
+      busy: translationOn &&
+          _translationBatchesInFlight > 0 &&
+          _messageTranslations.isEmpty,
       languageLabel: languageLabel,
       toggleSemanticLabel: toggleLabel,
       languageSemanticLabel: settingsLabel,
@@ -7456,6 +7469,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                             ),
                           ),
                   ),
+                  _buildTranslateFirstHint(),
                   ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _messageController,
                     builder: (context, value, _) {
@@ -7555,9 +7569,93 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     );
   }
 
-  /// 번역은 상단 버튼(방 단위)으로만 켜고 끈다. 메시지별 전환은 없다.
+  /// 번역은 상단 스위치(방 단위)로 켜고 끈다. 선택 항목(플래그)이 켜져 있으면
+  /// 방 번역이 꺼진 동안 메시지 하나만 번역해 볼 수 있다.
   bool _wantsTranslation(SnackChatMessage message) =>
-      _translationModeReady && !_translationShowsOriginal;
+      _translationModeReady &&
+      (!_translationShowsOriginal || _singleTranslateIds.contains(message.id));
+
+  /// 이 메시지의 언어가 내 번역 언어와 다르다고 이미 알려져 있는지(캐시·서버
+  /// 감지 값만 본다. 알기 위해 새로 요청하지 않는다).
+  bool _isKnownOtherLanguage(SnackChatMessage message) {
+    final known = _translationService
+        .latestOutcomeFor(_translationRequestForMessage(message));
+    if (known == null || known.isSameLanguage) return false;
+    return known.sourceLanguage.trim().isNotEmpty || known.isReady;
+  }
+
+  bool _showsSingleTranslateButton(SnackChatMessage message, bool isMe) =>
+      !isMe &&
+      TranslateHintFlags.singleMessageButton &&
+      _translationModeReady &&
+      _translationShowsOriginal &&
+      !_singleTranslateIds.contains(message.id) &&
+      _canTranslateMessage(message) &&
+      _isKnownOtherLanguage(message);
+
+  Future<void> _translateSingleMessage(SnackChatMessage message) async {
+    final id = message.id;
+    final request = _translationRequestForMessage(message);
+    final ready = _translationService.latestResultFor(request);
+    setState(() {
+      _singleTranslateIds.add(id);
+      if (ready == null) _singleTranslateLoading.add(id);
+    });
+    if (ready != null) return;
+    ContentTranslationResult? result;
+    try {
+      result = await _translationService.request(request);
+    } catch (_) {
+      result = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _singleTranslateLoading.remove(id);
+      if (result == null || !result.isReady) _singleTranslateIds.remove(id);
+    });
+  }
+
+  Future<void> _loadTranslateHintState() async {
+    final dismissed =
+        await TranslateHintStore.isDismissed(_uid ?? '', widget.snackChatId);
+    if (mounted && dismissed != _translateHintDismissed) {
+      setState(() => _translateHintDismissed = dismissed);
+    }
+  }
+
+  void _dismissTranslateHint() {
+    setState(() => _translateHintDismissed = true);
+    unawaited(TranslateHintStore.dismiss(_uid ?? '', widget.snackChatId));
+  }
+
+  Widget _buildTranslateFirstHint() {
+    final uid = _uid;
+    final show = TranslateHintFlags.firstHint &&
+        !_translateHintDismissed &&
+        _translationModeReady &&
+        _translationShowsOriginal &&
+        uid != null &&
+        _messages.any((message) =>
+            message.senderId != uid &&
+            _canTranslateMessage(message) &&
+            _isKnownOtherLanguage(message));
+    if (!show) return const SizedBox.shrink();
+    final code = _targetLanguageCode;
+    final language = code == null
+        ? ''
+        : ContentTranslationService.supportedLanguages[code] ?? '';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: TranslateFirstHintBar(
+        languageLabel: language,
+        onTranslate: () {
+          _dismissTranslateHint();
+          unawaited(_toggleSnackTranslation());
+        },
+        onDismiss: _dismissTranslateHint,
+      ),
+    );
+  }
 
   _SnackTranslationView _translationViewFor(
     SnackChatMessage message, {
@@ -7953,6 +8051,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           const SizedBox(width: 5),
           reactions,
         ],
+        // 선택 항목: 이 메시지 하나만 번역(말풍선 오른쪽, 시간 앞).
+        if (_showsSingleTranslateButton(message, isMe) ||
+            _singleTranslateLoading.contains(message.id))
+          TranslateSingleMessageButton(
+            busy: _singleTranslateLoading.contains(message.id),
+            onPressed: () => unawaited(_translateSingleMessage(message)),
+          ),
         if (!isMe && showTimeText)
           Padding(
             padding: const EdgeInsets.only(left: 5, bottom: 2),

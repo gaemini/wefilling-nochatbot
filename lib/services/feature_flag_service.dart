@@ -23,6 +23,13 @@ class FeatureFlagService {
   static const String FEATURE_ORGANIZATION_PROFILES =
       'feature_organization_profiles';
 
+  /// 번역 스위치 선택 항목(기본 꺼짐, 사용자 확인 후 켬).
+  // ignore: constant_identifier_names
+  static const String FEATURE_TRANSLATE_SINGLE_MESSAGE_BUTTON =
+      'translate_single_message_button';
+  // ignore: constant_identifier_names
+  static const String FEATURE_TRANSLATE_FIRST_HINT = 'translate_first_hint';
+
   /// 서비스 초기화
   Future<void> init() async {
     if (_isInitialized) return;
@@ -45,6 +52,8 @@ class FeatureFlagService {
         // Public organization search/content stays dark until the compatible
         // app version and the first operator-created account are verified.
         FEATURE_ORGANIZATION_PROFILES: false,
+        FEATURE_TRANSLATE_SINGLE_MESSAGE_BUTTON: false,
+        FEATURE_TRANSLATE_FIRST_HINT: false,
       });
 
       // Placeholder/unavailable App Check 상태에서 Remote Config 요청을

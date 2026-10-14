@@ -75,6 +75,7 @@ import '../ui/widgets/dm_header_identity.dart';
 import '../ui/widgets/snack_chat_translated_text.dart';
 import '../l10n/translation_source_language.dart';
 import '../services/clipboard_image_service.dart';
+import '../ui/widgets/translate_hints.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -212,6 +213,10 @@ class _DMChatScreenState extends State<DMChatScreen>
   int _translationStateGeneration = 0;
   late int _translationLanguageRevision;
   late bool _translationShowsOriginal;
+  // 번역 선택 항목(기본 꺼짐 플래그): 메시지 하나만 번역, 처음 알림 줄.
+  final Set<String> _singleTranslateIds = <String>{};
+  final Set<String> _singleTranslateLoading = <String>{};
+  bool _translateHintDismissed = true;
   Stream<DMUserInfo?>? _otherUserInfoStream;
   // UX: 캐시 스냅샷(fromCache) → 서버 스냅샷 전환으로 인한 플리커를 방지하기 위해
   // 서버에서 확인된 최신 상대 프로필 정보를 별도로 보관한다.
@@ -538,6 +543,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     _translationService.addListener(_handleTranslationServiceChange);
     _translationLifecycleInitialized = true;
     unawaited(_prepareTranslationMode());
+    if (TranslateHintFlags.firstHint) unawaited(_loadTranslateHintState());
     _otherUserInfoStream =
         _userInfoCacheService.watchUserInfo(widget.otherUserId);
     _scrollController.addListener(_onScroll);
@@ -683,6 +689,9 @@ class _DMChatScreenState extends State<DMChatScreen>
     setState(() {
       _translationLanguageRevision = languageRevision;
       _translationShowsOriginal = showingOriginal;
+      // 방 번역 상태가 바뀌면 메시지 하나씩 켠 번역은 방 설정을 따른다.
+      _singleTranslateIds.clear();
+      _singleTranslateLoading.clear();
       if (languageChanged) {
         _translationStateGeneration++;
         // 스낵챗과 같이: 세대가 바뀌면 진행 중이던 준비 결과가 버려지므로
@@ -801,7 +810,8 @@ class _DMChatScreenState extends State<DMChatScreen>
   Widget _buildDmTranslatedText(DMMessage message) {
     final result = _currentTranslation(message);
     final translatedText = (result?.translatedFields['text'] ?? '').trim();
-    final canShowTranslation = !_translationShowsOriginal &&
+    final canShowTranslation = (!_translationShowsOriginal ||
+            _singleTranslateIds.contains(message.id)) &&
         result?.isReady == true &&
         result?.isSameLanguage != true &&
         translatedText.isNotEmpty;
@@ -1338,6 +1348,88 @@ class _DMChatScreenState extends State<DMChatScreen>
         _liveTranslationPriorityUntil[message.id] = expiresAt;
       }
     }
+  }
+
+  /// 이 메시지의 언어가 내 번역 언어와 다르다고 이미 알려져 있는지(캐시·서버
+  /// 감지 값만 본다. 알기 위해 새로 요청하지 않는다).
+  bool _isKnownOtherLanguage(DMMessage message) {
+    final known = _translationService
+        .latestOutcomeFor(_translationRequestForMessage(message));
+    if (known == null || known.isSameLanguage) return false;
+    return known.sourceLanguage.trim().isNotEmpty || known.isReady;
+  }
+
+  bool _showsSingleTranslateButton(DMMessage message) =>
+      TranslateHintFlags.singleMessageButton &&
+      _translationModeReady &&
+      _translationShowsOriginal &&
+      !_singleTranslateIds.contains(message.id) &&
+      _canTranslateMessage(message) &&
+      _isKnownOtherLanguage(message);
+
+  Future<void> _translateSingleMessage(DMMessage message) async {
+    final id = message.id;
+    final request = _translationRequestForMessage(message);
+    final ready = _translationService.latestResultFor(request);
+    setState(() {
+      _singleTranslateIds.add(id);
+      if (ready == null) _singleTranslateLoading.add(id);
+    });
+    if (ready != null) return;
+    ContentTranslationResult? result;
+    try {
+      result = await _translationService.request(request);
+    } catch (_) {
+      result = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _singleTranslateLoading.remove(id);
+      if (result == null || !result.isReady) _singleTranslateIds.remove(id);
+    });
+  }
+
+  Future<void> _loadTranslateHintState() async {
+    final dismissed = await TranslateHintStore.isDismissed(
+      _currentUser?.uid ?? '',
+      _activeConversationId,
+    );
+    if (mounted && dismissed != _translateHintDismissed) {
+      setState(() => _translateHintDismissed = dismissed);
+    }
+  }
+
+  void _dismissTranslateHint() {
+    setState(() => _translateHintDismissed = true);
+    unawaited(TranslateHintStore.dismiss(
+      _currentUser?.uid ?? '',
+      _activeConversationId,
+    ));
+  }
+
+  Widget _buildTranslateFirstHint() {
+    final show = TranslateHintFlags.firstHint &&
+        !_translateHintDismissed &&
+        _translationModeReady &&
+        _translationShowsOriginal &&
+        _messages.any((message) =>
+            _canTranslateMessage(message) && _isKnownOtherLanguage(message));
+    if (!show) return const SizedBox.shrink();
+    final code = _targetLanguageCode;
+    final language = code == null
+        ? ''
+        : ContentTranslationService.supportedLanguages[code] ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TranslateFirstHintBar(
+        languageLabel: language,
+        onTranslate: () {
+          _dismissTranslateHint();
+          unawaited(_toggleDmTranslation());
+        },
+        onDismiss: _dismissTranslateHint,
+      ),
+    );
   }
 
   Future<void> _toggleDmTranslation() async {
@@ -2550,6 +2642,10 @@ class _DMChatScreenState extends State<DMChatScreen>
       SnackChatTranslationSplitButton(
         translationOn: translationOn,
         enabled: _translationModeReady,
+        // 번역을 켠 뒤 첫 요청이 진행 중이고 아직 번역된 메시지가 없을 때.
+        busy: translationOn &&
+            _translationRequestsInFlight.isNotEmpty &&
+            _messageTranslations.isEmpty,
         languageLabel: code == null
             ? ''
             : ContentTranslationService.supportedLanguages[code] ?? '',
@@ -4530,6 +4626,13 @@ class _DMChatScreenState extends State<DMChatScreen>
               const SizedBox(width: 5),
               _buildInlineReactionBar(message),
             ],
+            // 선택 항목: 이 메시지 하나만 번역(말풍선 오른쪽, 시간 앞).
+            if (_showsSingleTranslateButton(message) ||
+                _singleTranslateLoading.contains(message.id))
+              TranslateSingleMessageButton(
+                busy: _singleTranslateLoading.contains(message.id),
+                onPressed: () => unawaited(_translateSingleMessage(message)),
+              ),
             const SizedBox(width: 6),
             // 시간 표시
             Visibility(
@@ -5182,6 +5285,7 @@ class _DMChatScreenState extends State<DMChatScreen>
                 _buildAttachmentPreview(),
                 const SizedBox(height: 8),
               ],
+              _buildTranslateFirstHint(),
               // 화면 아래에 떠 있는 어두운 알약(스낵챗과 같은 ChatPillComposer).
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _messageController,

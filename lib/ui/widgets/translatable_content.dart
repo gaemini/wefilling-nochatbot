@@ -7,6 +7,7 @@ import '../../services/content_translation_service.dart';
 import '../../l10n/ui_locale.dart';
 import '../../l10n/translation_source_language.dart';
 import '../../utils/logger.dart';
+import 'translate_switch.dart';
 
 typedef TranslatedContentBuilder = Widget Function(
   BuildContext context,
@@ -412,6 +413,33 @@ class _TranslatableContentState extends State<TranslatableContent> {
   }
 }
 
+/// 피드 카드 번역 상태 글자: 켜짐 `{언어}에서 번역됨`, 꺼짐 `원문 · {언어}`.
+@visibleForTesting
+String postCardTranslationStatus(
+  BuildContext context,
+  bool translated,
+  String sourceLanguage,
+) {
+  final zh = isChineseUi(context);
+  final isKo = Localizations.localeOf(context).languageCode == 'ko';
+  if (translated) {
+    if (sourceLanguage.isEmpty) {
+      return zh ? '已翻译' : isKo ? '번역됨' : 'Translated';
+    }
+    return zh
+        ? '译自$sourceLanguage'
+        : isKo
+            ? '$sourceLanguage에서 번역됨'
+            : 'Translated from $sourceLanguage';
+  }
+  if (sourceLanguage.isEmpty) return zh ? '原文' : isKo ? '원문' : 'Original';
+  return zh
+      ? '原文 · $sourceLanguage'
+      : isKo
+          ? '원문 · $sourceLanguage'
+          : 'Original · $sourceLanguage';
+}
+
 /// 여러 항목이 같은 번역 상태를 공유할 때 사용하는 섹션 단위 토글입니다.
 /// 화면 콘텐츠가 자동으로 캐시/서버 번역을 준비하고, 이 버튼은 준비된
 /// 결과와 원문 사이의 표시만 전환합니다.
@@ -596,138 +624,68 @@ class _TranslationScopeToggleState extends State<TranslationScopeToggle> {
     }
 
     if (postCardHeader) {
-      final settingsLabel = (isChineseUi(context) ? '翻译语言设置' : isKo ? '번역 언어 설정' : 'Translation language settings');
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Semantics(
-            button: true,
-            label: label,
-            child: InkWell(
-              onTap: canToggle || retryAvailable
-                  ? () => service.requestOrToggleScope(scope)
-                  : null,
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 2,
-                  runSpacing: 1,
-                  children: [
-                    if (loading)
-                      const SizedBox.square(
-                        dimension: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          color: Color(0xFF2F9BE8),
-                        ),
-                      )
-                    else
-                      const Icon(
-                        Icons.translate_rounded,
-                        size: 13,
-                        color: Color(0xFF6F7D8D),
-                      ),
-                    if (sourceLanguage.isNotEmpty)
-                      Text(
-                        sourceLanguage,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: ['NotoSansKR'],
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6F7D8D),
-                          height: isChineseUi(context) ? 1.3 : 1.05,
-                          letterSpacing: -0.15,
-                        ),
-                      ),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: ['NotoSansKR'],
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF2F9BE8),
-                        height: isChineseUi(context) ? 1.3 : 1.05,
-                        letterSpacing: -0.15,
-                      ),
-                    ),
-                  ],
-                ),
+      // 피드 카드: 본문 아래 오른쪽 끝에 상태 글자 + 번역 스위치.
+      // 언어 설정(톱니)은 카드에 두지 않는다(포스트 상세·설정 화면에서).
+      final zh = isChineseUi(context);
+      final on = canToggle && !showingOriginal;
+      final status = postCardTranslationStatus(context, on, sourceLanguage);
+      final statusStyle = TextStyle(
+        fontFamily: uiFontFamily(context, 'Inter'),
+        fontFamilyFallback: const ['NotoSansKR'],
+        fontSize: 11.5,
+        fontWeight: FontWeight.w400,
+        color: const Color(0xFF8A8A8A),
+        height: zh ? 1.3 : 15 / 11.5,
+      );
+      return MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: Row(
+          key: const ValueKey('post_card_translation_row'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                status,
+                key: const ValueKey('post_card_translation_status'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: statusStyle,
               ),
             ),
-          ),
-          if (retryExhausted && canToggle) ...[
-            const SizedBox(width: 4),
-            Semantics(
-              button: true,
-              label: (isChineseUi(context) ? '重新翻译' : isKo ? '번역 재시도' : 'Retry translation'),
-              child: InkWell(
-                key: const ValueKey('translation_scope_retry_header'),
-                onTap: retryAvailable
-                    ? () => service.retryOneFailedScopeItem(scope)
-                    : null,
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.refresh_rounded,
-                        size: 13,
-                        color: retryAvailable
-                            ? const Color(0xFFB54708)
-                            : const Color(0xFF9AA5B1),
-                      ),
-                      const SizedBox(width: 1),
-                      Text(
-                        (isChineseUi(context) ? '重试' : isKo ? '재시도' : 'Retry'),
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: retryAvailable
-                              ? const Color(0xFFB54708)
-                              : const Color(0xFF9AA5B1),
-                          height: isChineseUi(context) ? 1.3 : 1.05,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-          if (widget.onSettingsPressed != null) ...[
-            const SizedBox(width: 3),
-            Tooltip(
-              message: settingsLabel,
-              child: Semantics(
+            if (retryExhausted && canToggle)
+              Semantics(
                 button: true,
-                label: settingsLabel,
+                label: (zh ? '重新翻译' : isKo ? '번역 재시도' : 'Retry translation'),
                 child: InkResponse(
-                  key: const ValueKey(
-                    'post_translation_language_settings',
-                  ),
-                  onTap: widget.onSettingsPressed,
-                  radius: 16,
-                  child: const SizedBox.square(
-                    dimension: 28,
+                  key: const ValueKey('translation_scope_retry_header'),
+                  onTap: retryAvailable
+                      ? () => service.retryOneFailedScopeItem(scope)
+                      : null,
+                  radius: 18,
+                  child: SizedBox.square(
+                    dimension: 32,
                     child: Icon(
-                      Icons.settings_outlined,
-                      size: 16,
-                      color: Color(0xFF6F7D8D),
+                      Icons.refresh_rounded,
+                      size: 15,
+                      color: retryAvailable
+                          ? const Color(0xFFB54708)
+                          : const Color(0xFF9AA5B1),
                     ),
                   ),
                 ),
               ),
+            TranslateSwitch(
+              key: const ValueKey('post_card_translation_switch'),
+              value: on,
+              busy: translating,
+              failed: retryExhausted && !canToggle,
+              semanticLabel: label,
+              onChanged: canToggle || retryAvailable
+                  ? (_) => service.requestOrToggleScope(scope)
+                  : null,
             ),
           ],
-        ],
+        ),
       );
     }
 

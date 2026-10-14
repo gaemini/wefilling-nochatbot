@@ -105,6 +105,25 @@ class _TranslationLanguageSheetState extends State<TranslationLanguageSheet> {
                 ),
               ),
             ),
+            // 언어 하나가 앱 전체(포스트·댓글·채팅)에 적용된다는 안내.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: Text(
+                isChineseUi(context)
+                    ? '帖子、评论和聊天都会使用这个语言'
+                    : isKo
+                        ? '포스트·댓글·채팅 모두 이 언어로 바뀌어요'
+                        : 'Posts, comments and chats will all use this language',
+                key: const ValueKey('translation_language_sheet_note'),
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 12,
+                  color: const Color(0xFF8A8A8A),
+                  height: isChineseUi(context) ? 1.35 : 16 / 12,
+                ),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
               child: Text(

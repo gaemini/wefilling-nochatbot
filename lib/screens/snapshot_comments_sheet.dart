@@ -808,7 +808,15 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
       toggleKey: const ValueKey('snapshot_comments_translation_toggle'),
       languageKey: const ValueKey('snapshot_comments_translation_language'),
       onToggle: () => _translationService.toggleScope(scope),
-      onOpenLanguage: () => unawaited(showTranslationLanguageSheet(context)),
+      onOpenLanguage: () => unawaited(() async {
+        final code = await showTranslationLanguageSheet(context);
+        // 언어를 고르면 꺼져 있던 번역을 켠다.
+        if (code != null &&
+            mounted &&
+            _translationService.showsOriginal(scope)) {
+          _translationService.toggleScope(scope);
+        }
+      }()),
     );
   }
 

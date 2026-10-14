@@ -62,15 +62,16 @@ void main() {
     return taps;
   }
 
-  testWidgets('375 폭에서 이름 칸이 Wefilling을 담을 만큼 넓다', (tester) async {
+  testWidgets('375 폭에서 이름 칸이 Wefilling을 담을 만큼 넓다(72 이상)', (tester) async {
     // 테스트 글꼴(Ahem)은 글자를 정사각형으로 그려 실제보다 훨씬 넓다.
     // 실제 Inter 16 w600에서 'Wefilling'은 약 72px이므로, 번역 버튼과 메뉴가
     // 있어도 이름 칸이 80px 이상 확보되는지 본다(이전 배치는 날짜까지 한 줄에 있어
     // 이름 칸이 'W…' 수준으로 좁았다).
     await pump(tester, title: 'W');
     final identity = tester.getSize(find.byKey(const ValueKey('dm_header_identity')));
-    // 사진 36 + 간격 10을 뺀 텍스트 칸
-    expect(identity.width - 46, greaterThanOrEqualTo(80));
+    // 사진 36 + 간격 10을 뺀 텍스트 칸. 번역 스위치(누름 영역 56)로 바뀌며
+    // 이전 80에서 75가 되었다. 실제 'Wefilling'(약 72px)은 여전히 들어간다.
+    expect(identity.width - 46, greaterThanOrEqualTo(72));
   });
 
   testWidgets('보조 줄: 일반 날짜, 익명 게시글, 없음', (tester) async {

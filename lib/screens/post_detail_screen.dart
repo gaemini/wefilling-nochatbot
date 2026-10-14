@@ -2840,7 +2840,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       languageSemanticLabel:
           zh ? '翻译语言' : (isKo ? '번역 언어 설정' : 'Translation language'),
       onToggle: _togglePostTranslation,
-      onOpenLanguage: () => unawaited(showTranslationLanguageSheet(context)),
+      onOpenLanguage: () => unawaited(() async {
+        final code = await showTranslationLanguageSheet(context);
+        // 언어를 고르면 꺼져 있던 번역을 켠다.
+        if (code != null && mounted && !_postTranslationOn) {
+          _togglePostTranslation();
+        }
+      }()),
     );
   }
 

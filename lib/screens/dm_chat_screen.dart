@@ -1349,7 +1349,12 @@ class _DMChatScreenState extends State<DMChatScreen>
     if (_translationLanguageSheetOpen) return;
     _translationLanguageSheetOpen = true;
     try {
-      await showTranslationLanguageSheet(context, forSnackChat: true);
+      final code =
+          await showTranslationLanguageSheet(context, forSnackChat: true);
+      // 언어를 고르면 꺼져 있던 대화 번역을 켠다.
+      if (code != null && mounted && _translationShowsOriginal) {
+        await _toggleDmTranslation();
+      }
     } finally {
       _translationLanguageSheetOpen = false;
       _scheduleVisibleTranslations();
@@ -2559,7 +2564,6 @@ class _DMChatScreenState extends State<DMChatScreen>
         languageKey: const ValueKey('dm_translation_language_settings'),
         languageMaxWidth: 96,
       ),
-      const SizedBox(width: 2),
     ];
   }
 

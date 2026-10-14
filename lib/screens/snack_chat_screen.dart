@@ -1535,10 +1535,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (_translationLanguageSheetOpen) return;
     _translationLanguageSheetOpen = true;
     try {
-      await showTranslationLanguageSheet(
+      final code = await showTranslationLanguageSheet(
         context,
         forSnackChat: true,
       );
+      // 언어를 고르면 꺼져 있던 방 번역을 켠다.
+      if (code != null && mounted && _translationShowsOriginal) {
+        await _toggleSnackTranslation();
+      }
     } finally {
       _translationLanguageSheetOpen = false;
     }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wefilling/ui/widgets/snack_chat_chrome.dart';
 import 'package:wefilling/ui/widgets/snack_chat_translation_split_button.dart';
 
 void main() {
@@ -43,23 +42,25 @@ void main() {
     return (taps: taps);
   }
 
-  Color fill(WidgetTester tester) => (tester
+  Color track(WidgetTester tester) => (tester
           .widget<AnimatedContainer>(
-              find.byKey(const ValueKey('snack_translation_toggle_fill')))
+              find.byKey(const ValueKey('translate_switch_track')))
           .decoration! as BoxDecoration)
       .color!;
-  Color iconColor(WidgetTester tester) => tester
-      .widget<Icon>(find.byKey(const ValueKey('snack_translation_toggle_icon')))
-      .color!;
+  double knobLeft(WidgetTester tester) => tester
+      .widget<AnimatedPositioned>(
+          find.byKey(const ValueKey('translate_switch_knob')))
+      .left!;
 
-  testWidgets('켜짐: #2C6BC0 채움 + 흰 아이콘, 두 key와 언어 라벨', (tester) async {
+  testWidgets('켜짐: 파란 홈 + 손잡이 오른쪽, 두 key와 언어 라벨', (tester) async {
     final result = await pump(tester, on: true);
     expect(find.byKey(const ValueKey('snack_translation_toggle')), findsOneWidget);
     expect(find.byKey(const ValueKey('snack_translation_language_settings')),
         findsOneWidget);
     expect(find.text('한국어'), findsOneWidget);
-    expect(fill(tester), SnackChatPalette.pointStrong);
-    expect(iconColor(tester), Colors.white);
+    await tester.pumpAndSettle();
+    expect(track(tester), const Color(0xFF2C6BC0));
+    expect(knobLeft(tester), 24);
 
     await tester.tap(find.byKey(const ValueKey('snack_translation_toggle')));
     await tester.tap(
@@ -67,21 +68,31 @@ void main() {
     expect(result.taps, ['toggle', 'language']);
   });
 
-  testWidgets('꺼짐: 투명 + 검정 아이콘', (tester) async {
+  testWidgets('꺼짐: 회색 홈 + 손잡이 왼쪽, 글자 없는 스위치', (tester) async {
     await pump(tester, on: false);
-    expect(fill(tester), Colors.transparent);
-    expect(iconColor(tester), SnackChatPalette.ink);
+    await tester.pumpAndSettle();
+    expect(track(tester), const Color(0xFFE4E4E4));
+    expect(knobLeft(tester), 2);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('snack_translation_toggle')),
+        matching: find.byType(Text),
+      ),
+      findsNothing,
+    );
   });
 
-  testWidgets('비활성이면 토글이 반응하지 않고 반투명이다', (tester) async {
+  testWidgets('비활성이면 스위치가 반응하지 않고 비활성 색이다', (tester) async {
     final result = await pump(tester, on: false, enabled: false);
     await tester.tap(find.byKey(const ValueKey('snack_translation_toggle')));
     expect(result.taps, isEmpty);
-    final opacity = tester.widget<AnimatedOpacity>(find.ancestor(
-      of: find.byKey(const ValueKey('snack_translation_toggle_fill')),
-      matching: find.byType(AnimatedOpacity),
-    ));
-    expect(opacity.opacity, lessThan(1));
+    await tester.pumpAndSettle();
+    expect(track(tester), const Color(0xFFF0F0F0));
+  });
+
+  testWidgets('언어 라벨이 비면 언어', (tester) async {
+    await pump(tester, on: false, language: '');
+    expect(find.text('Language'), findsOneWidget);
   });
 
   testWidgets('터치 영역은 44 이상이다', (tester) async {

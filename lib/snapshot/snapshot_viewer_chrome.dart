@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/translate_switch.dart';
 import 'snack_feel_icon.dart';
 import 'snapshot_strings.dart';
 
@@ -152,7 +153,7 @@ class SnapshotGlassChip extends StatelessWidget {
   }
 }
 
-/// 헤더의 번역 칩. 켜지면 #2C6BC0, 라벨은 대상 언어 고유 이름.
+/// 헤더의 번역 스위치(어두운 모양). 켜지면 #2C6BC0 홈, 글자 없음.
 class SnapshotTranslateChip extends StatelessWidget {
   const SnapshotTranslateChip({
     super.key,
@@ -165,35 +166,15 @@ class SnapshotTranslateChip extends StatelessWidget {
   final String languageLabel;
   final VoidCallback onTap;
 
+  /// 언어는 전체 설정을 따르므로 표시하지 않는다(공간 부족). API 호환용.
   @override
   Widget build(BuildContext context) {
-    final strings = SnapshotStrings.of(context);
-    final label = on && languageLabel.isNotEmpty
-        ? languageLabel
-        : strings.translateChip;
-    return SnapshotGlassChip(
+    return TranslateSwitch(
       key: const ValueKey('snapshot_translate_chip'),
-      active: on,
-      onTap: onTap,
-      semanticsLabel: label,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 104),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.translate_rounded, size: 15, color: Colors.white),
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: snapshotChromeStyle(context, size: 12),
-              ),
-            ),
-          ],
-        ),
-      ),
+      tone: TranslateSwitchTone.dark,
+      value: on,
+      semanticLabel: SnapshotStrings.of(context).translateChip,
+      onChanged: (_) => onTap(),
     );
   }
 }

@@ -65,7 +65,7 @@ void main() {
     expect(fullWhite, findsNWidgets(2 + 1));
   });
 
-  testWidgets('번역 칩: 꺼짐은 번역, 켜짐은 언어 이름, 탭 콜백', (tester) async {
+  testWidgets('번역 스위치(어두운 모양): 글자 없음, 탭 콜백, 켜지면 파란 홈', (tester) async {
     var taps = 0;
     var on = false;
     await tester.pumpWidget(StatefulBuilder(builder: (context, set) {
@@ -78,12 +78,14 @@ void main() {
         },
       ));
     }));
-    expect(find.text('번역'), findsOneWidget);
+    expect(find.text('English'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('snapshot_translate_chip')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(taps, 1);
-    expect(find.text('English'), findsOneWidget);
-    expect(find.text('번역'), findsNothing);
+    final track = tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey('translate_switch_track')));
+    expect((track.decoration! as BoxDecoration).color, const Color(0xFF2C6BC0));
+    expect(find.text('English'), findsNothing);
   });
 
   for (final width in const [320.0, 375.0, 430.0]) {

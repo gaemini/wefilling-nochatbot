@@ -1152,5 +1152,6 @@ class SnapshotStrings {
 
   String get cropTool => _pick('裁剪', '자르기', 'Crop');
   String get cropOriginal => _pick('原始', '원본', 'Original');
+  String get cropFree => _pick('自由', '자유', 'Free');
   String get cropReset => _pick('还原', '처음으로', 'Reset');
 }

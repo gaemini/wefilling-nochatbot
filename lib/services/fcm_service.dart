@@ -719,7 +719,11 @@ class FCMService {
           }
           final recipientUserId =
               (initialMessage.data['recipientUserId'] ?? '').toString().trim();
-          if (recipientUserId.isEmpty || recipientUserId == userId) {
+          final alreadyRouted = initialMessage.messageId != null &&
+              initialMessage.messageId == _earlyLaunchMessageId;
+          if (alreadyRouted) {
+            // 앱 시작 직후 이미 목적지를 잡았다(captureLaunchPushEarly).
+          } else if (recipientUserId.isEmpty || recipientUserId == userId) {
             await NavigationService.handlePushNavigation(initialMessage.data);
           } else {
             if (Logger.isVerboseEnabled) Logger.log('⏭️ 이전 계정 대상 초기 푸시 딥링크 무시');
@@ -1609,6 +1613,27 @@ class FCMService {
       Logger.error('읽음 푸시 재확인 실패', error);
     } finally {
       if (_cleanupReplaySession == epoch) _cleanupReplaySession = null;
+    }
+  }
+
+  static bool _launchPushCaptured = false;
+  static String? _earlyLaunchMessageId;
+
+  /// 앱이 꺼진 상태에서 푸시를 눌러 열었을 때, 로그인·FCM 초기화(언어·권한·
+  /// 토큰)를 기다리지 않고 앱 시작 직후 바로 목적지를 잡아 둔다. 화면 이동은
+  /// 메인 화면이 준비되는 즉시 이어진다(NavigationService가 보관 후 실행).
+  static Future<void> captureLaunchPushEarly() async {
+    if (_launchPushCaptured || kIsWeb) return;
+    _launchPushCaptured = true;
+    try {
+      final message = await FirebaseMessaging.instance
+          .getInitialMessage()
+          .timeout(const Duration(seconds: 3), onTimeout: () => null);
+      if (message == null) return;
+      _earlyLaunchMessageId = message.messageId;
+      await NavigationService.handlePushNavigation(message.data);
+    } catch (error) {
+      Logger.error('시작 푸시 확인 실패(초기화 때 다시 확인)', error);
     }
   }
 

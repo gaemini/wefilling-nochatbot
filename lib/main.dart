@@ -160,6 +160,8 @@ void main() {
           if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
             FirebaseMessaging.onBackgroundMessage(
                 firebaseMessagingBackgroundHandler);
+            // 푸시로 앱이 열렸으면 초기화를 기다리지 않고 바로 목적지를 잡는다.
+            unawaited(FCMService.captureLaunchPushEarly());
             if (kDebugMode) {
               debugPrint('📱 FCM 백그라운드 핸들러 등록 완료');
             }

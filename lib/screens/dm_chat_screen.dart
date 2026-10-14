@@ -3399,7 +3399,7 @@ class _DMChatScreenState extends State<DMChatScreen>
     String? _statusFor(DMMessage m) {
       if (m.senderId != myUid || m.deliveryState != DMDeliveryState.sent)
         return null;
-      if (m.id == latestMyUnreadMessageId) return '1';
+      // 상대가 아직 안 읽었다는 숫자('1')는 표시하지 않는다. 읽으면 '읽음'만.
       if (m.id == latestMyReadMessageId)
         return AppLocalizations.of(context)!.read;
       return null;

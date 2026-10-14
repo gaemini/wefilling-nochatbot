@@ -12,6 +12,7 @@ import '../models/friend_category.dart';
 import '../models/snapshot.dart';
 import '../ui/widgets/user_avatar.dart';
 import 'snapshot_strings.dart';
+import '../design/tokens.dart';
 
 const Color _accent = Color(0xFF2C6BC0);
 
@@ -117,7 +118,11 @@ class SnapshotShareView extends StatelessWidget {
     required this.onToggleCategory,
     required this.onShare,
     this.friends,
+    this.shareCompleted = false,
   });
+
+  /// 업로드가 끝나 닫히기 직전(체크를 보인다, 모션 2부 G-4).
+  final bool shareCompleted;
 
   /// 구독 중인 친구 목록(표시용). null이면 로딩 중.
   final List<ShareAudienceMember>? friends;
@@ -399,12 +404,34 @@ class SnapshotShareView extends StatelessWidget {
             child: Stack(
               children: [
                 Center(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: shareTextStyle(context, ShareTextSpec.button),
-                  ),
+                  child: shareCompleted
+                      // 100%: 체크가 0 → 1.15 → 1로 튀어나온다(delight).
+                      ? TweenAnimationBuilder<double>(
+                          key: const ValueKey('share_done_check'),
+                          tween: Tween<double>(
+                            begin: MotionTokens.reduceMotion(context) ? 1 : 0,
+                            end: 1,
+                          ),
+                          duration:
+                              MotionTokens.of(context, MotionTokens.delight),
+                          builder: (context, t, child) => Transform.scale(
+                            scale: t < .5
+                                ? 1.15 * (t / .5)
+                                : 1.15 - .15 * ((t - .5) / .5),
+                            child: child,
+                          ),
+                          child: const Icon(
+                            Icons.check_rounded,
+                            color: Colors.white,
+                            size: 26,
+                          ),
+                        )
+                      : Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: shareTextStyle(context, ShareTextSpec.button),
+                        ),
                 ),
                 if (uploading)
                   Positioned(
@@ -414,9 +441,21 @@ class SnapshotShareView extends StatelessWidget {
                     height: 2,
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: FractionallySizedBox(
-                        key: const ValueKey('share_progress'),
-                        widthFactor: uploadProgress.clamp(0.0, 1.0),
+                      // 진행 값 사이를 튀지 않게 state로 보간한다.
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(
+                          end: shareCompleted
+                              ? 1
+                              : uploadProgress.clamp(0.0, 1.0).toDouble(),
+                        ),
+                        duration: MotionTokens.of(context, MotionTokens.state),
+                        curve: MotionTokens.curve,
+                        builder: (context, value, child) =>
+                            FractionallySizedBox(
+                          key: const ValueKey('share_progress'),
+                          widthFactor: value,
+                          child: child,
+                        ),
                         child: const ColoredBox(
                           color: Colors.white,
                           child: SizedBox(height: 2),

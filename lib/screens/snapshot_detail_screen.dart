@@ -50,9 +50,35 @@ class SnapshotDetailMotionRoute extends MaterialPageRoute<void> {
   SnapshotDetailMotionRoute({
     required List<SnapshotItem> snapshots,
     required int initialIndex,
+    this.originRect,
+    this.resolveCloseRect,
   }) : super(
-            builder: (_) => SnapshotDetailScreen(
-                snapshots: snapshots, initialIndex: initialIndex));
+          builder: (_) => SnapshotDetailScreen(
+            snapshots: snapshots,
+            initialIndex: initialIndex,
+          ),
+        ) {
+    _currentSnapshot = snapshots.isEmpty
+        ? null
+        : snapshots[initialIndex.clamp(0, snapshots.length - 1)];
+  }
+
+  /// 누른 트레이 타일의 화면 위치(모션 2부 G-1). null이면 기존 전환 그대로.
+  final Rect? originRect;
+
+  /// 닫을 때 지금 보고 있던 스낵의 타일 위치를 다시 구한다(다른 작성자로
+  /// 넘겼으면 그 작성자 타일). 타일이 화면에 없으면 null → 제자리에서 사라짐.
+  final Rect? Function(SnapshotItem current)? resolveCloseRect;
+
+  SnapshotItem? _currentSnapshot;
+  Rect? _closeRect;
+  bool _closeRectResolved = false;
+
+  /// 보기 화면이 넘긴 스낵을 알린다(닫힐 자리를 고르는 데만 쓴다).
+  static void reportCurrent(BuildContext context, SnapshotItem item) {
+    final route = ModalRoute.of(context);
+    if (route is SnapshotDetailMotionRoute) route._currentSnapshot = item;
+  }
 
   @override
   Duration get transitionDuration => MotionTokens.medium;
@@ -70,6 +96,10 @@ class SnapshotDetailMotionRoute extends MaterialPageRoute<void> {
       return super.buildTransitions(
           context, animation, secondaryAnimation, child);
     }
+    final origin = originRect;
+    if (origin != null && !MotionTokens.reduceMotion(context)) {
+      return _buildTileTransition(animation, child, origin);
+    }
     final curved = animation.drive(CurveTween(curve: MotionTokens.decelerate));
     return FadeTransition(
       opacity: curved,
@@ -80,6 +110,70 @@ class SnapshotDetailMotionRoute extends MaterialPageRoute<void> {
                   .drive(Tween(begin: const Offset(0, .015), end: Offset.zero)),
               child: child,
             ),
+    );
+  }
+
+  /// 타일 크기·위치·모서리(12)에서 전체 화면으로 커지고, 닫힐 때는 그 타일
+  /// 자리로 줄어든다. 뒤 배경은 0 → 1. 구조를 끝까지 같게 두어 보기 화면의
+  /// 상태(재생 중인 영상 등)를 다시 만들지 않는다.
+  Widget _buildTileTransition(
+    Animation<double> animation,
+    Widget child,
+    Rect origin,
+  ) {
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        final closing = animation.status == AnimationStatus.reverse;
+        if (closing && !_closeRectResolved) {
+          _closeRectResolved = true;
+          final current = _currentSnapshot;
+          _closeRect = current == null ? null : resolveCloseRect?.call(current);
+        }
+        final target = closing ? _closeRect : origin;
+        final t = MotionTokens.curve.transform(animation.value);
+        final full = Offset.zero & MediaQuery.sizeOf(context);
+        final rect = target == null ? full : Rect.lerp(target, full, t)!;
+        final radius = target == null ? 0.0 : 12 * (1 - t);
+        final scale = math.max(
+          rect.width / full.width,
+          rect.height / full.height,
+        );
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(
+                  key: const ValueKey('snapshot_origin_backdrop'),
+                  color: Colors.black.withValues(alpha: t.clamp(0.0, 1.0)),
+                ),
+              ),
+            ),
+            Positioned.fromRect(
+              rect: rect,
+              child: ClipRRect(
+                key: const ValueKey('snapshot_origin_clip'),
+                borderRadius: BorderRadius.circular(radius),
+                child: OverflowBox(
+                  minWidth: full.width,
+                  maxWidth: full.width,
+                  minHeight: full.height,
+                  maxHeight: full.height,
+                  child: Transform.scale(
+                    scale: scale,
+                    child: Opacity(
+                      // 닫힐 자리가 없으면 제자리에서 사라진다(기존 닫기와 같음).
+                      opacity: target == null ? t.clamp(0.0, 1.0) : 1,
+                      child: child,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1047,6 +1141,8 @@ class _SnapshotDetailScreenState extends State<SnapshotDetailScreen>
       });
       return const Scaffold(backgroundColor: Colors.black);
     }
+    // 닫힐 때 지금 스낵의 트레이 타일로 줄어들도록 알린다(모션 2부 G-1).
+    SnapshotDetailMotionRoute.reportCurrent(context, _current);
     final strings = SnapshotStrings.of(context);
     final interactionsEnabled =
         _unavailableSnapshotId != _current.id && _deletingSnapshotId == null;

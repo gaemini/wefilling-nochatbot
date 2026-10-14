@@ -18,6 +18,7 @@ import 'snapshot_seen_store.dart';
 import 'snapshot_storage_image.dart';
 import 'snapshot_strings.dart';
 import '../l10n/ui_locale.dart';
+import '../design/tokens.dart';
 
 const BorderRadius _snackCardRadius = BorderRadius.all(Radius.circular(12));
 const Color _snackNeutralBackground = Color(0xFFF3F4F6);
@@ -127,6 +128,11 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
   bool _appActive = true;
   bool _sectionVisible = true;
   bool _detailOpen = false;
+  // 모션 2부 G: 타일 위치(열기·닫기 전환), 새로 생긴 타일만 등장 애니메이션.
+  final Map<String, GlobalKey> _tileKeys = <String, GlobalKey>{};
+  final Map<String, String> _tileAuthors = <String, String>{};
+  Set<String>? _knownTileIds;
+  Set<String> _enteringTileIds = const <String>{};
 
   @override
   void initState() {
@@ -474,6 +480,8 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
         SnapshotDetailMotionRoute(
           snapshots: snapshots,
           initialIndex: index,
+          originRect: selectedId.isEmpty ? null : _tileRect(selectedId),
+          resolveCloseRect: _closeRectFor,
         ),
       );
     } finally {
@@ -486,6 +494,43 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
         );
       }
     }
+  }
+
+  /// 화면에 보이는 타일의 전역 위치. 트레이가 화면 밖이거나 타일이 없으면 null.
+  Rect? _tileRect(String snapshotId) {
+    final box = _tileKeys[snapshotId]?.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    final screen = Offset.zero & MediaQuery.sizeOf(context);
+    final visible = rect.intersect(screen);
+    if (visible.width < rect.width * .5 || visible.height < rect.height * .5) {
+      return null;
+    }
+    return rect;
+  }
+
+  /// 닫힐 자리: 지금 스낵의 타일, 없으면 같은 작성자의 타일.
+  Rect? _closeRectFor(SnapshotItem current) {
+    if (!mounted) return null;
+    final direct = _tileRect(current.id);
+    if (direct != null) return direct;
+    for (final entry in _tileAuthors.entries) {
+      if (entry.value == current.authorId) {
+        final rect = _tileRect(entry.key);
+        if (rect != null) return rect;
+      }
+    }
+    return null;
+  }
+
+  /// 처음 그릴 때·다시 불러올 때는 등장 애니메이션 없이, 새로 생긴 id만 고른다.
+  void _trackEnteringTiles(List<SnapshotItem> items) {
+    final ids = items.map((item) => item.id).toSet();
+    final known = _knownTileIds;
+    _knownTileIds = ids;
+    if (known == null) return;
+    final entering = ids.difference(known);
+    if (entering.isNotEmpty) _enteringTileIds = entering;
   }
 
   @override
@@ -621,6 +666,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                   snapshot.connectionState == ConnectionState.waiting &&
                       !snapshot.hasData;
               final failed = snapshot.hasError && items.isEmpty;
+              if (!loading && !failed) _trackEnteringTiles(visibleItems);
 
               return SizedBox(
                 height: layout.sectionHeight,
@@ -653,9 +699,14 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                                 ? null
                                 : _userInfoService.getCachedUserInfo(uid),
                             builder: (context, profileSnapshot) => _MySnackTile(
-                              key: ValueKey<String>(
-                                'my-snack-${own?.id ?? 'empty'}',
-                              ),
+                              key: own == null
+                                  ? const ValueKey<String>('my-snack-empty')
+                                  : _tileKeys.putIfAbsent(
+                                      own.id,
+                                      () => GlobalKey(
+                                        debugLabel: 'my-snack-${own.id}',
+                                      ),
+                                    ),
                               snapshot: own,
                               layout: layout,
                               previewDecodeWidth: _previewDecodeWidth,
@@ -694,17 +745,27 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                       final item = visibleItems[index - 1];
                       final sourceIndex = viewerItems
                           .indexWhere((candidate) => candidate.id == item.id);
+                      _tileAuthors[item.id] = item.authorId;
                       return Directionality(
                         key: ValueKey<String>('snack-tile-${item.id}'),
                         textDirection: pageTextDirection,
-                        child: _SnapshotTile(
-                          layout: layout,
-                          previewDecodeWidth: _previewDecodeWidth,
-                          profileDecodeWidth: profileDecodeWidth,
-                          snapshot: item,
-                          label: item.authorName,
-                          mutualFeel: _mutualIds.contains(item.authorId),
-                          onTap: () => _open(viewerItems, sourceIndex),
+                        child: _SnackTileEntrance(
+                          animate: _enteringTileIds.contains(item.id),
+                          child: _SnapshotTile(
+                            key: _tileKeys.putIfAbsent(
+                              item.id,
+                              () => GlobalKey(
+                                debugLabel: 'snack-tile-${item.id}',
+                              ),
+                            ),
+                            layout: layout,
+                            previewDecodeWidth: _previewDecodeWidth,
+                            profileDecodeWidth: profileDecodeWidth,
+                            snapshot: item,
+                            label: item.authorName,
+                            mutualFeel: _mutualIds.contains(item.authorId),
+                            onTap: () => _open(viewerItems, sourceIndex),
+                          ),
                         ),
                       );
                     },
@@ -722,29 +783,39 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
 }
 
 /// 남은 시간 링: 채워진 비율 = 남은 시간 / 24시간. 본 스낵은 전체 회색.
+/// [seenProgress] 0(안 봄) → 1(봄)으로 보간한다: 트랙 #D6E4F5 → #D4D4D4,
+/// 포인트 호 투명도 1 → 0(모션 2부 G-2).
 class _SnackRemainingRing extends CustomPainter {
-  const _SnackRemainingRing({required this.fraction, required this.seen});
+  const _SnackRemainingRing({
+    required this.fraction,
+    required this.seenProgress,
+  });
 
   final double fraction;
-  final bool seen;
+  final double seenProgress;
 
   static const double stroke = 3;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final seen = seenProgress.clamp(0.0, 1.0);
     final rect = Offset.zero & size;
     final arcRect = rect.deflate(stroke / 2);
     final track = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
-      ..color = seen ? const Color(0xFFD4D4D4) : const Color(0xFFD6E4F5);
+      ..color = Color.lerp(
+        const Color(0xFFD6E4F5),
+        const Color(0xFFD4D4D4),
+        seen,
+      )!;
     canvas.drawArc(arcRect, 0, math.pi * 2, false, track);
-    if (seen) return;
+    if (seen >= 1) return;
     final arc = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeWidth = stroke
-      ..color = const Color(0xFF2C6BC0);
+      ..color = const Color(0xFF2C6BC0).withValues(alpha: 1 - seen);
     canvas.drawArc(
       arcRect,
       -math.pi / 2,
@@ -756,7 +827,102 @@ class _SnackRemainingRing extends CustomPainter {
 
   @override
   bool shouldRepaint(_SnackRemainingRing old) =>
-      old.fraction != fraction || old.seen != seen;
+      old.fraction != fraction || old.seenProgress != seenProgress;
+}
+
+/// 본 상태를 0 ↔ 1로 보간한다(medium). 보기 화면에 가려진 동안(TickerMode
+/// 꺼짐)에는 바꾸지 않고, 돌아와 보일 때 바뀌는 모습이 보이게 한다.
+class _SeenTween extends StatefulWidget {
+  const _SeenTween({required this.snapshotId, required this.builder});
+
+  final String snapshotId;
+  final Widget Function(BuildContext context, double seenProgress) builder;
+
+  @override
+  State<_SeenTween> createState() => _SeenTweenState();
+}
+
+class _SeenTweenState extends State<_SeenTween> {
+  bool? _shownSeen;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: SnapshotSeenStore.instance,
+      builder: (context, _) {
+        final seen = SnapshotSeenStore.instance.isSeen(widget.snapshotId);
+        final visible = TickerMode.valuesOf(context).enabled;
+        if (_shownSeen == null || visible) _shownSeen = seen;
+        final target = _shownSeen! ? 1.0 : 0.0;
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: target),
+          duration: MotionTokens.of(context, MotionTokens.medium),
+          curve: MotionTokens.curve,
+          builder: (context, value, _) => widget.builder(context, value),
+        );
+      },
+    );
+  }
+}
+
+/// 새로 생긴 타일만 0.6 → 1 크기 + 투명도로 나타나고(medium), 자리는 state
+/// 동안 벌어져 뒤 타일들이 밀린다(모션 2부 G-3).
+class _SnackTileEntrance extends StatefulWidget {
+  const _SnackTileEntrance({required this.animate, required this.child});
+
+  final bool animate;
+  final Widget child;
+
+  @override
+  State<_SnackTileEntrance> createState() => _SnackTileEntranceState();
+}
+
+class _SnackTileEntranceState extends State<_SnackTileEntrance>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_controller != null || !widget.animate) return;
+    if (MotionTokens.reduceMotion(context)) return;
+    _controller = AnimationController(
+      vsync: this,
+      duration: MotionTokens.medium,
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (controller == null) return widget.child;
+    final spaceEnd =
+        MotionTokens.state.inMicroseconds / MotionTokens.medium.inMicroseconds;
+    return AnimatedBuilder(
+      animation: controller,
+      child: widget.child,
+      builder: (context, child) {
+        final t = controller.value;
+        final space = MotionTokens.curve.transform((t / spaceEnd).clamp(0, 1));
+        final grow = MotionTokens.curve.transform(t);
+        return Align(
+          key: const ValueKey('snack_tile_entrance'),
+          alignment: Alignment.centerLeft,
+          widthFactor: space,
+          child: Opacity(
+            opacity: grow,
+            child: Transform.scale(scale: .6 + .4 * grow, child: child),
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// 남은 비율(0~1). 24시간을 기준으로 한다.
@@ -768,6 +934,7 @@ double snackRemainingFraction(Duration remaining) =>
 
 class _SnapshotTile extends StatelessWidget {
   const _SnapshotTile({
+    super.key,
     required this.layout,
     required this.previewDecodeWidth,
     required this.profileDecodeWidth,
@@ -843,10 +1010,9 @@ class _SnapshotTile extends StatelessWidget {
             Positioned(
               top: 8,
               left: 8,
-              child: ListenableBuilder(
-                listenable: SnapshotSeenStore.instance,
-                builder: (context, _) {
-                  final seen = SnapshotSeenStore.instance.isSeen(snapshot.id);
+              child: _SeenTween(
+                snapshotId: snapshot.id,
+                builder: (context, seenProgress) {
                   final fraction = snackRemainingFraction(
                     snapshot.remainingAt(SnapshotService.instance.serverNow),
                   );
@@ -855,7 +1021,7 @@ class _SnapshotTile extends StatelessWidget {
                     key: ValueKey<String>('snack-ring-${snapshot.id}'),
                     painter: _SnackRemainingRing(
                       fraction: fraction,
-                      seen: seen,
+                      seenProgress: seenProgress,
                     ),
                     child: Container(
                       width: outer,
@@ -916,20 +1082,24 @@ class _SnapshotTile extends StatelessWidget {
             right: 8,
             bottom: 10,
             child: ExcludeSemantics(
-              child: ListenableBuilder(
-                listenable: SnapshotSeenStore.instance,
-                builder: (context, child) => Opacity(
-                  opacity: SnapshotSeenStore.instance.isSeen(snapshot.id)
-                      ? .7
-                      : 1,
-                  child: child,
-                ),
-                child: Text(
-                  label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.start,
-                  style: nameStyle,
+              // 본 뒤에는 이름이 흐려지고 굵기 600 → 500(같은 보간 값).
+              child: _SeenTween(
+                snapshotId: snapshot.id,
+                builder: (context, seenProgress) => Opacity(
+                  opacity: 1 - .3 * seenProgress,
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.start,
+                    style: nameStyle.copyWith(
+                      fontWeight: FontWeight.lerp(
+                        FontWeight.w600,
+                        FontWeight.w500,
+                        seenProgress,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),

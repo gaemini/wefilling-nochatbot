@@ -36,6 +36,7 @@ import '../ui/widgets/motion_press.dart';
 import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../utils/motion_haptics.dart';
 
 // Short AVC/AAC clips can be uploaded as muxed. Keep the existing encoder for
 // HEVC, large clips, and other formats, but run it only after Publish is tapped.
@@ -146,6 +147,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   bool _uploading = false;
   String? _pendingUploadSnapshotId;
   double _uploadProgress = 0;
+  bool _shareCompleted = false;
   int _step = 0;
   /// 고르기(v4) 상태: 보던 앨범·목록·스크롤을 편집에 다녀와도 유지한다.
   late final SnapshotPickerController _pickerController =
@@ -1490,6 +1492,17 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           );
         }
       }
+      // 100%: 체크(delight) + success 햅틱 뒤에 닫는다(모션 2부 G-4).
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 1;
+          _shareCompleted = true;
+        });
+        MotionHaptics.fire(context, MotionHapticEvent.success);
+        await Future<void>.delayed(
+          MotionTokens.of(context, MotionTokens.delight),
+        );
+      }
       widget.onCreated?.call();
       if (mounted) Navigator.of(context).pop(true);
     } catch (error, stackTrace) {
@@ -2615,6 +2628,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       selectedCategoryIds: _selectedCategoryIds,
       uploading: _uploading,
       uploadProgress: _uploadProgress,
+      shareCompleted: _shareCompleted,
       onBack: _uploading ? null : () => setState(() => _step = 0),
       onVisibilityChanged: (value) => setState(() => _visibility = value),
       onResponseModeChanged: (value) => setState(() => _responseMode = value),

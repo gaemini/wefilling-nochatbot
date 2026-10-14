@@ -420,7 +420,7 @@ class _LoginScreenState extends State<LoginScreen>
                 children: [
                   LayoutId(
                     id: _LoginSlot.scene,
-                    child: _buildScene(languageCode, small),
+                    child: _buildScene(languageCode),
                   ),
                   LayoutId(
                     id: _LoginSlot.header,
@@ -465,10 +465,10 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   /// 대화 장면: 남는 공간에 맞춰 4줄 / 3줄(작은 화면) / 숨김.
-  Widget _buildScene(String languageCode, bool small) {
+  Widget _buildScene(String languageCode) {
     return LayoutBuilder(builder: (context, constraints) {
-      final compact =
-          small || constraints.maxHeight < LoginChatScene.fullHeight;
+      // 배치가 정한 높이(200 / 150 / 0)를 따른다.
+      final compact = constraints.maxHeight < LoginChatScene.fullHeight;
       final need =
           compact ? LoginChatScene.compactHeight : LoginChatScene.fullHeight;
       if (constraints.maxHeight < need) return const SizedBox.shrink();
@@ -530,16 +530,17 @@ class _LoginScreenState extends State<LoginScreen>
               children: [
                 rise(
                   _nameIn,
-                  const Text(
-                    'Wefilling',
-                    key: ValueKey('login_brand_name'),
+                  Text(
+                    _brandName(languageCode),
+                    key: const ValueKey('login_brand_name'),
                     maxLines: 1,
                     style: TextStyle(
-                      fontFamily: 'Inter',
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: _loginFontFallback(context),
                       fontSize: 27,
                       height: 30 / 27,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: -.8,
+                      letterSpacing: languageCode == 'en' ? -.8 : -.4,
                       color: Colors.white,
                     ),
                   ),
@@ -1081,14 +1082,21 @@ List<String> _loginFontFallback(BuildContext context) => isChineseUi(context)
     ? const ['NotoSansSC', 'NotoSansKR']
     : const ['NotoSansKR'];
 
+/// 화면 언어별 이름: Wefilling / 위필링 / 微邻.
+String _brandName(String languageCode) => switch (languageCode) {
+      'ko' => '위필링',
+      'zh' => '微邻',
+      _ => 'Wefilling',
+    };
+
 enum _LoginSlot { language, header, scene, sheet, error, welcome }
 
 /// 위쪽 파란 영역 + 아래 흰 시트 배치.
 /// - 언어 선택: 안전 영역 위 + 4, 오른쪽
-/// - 로고 묶음: 언어 선택 아래(안전 영역 위 + 56, 작은 화면 + 52), 가운데
 /// - 시트: 아래에 붙고 기준 높이 366(+ 아래 안전 영역), 내용에 맞춰 늘어나며
 ///   로고 묶음 아래까지만 커진다(넘치면 시트 안만 스크롤). 태블릿 최대 폭 480
-/// - 대화 장면: 로고 묶음 아래 24(작은 화면 16) ~ 시트 위 8, 최대 폭 420
+/// - 로고 묶음 + 대화 장면: 언어 선택 아래(안전 영역 위 + 56, 작은 화면 + 52)
+///   ~ 시트 위 8 사이의 파란 공간 가운데쯤. 대화 장면 최대 폭 420
 /// - 오류 알약: 시트 위쪽 바깥 10
 class _LoginLayoutDelegate extends MultiChildLayoutDelegate {
   _LoginLayoutDelegate({
@@ -1117,19 +1125,16 @@ class _LoginLayoutDelegate extends MultiChildLayoutDelegate {
       Offset(size.width - side - language.width, safeTop + 4),
     );
 
-    final headerTop = safeTop + (small ? 52 : 56);
+    // 로고 묶음이 올라갈 수 있는 가장 위(언어 선택 바로 아래).
+    final minHeaderTop = safeTop + (small ? 52 : 56);
     final header = layoutChild(
       _LoginSlot.header,
       BoxConstraints(maxWidth: math.max(0, size.width - 32)),
     );
-    positionChild(
-      _LoginSlot.header,
-      Offset((size.width - header.width) / 2, headerTop),
-    );
-    final headerBottom = headerTop + header.height;
 
     final sheetWidth = math.min(size.width, sheetMaxWidth);
-    final maxSheet = math.max(0.0, size.height - headerBottom - 8);
+    final maxSheet =
+        math.max(0.0, size.height - (minHeaderTop + header.height) - 8);
     final sheet = layoutChild(
       _LoginSlot.sheet,
       BoxConstraints(
@@ -1145,9 +1150,34 @@ class _LoginLayoutDelegate extends MultiChildLayoutDelegate {
       Offset((size.width - sheetWidth) / 2, sheetTop),
     );
 
-    final sceneTop = headerBottom + (small ? 16 : 24);
+    // 대화 장면 높이: 4줄(200) / 작은 화면·공간 부족 3줄(150) / 숨김.
+    final baseGap = small ? 16.0 : 24.0;
+    final regionBottom = sheetTop - 8;
+    final room = regionBottom - (minHeaderTop + header.height + baseGap);
+    final double sceneHeight;
+    if (!small && room >= LoginChatScene.fullHeight) {
+      sceneHeight = LoginChatScene.fullHeight;
+    } else if (room >= LoginChatScene.compactHeight) {
+      sceneHeight = LoginChatScene.compactHeight;
+    } else {
+      sceneHeight = 0;
+    }
+
+    // 남는 파란 공간을 나눠 로고 묶음 + 대화 장면을 가운데쯤에 둔다
+    // (간격을 조금 넓히고, 나머지는 위 45% / 아래 55%).
+    final groupBase =
+        header.height + (sceneHeight > 0 ? baseGap + sceneHeight : 0);
+    final free = math.max(0.0, regionBottom - minHeaderTop - groupBase);
+    final extraGap =
+        sceneHeight > 0 ? math.min(free * .2, 24.0).roundToDouble() : 0.0;
+    final headerTop = (minHeaderTop + (free - extraGap) * .45).roundToDouble();
+    positionChild(
+      _LoginSlot.header,
+      Offset((size.width - header.width) / 2, headerTop),
+    );
+
+    final sceneTop = headerTop + header.height + baseGap + extraGap;
     final sceneWidth = math.max(0.0, math.min(size.width - 36, sceneMaxWidth));
-    final sceneHeight = math.max(0.0, sheetTop - 8 - sceneTop);
     layoutChild(
       _LoginSlot.scene,
       BoxConstraints.tightFor(width: sceneWidth, height: sceneHeight),

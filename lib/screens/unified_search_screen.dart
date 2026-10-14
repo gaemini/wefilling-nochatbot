@@ -54,6 +54,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
   late final TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
+  bool _searchTextWasEmpty = true;
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
   StreamSubscription<User?>? _authSubscription;
@@ -91,7 +92,11 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     _tabController.addListener(_onTabChanged);
 
     _searchController.addListener(() {
-      // clear 아이콘 노출용
+      // clear 아이콘·가운데 안내 노출용: 비었는지가 바뀔 때만 다시 그린다
+      // (글자마다 화면 전체를 다시 그리지 않게. 입력 변화는 onChanged가 처리).
+      final empty = _searchController.text.isEmpty;
+      if (empty == _searchTextWasEmpty) return;
+      _searchTextWasEmpty = empty;
       if (mounted) setState(() {});
     });
 

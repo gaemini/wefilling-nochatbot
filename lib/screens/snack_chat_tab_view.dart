@@ -12,6 +12,7 @@ import '../ui/widgets/snack_chat_card.dart';
 import '../ui/widgets/create_action_button.dart';
 import '../ui/widgets/tab_empty_state.dart';
 import '../l10n/group_ui_strings.dart';
+import 'snack_chat_info_screen.dart';
 import 'snack_chat_screen.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
@@ -252,24 +253,40 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
     }
   }
 
-  /// 길게 누르기 메뉴: `즐겨찾기` / `즐겨찾기 해제`. 해제는 기존 확인 시트를
-  /// 그대로 거치고, 저장은 `_handleToggleFavorite`가 맡는다.
-  Future<void> _showFavoriteMenu(SnackChat chat, String? currentUserId) async {
+  /// 길게 누르기 메뉴: 즐겨찾기 / 알림 끄기·켜기 / 설정.
+  /// 즐겨찾기 해제는 기존 확인 시트를 그대로 거치고(`_handleToggleFavorite`),
+  /// 알림은 사용자별 `mutedSnackChatIds`(채팅방 설정 화면과 같은 저장소)를 바꾼다.
+  Future<void> _showRoomMenu(
+    SnackChat chat,
+    String? currentUserId, {
+    required bool muted,
+  }) async {
     if (currentUserId == null || currentUserId.isEmpty) return;
     final favorited = _effectiveFavorite(chat, currentUserId);
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final label = favorited
-        ? (isChineseUi(context)
-            ? '取消收藏'
-            : isKo
-                ? '즐겨찾기 해제'
-                : 'Remove favorite')
-        : (isChineseUi(context)
-            ? '收藏'
-            : isKo
-                ? '즐겨찾기'
-                : 'Favorite');
-    final selected = await showModalBottomSheet<bool>(
+    final zh = isChineseUi(context);
+    String t(String zhText, String ko, String en) =>
+        zh ? zhText : (isKo ? ko : en);
+    final items = <(String, String, IconData)>[
+      (
+        'favorite',
+        favorited
+            ? t('取消收藏', '즐겨찾기 해제', 'Remove favorite')
+            : t('收藏', '즐겨찾기', 'Favorite'),
+        favorited ? Icons.star_outline_rounded : Icons.star_rounded,
+      ),
+      (
+        'mute',
+        muted
+            ? t('开启通知', '알림 켜기', 'Turn on notifications')
+            : t('关闭通知', '알림 끄기', 'Mute notifications'),
+        muted
+            ? Icons.notifications_active_outlined
+            : Icons.notifications_off_outlined,
+      ),
+      ('settings', t('设置', '설정', 'Settings'), Icons.settings_outlined),
+    ];
+    final selected = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
       showDragHandle: false,
@@ -281,30 +298,87 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
         top: false,
         child: MediaQuery.withClampedTextScaling(
           maxScaleFactor: 1.3,
-          child: InkWell(
-            key: const ValueKey('snack_chat_favorite_menu_item'),
-            onTap: () => Navigator.pop(sheetContext, true),
-            child: Container(
-              height: 56,
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(sheetContext, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF000000),
-                ),
-              ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final item in items)
+                  InkWell(
+                    key: ValueKey<String>('snack_chat_menu_${item.$1}'),
+                    onTap: () => Navigator.pop(sheetContext, item.$1),
+                    child: Container(
+                      height: 56,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          Icon(item.$3, size: 22, color: Colors.black),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              item.$2,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(sheetContext, 'Inter'),
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF000000),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
       ),
     );
-    if (selected == true && mounted) {
-      await _handleToggleFavorite(chat, currentUserId);
+    if (!mounted || selected == null) return;
+    switch (selected) {
+      case 'favorite':
+        await _handleToggleFavorite(chat, currentUserId);
+      case 'mute':
+        await _toggleMute(chat.id, mute: !muted);
+      case 'settings':
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => SnackChatInfoScreen(snackChatId: chat.id),
+          ),
+        );
+    }
+  }
+
+  /// 연타로 같은 요청이 겹치지 않게 방별로 한 번만 보낸다.
+  final Set<String> _muteInFlight = <String>{};
+
+  Future<void> _toggleMute(String roomId, {required bool mute}) async {
+    if (!_muteInFlight.add(roomId)) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final zh = isChineseUi(context);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      await _service.toggleMuteSnackChat(roomId, mute);
+      messenger?.showSnackBar(SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text(mute
+            ? (zh ? '已关闭此群聊的通知' : isKo ? '이 방의 알림을 껐어요' : 'Notifications muted')
+            : (zh ? '已开启此群聊的通知' : isKo ? '이 방의 알림을 켰어요' : 'Notifications on')),
+      ));
+    } catch (_) {
+      messenger?.showSnackBar(SnackBar(
+        content: Text(zh
+            ? '无法更改通知设置'
+            : isKo
+                ? '알림 설정을 바꾸지 못했어요'
+                : 'Couldn\'t change notifications'),
+      ));
+    } finally {
+      _muteInFlight.remove(roomId);
     }
   }
 
@@ -401,10 +475,14 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         onToggleFavorite: () {
                           _handleToggleFavorite(chat, currentUserId);
                         },
-                        // 목록에서는 빈 별을 없애고 길게 눌러 즐겨찾기를 바꾼다.
+                        // 길게 누르면 즐겨찾기·알림·설정 메뉴.
                         onLongPress: isPast
                             ? null
-                            : () => _showFavoriteMenu(chat, currentUserId),
+                            : () => _showRoomMenu(
+                                  chat,
+                                  currentUserId,
+                                  muted: mutedIds.contains(chat.id),
+                                ),
                       );
                     },
                   ),

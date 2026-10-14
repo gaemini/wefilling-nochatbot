@@ -286,12 +286,21 @@ class SnackChatCard extends StatelessWidget {
                                         color: mutedColor,
                                       ),
                                     ),
+                                    // 알림을 끈 방: 이름 옆 종 꺼짐 아이콘.
                                     if (isMuted) ...[
-                                      const SizedBox(width: 3),
-                                      const Icon(
-                                        Icons.notifications_off_rounded,
-                                        size: 12,
-                                        color: mutedColor,
+                                      const SizedBox(width: 4),
+                                      Semantics(
+                                        label: (isChineseUi(context)
+                                            ? '已关闭通知'
+                                            : isKo
+                                                ? '알림 꺼짐'
+                                                : 'Muted'),
+                                        child: const Icon(
+                                          Icons.notifications_off_rounded,
+                                          key: ValueKey('snack_chat_muted_icon'),
+                                          size: 14,
+                                          color: mutedColor,
+                                        ),
                                       ),
                                     ],
                                     // 즐겨찾기한 방만 채운 별을 보인다.

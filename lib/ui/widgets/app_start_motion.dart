@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../../design/tokens.dart';
-import '../../constants/app_constants.dart';
 import 'motion_press.dart';
+import '../motion/logo_handoff.dart';
 
 /// Stable login slot for the auth gate: submitting does not remove its State.
 /// The existing gate decides the session/registration destination, not this UI.
@@ -129,23 +129,28 @@ class _AppBootScreenState extends State<AppBootScreen> {
             'zh' => '正在加载',
             _ => 'Loading',
           };
+    // 네이티브 시작 화면과 같은 자리·크기: 화면(안전 영역 무시) 정가운데 130.
+    // 첫 로고에는 등장 애니메이션을 넣지 않는다(네이티브 로고와 그대로 이어짐).
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              AppEntryFade(
-                reveal: true,
-                enabled: widget.animateLogo,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final center = constraints.biggest.center(Offset.zero);
+          return Stack(
+            children: [
+              Positioned(
+                left: center.dx - kBootLogoSize / 2,
+                top: center.dy - kBootLogoSize / 2,
+                width: kBootLogoSize,
+                height: kBootLogoSize,
                 child: Semantics(
                   label: 'Wefilling',
                   image: true,
                   child: Image.asset(
-                    'assets/images/wefilling_boot_logo.png',
-                    width: 130,
-                    height: 130,
+                    kBootLogoAsset,
+                    key: const ValueKey('boot_logo'),
+                    width: kBootLogoSize,
+                    height: kBootLogoSize,
                     cacheWidth: 390,
                     cacheHeight: 390,
                     fit: BoxFit.contain,
@@ -154,38 +159,125 @@ class _AppBootScreenState extends State<AppBootScreen> {
                   ),
                 ),
               ),
-              // Reserve the actual localized/scaled hint height so the logo
-              // does not jump when initialization takes longer. No hidden
-              // progress ticker or premature accessibility announcement.
-              Visibility(
-                visible: _showHint || widget.failed,
-                maintainSize: true,
-                maintainState: true,
-                maintainAnimation: true,
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const SizedBox(height: 24),
-                  if (!widget.failed) ...[
-                    SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: _showHint
-                            ? const CircularProgressIndicator(
-                                strokeWidth: 2, color: AppColors.pointColor)
-                            : null),
-                    const SizedBox(height: 12),
-                  ],
-                  Semantics(
-                      liveRegion: true,
-                      child: Text(hint,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 14, color: Color(0xFF667085)))),
-                ]),
+              // 느린 시작 힌트: 로고 아래 고정 자리(로고는 움직이지 않는다).
+              Positioned(
+                left: 24,
+                right: 24,
+                top: center.dy + kBootLogoSize / 2 + 24,
+                child: AnimatedOpacity(
+                  opacity: _showHint || widget.failed ? 1 : 0,
+                  duration: MotionTokens.of(context, MotionTokens.fast),
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.3,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!widget.failed) ...[
+                          _LoadingDots(active: _showHint),
+                          const SizedBox(height: 8),
+                        ],
+                        Semantics(
+                          liveRegion: _showHint || widget.failed,
+                          child: Text(
+                            hint,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF8A8A8A),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ]),
-          ),
-        ),
+            ],
+          );
+        },
       ),
     );
+  }
+}
+
+/// 6px 점 3개(#B0B0B0). 1초 주기로 0.3 ↔ 1 깜빡이고 점마다 0.15초 늦다.
+/// 동작 줄이기면 깜빡이지 않는다.
+class _LoadingDots extends StatefulWidget {
+  const _LoadingDots({required this.active});
+
+  final bool active;
+
+  @override
+  State<_LoadingDots> createState() => _LoadingDotsState();
+}
+
+class _LoadingDotsState extends State<_LoadingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 1),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LoadingDots oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
+  void _sync() {
+    final animate = widget.active && !MotionTokens.reduceMotion(context);
+    if (animate && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!animate && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduce = MotionTokens.reduceMotion(context);
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) => Row(
+        key: const ValueKey('boot_loading_dots'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < 3; i++) ...[
+            if (i > 0) const SizedBox(width: 6),
+            Opacity(
+              opacity: reduce ? 1 : _dotOpacity(_controller.value - i * .15),
+              child: const SizedBox.square(
+                dimension: 6,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Color(0xFFB0B0B0),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 0.3 → 1 → 0.3 (삼각파).
+  static double _dotOpacity(double phase) {
+    final p = phase % 1.0;
+    final wave = p < .5 ? p * 2 : (1 - p) * 2;
+    return .3 + .7 * wave;
   }
 }

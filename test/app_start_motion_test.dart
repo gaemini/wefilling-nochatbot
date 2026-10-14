@@ -85,7 +85,8 @@ void main() {
         expect(tester.binding.transientCallbackCount, 0);
         await tester.pump(const Duration(milliseconds: 751));
         expect(tester.getRect(find.byType(Image)), logo);
-        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        // 스피너 대신 점 3개 힌트(2부 A-1).
+        expect(find.byKey(const ValueKey('boot_loading_dots')), findsOneWidget);
         expect(tester.takeException(), isNull);
       }
     }

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Modify this file to customize your launch splash screen -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="?android:colorBackground" />
+    <!-- 다크 모드에서도 흰 바탕: Flutter 부트 화면(흰색)과 이어지게 한다. -->
+    <item android:drawable="@android:color/white" />
 
     <!-- You can insert your own image assets here -->
     <item>

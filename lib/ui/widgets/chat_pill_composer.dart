@@ -83,16 +83,19 @@ class ChatPillComposer extends StatelessWidget {
                 key: const ValueKey('chat-composer-gallery'),
                 label: galleryLabel,
                 icon: Icons.photo_outlined,
-                iconSize: 22,
+                iconSize: 23,
+                width: ChatMetrics.composerToolWidth,
                 onTap: enabled ? onGallery : null,
               ),
               _CircleButton(
                 key: const ValueKey('chat-composer-attach'),
                 label: attachLabel,
                 icon: attachIcon,
-                iconSize: 22,
+                iconSize: 23,
+                width: ChatMetrics.composerToolWidth,
                 onTap: enabled ? onAttach : null,
               ),
+              const SizedBox(width: ChatMetrics.composerToolTrailing),
             ],
           );
 
@@ -101,8 +104,8 @@ class ChatPillComposer extends StatelessWidget {
       child: Container(
         key: const ValueKey('chat-composer-pill'),
         constraints: const BoxConstraints(minHeight: minHeight),
-        // 터치 상자(52)가 알약 높이(52)를 그대로 채우므로 위아래 여백은 0이고,
-        // 좌우 여백 6에서 40짜리 버튼이 가장자리에 12씩 떨어진다.
+        // 터치 상자(52)가 알약 높이(52)를 채우고, 40짜리 원 버튼은 그 가운데에
+        // 있어 알약 가장자리와 사방 6 간격이 된다(좌우 여백 0).
         padding: const EdgeInsets.symmetric(
           horizontal: ChatMetrics.composerPadding,
         ),
@@ -124,7 +127,10 @@ class ChatPillComposer extends StatelessWidget {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.only(
+                  left: ChatMetrics.composerTextGap,
+                  right: 4,
+                ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: touch),
                   child: Align(
@@ -160,8 +166,11 @@ class _CircleButton extends StatelessWidget {
     required this.iconSize,
     required this.onTap,
     this.filled = false,
+    this.width,
   });
 
+  /// 터치 폭(기본은 정사각 52).
+  final double? width;
   final String label;
   final IconData icon;
   final double iconSize;
@@ -181,8 +190,9 @@ class _CircleButton extends StatelessWidget {
         child: InkResponse(
           onTap: onTap,
           radius: ChatPillComposer.touch / 2,
-          child: SizedBox.square(
-            dimension: ChatPillComposer.touch,
+          child: SizedBox(
+            width: width ?? ChatPillComposer.touch,
+            height: ChatPillComposer.touch,
             child: Center(
               child: Container(
                 width: ChatPillComposer.button,

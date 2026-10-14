@@ -65,7 +65,18 @@ class ChatMetrics {
   static const double composerRadius = 26;
   static const double composerButton = 40;
   static const double composerTouch = 52;
-  static const double composerPadding = 6;
+  /// 알약 좌우 안쪽 여백. 카메라·전송(40)은 터치 상자(52) 가운데에 있어
+  /// 알약 가장자리와 사방 6으로 같은 간격이 된다.
+  static const double composerPadding = 0;
+
+  /// 사진·첨부 아이콘 터치 폭(높이는 52). 두 아이콘 사이가 벌어지지 않게 좁힌다.
+  static const double composerToolWidth = 40;
+
+  /// 오른쪽 아이콘 묶음 뒤 여백: 마지막 아이콘 중심이 카메라 중심과 대칭(26).
+  static const double composerToolTrailing = 6;
+
+  /// 카메라 원과 입력 글자 사이(원 가장자리에서 12).
+  static const double composerTextGap = 6;
   static const double inputSize = 15;
   static const double inputLine = 20;
 

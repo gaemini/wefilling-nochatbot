@@ -227,13 +227,24 @@ export const getUserProfileStats = callables()
       throw new functions.https.HttpsError('not-found', 'User not found.');
     }
 
-    const [friendEntries, postAggregate, joinedMeetupAggregate] =
+    // 다른 사람이 보는 글 수에는 익명 글을 넣지 않는다(익명 글을 올린 직후
+    // 숫자가 늘어 작성자가 드러나지 않게). 본인에게는 전체를 보인다.
+    const viewerIsOwner = context.auth?.uid === targetUserId;
+    const [friendEntries, postAggregate, anonymousPostAggregate,
+      joinedMeetupAggregate] =
       await Promise.all([
         getCanonicalFriendEntries(targetUserId),
         db.collection(COL.posts)
           .where('userId', '==', targetUserId)
           .count()
           .get(),
+        viewerIsOwner
+          ? Promise.resolve(null)
+          : db.collection(COL.posts)
+            .where('userId', '==', targetUserId)
+            .where('isAnonymous', '==', true)
+            .count()
+            .get(),
         db.collection(COL.meetupParticipants)
           .where('userId', '==', targetUserId)
           .where('status', '==', 'approved')
@@ -257,7 +268,11 @@ export const getUserProfileStats = callables()
 
     return {
       friendCount,
-      writtenPostCount: postAggregate.data().count,
+      writtenPostCount: Math.max(
+        0,
+        postAggregate.data().count -
+          (anonymousPostAggregate?.data().count ?? 0),
+      ),
       joinedMeetupCount: joinedMeetupAggregate.data().count,
       fetchedAtMillis: Date.now(),
     };
@@ -842,6 +857,10 @@ export const onUserProfileUpdatedPropagateAuthorInfo = triggers()
 
       for (const doc of snap.docs) {
         const data = doc.data() as any;
+        // 익명 대화방에는 실제 이름·사진을 쓰지 않는다(익명 작성자 노출 방지).
+        if (doc.id.startsWith('anon_') || data?.isAnonymous?.[userId] === true) {
+          continue;
+        }
         const currentName = toStr(data?.participantNames?.[userId]).trim();
         const currentPhoto = toStr(data?.participantPhotos?.[userId]).trim();
 
@@ -2544,6 +2563,12 @@ export const onPrivatePostCreated = triggers().firestore
 
       if (visibility !== 'public' && visibility !== 'category') {
         runtimeLogsEnabled && runtimeInfo(`onPrivatePostCreated: 지원하지 않는 공개범위 스킵 (postId=${postId})`);
+        return null;
+      }
+      // 익명 글: 친구에게 알리면 '익명 = 내 친구'가 드러난다. 구버전 앱이 직접
+      // 만든 문서(알림 대상 필드 없음)도 여기서 막는다.
+      if (post.isAnonymous === true) {
+        runtimeLogsEnabled && runtimeInfo(`onPrivatePostCreated: 익명 글 알림 생략 (postId=${postId})`);
         return null;
       }
 
@@ -8072,6 +8097,8 @@ async function isVerifiedCreatedContentNotificationRecipient(
   const document = await db.collection(collection).doc(contentId).get();
   if (!document.exists) return false;
   const content = document.data() || {};
+  // 익명 글의 새 글 알림은 이미 만들어졌더라도 푸시하지 않는다.
+  if (type === 'post_created' && content.isAnonymous === true) return false;
   const ownerId = normalizeUidLoose(content.ownerId || content.userId);
   const actorId = normalizeUidLoose(notification.actorId || nested.hostId);
   const visibility = safeStringLoose(content.visibilityMode || content.visibility);

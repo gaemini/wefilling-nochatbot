@@ -2491,6 +2491,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         for (final doc in chunk) {
           try {
             final data = doc.data();
+            // 익명 대화방에는 실제 이름·사진을 쓰지 않는다(익명 작성자 노출 방지).
+            final anonymousMap = data['isAnonymous'];
+            if (doc.id.startsWith('anon_') ||
+                (anonymousMap is Map && anonymousMap[_user!.uid] == true)) {
+              continue;
+            }
             final participants =
                 List<String>.from(data['participants'] ?? const []);
 

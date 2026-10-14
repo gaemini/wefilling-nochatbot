@@ -560,9 +560,12 @@ export const createPostSecure = callables().runWith({timeoutSeconds: 120, memory
         'Hanyang-only visibility cannot be combined with another visibility mode or anonymity.',
       );
     }
-    const notificationAudienceUserIdsFrozen = frozen.visibilityMode === 'public'
-      ? await resolveFriendNotificationAudience(uid)
-      : frozen.audienceUserIdsFrozen.filter((userId) => userId !== uid);
+    // 익명 글은 친구에게 새 글 알림을 보내지 않는다(알림 = 작성자가 친구라는 노출).
+    const notificationAudienceUserIdsFrozen = isAnonymous
+      ? []
+      : frozen.visibilityMode === 'public'
+        ? await resolveFriendNotificationAudience(uid)
+        : frozen.audienceUserIdsFrozen.filter((userId) => userId !== uid);
     const user = await profile(uid);
     if (requiresHanyangVerification && !(await hasActiveHanyangClaim(uid))) {
       throw new functions.https.HttpsError(
@@ -740,9 +743,12 @@ export const createExternalSharePost = callables()
       throw new functions.https.HttpsError('invalid-argument', 'Post content is empty.');
     }
 
-    const notificationAudienceUserIdsFrozen = frozen.visibilityMode === 'public'
-      ? await resolveFriendNotificationAudience(uid)
-      : frozen.audienceUserIdsFrozen.filter((userId) => userId !== uid);
+    // 익명 글은 친구에게 새 글 알림을 보내지 않는다(알림 = 작성자가 친구라는 노출).
+    const notificationAudienceUserIdsFrozen = isAnonymous
+      ? []
+      : frozen.visibilityMode === 'public'
+        ? await resolveFriendNotificationAudience(uid)
+        : frozen.audienceUserIdsFrozen.filter((userId) => userId !== uid);
 
     let uploadedPath = '';
     let uploadedPreviewPath = '';

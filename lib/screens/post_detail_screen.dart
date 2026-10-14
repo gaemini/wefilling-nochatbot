@@ -4077,7 +4077,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             RelationshipOrbitForUser(
-              userId: _currentPost.userId,
+              // 익명 글은 작성자와의 관계(친구·요청 보냄)를 그리지 않는다.
+              userId: _currentPost.isAnonymous ? '' : _currentPost.userId,
               size: avatarSize,
               allowRequest: canOpenProfile,
               child: Semantics(

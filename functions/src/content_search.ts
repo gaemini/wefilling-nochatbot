@@ -452,9 +452,10 @@ function postResult(id: string, data: SourceData): Record<string, unknown> {
     id,
     title: stringValue(data.title),
     content: stringValue(data.content),
-    authorNickname: stringValue(data.authorNickname),
-    authorNationality: stringValue(data.authorNationality),
-    authorPhotoURL: stringValue(data.authorPhotoURL),
+    // 익명 글은 응답에도 작성자 이름·국적·사진을 싣지 않는다.
+    authorNickname: data.isAnonymous === true ? '' : stringValue(data.authorNickname),
+    authorNationality: data.isAnonymous === true ? '' : stringValue(data.authorNationality),
+    authorPhotoURL: data.isAnonymous === true ? '' : stringValue(data.authorPhotoURL),
     category: stringValue(data.category),
     categoryKey: stringValue(data.categoryKey),
     categoryKeys: stringList(data.categoryKeys),

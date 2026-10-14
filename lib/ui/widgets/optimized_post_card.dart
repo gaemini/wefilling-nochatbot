@@ -1066,7 +1066,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               // 프로필 이미지. 친구 요청 `+` 노드는 프로필 탭 영역 바깥의
               // 형제로 두어 두 탭이 서로 가로채지 않게 한다.
               RelationshipOrbitForUser(
-                userId: post.userId,
+                // 익명 글은 작성자와의 관계(친구·요청 보냄)를 그리지 않는다.
+                userId: isAnonymous ? '' : post.userId,
                 size: 40,
                 allowRequest: canOpenProfile,
                 child: Semantics(

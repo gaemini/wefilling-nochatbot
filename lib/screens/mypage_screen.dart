@@ -1575,12 +1575,24 @@ class _MyPageScreenState extends State<MyPageScreen>
         return;
       }
 
-      Navigator.push(
+      final deleted = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
           builder: (context) => PostDetailScreen(post: fetched),
         ),
       );
+      // 상세에서 지웠으면 목록과 기기 저장본에서도 바로 뺀다(다시 누르면
+      // '찾을 수 없음'이 뜨는 남은 항목 방지).
+      if (deleted == true && mounted) {
+        final remaining = (_userPosts ?? const <Post>[])
+            .where((post) => post.id != postId)
+            .toList();
+        setState(() => _userPosts = remaining);
+        final uid = Provider.of<AuthProvider>(context, listen: false).user?.uid;
+        if (uid != null) {
+          unawaited(_myPageCacheService.saveUserPosts(uid, remaining));
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

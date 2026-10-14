@@ -1579,12 +1579,11 @@ class PostService {
       // 게시글 삭제
       await _firestore.collection('posts').doc(postId).delete();
 
-      // 이미지가 있으면 삭제
+      // 이미지 정리는 기다리지 않고 함께 진행한다(실패는 기록만). 글 삭제는 이미
+      // 끝났으므로 화면이 이미지 수만큼 늦게 닫히지 않는다.
       if (data['imageUrls'] != null) {
-        List<String> imageUrls = List<String>.from(data['imageUrls'] ?? []);
-        for (final imageUrl in imageUrls) {
-          await _storageService.deleteImage(imageUrl);
-        }
+        final imageUrls = List<String>.from(data['imageUrls'] ?? []);
+        unawaited(Future.wait(imageUrls.map(_storageService.deleteImage)));
       }
 
       // 캐시 무효화 (게시글이 삭제되었으므로 캐시 삭제)

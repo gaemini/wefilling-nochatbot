@@ -447,6 +447,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
     _commentsStream = _createResilientCommentsStream(_currentPost.id);
     unawaited(_refreshBlockedCommentAuthors());
+    _subscribeEngagement();
+
+    // 여러 이미지는 진입 시 병렬 프리패치로 "넘길 때 바로 보이게" 최적화
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _prefetchPostImages(initial: true);
+    });
+  }
+
+  void _subscribeEngagement() {
     _engagementSubscription = _postService
         .watchPostEngagement(_currentPost.id, seed: _currentPost)
         .listen(
@@ -460,11 +469,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           Logger.warning('포스트 상세 실시간 지표 구독 오류: $error');
       },
     );
-
-    // 여러 이미지는 진입 시 병렬 프리패치로 "넘길 때 바로 보이게" 최적화
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _prefetchPostImages(initial: true);
-    });
   }
 
   Future<void> _refreshBlockedCommentAuthors() async {
@@ -478,7 +482,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   void _handleUnavailablePost() {
-    if (!mounted || _postUnavailableHandled) return;
+    // 내가 지우는 중이면 '볼 수 없음'은 삭제의 결과다. 권한 오류로 알리고
+    // 화면을 먼저 닫으면 삭제 완료 처리(안내·목록 갱신)가 실행되지 않는다.
+    if (!mounted || _postUnavailableHandled || _isDeleting) return;
     _postUnavailableHandled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -498,7 +504,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final refreshed = await _postService
           .getPostById(widget.post.id)
           .timeout(const Duration(seconds: 12));
-      if (!mounted) return;
+      if (!mounted || _isDeleting) return;
 
       if (refreshed == null) {
         // 접근 불가(권한 없음/차단/삭제 등)
@@ -544,7 +550,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await _incrementViewCount();
     } catch (e) {
       Logger.error('❌ 게시글 접근 검증/갱신 오류: $e');
-      if (!mounted) return;
+      if (!mounted || _isDeleting) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AppLocalizations.of(context)!.noPermission),
@@ -2767,6 +2773,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     setState(() {
       _isDeleting = true;
     });
+    // 지우는 동안 실시간 구독이 '볼 수 없음'을 받아 권한 오류로 처리하지 않게
+    // 먼저 끊는다(실패하면 다시 연결).
+    await _engagementSubscription?.cancel();
+    _engagementSubscription = null;
 
     try {
       final success = await _postService.deletePost(widget.post.id);
@@ -2787,6 +2797,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         setState(() {
           _isDeleting = false;
         });
+        _subscribeEngagement();
       }
     } catch (e) {
       if (mounted) {
@@ -2797,6 +2808,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         setState(() {
           _isDeleting = false;
         });
+        _subscribeEngagement();
       }
     }
   }

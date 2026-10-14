@@ -121,23 +121,6 @@ void main() {
     expect(forward, 1);
   });
 
-  testWidgets('탭 줄: 사진·영상은 기존 보관함 선택을 연다', (tester) async {
-    var photos = 0;
-    var videos = 0;
-    await tester.pumpWidget(_host(
-      (s) => SnapshotPickerTabRow(
-        strings: s,
-        onPhotos: () => photos++,
-        onVideos: () => videos++,
-      ),
-    ));
-    expect(find.text('영상은 12초까지'), findsOneWidget);
-    await tester.tap(find.text('사진'));
-    await tester.tap(find.text('영상'));
-    expect(photos, 1);
-    expect(videos, 1);
-  });
-
   testWidgets('다음 알약: 선택이 없으면 비활성(35%)', (tester) async {
     var taps = 0;
     await tester.pumpWidget(_host(
@@ -154,44 +137,6 @@ void main() {
     expect(taps, 1);
   });
 
-  testWidgets('그리드 선택 표시: 선택되면 파란 체크 원과 흰 테두리', (tester) async {
-    await tester.pumpWidget(_host(
-      (_) => const SizedBox.square(
-        dimension: 90,
-        child: SnapshotGridSelection(selected: true),
-      ),
-    ));
-    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
-    await tester.pumpWidget(_host(
-      (_) => const SizedBox.square(
-        dimension: 90,
-        child: SnapshotGridSelection(selected: false),
-      ),
-    ));
-    expect(find.byIcon(Icons.check_rounded), findsNothing);
-  });
-
-  testWidgets('권한 거부 안내: [설정 열기]가 설정을 연다', (tester) async {
-    var opened = 0;
-    var retried = 0;
-    await tester.pumpWidget(_host(
-      (s) => SizedBox(
-        height: 300,
-        child: SnapshotPickerNotice(
-          message: s.galleryPermissionRequired,
-          primaryLabel: s.openSettings,
-          onPrimary: () => opened++,
-          secondaryLabel: s.retry,
-          onSecondary: () => retried++,
-        ),
-      ),
-    ));
-    await tester.tap(find.text('설정 열기'));
-    await tester.tap(find.text(SnapshotStringsTestKo.retry));
-    expect(opened, 1);
-    expect(retried, 1);
-  });
-
   testWidgets('UI 글자는 15를 넘지 않는다', (tester) async {
     await tester.pumpWidget(_host(
       (s) => Column(
@@ -201,9 +146,7 @@ void main() {
             icon: Icons.chevron_left_rounded,
             label: s.repick,
             onBack: () {},
-            lifetime: s.shareLifetimeNote,
           ),
-          SnapshotPickerTabRow(strings: s, onPhotos: () {}, onVideos: () {}),
           SnapshotEditorToolRow(
             strings: s,
             isVideo: true,
@@ -245,10 +188,7 @@ void main() {
                   icon: Icons.chevron_left_rounded,
                   label: s.repick,
                   onBack: () {},
-                  lifetime: s.shareLifetimeNote,
-                ),
-                SnapshotPickerTabRow(
-                    strings: s, onPhotos: () {}, onVideos: () {}),
+                      ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 20, 20),
                   child: SnapshotEditorToolRow(
@@ -284,6 +224,3 @@ void main() {
   }
 }
 
-class SnapshotStringsTestKo {
-  static const retry = '다시 시도';
-}

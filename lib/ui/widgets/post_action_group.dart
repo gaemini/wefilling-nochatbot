@@ -218,11 +218,19 @@ class PostActionGroup extends StatelessWidget {
                 selected: isSaved,
                 activePeak: 1.18,
                 activeDip: 1,
-                inactiveDip: .9,
+                // 끌 때는 조용히 교차만(모션 2부 E).
+                inactiveDip: 1,
                 child: _PostActionItem(
                   icon: isSaved
                       ? Icons.bookmark_rounded
                       : Icons.bookmark_border_rounded,
+                  iconWidget: MotionStateIcon(
+                    selected: isSaved,
+                    inactiveIcon: Icons.bookmark_border_rounded,
+                    activeIcon: Icons.bookmark_rounded,
+                    color: actionColor,
+                    size: responsiveIconSize + 1,
+                  ),
                   iconColor: actionColor,
                   progress: isSaving,
                   iconSize: responsiveIconSize + 1,

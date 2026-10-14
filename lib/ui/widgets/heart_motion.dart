@@ -228,7 +228,7 @@ class LikeHoldRing extends StatelessWidget {
   }
 }
 
-/// 목록 행 순차 등장(행마다 40ms 늦게, 투명 → 선명 + 6px 올라옴). 목록이 처음
+/// 목록 행 순차 등장(행마다 40ms 늦게, `medium` 동안 투명 → 선명 + 8px 올라옴). 목록이 처음
 /// 보인 시각 [shownAt]을 기준으로 하므로 스크롤로 다시 만들어진 행은 바로 보인다.
 class StaggerIn extends StatefulWidget {
   const StaggerIn({
@@ -261,7 +261,7 @@ class _StaggerInState extends State<StaggerIn>
     final delay = Duration(
       milliseconds: 40 * widget.index.clamp(0, widget.maxStaggered),
     );
-    final total = delay + MotionTokens.state;
+    final total = delay + MotionTokens.medium;
     final elapsed = DateTime.now().difference(widget.shownAt);
     if (MotionTokens.reduceMotion(context) || elapsed >= total) return;
     final controller = AnimationController(vsync: this, duration: total);
@@ -282,7 +282,7 @@ class _StaggerInState extends State<StaggerIn>
     if (controller == null) return widget.child;
     final total = controller.duration!.inMicroseconds;
     final begin =
-        (total - MotionTokens.state.inMicroseconds) / total.clamp(1, 1 << 62);
+        (total - MotionTokens.medium.inMicroseconds) / total.clamp(1, 1 << 62);
     final curved = CurvedAnimation(
       parent: controller,
       curve: Interval(begin, 1, curve: MotionTokens.curve),
@@ -293,7 +293,7 @@ class _StaggerInState extends State<StaggerIn>
       builder: (context, child) => Opacity(
         opacity: curved.value,
         child: Transform.translate(
-          offset: Offset(0, 6 * (1 - curved.value)),
+          offset: Offset(0, 8 * (1 - curved.value)),
           child: child,
         ),
       ),

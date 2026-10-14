@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../design/tokens.dart';
 import '../../l10n/ui_locale.dart';
 import 'snack_chat_chrome.dart';
 
@@ -51,8 +52,8 @@ class SnackChatTranslationSplitButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    final duration =
-        reduceMotion ? Duration.zero : const Duration(milliseconds: 180);
+    // 버튼 바탕 흰색 ↔ 포인트는 state(모션 2부 E).
+    final duration = reduceMotion ? Duration.zero : MotionTokens.state;
     final toggleFill =
         translationOn ? SnackChatPalette.pointStrong : Colors.transparent;
     final toggleIcon = translationOn ? Colors.white : SnackChatPalette.ink;
@@ -101,7 +102,7 @@ class SnackChatTranslationSplitButton extends StatelessWidget {
                             key:
                                 const ValueKey('snack_translation_toggle_fill'),
                             duration: duration,
-                            curve: Curves.easeOut,
+                            curve: MotionTokens.curve,
                             width: toggleWidth,
                             height: height,
                             decoration: BoxDecoration(

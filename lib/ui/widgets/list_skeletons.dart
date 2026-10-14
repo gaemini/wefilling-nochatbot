@@ -15,7 +15,9 @@ Widget _bar(double width, double height) => Container(
       ),
     );
 
-/// 댓글 말풍선 자리표시(원 32 + 말풍선). 스크롤 안에 들어가므로 Column이다.
+/// 댓글 줄 자리표시(아바타 30 둥근 네모 + 막대 2개). 높이는 댓글 한 개의
+/// 평균 높이에 맞춰 데이터가 와도 위치가 튀지 않게 한다. 스크롤 안에 들어가므로
+/// Column이다.
 class CommentListSkeleton extends StatelessWidget {
   const CommentListSkeleton({super.key, this.rows = 3});
 
@@ -38,11 +40,11 @@ class CommentListSkeleton extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
                       color: kSkeletonFill,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(7.5),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -50,15 +52,9 @@ class CommentListSkeleton extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _bar(72, 10),
-                      const SizedBox(height: 6),
-                      Container(
-                        width: _widths[i % _widths.length],
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: kSkeletonFill,
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                      ),
+                      const SizedBox(height: 8),
+                      _bar(_widths[i % _widths.length], 14),
+                      const SizedBox(height: 14),
                     ],
                   ),
                 ],

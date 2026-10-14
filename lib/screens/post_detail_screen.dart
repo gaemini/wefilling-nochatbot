@@ -78,6 +78,9 @@ import '../ui/widgets/heart_motion.dart';
 import '../utils/motion_haptics.dart';
 import '../ui/widgets/list_skeletons.dart';
 import '../ui/widgets/new_items_pill.dart';
+import '../ui/motion/motion_strings.dart';
+import '../ui/motion/optimistic_toggle.dart';
+import '../ui/widgets/icon_motion.dart';
 
 /// Keeps Material route behavior (including back navigation) while making the
 /// feed-to-detail change perceptible without waiting for an animation.
@@ -325,6 +328,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final Completer<void> _commentsFirstShown = Completer<void>();
   DateTime? _commentsShownAt;
   Set<String>? _seenCommentIds;
+  // 처음 이후에 도착한 댓글이 보인 시각(그 댓글만 올라오며 나타난다).
+  final Map<String, DateTime> _commentArrivedAt = <String, DateTime>{};
   int _newCommentCount = 0;
   // 사진 두 번 탭 하트(모션 2부 C-2).
   int _photoHeartPop = 0;
@@ -1465,7 +1470,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       showViews: false,
       showSave: !_isAuthor,
       isSaved: _isSaved,
-      isSaving: _isTogglingSave,
+      // 낙관적 저장: 진행 표시 없이 아이콘이 바로 바뀐다.
+      isSaving: false,
       saveLabel: _isSaved ? l10n.saved : l10n.save,
       onSaveTap: _toggleSave,
       compact: true,
@@ -2278,7 +2284,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  Future<void> _toggleSave() async {
+  /// 저장(모션 2부 E-1): 아이콘을 먼저 바꾸고, 서버 결과가 다르면 되돌린다.
+  /// 저장했을 때는 "저장했어요 · 되돌리기" 안내를 띄운다.
+  Future<void> _toggleSave({bool fromUndo = false}) async {
     if (_isTogglingSave) return;
 
     // 로그인 상태 확인
@@ -2298,42 +2306,49 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
-    setState(() {
-      _isTogglingSave = true;
-    });
+    final expected = !_isSaved;
+    setState(() => _isTogglingSave = true);
+    if (expected && !fromUndo) {
+      AppSnackBar.show(
+        context,
+        message: MotionStrings.saved(context),
+        type: AppSnackBarType.success,
+        duration: const Duration(seconds: 3),
+        action: SnackBarAction(
+          label: MotionStrings.undo(context),
+          textColor: const Color(0xFF8AB4F8),
+          onPressed: () {
+            if (mounted && _isSaved) unawaited(_toggleSave(fromUndo: true));
+          },
+        ),
+      );
+    } else if (!expected && !fromUndo) {
+      AppSnackBar.show(
+        context,
+        message: AppLocalizations.of(context)!.postUnsaved,
+        type: AppSnackBarType.info,
+        duration: const Duration(seconds: 1),
+      );
+    }
 
-    try {
-      final newSavedStatus = await _postService.toggleSavePost(widget.post.id);
-
-      if (mounted) {
-        setState(() {
-          _isSaved = newSavedStatus;
-          _isTogglingSave = false;
-        });
-
+    await runOptimisticToggle(
+      current: _isSaved,
+      apply: (value) {
+        if (mounted) setState(() => _isSaved = value);
+      },
+      commit: () => _postService.toggleSavePost(widget.post.id),
+      onMismatch: () {
+        if (!mounted) return;
+        MotionHaptics.fire(context, MotionHapticEvent.warning);
         AppSnackBar.show(
           context,
-          message: newSavedStatus
-              ? (AppLocalizations.of(context)!.postSaved ?? "")
-              : AppLocalizations.of(context)!.postUnsaved,
-          type: newSavedStatus ? AppSnackBarType.success : AppSnackBarType.info,
-          duration: const Duration(seconds: 1),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isTogglingSave = false;
-        });
-
-        AppSnackBar.show(
-          context,
-          message: AppLocalizations.of(context)!.error ?? "",
+          message: MotionStrings.saveFailed(context),
           type: AppSnackBarType.error,
           duration: const Duration(seconds: 2),
         );
-      }
-    }
+      },
+    );
+    if (mounted) setState(() => _isTogglingSave = false);
   }
 
   void _openPostActionsSheet() {
@@ -3059,8 +3074,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       children.add(KeyedSubtree(
         key: _commentKeys.putIfAbsent(comment.id, GlobalKey.new),
         child: StaggerIn(
-          index: rowIndex,
-          shownAt: _commentsShownAt ?? DateTime.now(),
+          index: _commentArrivedAt.containsKey(comment.id) ? 0 : rowIndex,
+          shownAt: _commentArrivedAt[comment.id] ??
+              _commentsShownAt ??
+              DateTime.now(),
           child: SwipeToReply(
           enabled: canSwipeReply,
           onReply: comment.isDeleted ? null : enterReply,
@@ -3181,6 +3198,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final seen = _seenCommentIds;
     _seenCommentIds = ids;
     if (seen == null) return;
+    final now = DateTime.now();
+    for (final c in comments) {
+      if (!seen.contains(c.id)) _commentArrivedAt[c.id] = now;
+    }
     final fresh = comments
         .where((c) => !seen.contains(c.id) && c.userId != currentUserId)
         .length;
@@ -4370,6 +4391,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     child: Center(
                       child: NewItemsPill(
                         key: const ValueKey('post_detail_new_comments_pill'),
+                        // 입력창 위, 검정 알약(모션 2부 D-3).
                         visible: _newCommentCount > 0,
                         label: _newCommentsLabel(context, _newCommentCount),
                         icon: Icons.arrow_downward_rounded,
@@ -4508,36 +4530,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                           value.text.trim().isNotEmpty ||
                                               _commentGif != null ||
                                               _commentImages.isNotEmpty;
-                                      return Semantics(
-                                        button: true,
-                                        enabled: canSend,
-                                        child: InkResponse(
-                                          onTap: _submitComment,
-                                          radius: 22,
-                                          child: SizedBox(
-                                            width: 44,
-                                            height: 44,
-                                            child: Center(
-                                              child: Container(
-                                                width: 32,
-                                                height: 32,
-                                                decoration: BoxDecoration(
-                                                  color: canSend
-                                                      ? _kDetailPointStrong
-                                                      : _kDetailFillSubtle,
-                                                  shape: BoxShape.circle,
-                                                ),
-                                                child: Icon(
-                                                  Icons.arrow_upward_rounded,
-                                                  color: canSend
-                                                      ? Colors.white
-                                                      : _kDetailInkTertiary,
-                                                  size: 18,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
+                                      // 댓글·DM·스낵챗 공용 보내기 버튼.
+                                      return MotionSendButton(
+                                        key: const ValueKey(
+                                          'post_detail_comment_send',
                                         ),
+                                        active: canSend,
+                                        onTap: _submitComment,
+                                        label: isChineseUi(context)
+                                            ? '发送'
+                                            : (Localizations.localeOf(context)
+                                                        .languageCode ==
+                                                    'ko'
+                                                ? '전송'
+                                                : 'Send'),
                                       );
                                     },
                                   ),

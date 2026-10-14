@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../design/tokens.dart';
 import '../../l10n/ui_locale.dart';
 import 'snack_chat_chrome.dart';
 
@@ -69,7 +70,9 @@ class SnackChatTranslatedText extends StatefulWidget {
 
   /// '번역 중' 표시 유예. 이 안에 결과가 오면 바로 번역본으로 바뀐다.
   static const Duration pendingDelay = Duration(milliseconds: 300);
-  static const Duration transition = Duration(milliseconds: 180);
+  // 본문 교차는 fast, 높이 변화는 state(모션 2부 E).
+  static const Duration transition = MotionTokens.fast;
+  static const Duration resize = MotionTokens.state;
   static const Duration pulsePeriod = Duration(milliseconds: 1200);
 
   /// 발 줄의 터치 높이. 말풍선 아래 여백과 합쳐 손가락 영역을 확보한다.
@@ -167,7 +170,7 @@ class _SnackChatTranslatedTextState extends State<SnackChatTranslatedText>
     if (!widget.preserveChildState) {
       body = AnimatedSwitcher(
         duration: duration,
-        switchInCurve: Curves.easeOut,
+        switchInCurve: MotionTokens.curve,
         switchOutCurve: Curves.easeOut,
         layoutBuilder: (current, previous) => Stack(
           alignment: Alignment.topLeft,
@@ -196,8 +199,8 @@ class _SnackChatTranslatedTextState extends State<SnackChatTranslatedText>
     // 줄이기에서는 즉시 바뀌면 되므로 감싸지 않는다.
     if (_reduceMotion) return content;
     return AnimatedSize(
-      duration: duration,
-      curve: Curves.easeOut,
+      duration: SnackChatTranslatedText.resize,
+      curve: MotionTokens.curve,
       alignment: Alignment.topLeft,
       child: content,
     );

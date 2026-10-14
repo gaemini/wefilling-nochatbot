@@ -10,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../l10n/ui_locale.dart';
 import '../services/notification_settings_service.dart';
 import '../utils/responsive_helper.dart';
+import '../ui/widgets/icon_motion.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -296,6 +297,7 @@ class _NotificationSettingsScreenState
       description: l10n.allNotificationsSubtitle,
       value: isOn,
       enabled: true,
+      shakeOnEnable: true,
       titleFontSize: context.rf(16).clamp(15, 17).toDouble(),
       verticalPadding: context.rs(12).clamp(10, 14).toDouble(),
       onChanged: (value) =>
@@ -332,6 +334,7 @@ class _NotificationSettingsScreenState
     required double titleFontSize,
     required double verticalPadding,
     required ValueChanged<bool> onChanged,
+    bool shakeOnEnable = false,
   }) {
     final titleColor = enabled ? _ink : _disabledText;
     final descriptionColor = enabled ? _textMuted : _disabledText;
@@ -349,10 +352,18 @@ class _NotificationSettingsScreenState
               children: [
                 SizedBox.square(
                   dimension: 30,
-                  child: Icon(
-                    icon,
-                    color: iconColor,
-                    size: context.ri(20).clamp(19, 22).toDouble(),
+                  // 켤 때만 종이 흔들린다(모션 2부 E). 아이콘은 교차.
+                  child: BellShake(
+                    ringing: shakeOnEnable && value,
+                    child: AnimatedSwitcher(
+                      duration: MotionTokens.of(context, MotionTokens.fast),
+                      child: Icon(
+                        icon,
+                        key: ValueKey<IconData>(icon),
+                        color: iconColor,
+                        size: context.ri(20).clamp(19, 22).toDouble(),
+                      ),
+                    ),
                   ),
                 ),
                 SizedBox(width: context.rs(10)),

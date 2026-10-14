@@ -9,6 +9,8 @@ import 'package:share_plus/share_plus.dart';
 import '../../l10n/profile_share_strings.dart';
 import '../../l10n/ui_locale.dart';
 import '../../services/profile_link.dart';
+import 'icon_motion.dart';
+import '../motion/motion_strings.dart';
 
 Future<void> showProfileShareSheet(
   BuildContext context, {
@@ -138,25 +140,30 @@ class ProfileShareSheet extends StatelessWidget {
                 Expanded(
                   child: SizedBox(
                     height: 44,
-                    child: OutlinedButton(
-                      key: const ValueKey('profile_share_copy'),
-                      onPressed: () async {
-                        await Clipboard.setData(ClipboardData(text: link));
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(strings.copied)),
-                        );
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF111827),
-                        side: const BorderSide(color: Color(0xFFD9D9D9)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                    // 복사하면 버튼 글자가 "✓ 복사됨"으로 1.5초 바뀐다(스낵바 없음).
+                    child: CopyFeedback(
+                      builder: (context, copied, markCopied) => OutlinedButton(
+                        key: const ValueKey('profile_share_copy'),
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: link));
+                          if (!context.mounted) return;
+                          markCopied();
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF111827),
+                          side: const BorderSide(color: Color(0xFFD9D9D9)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: CopyFeedbackLabel(
+                          copied: copied,
+                          label: strings.copy,
+                          copiedLabel: MotionStrings.copied(context),
+                          style: style(
+                              14, FontWeight.w600, const Color(0xFF111827)),
                         ),
                       ),
-                      child: Text(strings.copy,
-                          style: style(14, FontWeight.w600,
-                              const Color(0xFF111827))),
                     ),
                   ),
                 ),

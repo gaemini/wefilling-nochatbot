@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 
 import '../chat/chat_metrics.dart';
+import 'icon_motion.dart';
 
 const Color chatComposerBackground = Color(0xFF252629);
 const Color chatComposerAccent = Color(0xFF2C6BC0);
@@ -65,12 +66,13 @@ class ChatPillComposer extends StatelessWidget {
         reduceMotion ? Duration.zero : const Duration(milliseconds: 120);
 
     final trailing = showSend
-        ? _CircleButton(
+        // 댓글·DM·스낵챗 공용 보내기 버튼(모션 2부 E).
+        ? MotionSendButton(
             key: const ValueKey('chat-composer-send'),
             label: sendLabel,
-            icon: Icons.arrow_upward_rounded,
-            iconSize: 18,
-            filled: true,
+            size: button,
+            touch: touch,
+            active: enabled && canSend,
             onTap: enabled && canSend ? onSend : null,
           )
         : Row(

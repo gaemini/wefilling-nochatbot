@@ -24,6 +24,8 @@ import 'student_type_selection_screen.dart';
 import '../ui/widgets/motion_selectable.dart';
 import '../ui/widgets/motion_selection_pulse.dart';
 import '../utils/motion_haptics.dart';
+import '../ui/widgets/icon_motion.dart';
+import '../ui/widgets/motion_state_icon.dart';
 
 // Match the compact compose-screen scale without suppressing accessibility text
 // scaling or changing the shared theme used by the rest of the app.
@@ -751,14 +753,18 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          Icon(
-            controller.personalTodoNotificationsEnabled
-                ? Icons.notifications_active_outlined
-                : Icons.notifications_off_outlined,
-            size: 20,
-            color: controller.personalTodoNotificationsEnabled
-                ? AppColors.pointColor
-                : const Color(0xFF94A3B8),
+          // 켤 때만 종이 흔들린다(모션 2부 E). 끌 때는 교차만.
+          BellShake(
+            ringing: controller.personalTodoNotificationsEnabled,
+            child: MotionStateIcon(
+              selected: controller.personalTodoNotificationsEnabled,
+              inactiveIcon: Icons.notifications_off_outlined,
+              activeIcon: Icons.notifications_active_outlined,
+              size: 20,
+              color: controller.personalTodoNotificationsEnabled
+                  ? AppColors.pointColor
+                  : const Color(0xFF94A3B8),
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(

@@ -13,6 +13,15 @@ enum MotionHapticEvent {
 
   /// 처리형 버튼이 실제 성공 결과를 받았을 때.
   processingSuccess,
+
+  /// 켜기·임계값 도달(모션 2부 공통 이름).
+  selection,
+
+  /// 서버 확정 등 실제 성공.
+  success,
+
+  /// 되돌림·입력 거절.
+  warning,
 }
 
 /// 버튼 인터랙션용 햅틱 정책. 기존 `HapticFeedback.*` 직접 호출 지점은 그대로
@@ -29,10 +38,15 @@ class MotionHaptics {
     switch (event) {
       case MotionHapticEvent.likeSelected:
       case MotionHapticEvent.checkCompleted:
+      case MotionHapticEvent.selection:
         type = HapticFeedbackType.selectionClick;
         break;
       case MotionHapticEvent.processingSuccess:
+      case MotionHapticEvent.success:
         type = HapticFeedbackType.lightImpact;
+        break;
+      case MotionHapticEvent.warning:
+        type = HapticFeedbackType.mediumImpact;
         break;
     }
     AccessibilityUtils.provideFeedback(context, type);

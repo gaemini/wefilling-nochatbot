@@ -5,6 +5,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../design/tokens.dart';
+import '../utils/motion_haptics.dart';
+import '../ui/widgets/verification_code_boxes.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../providers/auth_provider.dart';
@@ -54,6 +57,8 @@ class _HanyangEmailVerificationScreenState
   bool _isLoading = false;
   bool _checkingCanonicalStatus = false;
   String? _errorMessage;
+  final FocusNode _codeFocusNode = FocusNode();
+  bool _codeVerified = false;
   String _cancellationToken = '';
 
   bool get _allowsAnyEmail =>
@@ -94,6 +99,7 @@ class _HanyangEmailVerificationScreenState
 
   @override
   void dispose() {
+    _codeFocusNode.dispose();
     _emailController.dispose();
     _verificationCodeController.dispose();
     super.dispose();
@@ -258,11 +264,22 @@ class _HanyangEmailVerificationScreenState
       }
 
       if (!verified && mounted) {
+        // 틀리면 칸을 비우고 첫 칸에 포커스, 기존 오류 문구(흔들기 없음).
+        _verificationCodeController.clear();
         setState(() {
           _errorMessage = AppLocalizations.of(context)!.verificationCodeInvalid;
           _isLoading = false;
         });
+        MotionHaptics.fire(context, MotionHapticEvent.warning);
+        _codeFocusNode.requestFocus();
         return;
+      }
+
+      // 맞으면 칸이 차례로 포인트색 + 체크(약 0.36초)를 보인 뒤 이어간다.
+      if (verified && mounted && !MotionTokens.reduceMotion(context)) {
+        setState(() => _codeVerified = true);
+        await Future<void>.delayed(const Duration(milliseconds: 360));
+        if (!mounted) return;
       }
 
       // 프로필에서 시작한 인증은 가입 상태를 건드리지 않고 학교 인증만 추가한다.
@@ -553,28 +570,16 @@ class _HanyangEmailVerificationScreenState
                             const SizedBox(height: 28),
                             SignupSectionLabel(text: l10n.verificationCode),
                             const SizedBox(height: 4),
-                            TextFormField(
+                            // 코드 4칸: 입력 중인 칸만 파란 테두리, 맞으면 칸마다
+                            // 40ms 간격으로 포인트색 + 체크.
+                            VerificationCodeBoxes(
                               controller: _verificationCodeController,
-                              keyboardType: TextInputType.number,
-                              textInputAction: TextInputAction.done,
-                              maxLength: 4,
-                              autofocus: true,
-                              onFieldSubmitted: (_) {
+                              focusNode: _codeFocusNode,
+                              verified: _codeVerified,
+                              enabled: !_isLoading,
+                              onSubmitted: (_) {
                                 if (!_isLoading) _verifyAndComplete();
                               },
-                              decoration: signupInputDecoration(context: context,
-                                hintText: l10n.verificationCodePlaceholder,
-                                icon: Icons.lock_outline_rounded,
-                                counterText: '',
-                              ),
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF0F172A),
-                                letterSpacing: 3,
-                              ),
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
                                   return l10n.verificationCodeRequired;
@@ -598,6 +603,7 @@ class _HanyangEmailVerificationScreenState
                                   : () {
                                       setState(() {
                                         _isCodeSent = false;
+                                        _codeVerified = false;
                                         _verificationCodeController.clear();
                                         _errorMessage = null;
                                       });

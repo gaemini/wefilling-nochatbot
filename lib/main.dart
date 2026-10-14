@@ -706,10 +706,11 @@ class _MeetupAppState extends State<MeetupApp> {
             var screen = _resolveGate(context, authProvider);
             // 로그인 성공 체크를 보여 주는 잠깐(300ms)은 로그인 화면을 유지한다.
             final held = _lastGateScreen;
+            // 가입 완료 환영 화면(닉네임 단계)도 같은 방식으로 잠깐 유지한다.
             if (AuthGateHold.instance.armed &&
                 held != null &&
-                held.kind == 'login' &&
-                screen.kind != 'login' &&
+                (held.kind == 'login' || held.kind == 'nickname') &&
+                screen.kind != held.kind &&
                 screen.kind != 'boot') {
               screen = held;
             }

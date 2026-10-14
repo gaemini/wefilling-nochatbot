@@ -3,6 +3,10 @@ import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import '../utils/motion_haptics.dart';
+import '../ui/widgets/signup_welcome_view.dart';
+import '../ui/motion/auth_gate_hold.dart';
+import '../design/tokens.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -83,6 +87,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
 
   @override
   void dispose() {
+    _welcomeTimer?.cancel();
     _nicknameController.removeListener(_onNicknameEditingChanged);
     _nicknameDebounce?.cancel();
     _draftDebounce?.cancel();
@@ -219,11 +224,16 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     FocusScope.of(context).unfocus();
     setState(() => _currentStep = step);
     _scheduleDraftSave();
-    _pageController.animateToPage(
-      step,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
+    final duration = MotionTokens.of(context, MotionTokens.medium);
+    if (duration == Duration.zero) {
+      _pageController.jumpToPage(step);
+    } else {
+      _pageController.animateToPage(
+        step,
+        duration: duration,
+        curve: MotionTokens.curve,
+      );
+    }
   }
 
   void _onNicknameChanged(String raw) {
@@ -413,6 +423,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
         Localizations.localeOf(context).languageCode == 'ko' ? 'ko' : 'en';
 
     setState(() => _isLoading = true);
+    // 게이트 안이면 환영 화면이 끝날 때까지 메인으로의 교체를 미룬다.
+    final hostedByGate = AuthGateScope.hosts(context);
+    if (hostedByGate) AuthGateHold.instance.arm(max: const Duration(seconds: 6));
     try {
       // Availability is checked only by the input debounce. The final sign-up
       // transaction is the authority and checks the claim again atomically.
@@ -526,12 +539,25 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
         throw Exception(l10n.profileSetupFailed);
       }
       await _clearDraft();
-      if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text(l10n.profileSetupSuccess)));
-      navigator.pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainScreen()),
+      if (!mounted) {
+        AuthGateHold.instance.release();
+        return;
+      }
+      // 스낵바 대신 환영 화면(위젯 내부 상태, 라우트 추가 없음).
+      MotionHaptics.fire(context, MotionHapticEvent.success);
+      setState(() {
+        _isLoading = false;
+        _welcome = _WelcomeInfo(
+          nickname: nickname,
+          photoFile: _selectedImage,
+        );
+      });
+      _welcomeTimer = Timer(
+        const Duration(milliseconds: 1200),
+        () => _finishWelcome(navigator, hostedByGate),
       );
     } catch (error) {
+      AuthGateHold.instance.release();
       if (!mounted) return;
       final networkError = error is TimeoutException ||
           (error is FirebaseFunctionsException &&
@@ -599,8 +625,45 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
     }
   }
 
+  _WelcomeInfo? _welcome;
+  Timer? _welcomeTimer;
+  bool _welcomeDone = false;
+
+  /// 환영 화면 → 메인(교차 state). 게이트 안이면 게이트가 바꾸고, 밖이면 기존
+  /// 경로처럼 MainScreen으로 교체한다.
+  void _finishWelcome(NavigatorState navigator, bool hostedByGate) {
+    if (_welcomeDone) return;
+    _welcomeDone = true;
+    _welcomeTimer?.cancel();
+    if (hostedByGate) {
+      AuthGateHold.instance.release();
+      return;
+    }
+    final duration = MotionTokens.of(context, MotionTokens.state);
+    navigator.pushReplacement(
+      PageRouteBuilder<void>(
+        transitionDuration: duration,
+        pageBuilder: (_, __, ___) => const MainScreen(),
+        transitionsBuilder: (_, animation, __, child) =>
+            FadeTransition(opacity: animation, child: child),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final welcome = _welcome;
+    if (welcome != null) {
+      final navigator = Navigator.of(context);
+      final hosted = AuthGateScope.hosts(context);
+      return SignupWelcomeView(
+        nickname: welcome.nickname,
+        photo: welcome.photoFile == null
+            ? null
+            : FileImage(welcome.photoFile!) as ImageProvider,
+        onTap: () => _finishWelcome(navigator, hosted),
+      );
+    }
     final screenWidth = MediaQuery.sizeOf(context).width;
     final horizontalPadding = screenWidth < 360
         ? 14.0
@@ -670,15 +733,33 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
                 children: List.generate(
                   2,
                   (index) => Expanded(
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
+                    // 진행 막대는 회색 바탕 위로 폭이 이어서 차오른다(medium).
+                    child: Container(
                       height: 2,
                       margin: EdgeInsets.only(right: index == 1 ? 0 : 6),
                       decoration: BoxDecoration(
-                        color: index <= _currentStep
-                            ? AppColors.pointColor
-                            : const Color(0xFFE2E8F0),
+                        color: const Color(0xFFE2E8F0),
                         borderRadius: BorderRadius.circular(2),
+                      ),
+                      alignment: Alignment.centerLeft,
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(
+                          end: index <= _currentStep ? 1 : 0,
+                        ),
+                        duration:
+                            MotionTokens.of(context, MotionTokens.medium),
+                        curve: MotionTokens.curve,
+                        builder: (context, fill, _) => FractionallySizedBox(
+                          key: ValueKey<String>('nickname_progress_$index'),
+                          widthFactor: fill,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: AppColors.pointColor,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1211,4 +1292,11 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen>
           ],
         ),
       ]);
+}
+
+
+class _WelcomeInfo {
+  const _WelcomeInfo({required this.nickname, this.photoFile});
+  final String nickname;
+  final File? photoFile;
 }

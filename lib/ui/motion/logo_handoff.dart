@@ -39,8 +39,16 @@ class LogoHandoff extends ChangeNotifier {
   LogoHandoff._();
   static final LogoHandoff instance = LogoHandoff._();
 
-  final Map<LogoHandoffTarget, GlobalKey> _targets =
-      <LogoHandoffTarget, GlobalKey>{};
+  /// 자리별로 붙어 있는 로고(가장 나중에 붙은 것이 목표). 로그아웃 전환처럼
+  /// 같은 화면이 잠깐 두 개 있어도 GlobalKey 충돌이 없도록 컨텍스트로 둔다.
+  final Map<LogoHandoffTarget, List<BuildContext>> _targets =
+      <LogoHandoffTarget, List<BuildContext>>{};
+
+  void _attach(LogoHandoffTarget target, BuildContext context) =>
+      _targets.putIfAbsent(target, () => <BuildContext>[]).add(context);
+
+  void _detach(LogoHandoffTarget target, BuildContext context) =>
+      _targets[target]?.remove(context);
 
   LogoHandoffFlight? _flight;
   int _serial = 0;
@@ -50,9 +58,6 @@ class LogoHandoff extends ChangeNotifier {
 
   /// 이 자리의 진짜 로고를 숨겨야 하는지(전환 로고가 아직 도착하지 않음).
   bool hidesTarget(LogoHandoffTarget target) => _flight?.target == target;
-
-  GlobalKey keyFor(LogoHandoffTarget target) =>
-      _targets.putIfAbsent(target, () => GlobalKey(debugLabel: target.name));
 
   /// 로고 이동을 시작한다. 동작 줄이기면 부르지 않는다(교차만).
   ///
@@ -88,11 +93,16 @@ class LogoHandoff extends ChangeNotifier {
 
   /// 목표 자리의 전역 위치(아직 그려지지 않았으면 null).
   Rect? targetRect(LogoHandoffTarget target) {
-    final context = _targets[target]?.currentContext;
-    final box = context?.findRenderObject();
-    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
-    if (box.size.isEmpty) return null;
-    return box.localToGlobal(Offset.zero) & box.size;
+    final contexts = _targets[target];
+    if (contexts == null) return null;
+    for (final context in contexts.reversed) {
+      if (!context.mounted) continue;
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      if (box.size.isEmpty) continue;
+      return box.localToGlobal(Offset.zero) & box.size;
+    }
+    return null;
   }
 
   @visibleForTesting
@@ -104,7 +114,7 @@ class LogoHandoff extends ChangeNotifier {
 }
 
 /// 다음 화면의 로고 자리. 위치를 알려 주고, 전환 로고가 날아오는 동안 숨긴다.
-class LogoHandoffTargetSlot extends StatelessWidget {
+class LogoHandoffTargetSlot extends StatefulWidget {
   const LogoHandoffTargetSlot({
     super.key,
     required this.target,
@@ -115,17 +125,40 @@ class LogoHandoffTargetSlot extends StatelessWidget {
   final Widget child;
 
   @override
+  State<LogoHandoffTargetSlot> createState() => _LogoHandoffTargetSlotState();
+}
+
+class _LogoHandoffTargetSlotState extends State<LogoHandoffTargetSlot> {
+  @override
+  void initState() {
+    super.initState();
+    LogoHandoff.instance._attach(widget.target, context);
+  }
+
+  @override
+  void didUpdateWidget(covariant LogoHandoffTargetSlot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.target != widget.target) {
+      LogoHandoff.instance._detach(oldWidget.target, context);
+      LogoHandoff.instance._attach(widget.target, context);
+    }
+  }
+
+  @override
+  void dispose() {
+    LogoHandoff.instance._detach(widget.target, context);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final handoff = LogoHandoff.instance;
-    return KeyedSubtree(
-      key: handoff.keyFor(target),
-      child: ListenableBuilder(
-        listenable: handoff,
+    return ListenableBuilder(
+      listenable: handoff,
+      child: widget.child,
+      builder: (context, child) => Opacity(
+        opacity: handoff.hidesTarget(widget.target) ? 0 : 1,
         child: child,
-        builder: (context, child) => Opacity(
-          opacity: handoff.hidesTarget(target) ? 0 : 1,
-          child: child,
-        ),
       ),
     );
   }

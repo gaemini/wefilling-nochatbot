@@ -2,6 +2,7 @@
 // 로그아웃 확인 다이얼로그 (앱 공통 다이얼로그 스타일 적용)
 
 import 'package:flutter/material.dart';
+import '../motion/logo_handoff.dart';
 import 'package:flutter/services.dart';
 
 import '../../design/tokens.dart';
@@ -15,8 +16,7 @@ Future<void> showLogoutConfirmDialog(
   BuildContext outerContext, {
   required AuthProvider authProvider,
 }) {
-  // 중요한 액션임을 알림
-  HapticFeedback.mediumImpact();
+  // 햅틱 정책: 대화상자 열기·로그아웃에는 햅틱을 쓰지 않는다(2부 B-4).
   // The opening page may disappear when authentication notifies its listeners.
   // Keep navigation independent of that page's inherited-widget lookups.
   final outerNavigator = Navigator.of(outerContext);
@@ -104,7 +104,6 @@ Future<void> showLogoutConfirmDialog(
                               onPressed: isLoading
                                   ? null
                                   : () {
-                                      HapticFeedback.lightImpact();
                                       Navigator.of(dialogContext).pop();
                                     },
                               style: _dialogActionStyle(
@@ -193,7 +192,6 @@ Future<void> _performLogout(
   AuthProvider authProvider,
   NavigatorState outerNavigator,
 ) async {
-  HapticFeedback.heavyImpact();
   final dialogNavigator = Navigator.of(dialogContext);
 
   try {
@@ -206,11 +204,36 @@ Future<void> _performLogout(
   dialogNavigator.pop();
 
   if (!outerContext.mounted || !outerNavigator.mounted) return;
+  final reduce = MotionTokens.reduceMotion(outerContext);
+  // 화면이 medium으로 어두워졌다가 로그인 화면이 순차 등장으로 나타난다.
+  // 로고는 화면 가운데에서 로그인 자리로 옮겨 간다(앱 시작 전환 재사용).
+  if (!reduce) LogoHandoff.instance.start(LogoHandoffTarget.login);
   outerNavigator.pushAndRemoveUntil(
-    MaterialPageRoute(
-      builder: (_) => const LoginScreen(
+    PageRouteBuilder<void>(
+      transitionDuration: reduce ? Duration.zero : MotionTokens.medium,
+      pageBuilder: (_, __, ___) => const LoginScreen(
         showLogoutSuccess: true,
       ),
+      transitionsBuilder: (context, animation, _, child) {
+        final darken = CurvedAnimation(
+          parent: animation,
+          curve: const Interval(0, .5, curve: Curves.easeIn),
+        );
+        final reveal = CurvedAnimation(
+          parent: animation,
+          curve: const Interval(.5, 1, curve: Curves.easeOut),
+        );
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            FadeTransition(
+              opacity: darken,
+              child: const ColoredBox(color: Colors.black54),
+            ),
+            FadeTransition(opacity: reveal, child: child),
+          ],
+        );
+      },
     ),
     (route) => false,
   );

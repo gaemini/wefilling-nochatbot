@@ -3,6 +3,8 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import '../design/tokens.dart';
+import '../ui/widgets/motion_state_icon.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/app_constants.dart';
@@ -338,18 +340,40 @@ class _SignUpMethodSelectionScreenState
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Checkbox(
-                                        value: _agreedTerms,
-                                        activeColor: AppColors.pointColor,
-                                        visualDensity: VisualDensity.compact,
-                                        materialTapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                        onChanged: _isLoading
-                                            ? null
-                                            : (value) => setState(
-                                                  () => _agreedTerms =
-                                                      value ?? false,
-                                                ),
+                                      // 체크 표시는 MotionStateIcon(켜면 1.16 → 1).
+                                      Semantics(
+                                        checked: _agreedTerms,
+                                        enabled: !_isLoading,
+                                        label: l10n.loginTermsNotice,
+                                        excludeSemantics: true,
+                                        child: GestureDetector(
+                                          key: const ValueKey(
+                                            'signup_terms_checkbox',
+                                          ),
+                                          behavior: HitTestBehavior.opaque,
+                                          onTap: _isLoading
+                                              ? null
+                                              : () => setState(
+                                                    () => _agreedTerms =
+                                                        !_agreedTerms,
+                                                  ),
+                                          child: SizedBox.square(
+                                            dimension: 40,
+                                            child: Center(
+                                              child: MotionStateIcon(
+                                                selected: _agreedTerms,
+                                                inactiveIcon: Icons
+                                                    .check_box_outline_blank_rounded,
+                                                activeIcon:
+                                                    Icons.check_box_rounded,
+                                                color: _agreedTerms
+                                                    ? AppColors.pointColor
+                                                    : const Color(0xFF98A2B3),
+                                                size: 24,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                       const SizedBox(width: 4),
                                       Expanded(
@@ -360,7 +384,8 @@ class _SignUpMethodSelectionScreenState
                                             l10n.loginTermsNotice,
                                             textAlign: TextAlign.left,
                                             style: TextStyle(
-                                              fontFamily: uiFontFamily(context, 'Inter'),
+                                              fontFamily: uiFontFamily(
+                                                  context, 'Inter'),
                                               fontFamilyFallback: const [
                                                 'NotoSansKR'
                                               ],
@@ -401,51 +426,74 @@ class _SignUpMethodSelectionScreenState
                                     ],
                                   ),
                                   const SizedBox(height: 22),
-                                  if (showApple) ...[
-                                    _SocialSignupButton(
-                                      label: l10n.signUpWithApple,
-                                      onPressed: _isLoading || !_agreedTerms
-                                          ? null
-                                          : _signUpWithApple,
-                                      icon: const Icon(
-                                        Icons.apple,
-                                        size: 22,
-                                        color: Colors.white,
-                                      ),
-                                      backgroundColor: const Color(0xFF0F172A),
-                                      foregroundColor: Colors.white,
+                                  // 약관에 동의하면 가입 버튼이 흐림 → 선명(state).
+                                  AnimatedOpacity(
+                                    key: const ValueKey('signup_buttons_fade'),
+                                    opacity: _agreedTerms ? 1 : .55,
+                                    duration: MotionTokens.of(
+                                      context,
+                                      MotionTokens.state,
                                     ),
-                                    const SizedBox(height: 10),
-                                  ],
-                                  _SocialSignupButton(
-                                    label: l10n.signUpWithGoogle,
-                                    onPressed: _isLoading || !_agreedTerms
-                                        ? null
-                                        : _signUpWithGoogle,
-                                    icon: Image.asset(
-                                      'assets/icons/google_logo.png',
-                                      width: 20,
-                                      height: 20,
+                                    curve: MotionTokens.curve,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        if (showApple) ...[
+                                          _SocialSignupButton(
+                                            label: l10n.signUpWithApple,
+                                            onPressed:
+                                                _isLoading || !_agreedTerms
+                                                    ? null
+                                                    : _signUpWithApple,
+                                            icon: const Icon(
+                                              Icons.apple,
+                                              size: 22,
+                                              color: Colors.white,
+                                            ),
+                                            backgroundColor:
+                                                const Color(0xFF0F172A),
+                                            foregroundColor: Colors.white,
+                                          ),
+                                          const SizedBox(height: 10),
+                                        ],
+                                        _SocialSignupButton(
+                                          label: l10n.signUpWithGoogle,
+                                          onPressed: _isLoading || !_agreedTerms
+                                              ? null
+                                              : _signUpWithGoogle,
+                                          icon: Image.asset(
+                                            'assets/icons/google_logo.png',
+                                            width: 20,
+                                            height: 20,
+                                          ),
+                                          backgroundColor:
+                                              const Color(0xFFF1F5F9),
+                                          foregroundColor:
+                                              const Color(0xFF0F172A),
+                                        ),
+                                        if (showEmail) ...[
+                                          const SizedBox(height: 10),
+                                          _SocialSignupButton(
+                                            label: l10n.signUpWithId,
+                                            onPressed:
+                                                _isLoading || !_agreedTerms
+                                                    ? null
+                                                    : _startEmailSignUp,
+                                            icon: const Icon(
+                                              Icons.mail_outline_rounded,
+                                              size: 21,
+                                              color: Color(0xFF0F172A),
+                                            ),
+                                            backgroundColor:
+                                                const Color(0xFFF1F5F9),
+                                            foregroundColor:
+                                                const Color(0xFF0F172A),
+                                          ),
+                                        ],
+                                      ],
                                     ),
-                                    backgroundColor: const Color(0xFFF1F5F9),
-                                    foregroundColor: const Color(0xFF0F172A),
                                   ),
-                                  if (showEmail) ...[
-                                    const SizedBox(height: 10),
-                                    _SocialSignupButton(
-                                      label: l10n.signUpWithId,
-                                      onPressed: _isLoading || !_agreedTerms
-                                          ? null
-                                          : _startEmailSignUp,
-                                      icon: const Icon(
-                                        Icons.mail_outline_rounded,
-                                        size: 21,
-                                        color: Color(0xFF0F172A),
-                                      ),
-                                      backgroundColor: const Color(0xFFF1F5F9),
-                                      foregroundColor: const Color(0xFF0F172A),
-                                    ),
-                                  ],
                                   if (_isLoading) ...[
                                     const SizedBox(height: 16),
                                     const Center(

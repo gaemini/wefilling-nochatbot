@@ -22,6 +22,7 @@ class ChatVideoTile extends StatelessWidget {
     this.expired = false,
     this.failed = false,
     this.maxWidth = 240,
+    this.maxHeight = 320,
   });
 
   final String? thumbnailDataUrl;
@@ -39,6 +40,9 @@ class ChatVideoTile extends StatelessWidget {
   final bool expired;
   final bool failed;
   final double maxWidth;
+
+  /// 세로 영상 타일의 최대 높이(대화방은 더 크게 넘긴다).
+  final double maxHeight;
 
   static Uint8List? decodeThumbnail(String? dataUrl) {
     if (dataUrl == null || !dataUrl.startsWith('data:image/jpeg;base64,')) {
@@ -65,7 +69,8 @@ class ChatVideoTile extends StatelessWidget {
         ? (width / height).clamp(0.6, 1.8).toDouble()
         : 16 / 9;
     final tileWidth = maxWidth;
-    final tileHeight = (tileWidth / ratio).clamp(120.0, 320.0).toDouble();
+    final tileHeight =
+        (tileWidth / ratio).clamp(120.0, maxHeight).toDouble();
     final dimmed = expired || failed;
     return Semantics(
       button: onTap != null,

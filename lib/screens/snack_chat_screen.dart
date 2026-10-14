@@ -8279,7 +8279,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (SnackChatFilePolicy.isVideoMime(message.mimeType)) {
       final uploading = status == SnackChatFileTransferStatus.uploading ||
           status == SnackChatFileTransferStatus.downloading;
+      final screen = MediaQuery.sizeOf(context);
       return ChatVideoTile(
+        // 사진과 같은 크기 기준(말풍선 최대 폭, 세로는 화면의 절반).
+        maxWidth: (screen.width * ChatMetrics.mediaBubbleWidthFactor)
+            .clamp(220.0, 440.0)
+            .toDouble(),
+        maxHeight: (screen.height * 0.5).clamp(280.0, 460.0).toDouble(),
         thumbnailDataUrl: message.videoThumbnail,
         durationMs: message.videoDurationMs ?? 0,
         width: message.videoWidth ?? 0,
@@ -8800,10 +8806,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     }
     final heroTag = 'snack_chat_image_${widget.snackChatId}_${message.id}';
     final mediaSize = MediaQuery.sizeOf(context);
+    // 대화방 사진은 말풍선 최대 폭(화면의 76%)까지, 세로는 화면의 절반까지.
     final maxImageWidth =
-        (mediaSize.width * 0.7).clamp(180.0, 380.0).toDouble();
+        (mediaSize.width * ChatMetrics.mediaBubbleWidthFactor)
+            .clamp(200.0, 440.0)
+            .toDouble();
     final maxImageHeight =
-        (mediaSize.height * 0.38).clamp(240.0, 360.0).toDouble();
+        (mediaSize.height * 0.5).clamp(280.0, 460.0).toDouble();
     final imageAspectRatio = message.imageWidth != null &&
             message.imageWidth! > 0 &&
             message.imageHeight != null &&

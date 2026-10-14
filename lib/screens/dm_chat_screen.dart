@@ -4806,7 +4806,12 @@ class _DMChatScreenState extends State<DMChatScreen>
   Widget _buildFileBubble(DMMessage message, {required bool isMine}) {
     if (SnackChatFilePolicy.isVideoMime(message.fileMimeType)) {
       final progress = _uploadById[message.id] ?? _downloadById[message.id];
+      final screen = MediaQuery.sizeOf(context);
       return ChatVideoTile(
+        maxWidth: (screen.width * ChatMetrics.mediaBubbleWidthFactor)
+            .clamp(220.0, 440.0)
+            .toDouble(),
+        maxHeight: (screen.height * 0.5).clamp(280.0, 460.0).toDouble(),
         thumbnailDataUrl: message.videoThumbnail,
         durationMs: message.videoDurationMs ?? 0,
         width: message.videoWidth ?? 0,
@@ -5131,9 +5136,12 @@ class _DMChatScreenState extends State<DMChatScreen>
     required bool isMine,
     required String heroTag,
   }) {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final maxWidth = screenWidth < 400 ? screenWidth * 0.62 : 240.0;
-    const maxHeight = 240.0;
+    // 스낵챗과 같은 크기 기준: 말풍선 최대 폭(화면의 76%), 세로는 화면의 절반.
+    final screen = MediaQuery.sizeOf(context);
+    final maxWidth = (screen.width * ChatMetrics.mediaBubbleWidthFactor)
+        .clamp(200.0, 440.0)
+        .toDouble();
+    final maxHeight = (screen.height * 0.5).clamp(280.0, 460.0).toDouble();
 
     return MotionPress(
       pressedScale: .985,

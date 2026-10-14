@@ -7,11 +7,13 @@
 // 고르기`로 돌아와도 보던 앨범과 스크롤 위치가 남는다.
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../l10n/ui_locale.dart';
@@ -89,8 +91,28 @@ class PhotoManagerGallerySource implements SnapshotGallerySource {
         ],
       );
 
+  /// 이 실행에서 영상 권한을 이미 물어봤는지(거절한 사람에게 반복해 묻지 않는다).
+  static bool _askedVideoPermission = false;
+
+  /// photo_manager는 사진 권한만 있어도 "허용됨"으로 보고 영상 권한
+  /// (READ_MEDIA_VIDEO)을 따로 묻지 않는다. 그래서 예전에 사진만 허용한
+  /// 기기에서는 영상이 목록에 나오지 않는다. Android에서는 영상 권한을 먼저
+  /// 한 번 물어 사진·동영상 접근을 함께 받는다.
+  Future<void> _ensureVideoPermission() async {
+    if (!Platform.isAndroid || _askedVideoPermission) return;
+    try {
+      final status = await Permission.videos.status;
+      if (status.isGranted || status.isPermanentlyDenied) return;
+      _askedVideoPermission = true;
+      await Permission.videos.request();
+    } catch (_) {
+      // 권한 플러그인을 쓸 수 없으면 사진만 보여 준다.
+    }
+  }
+
   @override
   Future<SnapshotGalleryAccess> access({required bool request}) async {
+    if (request) await _ensureVideoPermission();
     final state = request
         ? await PhotoManager.requestPermissionExtend(
             requestOption: permissionOption,

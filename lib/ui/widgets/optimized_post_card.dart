@@ -51,6 +51,7 @@ import '../../providers/relationship_provider.dart';
 import '../../models/relationship_status.dart';
 import '../../services/content_filter_service.dart';
 import '../../utils/avatar_image.dart';
+import 'heart_motion.dart';
 
 /// Board/Home 피드에서 사용하는 content-first 일반 게시글 카드.
 class OptimizedPostCard extends StatefulWidget {
@@ -349,6 +350,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
 
     if (!mounted) return;
+    DateTime? likersShownAt;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -459,11 +461,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                             if (snapshot.connectionState !=
                                     ConnectionState.done &&
                                 !snapshot.hasData) {
-                              return const Center(
-                                child: CircularProgressIndicator(
-                                    color: BrandColors.primary),
-                              );
+                              return const PeopleListSkeleton();
                             }
+                            final shownAt = likersShownAt ??= DateTime.now();
                             final users =
                                 snapshot.data ?? const <_PostLikeUser>[];
                             if (users.isEmpty) {
@@ -497,7 +497,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                   const Divider(height: 1, color: dividerColor),
                               itemBuilder: (context, index) {
                                 final u = users[index];
-                                return ListTile(
+                                return StaggerIn(
+                                  index: index,
+                                  shownAt: shownAt,
+                                  child: ListTile(
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: DesignTokens.s16,
                                   ),
@@ -570,6 +573,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                       ],
                                     ],
                                   ),
+                                ),
                                 );
                               },
                             );

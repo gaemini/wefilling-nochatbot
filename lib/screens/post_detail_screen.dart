@@ -74,6 +74,8 @@ import '../utils/chat_date_label.dart';
 import '../utils/post_comment_conversation.dart';
 import '../services/comment_image_upload.dart';
 import '../utils/avatar_image.dart';
+import '../ui/widgets/heart_motion.dart';
+import '../utils/motion_haptics.dart';
 
 /// Keeps Material route behavior (including back navigation) while making the
 /// feed-to-detail change perceptible without waiting for an animation.
@@ -300,6 +302,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<bool>? _postSnackMembershipFuture;
   bool _isLiked = false;
   bool _isTogglingLike = false;
+  // 사진 두 번 탭 하트(모션 2부 C-2).
+  int _photoHeartPop = 0;
   bool _isSaved = false;
   bool _isTogglingSave = false;
   late Post _currentPost;
@@ -1493,6 +1497,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
 
     if (!mounted) return;
+    DateTime? likersShownAt;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1603,12 +1608,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             if (snapshot.connectionState !=
                                     ConnectionState.done &&
                                 !snapshot.hasData) {
-                              return const Center(
-                                child: CircularProgressIndicator(
-                                  color: BrandColors.primary,
-                                ),
-                              );
+                              return const PeopleListSkeleton();
                             }
+                            final shownAt = likersShownAt ??= DateTime.now();
                             final users =
                                 snapshot.data ?? const <_PostLikeUser>[];
                             if (users.isEmpty) {
@@ -1641,7 +1643,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   const Divider(height: 1, color: dividerColor),
                               itemBuilder: (context, index) {
                                 final u = users[index];
-                                return ListTile(
+                                return StaggerIn(
+                                  index: index,
+                                  shownAt: shownAt,
+                                  child: ListTile(
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: DesignTokens.s16,
                                   ),
@@ -1694,6 +1699,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       ],
                                     ],
                                   ),
+                                ),
                                 );
                               },
                             );
@@ -2484,6 +2490,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } catch (e) {
       Logger.error('포스트 새로고침 오류: $e');
     }
+  }
+
+  /// 사진 두 번 탭: 큰 하트를 보이고 좋아요를 켠다(이미 켜져 있으면 끄지 않음).
+  void _likeFromPhotoDoubleTap() {
+    setState(() => _photoHeartPop++);
+    if (_isLiked || _isTogglingLike) return;
+    MotionHaptics.fire(context, MotionHapticEvent.selection);
+    unawaited(_toggleLike());
   }
 
   // post_detail_screen.dart 파일의 _toggleLike 메서드 개선
@@ -3771,6 +3785,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     heroTag: 'post_image_$imageIndex',
                                   );
                                 },
+                                onDoubleTap: _likeFromPhotoDoubleTap,
                                 child: Hero(
                                   tag: 'post_image_$imageIndex',
                                   child: ColoredBox(
@@ -3792,6 +3807,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ),
                             );
                           },
+                        ),
+                        Positioned.fill(
+                          child: Center(
+                            child: HeartPop(trigger: _photoHeartPop),
+                          ),
                         ),
                         if (carouselPageCount > 1)
                           Positioned(

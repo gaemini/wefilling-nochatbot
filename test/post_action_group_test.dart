@@ -77,9 +77,10 @@ void main() {
         );
 
     await tester.pumpWidget(actions(0));
-    expect(find.byKey(const ValueKey('count_0')), findsWidgets);
+    // 숫자는 RollingCount(키 = 숫자)로 굴러 바뀐다(모션 2부 C-1).
+    expect(find.byKey(const ValueKey<int>(0)), findsWidgets);
     await tester.pumpWidget(actions(1));
-    expect(find.byKey(const ValueKey('count_1')), findsOneWidget);
+    expect(find.byKey(const ValueKey<int>(1)), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
@@ -179,7 +180,7 @@ void main() {
     }
   }
 
-  testWidgets('selected post heart uses dark gray instead of red',
+  testWidgets('selected post heart uses point blue instead of red',
       (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -200,7 +201,8 @@ void main() {
     final heart = tester.widget<Icon>(
       find.byIcon(Icons.favorite_rounded),
     );
-    expect(heart.color, BrandColors.textSecondary);
+    // 모션 2부 C-1: 좋아요 켠 색은 포인트 파랑.
+    expect(heart.color, const Color(0xFF2C6BC0));
     expect(heart.color, isNot(BrandColors.error));
   });
 

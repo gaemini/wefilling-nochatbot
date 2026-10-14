@@ -35,6 +35,7 @@ import '../../utils/chat_message_typography.dart';
 import 'user_avatar.dart';
 import 'snack_chat_message_extras.dart' show SnackChatStorageImage;
 import '../../services/clipboard_image_service.dart';
+import 'heart_motion.dart';
 
 // 포스트 상세 v2 댓글 스레드 값. 위필링 디자인 시스템 토큰을 이 화면용 이름으로 모은다.
 const Color _kInk = Color(0xFF000000);
@@ -117,7 +118,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   final CommentService _commentService = CommentService();
   bool _hiddenByReport = false;
   bool _likeInFlight = false;
-  bool _heartPop = false;
+  int _heartPop = 0;
   Duration? _bubbleDownAt;
   Offset? _bubbleDownPosition;
   Duration? _lastBubbleTapAt;
@@ -1099,10 +1100,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   /// 두 번 탭은 좋아요만 한다. 이미 누른 상태면 취소하지 않는다.
   void _handleBubbleDoubleTap({required bool isLiked}) {
     if (isLiked || widget.directInteractionBlocked) return;
-    setState(() => _heartPop = true);
-    Future<void>.delayed(const Duration(milliseconds: 420), () {
-      if (mounted) setState(() => _heartPop = false);
-    });
+    setState(() => _heartPop++);
     _toggleLike();
   }
 
@@ -1252,22 +1250,12 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         children: [
           bubble,
           Positioned.fill(
-            child: IgnorePointer(
-              child: Center(
-                child: AnimatedScale(
-                  scale: _heartPop ? 1 : 0.4,
-                  duration: const Duration(milliseconds: 120),
-                  curve: Curves.easeOutBack,
-                  child: AnimatedOpacity(
-                    opacity: _heartPop ? 1 : 0,
-                    duration: const Duration(milliseconds: 120),
-                    child: const Icon(
-                      Icons.favorite_rounded,
-                      size: 22,
-                      color: AppColors.pointColor,
-                    ),
-                  ),
-                ),
+            child: Center(
+              child: HeartPop(
+                trigger: _heartPop,
+                size: 22,
+                color: kLikeColor,
+                shadow: false,
               ),
             ),
           ),

@@ -270,7 +270,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         onTap: _handleCreateCategory,
         child: Container(
           height: 52,
-          alignment: Alignment.centerLeft,
+          alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
             strings.newGroup,

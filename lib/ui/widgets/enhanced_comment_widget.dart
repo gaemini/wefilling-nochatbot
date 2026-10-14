@@ -1323,7 +1323,12 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         currentUser != null && widget.comment.isLikedBy(currentUser.uid);
     final textScaler = MediaQuery.textScalerOf(context);
     // 스낵챗·DM과 같은 메시지 글꼴(15.5/21, w500, iOS 시스템 글꼴).
-    final bodyStyle = chatMessageTextStyle(context, color: _kInk);
+    // 포스트 댓글은 채팅 글자 크기 조정과 별개로 15/20을 유지한다.
+    final chatBody = chatMessageTextStyle(context, color: _kInk);
+    final bodyStyle = chatBody.copyWith(
+      fontSize: 15,
+      height: chatBody.height == 1.3 ? 1.3 : 20 / 15,
+    );
     final linkStyle = bodyStyle.copyWith(
       color: _kPointStrong,
       decoration: TextDecoration.underline,

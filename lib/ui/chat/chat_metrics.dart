@@ -26,9 +26,10 @@ class ChatMetrics {
   static const double avatar = 36;
   static const double avatarGap = 8;
 
-  /// 말풍선: 상하 6 · 좌우 12(한 줄 높이 32), 모서리 16(묶음 안쪽은 8).
+  /// 말풍선: 상하 8 · 좌우 13(한 줄 높이 35), 모서리 16(묶음 안쪽은 8).
+  /// 글자를 14로 줄이면서 안쪽 여백을 조금 늘렸다.
   static const EdgeInsets bubblePadding =
-      EdgeInsets.symmetric(horizontal: 12, vertical: 6);
+      EdgeInsets.symmetric(horizontal: 13, vertical: 8);
   static const double bubbleRadius = 16;
   static const double bubbleInnerRadius = 8;
 
@@ -75,8 +76,8 @@ class ChatMetrics {
   /// 메시지 본문은 사용자의 큰 글자 설정을 더 존중한다.
   static const double bodyMaxScale = 1.6;
 
-  /// 한 줄 말풍선 높이(배율 1.0): 줄 높이 20 + 상하 6×2.
-  static const double singleLineBubbleHeight = 32;
+  /// 한 줄 말풍선 높이(배율 1.0): 줄 높이 19 + 상하 8×2.
+  static const double singleLineBubbleHeight = 35;
 }
 
 class _ChatRawTextScaler extends InheritedWidget {

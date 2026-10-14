@@ -7780,7 +7780,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         : hasFile
             ? const EdgeInsets.all(10)
             : ChatMetrics.bubblePadding;
-    // 스낵챗·DM 공통 메시지 글꼴(15/20, w400).
+    // 스낵챗·DM 공통 메시지 글꼴(14/19).
     final textStyle = chatMessageTextStyle(
       context,
       color: isMe ? Colors.white : _incomingText,

@@ -60,16 +60,16 @@ class _Bubble extends StatelessWidget {
 
 void main() {
   group('본문 글꼴', () {
-    testWidgets('15 / 20, w500, 중국어는 줄 높이 1.3 이상', (tester) async {
+    testWidgets('14 / 19, w500, 중국어는 줄 높이 1.3 이상', (tester) async {
       late BuildContext ctx;
       await tester.pumpWidget(_host(Builder(builder: (c) {
         ctx = c;
         return const SizedBox();
       })));
       final ko = chatMessageTextStyle(ctx);
-      expect(ko.fontSize, 15);
+      expect(ko.fontSize, 14);
       expect(ko.fontWeight, FontWeight.w500);
-      expect(ko.height, closeTo(20 / 15, 0.001));
+      expect(ko.height, closeTo(19 / 14, 0.001));
 
       await tester.pumpWidget(_host(
         Builder(builder: (c) {
@@ -89,7 +89,7 @@ void main() {
       expect(ChatMetrics.avatar, 36);
       expect(ChatMetrics.avatarGap, 8);
       expect(ChatMetrics.bubblePadding,
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 6));
+          const EdgeInsets.symmetric(horizontal: 13, vertical: 8));
       expect(ChatMetrics.bubbleRadius, 16);
       expect(ChatMetrics.groupGap, 2);
       expect(ChatMetrics.senderGap, 10);
@@ -100,7 +100,7 @@ void main() {
     });
   });
 
-  testWidgets('말풍선 한 줄 높이 32, 폭은 화면의 0.63 이하', (tester) async {
+  testWidgets('말풍선 한 줄 높이 35, 폭은 화면의 0.63 이하', (tester) async {
     await tester.pumpWidget(_host(const _Bubble('안녕하세요')));
     expect(
       tester.getSize(find.byKey(const ValueKey('bubble'))).height,

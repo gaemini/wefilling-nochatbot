@@ -1164,13 +1164,13 @@ class _LoginLayoutDelegate extends MultiChildLayoutDelegate {
     }
 
     // 남는 파란 공간을 나눠 로고 묶음 + 대화 장면을 가운데쯤에 둔다
-    // (간격을 조금 넓히고, 나머지는 위 45% / 아래 55%).
+    // (간격을 조금 넓히고, 나머지는 위 75% / 아래 25%).
     final groupBase =
         header.height + (sceneHeight > 0 ? baseGap + sceneHeight : 0);
     final free = math.max(0.0, regionBottom - minHeaderTop - groupBase);
     final extraGap =
         sceneHeight > 0 ? math.min(free * .2, 24.0).roundToDouble() : 0.0;
-    final headerTop = (minHeaderTop + (free - extraGap) * .45).roundToDouble();
+    final headerTop = (minHeaderTop + (free - extraGap) * .75).roundToDouble();
     positionChild(
       _LoginSlot.header,
       Offset((size.width - header.width) / 2, headerTop),

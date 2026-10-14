@@ -374,13 +374,6 @@ class _MainScreenState extends State<MainScreen>
                     fontWeight: FontWeight.w700,
                     color: AppColors.pointColor,
                     letterSpacing: -0.5,
-                    shadows: [
-                      Shadow(
-                        offset: Offset(0.5, 0.5),
-                        blurRadius: 0.5,
-                        color: AppColors.pointColor,
-                      ),
-                    ],
                   ),
                 ),
               ],

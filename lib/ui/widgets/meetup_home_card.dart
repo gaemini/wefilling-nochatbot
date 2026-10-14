@@ -6,7 +6,6 @@ import '../../models/meetup.dart';
 import '../../services/meetup_service.dart';
 import '../../ui/snackbar/app_snackbar.dart';
 import '../../utils/category_label_utils.dart';
-import '../../utils/responsive_helper.dart';
 import 'board_meetup_card.dart';
 import '../../l10n/ui_locale.dart';
 
@@ -95,7 +94,7 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
     final label = localizedCategoryLabel(context, widget.meetup.category);
     return ConstrainedBox(
       constraints: BoxConstraints(
-        maxWidth: context.rs(86).clamp(72.0, 96.0).toDouble(),
+        maxWidth: 88,
       ),
       child: Text(
         '#$label',
@@ -104,8 +103,8 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
         style: TextStyle(
           fontFamily: uiFontFamily(context, 'Inter'),
           fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: context.rf(11.5).clamp(11.0, 12.0).toDouble(),
-          fontWeight: FontWeight.w700,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w600,
           height: isChineseUi(context) ? 1.3 : 1.15,
           color: const Color(0xFF2563EB),
         ),

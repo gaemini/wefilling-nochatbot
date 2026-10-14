@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/content_translation.dart';
 import '../../models/meetup.dart';
-import '../../utils/responsive_helper.dart';
 import '../../services/user_info_cache_service.dart';
 import 'audience_ring.dart';
 import 'meetup_public_countdown.dart';
@@ -73,16 +72,14 @@ class BoardMeetupCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final participants = currentParticipants ?? meetup.currentParticipants;
-    final horizontal = context.rs(16).clamp(14.0, 18.0).toDouble();
-    final dateRailSize = meetup.hasPublicTimeLimit
-        ? context.rs(80).clamp(76.0, 82.0).toDouble()
-        : context.rs(66).clamp(66.0, 68.0).toDouble();
-    final metaSize = context.rf(12.5).clamp(12.0, 13.0).toDouble();
+    // 글자·여백은 고정값(화면 비례 없음). 확대는 1.2배까지만 따른다.
+    const horizontal = 16.0;
+    final dateRailSize = meetup.hasPublicTimeLimit ? 76.0 : 64.0;
     final metaStyle = TextStyle(
       fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: metaSize,
-      fontWeight: FontWeight.w600,
+      fontSize: 12.5,
+      fontWeight: FontWeight.w500,
       height: isChineseUi(context) ? 1.3 : 1.18,
       color: const Color(0xFF667085),
     );
@@ -105,7 +102,7 @@ class BoardMeetupCard extends StatelessWidget {
               locked: isHanyangLocked,
               compact: true,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(horizontal, 9, horizontal, 10),
+                padding: const EdgeInsets.fromLTRB(horizontal, 10, horizontal, 10),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -113,9 +110,7 @@ class BoardMeetupCard extends StatelessWidget {
                       restricted: meetup.visibility != 'public',
                       size: dateRailSize,
                       innerGap: 1.5,
-                      borderRadius: BorderRadius.circular(
-                        context.rs(16).clamp(14.0, 18.0).toDouble(),
-                      ),
+                      borderRadius: BorderRadius.circular(14),
                       semanticLabel: (isChineseUi(context)
                           ? '部分人可见的聚会'
                           : _isKorean(context)
@@ -135,9 +130,8 @@ class BoardMeetupCard extends StatelessWidget {
                               style: TextStyle(
                                 fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize:
-                                    context.rf(9.5).clamp(9.0, 10.0).toDouble(),
-                                fontWeight: FontWeight.w800,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
                                 height: 1,
                                 letterSpacing: 0.2,
                                 color: const Color(0xFF667085),
@@ -158,11 +152,8 @@ class BoardMeetupCard extends StatelessWidget {
                                   style: TextStyle(
                                     fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize: context
-                                        .rf(21)
-                                        .clamp(19.0, 22.0)
-                                        .toDouble(),
-                                    fontWeight: FontWeight.w800,
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w700,
                                     height: 1,
                                     letterSpacing: -0.6,
                                     color: const Color(0xFF101828),
@@ -179,11 +170,8 @@ class BoardMeetupCard extends StatelessWidget {
                               style: TextStyle(
                                 fontFamily: uiFontFamily(context, 'Inter'),
                                 fontFamilyFallback: const ['NotoSansKR'],
-                                fontSize: context
-                                    .rf(10.5)
-                                    .clamp(10.0, 11.0)
-                                    .toDouble(),
-                                fontWeight: FontWeight.w700,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w500,
                                 height: isChineseUi(context) ? 1.3 : 1.05,
                                 color: const Color(0xFF667085),
                               ),
@@ -203,8 +191,7 @@ class BoardMeetupCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    SizedBox(
-                        width: context.rs(14).clamp(12.0, 16.0).toDouble()),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,12 +206,9 @@ class BoardMeetupCard extends StatelessWidget {
                                   style: TextStyle(
                                     fontFamily: uiFontFamily(context, 'Inter'),
                                     fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize: context
-                                        .rf(15.5)
-                                        .clamp(14.5, 16.0)
-                                        .toDouble(),
-                                    fontWeight: FontWeight.w800,
-                                    height: isChineseUi(context) ? 1.3 : 1.18,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    height: isChineseUi(context) ? 1.3 : 20 / 15,
                                     letterSpacing: -0.2,
                                     color: const Color(0xFF101828),
                                   ),
@@ -237,12 +221,12 @@ class BoardMeetupCard extends StatelessWidget {
                               const SizedBox(width: 5),
                               const Icon(
                                 Icons.chevron_right_rounded,
-                                size: 19,
-                                color: Color(0xFF98A2B3),
+                                size: 18,
+                                color: Color(0xFFB0B0B0),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 5),
+                          const SizedBox(height: 4),
                           TranslatableContent(
                             request: ContentTranslationRequest(
                               contentType: 'meetup',
@@ -261,7 +245,7 @@ class BoardMeetupCard extends StatelessWidget {
                               onTap: onLocationTap,
                             ),
                           ),
-                          const SizedBox(height: 7),
+                          const SizedBox(height: 6),
                           Row(
                             children: [
                               Expanded(
@@ -278,7 +262,7 @@ class BoardMeetupCard extends StatelessWidget {
                                 '$participants / ${meetup.maxParticipants}',
                                 maxLines: 1,
                                 style: metaStyle.copyWith(
-                                  fontWeight: FontWeight.w800,
+                                  fontWeight: FontWeight.w600,
                                   color: const Color(0xFF475467),
                                 ),
                               ),
@@ -369,7 +353,7 @@ class BoardMeetupCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: metaStyle.copyWith(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               color: const Color(0xFF344054),
             ),
           ),
@@ -398,7 +382,7 @@ class _InlineMeta extends StatelessWidget {
       children: [
         Icon(
           icon,
-          size: context.ri(15).clamp(14.0, 15.5).toDouble(),
+          size: 14,
           color: const Color(0xFF667085),
         ),
         const SizedBox(width: 5),

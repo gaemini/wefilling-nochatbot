@@ -84,6 +84,7 @@ import '../l10n/together_strings.dart';
 import '../services/together_service.dart';
 import '../ui/widgets/together_proposal_banner.dart';
 import '../utils/avatar_image.dart';
+import '../services/clipboard_image_service.dart';
 
 @visibleForTesting
 bool isSnackChatMessageMeaningfullyVisible({
@@ -153,6 +154,8 @@ class _ReadReceiptData {
 enum _MessageActionType {
   reaction,
   reply,
+  copy,
+  copyImage,
   retranslate,
   retry,
   removeFailed,
@@ -4907,6 +4910,15 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     await _pickAndSendImage(preselected: captured);
   }
 
+  /// 붙여넣은 사진: 임시 파일로 저장해 사진 보내기 경로(확인 시트 → 전송)로 넘긴다.
+  Future<void> _sendPastedImage(ClipboardImage image) async {
+    if (_isUploadingImage || _isAttachmentFlowOpen || _isLeavingRoom) return;
+    final file =
+        await ClipboardImageService.instance.saveToTemporaryFile(image);
+    if (!mounted) return;
+    await _pickAndSendImage(preselected: XFile(file.path));
+  }
+
   Future<void> _pickAndSendImage({XFile? preselected}) async {
     if (_isUploadingImage || _isLeavingRoom) return;
     final roomId = widget.snackChatId;
@@ -6383,6 +6395,47 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     );
   }
 
+  /// (복사, 이미지 복사) 문구.
+  (String, String) _copyLabels(BuildContext context) {
+    final code = Localizations.localeOf(context).languageCode;
+    if (isChineseUi(context)) return ('复制', '复制图片');
+    return code == 'ko' ? ('복사', '이미지 복사') : ('Copy', 'Copy image');
+  }
+
+  bool _hasCopyableImage(SnackChatMessage message) =>
+      message.type == SnackChatMessageType.image &&
+      ((message.localImagePath ?? '').isNotEmpty ||
+          (message.imagePath ?? '').isNotEmpty ||
+          (message.imageUrl ?? '').isNotEmpty);
+
+  Future<bool> _copyMessageImage(SnackChatMessage message) async {
+    final service = ClipboardImageService.instance;
+    final local = message.localImagePath ?? '';
+    if (local.isNotEmpty && await File(local).exists()) {
+      return service.copyImageFile(File(local));
+    }
+    final path = message.imagePath ?? '';
+    if (path.isNotEmpty) {
+      final bytes =
+          await SnackChatStorageImage.loadBytes(path, message.storageBucket);
+      if (bytes != null && await service.writeImage(bytes)) return true;
+    }
+    final url = message.imageUrl ?? '';
+    return url.isNotEmpty && await service.copyImageFromUrl(url);
+  }
+
+  void _showCopiedSnackBar({required bool ok}) {
+    if (!mounted) return;
+    final code = Localizations.localeOf(context).languageCode;
+    final zh = isChineseUi(context);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 2),
+      content: Text(ok
+          ? (zh ? '已复制' : code == 'ko' ? '복사했어요' : 'Copied')
+          : (zh ? '无法复制' : code == 'ko' ? '복사하지 못했어요' : 'Couldn\'t copy')),
+    ));
+  }
+
   Future<void> _showMessageActions(SnackChatMessage message) async {
     final isMe = message.senderId == _uid;
     final canDirectlyInteract =
@@ -6461,6 +6514,24 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                       ),
                     ),
                   ],
+                  if (!message.isDeleted && message.text.trim().isNotEmpty)
+                    _messageActionTile(
+                      icon: Icons.content_copy_rounded,
+                      label: _copyLabels(sheetContext).$1,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.copy),
+                      ),
+                    ),
+                  if (!message.isDeleted && _hasCopyableImage(message))
+                    _messageActionTile(
+                      icon: Icons.image_outlined,
+                      label: _copyLabels(sheetContext).$2,
+                      onTap: () => Navigator.pop(
+                        sheetContext,
+                        const _MessageAction(_MessageActionType.copyImage),
+                      ),
+                    ),
                   if (canRetranslate)
                     _messageActionTile(
                       icon: Icons.translate_rounded,
@@ -6526,6 +6597,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         break;
       case _MessageActionType.reply:
         await _beginReply(message);
+        break;
+      case _MessageActionType.copy:
+        await ClipboardImageService.instance.copyText(message.text);
+        _showCopiedSnackBar(ok: true);
+        break;
+      case _MessageActionType.copyImage:
+        _showCopiedSnackBar(ok: await _copyMessageImage(message));
         break;
       case _MessageActionType.retranslate:
         await _retryFailedTranslation(message, forceRefresh: true);
@@ -7406,6 +7484,24 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                           child: TextField(
                             controller: _messageController,
                             focusNode: _messageFocusNode,
+                            // 사진 붙여넣기: 길게 눌러 붙여넣기·키보드 클립보드.
+                            contextMenuBuilder: (context, state) =>
+                                pasteImageAwareContextMenu(
+                              context,
+                              state,
+                              (image) => unawaited(_sendPastedImage(image)),
+                            ),
+                            contentInsertionConfiguration:
+                                ContentInsertionConfiguration(
+                              allowedMimeTypes: kPastableImageMimeTypes,
+                              onContentInserted: (content) async {
+                                final image =
+                                    await readKeyboardInsertedImage(content);
+                                if (image != null) {
+                                  await _sendPastedImage(image);
+                                }
+                              },
+                            ),
                             maxLines: 4,
                             minLines: 1,
                             maxLength: 500,

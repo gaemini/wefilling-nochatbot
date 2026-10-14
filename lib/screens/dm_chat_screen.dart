@@ -74,6 +74,7 @@ import '../ui/widgets/snack_chat_translation_split_button.dart';
 import '../ui/widgets/dm_header_identity.dart';
 import '../ui/widgets/snack_chat_translated_text.dart';
 import '../l10n/translation_source_language.dart';
+import '../services/clipboard_image_service.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -3570,6 +3571,7 @@ class _DMChatScreenState extends State<DMChatScreen>
               ),
               const SizedBox(height: 10),
               _buildDmMessageQuickActions(sheetContext, message),
+              ..._buildDmCopyActions(sheetContext, message),
             ],
           ),
         ),
@@ -3583,8 +3585,79 @@ class _DMChatScreenState extends State<DMChatScreen>
       }
       return;
     }
+    if (selected == 'copy') {
+      await ClipboardImageService.instance.copyText(message.text);
+      _showCopiedSnackBar(ok: true);
+      return;
+    }
+    if (selected == 'copyImage') {
+      final url = message.imageUrl ?? '';
+      _showCopiedSnackBar(
+        ok: url.isNotEmpty &&
+            await ClipboardImageService.instance.copyImageFromUrl(url),
+      );
+      return;
+    }
     if (selected != 'reply') return;
     _beginReply(message);
+  }
+
+  /// 길게 누르기 시트의 복사 줄: 글이 있으면 `복사`, 사진이면 `이미지 복사`.
+  List<Widget> _buildDmCopyActions(BuildContext sheetContext, DMMessage message) {
+    final code = Localizations.localeOf(sheetContext).languageCode;
+    final zh = isChineseUi(sheetContext);
+    final hasText = message.text.trim().isNotEmpty;
+    final hasImage = (message.imageUrl ?? '').trim().isNotEmpty;
+    Widget tile(String key, IconData icon, String label) => InkWell(
+          key: ValueKey<String>('dm_action_$key'),
+          onTap: () => Navigator.of(sheetContext).pop(key),
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                const SizedBox(width: 8),
+                Icon(icon, size: 21, color: DMColors.graphite),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(sheetContext, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+    return [
+      if (hasText || hasImage) const SizedBox(height: 6),
+      if (hasText)
+        tile('copy', Icons.content_copy_rounded,
+            zh ? '复制' : code == 'ko' ? '복사' : 'Copy'),
+      if (hasImage)
+        tile('copyImage', Icons.image_outlined,
+            zh ? '复制图片' : code == 'ko' ? '이미지 복사' : 'Copy image'),
+    ];
+  }
+
+  void _showCopiedSnackBar({required bool ok}) {
+    if (!mounted) return;
+    final code = Localizations.localeOf(context).languageCode;
+    final zh = isChineseUi(context);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 2),
+      content: Text(ok
+          ? (zh ? '已复制' : code == 'ko' ? '복사했어요' : 'Copied')
+          : (zh ? '无法复制' : code == 'ko' ? '복사하지 못했어요' : 'Couldn\'t copy')),
+    ));
   }
 
   /// 답장 모드 진입. 길게 누르기 메뉴의 '답장'과 밀어서 답장이 함께 쓴다.
@@ -5130,6 +5203,22 @@ class _DMChatScreenState extends State<DMChatScreen>
                         controller: _messageController,
                         focusNode: _messageFocusNode,
                         enabled: !disabled,
+                        // 사진 붙여넣기: 길게 눌러 붙여넣기·키보드 클립보드.
+                        contextMenuBuilder: (context, state) =>
+                            pasteImageAwareContextMenu(
+                          context,
+                          state,
+                          (image) => unawaited(_sendPastedImage(image)),
+                        ),
+                        contentInsertionConfiguration:
+                            ContentInsertionConfiguration(
+                          allowedMimeTypes: kPastableImageMimeTypes,
+                          onContentInserted: (content) async {
+                            final image =
+                                await readKeyboardInsertedImage(content);
+                            if (image != null) await _sendPastedImage(image);
+                          },
+                        ),
                         minLines: 1,
                         maxLines: 4,
                         maxLength: 500,
@@ -5667,6 +5756,14 @@ class _DMChatScreenState extends State<DMChatScreen>
         ),
       );
     }
+  }
+
+  /// 붙여넣은 사진: 임시 파일로 저장해 사진 보내기 경로(미리보기 → 전송)로 넘긴다.
+  Future<void> _sendPastedImage(ClipboardImage image) async {
+    final file =
+        await ClipboardImageService.instance.saveToTemporaryFile(image);
+    if (!mounted) return;
+    await _sendPickedImageFile(file);
   }
 
   /// 사진 한 장을 미리보기에서 확인받고 보낸다. [beforeSend]는 확인 직후,

@@ -368,45 +368,115 @@ class AppUpdateService with WidgetsBindingObserver {
         ? 'mandatoryBlockStarted'
         : 'optionalPromptShown');
     try {
-      await showDialog<void>(
+      final mandatory = _evaluation.decision == AppUpdateDecision.mandatory;
+      final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+      // 바텀 시트(필수 업데이트는 끌어 내리기·배경 탭·뒤로가기 모두 막는다).
+      await showModalBottomSheet<void>(
         context: context,
-        barrierDismissible: _evaluation.decision != AppUpdateDecision.mandatory,
-        builder: (dialogContext) => PopScope(
-          canPop: _evaluation.decision != AppUpdateDecision.mandatory,
-          child: AlertDialog(
-            title: Text(_isKorean(dialogContext)
-                ? '새 버전이 준비됐어요'
-                : 'A new version is ready'),
-            content: Text(_isKorean(dialogContext)
-                ? (_flexibleReadyToInstall
-                    ? '업데이트 다운로드가 끝났어요. 앱을 다시 시작해 설치를 완료해 주세요.'
-                    : _evaluation.decision == AppUpdateDecision.mandatory
-                        ? '계속 사용하려면 최신 버전으로 업데이트해 주세요.'
-                        : '더 안정적인 사용을 위해 최신 버전으로 업데이트할 수 있어요.')
-                : (_flexibleReadyToInstall
-                    ? 'The update is downloaded. Restart the app to finish installing.'
-                    : _evaluation.decision == AppUpdateDecision.mandatory
-                        ? 'Update to the latest version to continue.'
-                        : 'Update now for the latest improvements.')),
-            actions: [
-              if (_evaluation.decision == AppUpdateDecision.optional)
-                TextButton(
-                  onPressed: () async {
-                    await _rememberOptionalDismissal();
-                    _logEvent('optionalPromptDismissed');
-                    if (dialogContext.mounted) Navigator.pop(dialogContext);
-                  },
-                  child: Text(_isKorean(dialogContext) ? '나중에' : 'Later'),
-                ),
-              FilledButton(
-                onPressed: () => _startUpdate(dialogContext),
-                child: Text(_isKorean(dialogContext)
-                    ? (_flexibleReadyToInstall ? '설치' : '업데이트')
-                    : (_flexibleReadyToInstall ? 'Install' : 'Update')),
-              ),
-            ],
-          ),
+        isDismissible: !mandatory,
+        enableDrag: !mandatory,
+        useSafeArea: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
+        sheetAnimationStyle: AnimationStyle(
+          duration: reduce ? Duration.zero : const Duration(milliseconds: 280),
+          curve: const Cubic(.2, .8, .2, 1),
+          reverseDuration:
+              reduce ? Duration.zero : const Duration(milliseconds: 200),
+        ),
+        builder: (dialogContext) {
+          final ko = _isKorean(dialogContext);
+          final title = ko ? '새 버전이 준비됐어요' : 'A new version is ready';
+          final body = ko
+              ? (_flexibleReadyToInstall
+                  ? '업데이트 다운로드가 끝났어요. 앱을 다시 시작해 설치를 완료해 주세요.'
+                  : mandatory
+                      ? '계속 사용하려면 최신 버전으로 업데이트해 주세요.'
+                      : '더 안정적인 사용을 위해 최신 버전으로 업데이트할 수 있어요.')
+              : (_flexibleReadyToInstall
+                  ? 'The update is downloaded. Restart the app to finish installing.'
+                  : mandatory
+                      ? 'Update to the latest version to continue.'
+                      : 'Update now for the latest improvements.');
+          final action = ko
+              ? (_flexibleReadyToInstall ? '설치' : '업데이트')
+              : (_flexibleReadyToInstall ? 'Install' : 'Update');
+          return PopScope(
+            canPop: !mandatory,
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.3,
+              child: Padding(
+                key: const ValueKey('app_update_sheet'),
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      body,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 19 / 13,
+                        color: Color(0xFF707070),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      height: 46,
+                      child: FilledButton(
+                        key: const ValueKey('app_update_action'),
+                        onPressed: () => _startUpdate(dialogContext),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2C6BC0),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(23),
+                          ),
+                        ),
+                        child: Text(
+                          action,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (!mandatory)
+                      TextButton(
+                        key: const ValueKey('app_update_later'),
+                        onPressed: () async {
+                          await _rememberOptionalDismissal();
+                          _logEvent('optionalPromptDismissed');
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext);
+                          }
+                        },
+                        child: Text(
+                          ko ? '나중에' : 'Later',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF707070),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       );
     } finally {
       _dialogVisible = false;

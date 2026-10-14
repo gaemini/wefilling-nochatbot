@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../ui/motion/logo_handoff.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/app_start_motion.dart';
 import 'package:provider/provider.dart';
@@ -363,7 +364,11 @@ class _MainScreenState extends State<MainScreen>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(width: 24, height: 24, child: _buildLogo()),
+                // 앱 시작 로고가 이 자리로 옮겨 온다.
+                LogoHandoffTargetSlot(
+                  target: LogoHandoffTarget.main,
+                  child: SizedBox(width: 24, height: 24, child: _buildLogo()),
+                ),
                 const SizedBox(width: 8),
                 Text(
                   AppLocalizations.of(context)!.appName,

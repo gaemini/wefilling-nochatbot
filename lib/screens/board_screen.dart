@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../ui/motion/logo_handoff.dart';
 import 'package:flutter/rendering.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
@@ -869,6 +870,8 @@ class BoardScreenState extends State<BoardScreen> {
         snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData &&
             _cachedTodayPosts == null;
+    // 메인 첫 화면의 첫 데이터(업데이트 안내 등이 이 뒤에 열린다).
+    if (!isPostsLoading) AppReadySignals.markFirstContent();
 
     final bool isPostsError = snapshot.hasError &&
         (_cachedTodayPosts == null || _cachedTodayPosts!.isEmpty);

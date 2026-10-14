@@ -4,6 +4,8 @@
 // 앱 테마 및 라우팅 설정
 
 import 'services/profile_link.dart';
+import 'ui/motion/logo_handoff.dart';
+import 'design/tokens.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
@@ -353,7 +355,7 @@ class _MeetupAppState extends State<MeetupApp> {
     unawaited(
       AppUpdateService.instance.initialize().whenComplete(() {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          unawaited(AppUpdateService.instance.presentIfNeeded());
+          unawaited(_presentUpdateWhenReady());
         });
       }),
     );
@@ -506,6 +508,134 @@ class _MeetupAppState extends State<MeetupApp> {
     }
   }
 
+  /// 업데이트 안내 시점: 메인이면 로고 이동과 첫 데이터 표시가 끝난 뒤(최소
+  /// 600ms 뒤), 로그인 등 다른 화면이면 지금처럼 바로 띄운다.
+  Future<void> _presentUpdateWhenReady() async {
+    // 세션 복원 중(부트 화면)이면 첫 화면이 정해질 때까지 기다린다(최대 8초).
+    for (var i = 0; i < 80 && _lastGateKind == 'boot'; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    if (_lastGateKind.startsWith('main_')) {
+      await LogoHandoff.instance.whenIdle();
+      await AppReadySignals.firstContent();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    }
+    if (!mounted) return;
+    await AppUpdateService.instance.presentIfNeeded();
+  }
+
+  /// 지금 보여 줄 첫 화면(종류 + 위젯). 인증·가입 판단은 기존 그대로다.
+  _GateScreen _resolveGate(
+    BuildContext context,
+    app_auth.AuthProvider authProvider,
+  ) {
+    final organizationService = OrganizationAccountService.instance;
+    if (organizationService.hasInvitation) {
+      _loginWasShown = false;
+      ExternalShareService.instance.setRoutingReady(false);
+      NavigationService.setRoutingReady(false, null);
+      return const _GateScreen('invite', OrganizationInviteScreen());
+    }
+    final canRouteExternalShare = !authProvider.isLoading &&
+        authProvider.isLoggedIn &&
+        authProvider.isRegistrationComplete &&
+        !authProvider.isOrganizationOnlyAccount;
+    if (!canRouteExternalShare) {
+      NavigationService.setRoutingReady(false, null);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ExternalShareService.instance.setRoutingReady(canRouteExternalShare);
+      NavigationService.setRoutingReady(
+        canRouteExternalShare,
+        canRouteExternalShare ? authProvider.user?.uid : null,
+      );
+    });
+
+    if (authProvider.isLoading) {
+      // Keep the existing login State during submitting/failure. Never
+      // retain an authenticated screen while another session is loading.
+      return _GateScreen(
+        _loginWasShown ? 'login' : 'boot',
+        AppLoginSurface(
+          restoring: true,
+          keepLogin: _loginWasShown,
+          login: const LoginScreen(),
+        ),
+      );
+    }
+
+    // 로그인되어 있으면
+    if (authProvider.isLoggedIn) {
+      _loginWasShown = false;
+      if (authProvider.isOrganizationOnlyAccount) {
+        return _GateScreen(
+          'organization_${authProvider.user!.uid}',
+          OrganizationHomeScreen(
+            key: ValueKey(
+              'organization_session_${authProvider.user!.uid}',
+            ),
+          ),
+        );
+      }
+      // Firebase Auth 존재 여부가 아니라 서버의 최종 가입 완료 상태를
+      // 기준으로만 앱 진입을 허용한다.
+      if (!authProvider.isRegistrationComplete) {
+        if (authProvider.registrationState ==
+            app_auth.AccountRegistrationState.authCreated) {
+          final signupLanguage =
+              (authProvider.userData?['signupLanguage'] ?? 'ko').toString();
+          return _GateScreen(
+            'verify',
+            signupLanguage.startsWith('en')
+                ? const HanyangEmailVerificationScreen.general(
+                    signupLanguage: 'en',
+                  )
+                : const HanyangEmailVerificationScreen(),
+          );
+        }
+        return const _GateScreen('nickname', NicknameSetupScreen());
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _initializeCompletedServices(authProvider);
+      });
+
+      return _GateScreen(
+        'main_${authProvider.user!.uid}',
+        MainScreen(
+          key: ValueKey('main_session_${authProvider.user!.uid}'),
+        ),
+        logo: LogoHandoffTarget.main,
+      );
+    }
+
+    // 로그인되어 있지 않으면
+    _loginWasShown = true;
+    return const _GateScreen(
+      'login',
+      AppLoginSurface(
+        restoring: false,
+        keepLogin: true,
+        login: LoginScreen(),
+      ),
+      logo: LogoHandoffTarget.login,
+    );
+  }
+
+  /// 직전에 그린 게이트 화면 종류(처음엔 부트 화면이 떠 있던 상태).
+  String _lastGateKind = 'boot';
+
+  /// 부트 화면에서 로그인·메인으로 넘어갈 때 로고를 그 자리로 옮긴다.
+  /// 동작 줄이기, 이메일 인증·닉네임·단체 화면처럼 도착할 로고가 없으면 교차만.
+  void _maybeStartLogoHandoff(BuildContext context, _GateScreen screen) {
+    final previous = _lastGateKind;
+    _lastGateKind = screen.kind;
+    final target = screen.logo;
+    if (previous != 'boot' || screen.kind == 'boot' || target == null) return;
+    if (MotionTokens.reduceMotion(context)) return;
+    LogoHandoff.instance.start(target);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -531,20 +661,22 @@ class _MeetupAppState extends State<MeetupApp> {
           unawaited(NavigationService.flushPendingPushes());
         });
         return MotionAccessibility(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () {
-              // 키보드 닫기
-              final currentFocus = FocusScope.of(context);
-              if (!currentFocus.hasPrimaryFocus &&
-                  currentFocus.focusedChild != null) {
-                FocusManager.instance.primaryFocus?.unfocus();
-              }
-              // SnackBar 닫기 (전역 ScaffoldMessenger 키 사용)
-              AppMessenger.scaffoldMessengerKey.currentState
-                  ?.hideCurrentSnackBar();
-            },
-            child: child,
+          child: LogoHandoffLayer(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                // 키보드 닫기
+                final currentFocus = FocusScope.of(context);
+                if (!currentFocus.hasPrimaryFocus &&
+                    currentFocus.focusedChild != null) {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                }
+                // SnackBar 닫기 (전역 ScaffoldMessenger 키 사용)
+                AppMessenger.scaffoldMessengerKey.currentState
+                    ?.hideCurrentSnackBar();
+              },
+              child: child,
+            ),
           ),
         );
       },
@@ -566,79 +698,17 @@ class _MeetupAppState extends State<MeetupApp> {
         animation: OrganizationAccountService.instance,
         builder: (context, _) => Consumer<app_auth.AuthProvider>(
           builder: (context, authProvider, _) {
-            final organizationService = OrganizationAccountService.instance;
-            if (organizationService.hasInvitation) {
-              _loginWasShown = false;
-              ExternalShareService.instance.setRoutingReady(false);
-              NavigationService.setRoutingReady(false, null);
-              return const OrganizationInviteScreen();
-            }
-            final canRouteExternalShare = !authProvider.isLoading &&
-                authProvider.isLoggedIn &&
-                authProvider.isRegistrationComplete &&
-                !authProvider.isOrganizationOnlyAccount;
-            if (!canRouteExternalShare) {
-              NavigationService.setRoutingReady(false, null);
-            }
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              ExternalShareService.instance
-                  .setRoutingReady(canRouteExternalShare);
-              NavigationService.setRoutingReady(
-                canRouteExternalShare,
-                canRouteExternalShare ? authProvider.user?.uid : null,
-              );
-            });
-
-            if (authProvider.isLoading) {
-              // Keep the existing login State during submitting/failure. Never
-              // retain an authenticated screen while another session is loading.
-              return AppLoginSurface(
-                restoring: true,
-                keepLogin: _loginWasShown,
-                login: const LoginScreen(),
-              );
-            }
-
-            // 로그인되어 있으면
-            if (authProvider.isLoggedIn) {
-              _loginWasShown = false;
-              if (authProvider.isOrganizationOnlyAccount) {
-                return OrganizationHomeScreen(
-                  key: ValueKey(
-                    'organization_session_${authProvider.user!.uid}',
-                  ),
-                );
-              }
-              // Firebase Auth 존재 여부가 아니라 서버의 최종 가입 완료 상태를
-              // 기준으로만 앱 진입을 허용한다.
-              if (!authProvider.isRegistrationComplete) {
-                if (authProvider.registrationState ==
-                    app_auth.AccountRegistrationState.authCreated) {
-                  final signupLanguage =
-                      (authProvider.userData?['signupLanguage'] ?? 'ko')
-                          .toString();
-                  return signupLanguage.startsWith('en')
-                      ? const HanyangEmailVerificationScreen.general(
-                          signupLanguage: 'en',
-                        )
-                      : const HanyangEmailVerificationScreen();
-                }
-                return const NicknameSetupScreen();
-              }
-
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _initializeCompletedServices(authProvider);
-              });
-
-              return MainScreen(
-                key: ValueKey('main_session_${authProvider.user!.uid}'),
-              );
-            }
-
-            // 로그인되어 있지 않으면
-            _loginWasShown = true;
-            return const AppLoginSurface(
-              restoring: false, keepLogin: true, login: LoginScreen(),
+            final screen = _resolveGate(context, authProvider);
+            _maybeStartLogoHandoff(context, screen);
+            // 화면 종류가 바뀔 때만 교차한다(같은 화면 안 상태 변화는 그대로).
+            return AnimatedSwitcher(
+              duration: MotionTokens.of(context, MotionTokens.state),
+              switchInCurve: MotionTokens.curve,
+              switchOutCurve: MotionTokens.curve,
+              child: KeyedSubtree(
+                key: ValueKey<String>('gate_${screen.kind}'),
+                child: screen.child,
+              ),
             );
           },
         ),
@@ -646,4 +716,15 @@ class _MeetupAppState extends State<MeetupApp> {
       debugShowCheckedModeBanner: false,
     );
   }
+}
+
+/// 인증 게이트가 고른 화면. [kind]가 같으면 교체 애니메이션을 하지 않는다.
+class _GateScreen {
+  const _GateScreen(this.kind, this.child, {this.logo});
+
+  final String kind;
+  final Widget child;
+
+  /// 이 화면에 로고 자리가 있으면 부트 로고가 그 자리로 옮겨 간다.
+  final LogoHandoffTarget? logo;
 }

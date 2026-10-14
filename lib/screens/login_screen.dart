@@ -4,6 +4,7 @@
 // 인증 후 화면 전환 처리
 
 import 'package:flutter/material.dart';
+import '../ui/motion/logo_handoff.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/nickname_setup_screen.dart';
@@ -33,23 +34,40 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
-  late Animation<double> _fadeInAnimation;
-  final Animation<Offset> _slideAnimation =
-      const AlwaysStoppedAnimation<Offset>(Offset.zero);
+  static const Duration _staggerStep = Duration(milliseconds: 40);
+  static const int _staggerCount = 7;
+
+  /// [index]번째 항목: 투명도 0 → 1, 아래 8px에서 올라온다(동작 줄이기면 즉시).
+  Widget _stagger(int index, Widget child) {
+    if (MotionTokens.reduceMotion(context)) return child;
+    final total = _animationController.duration!.inMilliseconds;
+    final start = (_staggerStep.inMilliseconds * index) / total;
+    final end = (start + MotionTokens.medium.inMilliseconds / total)
+        .clamp(0.0, 1.0);
+    final curved = CurvedAnimation(
+      parent: _animationController,
+      curve: Interval(start, end, curve: MotionTokens.curve),
+    );
+    return AnimatedBuilder(
+      animation: curved,
+      child: child,
+      builder: (context, child) => Opacity(
+        opacity: curved.value,
+        child: Transform.translate(
+          offset: Offset(0, 8 * (1 - curved.value)),
+          child: child,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
+    // 제목·부제·카드·버튼 3개·가입 버튼이 40ms 간격으로 순서대로 나타난다.
     _animationController = AnimationController(
       vsync: this,
-      duration: MotionTokens.medium,
-    );
-
-    _fadeInAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: MotionTokens.decelerate,
-      ),
+      duration: MotionTokens.medium + _staggerStep * (_staggerCount - 1),
     );
 
     _animationController.forward();
@@ -208,11 +226,8 @@ class _LoginScreenState extends State<LoginScreen>
         child: SafeArea(
           child: _LoginPageLayout(
             compactLanguages: isCompactLanguageButton,
-            content: FadeTransition(
-              opacity: _fadeInAnimation,
-              child: SlideTransition(
-                position: _slideAnimation,
-                child: LayoutBuilder(
+            content: Builder(
+              builder: (context) => LayoutBuilder(
                   builder: (context, constraints) {
                     final isShort = constraints.maxHeight < 760;
                     final isVeryShort = constraints.maxHeight < 700;
@@ -245,21 +260,26 @@ class _LoginScreenState extends State<LoginScreen>
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  Image.asset(
-                                    'assets/images/wefilling_boot_logo.png',
-                                    width: logoSize,
-                                    height: logoSize,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(
-                                        Icons.people_alt_rounded,
-                                        size: logoSize * 0.8,
-                                        color: Colors.blue.shade700,
-                                      );
-                                    },
+                                  // 앱 시작 로고가 이 자리로 옮겨 온다.
+                                  LogoHandoffTargetSlot(
+                                    target: LogoHandoffTarget.login,
+                                    child: Image.asset(
+                                      'assets/images/wefilling_boot_logo.png',
+                                      width: logoSize,
+                                      height: logoSize,
+                                      fit: BoxFit.contain,
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
+                                        return Icon(
+                                          Icons.people_alt_rounded,
+                                          size: logoSize * 0.8,
+                                          color: Colors.blue.shade700,
+                                        );
+                                      },
+                                    ),
                                   ),
                                   SizedBox(height: isVeryShort ? 8 : 12),
-                                  FittedBox(
+                                  _stagger(0, FittedBox(
                                     fit: BoxFit.scaleDown,
                                     child: Stack(
                                       alignment: Alignment.center,
@@ -319,9 +339,9 @@ class _LoginScreenState extends State<LoginScreen>
                                         ),
                                       ],
                                     ),
-                                  ),
+                                  )),
                                   SizedBox(height: isVeryShort ? 2 : 4),
-                                  FittedBox(
+                                  _stagger(1, FittedBox(
                                     fit: BoxFit.scaleDown,
                                     child: Text(
                                       AppLocalizations.of(context)!.appTagline,
@@ -335,7 +355,7 @@ class _LoginScreenState extends State<LoginScreen>
                                         letterSpacing: 0.5,
                                       ),
                                     ),
-                                  ),
+                                  )),
                                 ],
                               ),
                               SizedBox(height: isVeryShort ? 8 : 12),
@@ -360,7 +380,7 @@ class _LoginScreenState extends State<LoginScreen>
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    Text(
+                                    _stagger(2, Text(
                                       AppLocalizations.of(context)!
                                           .welcomeTitle,
                                       textAlign: TextAlign.center,
@@ -372,9 +392,9 @@ class _LoginScreenState extends State<LoginScreen>
                                         fontWeight: FontWeight.bold,
                                         color: Colors.blue.shade800,
                                       ),
-                                    ),
+                                    )),
                                     SizedBox(height: titleGap),
-                                    Text(
+                                    _stagger(2, Text(
                                       AppLocalizations.of(context)!
                                           .googleLoginDescription,
                                       textAlign: TextAlign.center,
@@ -386,9 +406,9 @@ class _LoginScreenState extends State<LoginScreen>
                                         height: 1.4,
                                         color: Colors.grey.shade800,
                                       ),
-                                    ),
+                                    )),
                                     SizedBox(height: isVeryShort ? 14 : 20),
-                                    _LoginMethodButton(
+                                    _stagger(3, _LoginMethodButton(
                                       label: AppLocalizations.of(context)!
                                           .appleLogin,
                                       onPressed: authProvider.isLoading
@@ -404,9 +424,9 @@ class _LoginScreenState extends State<LoginScreen>
                                         size: isVeryShort ? 19 : 20,
                                         color: Colors.black,
                                       ),
-                                    ),
+                                    )),
                                     SizedBox(height: buttonGap),
-                                    _LoginMethodButton(
+                                    _stagger(4, _LoginMethodButton(
                                       label: AppLocalizations.of(context)!
                                           .googleLogin,
                                       onPressed: authProvider.isLoading
@@ -432,9 +452,9 @@ class _LoginScreenState extends State<LoginScreen>
                                           );
                                         },
                                       ),
-                                    ),
+                                    )),
                                     SizedBox(height: buttonGap),
-                                    _LoginMethodButton(
+                                    _stagger(5, _LoginMethodButton(
                                       label: AppLocalizations.of(context)!
                                           .emailLogin,
                                       onPressed: authProvider.isLoading
@@ -455,9 +475,9 @@ class _LoginScreenState extends State<LoginScreen>
                                         size: isVeryShort ? 18 : 19,
                                         color: const Color(0xFF374151),
                                       ),
-                                    ),
+                                    )),
                                     SizedBox(height: buttonGap),
-                                    _LoginMethodButton(
+                                    _stagger(6, _LoginMethodButton(
                                       label:
                                           AppLocalizations.of(context)!.signUp,
                                       onPressed: authProvider.isLoading
@@ -466,7 +486,7 @@ class _LoginScreenState extends State<LoginScreen>
                                               _navigateToSignUpFlow(context),
                                       backgroundColor: Colors.white,
                                       foregroundColor: const Color(0xFF147FC4),
-                                    ),
+                                    )),
                                     if (authProvider.isLoading)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 10),
@@ -523,7 +543,6 @@ class _LoginScreenState extends State<LoginScreen>
                   },
                 ),
               ),
-            ),
 
             // 언어 선택 (상단 우측)
             languageSelector: Material(

@@ -1081,8 +1081,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       child: AudienceRing(
                         restricted: usesLimitedAudienceIdentity,
                         size: 40,
-                        ringWidth: usesLimitedAudienceIdentity ? 4 : 1.5,
-                        innerGap: usesLimitedAudienceIdentity ? 0.75 : 0.5,
+                        // 제한 공개 테두리는 2(예전 4는 사진 대비 너무 두꺼웠다).
+                        ringWidth: usesLimitedAudienceIdentity ? 2 : 1.5,
+                        innerGap: usesLimitedAudienceIdentity ? 1 : 0.5,
                         emphasized: usesLimitedAudienceIdentity,
                         semanticLabel: (isChineseUi(context)
                             ? '部分人可见的动态'

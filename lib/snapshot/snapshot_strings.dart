@@ -1082,4 +1082,25 @@ class SnapshotStrings {
       : isKorean
           ? '보내기'
           : 'Send');
+
+  // --- 스낵 만들기 고르기·편집 단계 ---
+  String _pick(String zh, String ko, String en) =>
+      isChinese ? zh : (isKorean ? ko : en);
+  String get pickerRecent => _pick('最近', '최근', 'Recent');
+  String get pickerPhotos => _pick('照片', '사진', 'Photos');
+  String get pickerVideos => _pick('视频', '영상', 'Videos');
+  String get videoLimitShort =>
+      _pick('视频最长12秒', '영상은 12초까지', 'Videos up to 12s');
+  String get repick => _pick('重新选择', '다시 고르기', 'Choose again');
+  String get textTool => _pick('文字', '글자', 'Text');
+  String get trimTool => _pick('剪辑', '자르기', 'Trim');
+  String get textLightShort => _pick('浅色', '밝게', 'Light');
+  String get textDarkShort => _pick('深色', '어둡게', 'Dark');
+  String get sizeSmall => _pick('小', '작게', 'Small');
+  String get sizeMedium => _pick('中', '보통', 'Medium');
+  String get sizeLarge => _pick('大', '크게', 'Large');
+  String get editDone => _pick('完成', '완료', 'Done');
+  String get bringForwardShort => _pick('置前', '앞으로', 'Forward');
+  String get dragToMove => _pick('拖动移动', '끌어서 옮기기', 'Drag to move');
+  String get openSettings => _pick('打开设置', '설정 열기', 'Open Settings');
 }

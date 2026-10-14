@@ -533,6 +533,42 @@ class _TextChoiceRow<T> extends StatelessWidget {
   }
 }
 
+/// 글자 선택지 묶음(선택 600 흰색 + 2pt 밑줄, 비선택 500 흰색 40%).
+/// 공유 단계의 [_TextChoiceRow]와 같은 선택지를 고르기·편집 단계에서 재사용한다.
+class ShareChoiceGroup<T> extends StatelessWidget {
+  const ShareChoiceGroup({
+    super.key,
+    required this.keyPrefix,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.gap = 18,
+  });
+
+  final String keyPrefix;
+  final T? value;
+  final List<(T, String)> options;
+  final ValueChanged<T> onChanged;
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final option in options)
+          _Choice(
+            key: ValueKey<String>('$keyPrefix-choice-${option.$1}'),
+            label: option.$2,
+            selected: option.$1 == value,
+            gap: gap,
+            onTap: () => onChanged(option.$1),
+          ),
+      ],
+    );
+  }
+}
+
 class _Choice extends StatelessWidget {
   const _Choice({
     super.key,

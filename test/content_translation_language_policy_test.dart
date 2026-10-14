@@ -4,7 +4,7 @@ import 'package:wefilling/services/content_translation_service.dart';
 void main() {
   group('automatic translation target language', () {
     test('includes Romanian in the shared translation language catalog', () {
-      expect(ContentTranslationService.supportedLanguages.length, 22);
+      expect(ContentTranslationService.supportedLanguages.length, 58);
       expect(ContentTranslationService.supportedLanguages['ro'], 'Română');
     });
 

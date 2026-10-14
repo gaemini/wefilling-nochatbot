@@ -95,6 +95,49 @@ const TARGET_LANGUAGE_NAMES: Record<string, string> = {
   pl: 'Polish',
   uk: 'Ukrainian',
   mn: 'Mongolian',
+  // 2026-10 확장: 유럽 전 국가 공용어 + 동남아·중앙아시아 주요 언어.
+  sq: 'Albanian',
+  hy: 'Armenian',
+  az: 'Azerbaijani',
+  be: 'Belarusian',
+  bs: 'Bosnian',
+  bg: 'Bulgarian',
+  ca: 'Catalan',
+  hr: 'Croatian',
+  cs: 'Czech',
+  da: 'Danish',
+  et: 'Estonian',
+  fi: 'Finnish',
+  ka: 'Georgian',
+  el: 'Greek',
+  hu: 'Hungarian',
+  is: 'Icelandic',
+  ga: 'Irish',
+  lv: 'Latvian',
+  lt: 'Lithuanian',
+  lb: 'Luxembourgish',
+  mk: 'Macedonian',
+  mt: 'Maltese',
+  no: 'Norwegian (Bokmål)',
+  sr: 'Serbian (Latin script)',
+  sk: 'Slovak',
+  sl: 'Slovenian',
+  sv: 'Swedish',
+  tl: 'Filipino (Tagalog)',
+  my: 'Burmese (Myanmar)',
+  km: 'Khmer',
+  lo: 'Lao',
+  kk: 'Kazakh (Cyrillic script)',
+  uz: 'Uzbek (Latin script)',
+  ky: 'Kyrgyz',
+  tg: 'Tajik',
+  tk: 'Turkmen',
+};
+/** 기기 언어 코드 별칭(노르웨이어 nb/nn, 필리핀어 fil). */
+const TARGET_LANGUAGE_ALIASES: Record<string, string> = {
+  nb: 'no',
+  nn: 'no',
+  fil: 'tl',
 };
 const MAX_BATCH_SIZE = 5;
 const SNACK_CONTEXT_HISTORY_LIMIT = 3;
@@ -247,12 +290,10 @@ function stringList(value: unknown): string[] {
 
 function normalizeLanguageCode(value: unknown): string {
   const raw = stringValue(value).trim().toLowerCase().replace('_', '-');
-  const code = raw.split('-')[0] || raw;
-  const allowed = new Set([
-    'ko', 'en', 'ja', 'zh', 'es', 'fr', 'de', 'ru', 'pt', 'it', 'ar',
-    'hi', 'th', 'vi', 'id', 'ms', 'tr', 'nl', 'pl', 'uk', 'mn', 'ro',
-  ]);
-  if (!allowed.has(code)) {
+  const base = raw.split('-')[0] || raw;
+  const code = TARGET_LANGUAGE_ALIASES[base] ?? base;
+  // 허용 목록은 프롬프트용 이름 표와 같다(한 곳에서만 관리).
+  if (!Object.prototype.hasOwnProperty.call(TARGET_LANGUAGE_NAMES, code)) {
     throw new functions.https.HttpsError(
       'invalid-argument',
       'Unsupported target language.',
@@ -455,8 +496,10 @@ function isUnexpectedlyUnchangedTranslation(
 
   const latinTargets = new Set([
     'en', 'es', 'fr', 'de', 'pt', 'it', 'ro', 'nl', 'pl', 'tr', 'vi', 'id', 'ms',
+    'sq', 'az', 'bs', 'ca', 'hr', 'cs', 'da', 'et', 'fi', 'hu', 'is', 'ga', 'lv', 'lt', 'lb', 'mt', 'no', 'sk', 'sl', 'sv', 'tl', 'uz', 'tk',
   ]);
-  const clearlyNonLatin = /[가-힣ぁ-ゟ゠-ヿ一-龯\u0400-\u04FF\u0600-\u06FF\u0E00-\u0E7F]/u
+  // 그리스·아르메니아·조지아·미얀마·크메르·라오 문자도 비라틴으로 본다.
+  const clearlyNonLatin = /[가-힣ぁ-ゟ゠-ヿ一-龯\u0400-\u04FF\u0600-\u06FF\u0E00-\u0E7F\u0370-\u03FF\u0530-\u058F\u10A0-\u10FF\u1000-\u109F\u1780-\u17FF\u0E80-\u0EFF]/u
     .test(meaningful);
   if (latinTargets.has(targetCode) && clearlyNonLatin) return true;
   if (!sourceCode || sourceCode === targetCode) return false;

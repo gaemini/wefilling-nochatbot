@@ -20,6 +20,12 @@ final RegExp _cyrillic = RegExp(r'[Ѐ-ӿ]');
 final RegExp _arabic = RegExp(r'[؀-ۿݐ-ݿ]');
 final RegExp _thai = RegExp(r'[฀-๿]');
 final RegExp _devanagari = RegExp(r'[ऀ-ॿ]');
+final RegExp _greek = RegExp(r'[Ͱ-Ͽἀ-῿]');
+final RegExp _armenian = RegExp(r'[԰-֏]');
+final RegExp _georgian = RegExp(r'[Ⴀ-ჿᲐ-Ჿ]');
+final RegExp _myanmar = RegExp(r'[က-႟]');
+final RegExp _khmer = RegExp(r'[ក-៿]');
+final RegExp _lao = RegExp(r'[຀-໿]');
 final RegExp _latin = RegExp(r'[A-Za-zÀ-ɏḀ-ỿ]');
 final RegExp _wordPattern = RegExp(r'\p{L}+', unicode: true);
 
@@ -58,7 +64,28 @@ bool translationLooksInTargetLanguage({
     case 'ru':
     case 'uk':
     case 'mn':
+    case 'be':
+    case 'bg':
+    case 'mk':
+    case 'kk':
+    case 'ky':
+    case 'tg':
       return ratio(_count(output, _cyrillic)) >= 0.2;
+    case 'sr':
+      // 세르비아어는 라틴·키릴 문자를 모두 쓴다.
+      return ratio(_count(output, _latin) + _count(output, _cyrillic)) >= 0.5;
+    case 'el':
+      return ratio(_count(output, _greek)) >= 0.2;
+    case 'hy':
+      return ratio(_count(output, _armenian)) >= 0.2;
+    case 'ka':
+      return ratio(_count(output, _georgian)) >= 0.2;
+    case 'my':
+      return ratio(_count(output, _myanmar)) >= 0.2;
+    case 'km':
+      return ratio(_count(output, _khmer)) >= 0.2;
+    case 'lo':
+      return ratio(_count(output, _lao)) >= 0.2;
     case 'ar':
       return ratio(_count(output, _arabic)) >= 0.2;
     case 'th':

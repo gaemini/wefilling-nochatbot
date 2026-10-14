@@ -21,6 +21,12 @@ const SCRIPT = {
   arabic: /[؀-ۿݐ-ݿ]/gu,
   thai: /[฀-๿]/gu,
   devanagari: /[ऀ-ॿ]/gu,
+  greek: /[Ͱ-Ͽἀ-῿]/gu,
+  armenian: /[԰-֏]/gu,
+  georgian: /[Ⴀ-ჿᲐ-Ჿ]/gu,
+  myanmar: /[က-႟]/gu,
+  khmer: /[ក-៿]/gu,
+  lao: /[຀-໿]/gu,
   latin: /[A-Za-zÀ-ɏḀ-ỿ]/gu,
   letter: /\p{L}/gu,
 } as const;
@@ -38,6 +44,12 @@ export interface ScriptCounts {
   arabic: number;
   thai: number;
   devanagari: number;
+  greek: number;
+  armenian: number;
+  georgian: number;
+  myanmar: number;
+  khmer: number;
+  lao: number;
   latin: number;
 }
 
@@ -62,6 +74,12 @@ export function scriptCounts(text: string): ScriptCounts {
     arabic: count(text, SCRIPT.arabic),
     thai: count(text, SCRIPT.thai),
     devanagari: count(text, SCRIPT.devanagari),
+    greek: count(text, SCRIPT.greek),
+    armenian: count(text, SCRIPT.armenian),
+    georgian: count(text, SCRIPT.georgian),
+    myanmar: count(text, SCRIPT.myanmar),
+    khmer: count(text, SCRIPT.khmer),
+    lao: count(text, SCRIPT.lao),
     latin: count(text, SCRIPT.latin),
   };
 }
@@ -232,7 +250,27 @@ export function looksLikeTargetLanguage(text: string, target: string): boolean {
     case 'ru':
     case 'uk':
     case 'mn':
+    case 'be':
+    case 'bg':
+    case 'mk':
+    case 'kk':
+    case 'ky':
+    case 'tg':
       return letters >= 3 && ratio(counts.cyrillic) >= 0.9;
+    case 'el':
+      return letters >= 3 && ratio(counts.greek) >= 0.9;
+    case 'hy':
+      return letters >= 3 && ratio(counts.armenian) >= 0.9;
+    case 'ka':
+      return letters >= 3 && ratio(counts.georgian) >= 0.9;
+    case 'my':
+    case 'km':
+    case 'lo':
+      // 결합 부호가 많아 글자 수 비율로는 판정하기 어렵다. 번역을 시도한다.
+      return false;
+    case 'sr':
+      // 라틴·키릴 문자를 모두 쓰므로 같은 언어로 확신하지 않는다.
+      return false;
     case 'ar':
       return letters >= 3 && ratio(counts.arabic) >= 0.9;
     case 'th':
@@ -264,7 +302,20 @@ function expectedScriptRatio(counts: ScriptCounts, target: string): number | nul
     case 'zh': return counts.han / letters;
     case 'ru':
     case 'uk':
-    case 'mn': return counts.cyrillic / letters;
+    case 'mn':
+    case 'be':
+    case 'bg':
+    case 'mk':
+    case 'kk':
+    case 'ky':
+    case 'tg': return counts.cyrillic / letters;
+    case 'sr': return (counts.cyrillic + counts.latin) / letters;
+    case 'el': return counts.greek / letters;
+    case 'hy': return counts.armenian / letters;
+    case 'ka': return counts.georgian / letters;
+    case 'my': return counts.myanmar / letters;
+    case 'km': return counts.khmer / letters;
+    case 'lo': return counts.lao / letters;
     case 'ar': return counts.arabic / letters;
     case 'th': return counts.thai / letters;
     case 'hi': return counts.devanagari / letters;
@@ -318,7 +369,10 @@ export function translationMatchesTargetLanguage(
   if (sourceNonLatin >= 4 && outputNonLatin / letters > 0.35) return false;
 
   const profile = latinProfile(output);
-  if (profile.words >= 5 && target !== 'vi') {
+  // 기능어 목록이 없는 라틴 언어(덴마크어·체코어 등)는 다른 언어와 점수를
+  // 비교할 근거가 없으므로 문자 비율 검사만 한다(오탐 방지).
+  if (profile.words >= 5 && target !== 'vi' &&
+      Object.prototype.hasOwnProperty.call(LATIN_STOPWORDS, target)) {
     const own = profile.hits[target] ?? 0;
     const rival = strongestRival(profile.hits, target);
     if (rival.hits >= 3 &&

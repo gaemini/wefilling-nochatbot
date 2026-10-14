@@ -347,6 +347,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   AppLifecycleState _appLifecycleState = AppLifecycleState.detached;
   SnackChatMessage? _replyingTo;
   String? _replyingToSenderName;
+  // 답장 시작은 입력창 위 답장 바만 다시 그린다(대화방 전체를 다시 그리면
+  // 키보드가 올라오는 첫 프레임이 무거워 버벅인다).
+  final ValueNotifier<int> _replyRevision = ValueNotifier<int>(0);
   Object? _messageStreamError;
   Object? _loadMoreError;
   final Map<String, String> _myReactions = <String, String>{};
@@ -4194,6 +4197,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _messageController.dispose();
     _messageFocusNode.dispose();
     _scrollController.dispose();
+    _replyRevision.dispose();
     super.dispose();
   }
 
@@ -5119,8 +5123,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   void _clearReplyState() {
+    final hadReply = _replyingTo != null;
     _replyingTo = null;
     _replyingToSenderName = null;
+    if (hadReply) _replyRevision.value++;
   }
 
   void _insertLocalMessage(SnackChatMessage message) {
@@ -5803,13 +5809,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         message.isDeleted) {
       return;
     }
-    setState(() {
-      _replyingTo = message;
-      _replyingToSenderName = _safeUserLabel(message.senderName);
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _messageFocusNode.requestFocus();
-    });
+    _replyingTo = message;
+    _replyingToSenderName = _safeUserLabel(message.senderName);
+    _replyRevision.value++;
+    // 답장 바와 키보드가 같은 프레임에 함께 움직이기 시작한다.
+    _messageFocusNode.requestFocus();
     final embeddedName = message.senderName?.trim() ?? '';
     if (embeddedName.isNotEmpty &&
         !_looksLikeInternalIdentifier(embeddedName)) {
@@ -5820,7 +5824,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       message.senderName,
     );
     if (!mounted || _replyingTo?.id != message.id) return;
-    setState(() => _replyingToSenderName = resolvedName);
+    _replyingToSenderName = resolvedName;
+    _replyRevision.value++;
   }
 
   Future<void> _jumpToMessage(
@@ -7421,8 +7426,6 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     required bool isKo,
     required SnackChat room,
   }) {
-    final replyingTo = _replyingTo;
-
     return Material(
       color: SnackChatPalette.background,
       child: SafeArea(
@@ -7453,7 +7456,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                         for (final id in room.participantIds)
                           id: _senderProfileNotifier(id),
                       }),
-                  ChatReplyReveal(
+                  ValueListenableBuilder<int>(
+                    valueListenable: _replyRevision,
+                    builder: (context, _, __) {
+                      final replyingTo = _replyingTo;
+                      return ChatReplyReveal(
                     replyId: replyingTo?.id,
                     child: replyingTo == null
                         ? null
@@ -7486,6 +7493,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                               ],
                             ),
                           ),
+                  );
+                    },
                   ),
                   _buildTranslateFirstHint(),
                   ValueListenableBuilder<TextEditingValue>(

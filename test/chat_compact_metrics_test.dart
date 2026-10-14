@@ -93,7 +93,7 @@ void main() {
       expect(ChatMetrics.bubbleRadius, 16);
       expect(ChatMetrics.groupGap, 2);
       expect(ChatMetrics.senderGap, 10);
-      expect(ChatMetrics.composerMinHeight, 44);
+      expect(ChatMetrics.composerMinHeight, 52);
       expect(ChatMetrics.headerHeight, 52);
       expect(ChatMetrics.textBubbleWidthFactor, .63);
       expect(375 * ChatMetrics.textBubbleWidthFactor, closeTo(236, 0.5));
@@ -130,7 +130,7 @@ void main() {
     expect(body, closeTo(16, 0.01));
   });
 
-  testWidgets('입력창: 최소 높이 44, 보이는 버튼 36 · 터치 44', (tester) async {
+  testWidgets('입력창: 최소 높이 52, 보이는 버튼 40 · 터치 52', (tester) async {
     await tester.pumpWidget(_host(
       SingleChildScrollView(
         child: SizedBox(
@@ -152,14 +152,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester.getSize(find.byKey(const ValueKey('chat-composer-pill'))).height,
-      44,
+      52,
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('chat-composer-camera'))).height,
-      greaterThanOrEqualTo(44),
+      greaterThanOrEqualTo(52),
     );
-    expect(ChatPillComposer.button, 36);
-    expect(ChatPillComposer.touch, 44);
+    expect(ChatPillComposer.button, 40);
+    expect(ChatPillComposer.touch, 52);
   });
 
   testWidgets('헤더: 방 이름 16, 보조 11, 참여자 사진 14', (tester) async {

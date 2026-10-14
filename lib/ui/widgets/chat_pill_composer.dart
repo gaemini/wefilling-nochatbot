@@ -53,7 +53,7 @@ class ChatPillComposer extends StatelessWidget {
   final String attachLabel;
   final String sendLabel;
 
-  // 카카오톡 수준의 밀도: 알약 44, 보이는 버튼 36(터치 영역 44 유지).
+  // 알약 52, 보이는 버튼 40(터치 영역 52).
   static const double minHeight = ChatMetrics.composerMinHeight;
   static const double radius = ChatMetrics.composerRadius;
   static const double button = ChatMetrics.composerButton;
@@ -101,9 +101,11 @@ class ChatPillComposer extends StatelessWidget {
       child: Container(
         key: const ValueKey('chat-composer-pill'),
         constraints: const BoxConstraints(minHeight: minHeight),
-        // 터치 상자(44)가 알약 높이(44)를 그대로 채우므로 위아래 여백은 0이고,
-        // 좌우 여백 4에서 36짜리 버튼이 가장자리에 4씩 떨어진다.
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        // 터치 상자(52)가 알약 높이(52)를 그대로 채우므로 위아래 여백은 0이고,
+        // 좌우 여백 6에서 40짜리 버튼이 가장자리에 12씩 떨어진다.
+        padding: const EdgeInsets.symmetric(
+          horizontal: ChatMetrics.composerPadding,
+        ),
         decoration: BoxDecoration(
           color: chatComposerBackground,
           borderRadius: BorderRadius.circular(radius),

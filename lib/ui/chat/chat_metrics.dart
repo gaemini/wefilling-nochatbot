@@ -59,11 +59,12 @@ class ChatMetrics {
   static const double translateButtonText = 13;
 
   // ---- 입력창 ----
-  static const double composerMinHeight = 44;
-  static const double composerRadius = 22;
-  static const double composerButton = 36;
-  static const double composerTouch = 44;
-  static const double composerPadding = 4;
+  // 입력 바가 얇아 보이지 않게 52(버튼 40, 터치 52)로 둔다.
+  static const double composerMinHeight = 52;
+  static const double composerRadius = 26;
+  static const double composerButton = 40;
+  static const double composerTouch = 52;
+  static const double composerPadding = 6;
   static const double inputSize = 15;
   static const double inputLine = 20;
 

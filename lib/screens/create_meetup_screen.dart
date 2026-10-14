@@ -156,7 +156,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   Future<void> _showTimePickerSheet() async {
     final l10n = AppLocalizations.of(context)!;
-    final use24h = MediaQuery.of(context).alwaysUse24HourFormat;
+    final use24h = MediaQuery.alwaysUse24HourFormatOf(context);
 
     final current = _selectedTime;
     DateTime initial = DateTime(2020, 1, 1, 12, 0);

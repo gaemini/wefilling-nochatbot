@@ -3392,7 +3392,7 @@ class _DMChatScreenState extends State<DMChatScreen>
       itemCount: widths.length,
       itemBuilder: (context, i) {
         final isMine = i.isEven;
-        final w = MediaQuery.of(context).size.width * widths[i];
+        final w = MediaQuery.sizeOf(context).width * widths[i];
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Align(

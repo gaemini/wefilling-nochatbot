@@ -103,7 +103,7 @@ class _FullscreenFileImageViewerState extends State<FullscreenFileImageViewer>
     final isCurrentlyZoomed = currentScale > 1.01;
 
     final tapPos = _doubleTapDownPositions[index] ??
-        Offset(MediaQuery.of(context).size.width / 2, MediaQuery.of(context).size.height / 2);
+        Offset(MediaQuery.sizeOf(context).width / 2, MediaQuery.sizeOf(context).height / 2);
 
     final endMatrix = isCurrentlyZoomed
         ? Matrix4.identity()

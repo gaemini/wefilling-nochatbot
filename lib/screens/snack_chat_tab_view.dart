@@ -589,9 +589,8 @@ class SnackChatEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strings = GroupUiStrings.of(context);
-    final media = MediaQuery.of(context);
     // 높이 700 미만이면 미리보기를 2줄로 줄이고, 그래도 넘치면 스크롤한다.
-    final previewRows = media.size.height < 700 ? 2 : 3;
+    final previewRows = MediaQuery.sizeOf(context).height < 700 ? 2 : 3;
 
     return SafeArea(
       top: false,

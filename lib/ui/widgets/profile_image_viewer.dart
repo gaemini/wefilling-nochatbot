@@ -81,7 +81,7 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
       // 줌 아웃
       endMatrix = Matrix4.identity();
     } else {
-      final mediaSize = MediaQuery.of(context).size;
+      final mediaSize = MediaQuery.sizeOf(context);
       final tapPosition = _doubleTapDownPosition ??
           Offset(mediaSize.width / 2, mediaSize.height / 2);
       // 탭한 위치를 기준으로 자연스럽게 줌 인

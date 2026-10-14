@@ -24,6 +24,7 @@ import 'dm_active_conversation.dart';
 import 'notification_service.dart';
 import 'snack_chat_active_conversation.dart';
 import 'unread_notification_feed.dart';
+import 'read_sync_service.dart';
 import 'language_service.dart';
 import '../utils/logger.dart';
 import '../utils/notification_delivery_policy.dart';
@@ -32,6 +33,7 @@ import '../utils/snack_chat_notification_policy.dart';
 import '../utils/chat_notification_presentation.dart';
 import '../utils/chat_work_queue.dart';
 import 'dart:io';
+import 'package:package_info_plus/package_info_plus.dart';
 
 const String _pushSessionUserIdPreferenceKey = 'active_push_session_user_id';
 const String _snackNotificationGroupPreferencePrefix =
@@ -53,6 +55,40 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final activeUserId =
         preferences.getString(_pushSessionUserIdPreferenceKey) ?? '';
     if (activeUserId != recipientUserId) return;
+
+    // 다른 기기·서버에서 읽음이 바뀐 조용한 푸시. 이 isolate에서는 알림센터
+    // 채널을 쓸 수 없으므로 확인 목록에 기록하고(다음 실행·복귀 때 정리),
+    // 배지만 바로 맞춘다.
+    if ((message.data['type'] ?? '').toString() == readSyncPushType) {
+      final requests = ReadSyncPlanner.requestsFromPush(
+        message.data,
+        owner: recipientUserId,
+      );
+      if (requests.isNotEmpty) {
+        final key = 'confirmed_push_reads::$recipientUserId';
+        final existing = <Map<String, dynamic>>[];
+        final encoded = preferences.getString(key);
+        if (encoded != null) {
+          for (final value in jsonDecode(encoded) as List) {
+            existing.add(Map<String, dynamic>.from(value as Map));
+          }
+        }
+        await preferences.setString(
+          key,
+          jsonEncode(ReadSyncPlanner.mergeReceipts(
+            existing,
+            ReadSyncPlanner.receiptsFor(
+              requests,
+              owner: recipientUserId,
+              nowMillis: DateTime.now().millisecondsSinceEpoch,
+            ),
+          )),
+        );
+      }
+      final badge = ReadSyncPlanner.badgeFromPush(message.data);
+      if (badge != null) await AppBadgePlus.updateBadge(badge);
+      return;
+    }
 
     final snackChatId = (message.data['snackChatId'] ?? '').toString().trim();
     final notificationGroupKey = (message.data['notificationThreadKey'] ??
@@ -538,6 +574,11 @@ class FCMService {
                 Logger.log('⏭️ 이전 계정 대상 포어그라운드 푸시 무시');
               return;
             }
+            // 다른 기기에서 읽음: 카드·소리 없이 알림센터만 정리하고 배지를 맞춘다.
+            if (type == readSyncPushType) {
+              unawaited(applyReadSyncPush(message.data));
+              return;
+            }
             final conversationId =
                 (message.data['conversationId'] ?? '').toString();
             final snackChatId = (message.data['snackChatId'] ?? '').toString();
@@ -812,10 +853,12 @@ class FCMService {
             : defaultTargetPlatform == TargetPlatform.android
                 ? 'android'
                 : null;
+        final build = await _appBuildNumber();
         await _functions.httpsCallable('registerFcmToken').call(<String, dynamic>{
           'token': token,
           'locale': localeTag,
           if (platform != null) 'platform': platform,
+          if (build > 0) 'appBuild': build,
         }).timeout(const Duration(seconds: 15));
         _registryRetryAttempt = 0;
         if (Logger.isVerboseEnabled) Logger.log('✅ FCM 토큰 registry 재등록 완료');
@@ -968,7 +1011,11 @@ class FCMService {
             : notificationId.isNotEmpty
                 ? appNotificationAndroidTag(notificationId)
                 : null,
-        groupKey: isGroupedSnackChat ? snackChatAndroidGroupKey : null,
+        groupKey: isGroupedSnackChat
+            ? snackChatAndroidGroupKey
+            : isGroupedChat
+                ? dmAndroidGroupKey
+                : null,
         // Keep the existing launcher/count policy. DM's compact count belongs
         // in subText, not a newly introduced Android badge count.
         number: isGroupedSnackChat ? unreadCount : null,
@@ -1364,7 +1411,11 @@ class FCMService {
         merged['throughSeconds'] = oldSeconds;
         merged['throughNanos'] = oldNanos;
       }
-      for (final field in ['throughSequence', 'throughSentAtMillis']) {
+      for (final field in [
+        'throughSequence',
+        'throughSentAtMillis',
+        'throughDeliveredAtMillis',
+      ]) {
         final old = (previous[field] as num?)?.toInt() ?? 0;
         if (old > ((incoming[field] as num?)?.toInt() ?? 0)) {
           merged[field] = old;
@@ -1382,6 +1433,8 @@ class FCMService {
     await _confirmedReadWrites.run(owner, () async {
       try {
         final prefs = await SharedPreferences.getInstance();
+        // 백그라운드 isolate(read_sync)가 쓴 항목을 덮어쓰지 않게 다시 읽는다.
+        await prefs.reload();
         if (!isNotificationSession(owner, epoch)) return;
         final encoded = prefs.getString('confirmed_push_reads::$owner');
         if (encoded != null) {
@@ -1516,6 +1569,7 @@ class FCMService {
     _cleanupReplaySession = epoch;
     try {
       final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
       if (!isNotificationSession(owner, epoch)) return;
       final encoded = prefs.getString('confirmed_push_reads::$owner');
       if (encoded != null) {
@@ -1546,10 +1600,172 @@ class FCMService {
         await _runNotificationCleanup(owner, epoch, Map.of(entry),
             remember: false);
       }
+      // 이 기기에서 확인한 읽음 외에, 다른 기기·서버에서 바뀐 읽음도 서버
+      // 상태와 비교해 정리한다(조용한 푸시가 늦거나 버려져도 최종 보장).
+      if (kReadSyncReconcileEnabled) {
+        await _reconcileDeliveredWithServer(owner, epoch);
+      }
     } catch (error) {
       Logger.error('읽음 푸시 재확인 실패', error);
     } finally {
       if (_cleanupReplaySession == epoch) _cleanupReplaySession = null;
+    }
+  }
+
+  static int? _cachedBuildNumber;
+
+  /// 앱 빌드 번호(pubspec의 +뒤 숫자). 알 수 없으면 0.
+  Future<int> _appBuildNumber() async {
+    final cached = _cachedBuildNumber;
+    if (cached != null) return cached;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      return _cachedBuildNumber = int.tryParse(info.buildNumber) ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// read_sync 푸시(앱이 떠 있을 때): 알림센터 정리 + 배지.
+  Future<void> applyReadSyncPush(Map<String, dynamic> data) async {
+    final owner = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final epoch = _activeEpoch;
+    if (owner.isEmpty || !isNotificationSession(owner, epoch)) return;
+    final requests = ReadSyncPlanner.requestsFromPush(data, owner: owner);
+    for (final request in requests) {
+      if (!isNotificationSession(owner, epoch)) return;
+      if (request['kind'] == 'app') {
+        await cancelAppNotifications(
+          (request['notificationIds'] as List).cast<String>(),
+          expectedOwner: owner,
+          expectedSession: epoch,
+        );
+      } else {
+        await _runNotificationCleanup(owner, epoch, request);
+      }
+    }
+    final badge = ReadSyncPlanner.badgeFromPush(data);
+    if (badge != null && isNotificationSession(owner, epoch)) {
+      try {
+        await AppBadgePlus.updateBadge(badge);
+      } catch (_) {}
+    }
+    unawaited(BadgeService.refreshNow());
+  }
+
+  /// 알림 화면 '모두 읽음': 일반 알림(DM·스낵챗·할 일·광고 제외) 전체를
+  /// 알림센터에서 지운다. [throughDeliveredAtMillis] 뒤에 온 알림은 남긴다.
+  Future<void> cancelAllAppNotifications({
+    required String expectedOwner,
+    required int expectedSession,
+    required int throughDeliveredAtMillis,
+  }) async {
+    if (!isNotificationSession(expectedOwner, expectedSession)) return;
+    await _runNotificationCleanup(expectedOwner, expectedSession, {
+      'kind': 'all_app',
+      'notificationId': 'all_app',
+      'throughDeliveredAtMillis': throughDeliveredAtMillis,
+    });
+  }
+
+  /// 알림센터에 남은 항목을 서버 읽음 상태와 맞춘다. 읽기는 남은 항목 수만큼만
+  /// 한다(일반 알림 문서·대화·스낵챗 멤버 문서, 최대 30개씩).
+  Future<void> _reconcileDeliveredWithServer(String owner, int epoch) async {
+    List<DeliveredNotification> delivered;
+    try {
+      final raw = await _notificationCenterChannel
+          .invokeMethod<List<dynamic>>('listDeliveredNotifications', {
+        'ownerUserId': owner,
+      });
+      delivered = (raw ?? const [])
+          .whereType<Map>()
+          .map(DeliveredNotification.fromMap)
+          .toList();
+    } on MissingPluginException {
+      return; // 구버전 네이티브(메서드 없음)
+    } catch (error) {
+      Logger.error('알림센터 목록 조회 실패', error);
+      return;
+    }
+    if (delivered.isEmpty || !isNotificationSession(owner, epoch)) return;
+
+    final firestore = FirebaseFirestore.instance;
+    final appIds = delivered
+        .where((item) => item.isApp)
+        .map((item) => item.notificationId)
+        .toSet()
+        .take(30)
+        .toList();
+    final dmRooms = delivered
+        .where((item) => item.isDm)
+        .map((item) => item.conversationId)
+        .toSet()
+        .take(30)
+        .toList();
+    final snackRooms = delivered
+        .where((item) => item.isSnackChat)
+        .map((item) => item.snackChatId)
+        .toSet()
+        .take(30)
+        .toList();
+
+    final readOrMissing = <String>{};
+    final dmReadAt = <String, int>{};
+    final snackRead = <String, int>{};
+    const server = GetOptions(source: Source.server);
+    await Future.wait<void>([
+      for (final id in appIds)
+        firestore
+            .collection('notifications')
+            .doc(id)
+            .get(server)
+            .then((doc) {
+          final data = doc.data();
+          if (!doc.exists || data?['isRead'] == true) readOrMissing.add(id);
+        }).catchError((Object error) {
+          // 지워진 문서는 규칙상 읽을 수 없어 permission-denied가 된다.
+          if (error is FirebaseException && error.code == 'permission-denied') {
+            readOrMissing.add(id);
+          }
+        }),
+      for (final room in dmRooms)
+        firestore.collection('conversations').doc(room).get(server).then((doc) {
+          final value = (doc.data()?['lastReadAtBy'] as Map?)?[owner];
+          if (value is Timestamp) dmReadAt[room] = value.millisecondsSinceEpoch;
+        }).catchError((Object _) {}),
+      for (final room in snackRooms)
+        firestore
+            .collection('snack_chats')
+            .doc(room)
+            .collection('members')
+            .doc(owner)
+            .get(server)
+            .then((doc) {
+          final value = doc.data()?['lastReadSequence'];
+          if (value is num) snackRead[room] = value.toInt();
+        }).catchError((Object _) {}),
+    ]);
+    if (!isNotificationSession(owner, epoch)) return;
+    final requests = ReadSyncPlanner.reconcileRequests(
+      owner: owner,
+      delivered: delivered,
+      server: ServerReadState(
+        readOrMissingNotificationIds: readOrMissing,
+        dmReadThroughMillis: dmReadAt,
+        snackReadThroughSequence: snackRead,
+      ),
+    );
+    for (final request in requests) {
+      if (!isNotificationSession(owner, epoch)) return;
+      if (request['kind'] == 'app') {
+        await cancelAppNotifications(
+          (request['notificationIds'] as List).cast<String>(),
+          expectedOwner: owner,
+          expectedSession: epoch,
+        );
+      } else {
+        await _runNotificationCleanup(owner, epoch, request);
+      }
     }
   }
 
@@ -1599,10 +1815,13 @@ class FCMService {
           Logger.log('  - registerFcmToken 함수 호출 시작...');
         // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
         final callable = _functions.httpsCallable('registerFcmToken');
+        final build = await _appBuildNumber();
         await callable.call(<String, dynamic>{
           'token': token,
           'locale': localeTag,
           if (platform != null) 'platform': platform,
+          // 서버가 read_sync 같은 새 푸시를 처리할 수 있는 빌드에만 보내도록.
+          if (build > 0) 'appBuild': build,
         }).timeout(
           const Duration(seconds: 10),
           onTimeout: () {

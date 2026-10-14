@@ -116,6 +116,16 @@ export {
 } from './hanyang_verification';
 
 export {translateContentBatch} from './content_translation';
+import {
+  READ_SYNC_DEBOUNCE_MS,
+  ReadSyncTarget,
+  emptyPending,
+  mergePending,
+  pendingFromDoc,
+  pendingIsEmpty,
+  readSyncEnabled,
+  readSyncMessage,
+} from './read_sync_policy';
 
 export {
   getSnapshotServerTime,
@@ -2486,6 +2496,21 @@ export const onUserRegistrationCompleted = triggers().runWith(withMailSecrets())
       context.eventId,
     )
   );
+
+/** 일반 알림의 iOS 묶음 키(대상별). 대상이 없으면 종류별. */
+export function notificationThreadIdFor(data: Record<string, string>): string {
+  const type = data.type || 'notification';
+  if (type === 'friend_request' || type === 'friend_request_accepted') {
+    return 'friend_requests';
+  }
+  if (data.postId) return `post_${data.postId}`;
+  if (data.snapshotId) return `snack_${data.snapshotId}`;
+  if (data.meetupId) return `meetup_${data.meetupId}`;
+  if (data.reviewId) return `review_${data.reviewId}`;
+  if (data.snackChatId) return `snackchat_${data.snackChatId}`;
+  if (data.pairKey) return `mutual_${data.pairKey}`;
+  return `type_${type}`;
+}
 
 function notificationSettingAllows(
   document: FirebaseFirestore.DocumentSnapshot,
@@ -7902,6 +7927,11 @@ export const registerFcmToken = callables().https.onCall(async (data, context) =
   const lang: SupportedLang = normalizeSupportedLang(localeRaw) ?? 'ko';
   const locale = (localeRaw ?? '').toString().trim();
   const platform = normalizePlatform(data?.platform);
+  // 앱 빌드 번호(있을 때만). read_sync 같은 새 푸시를 처리할 수 있는 빌드만
+  // 고르는 데 쓴다. 구버전 앱은 보내지 않으므로 필드가 없다.
+  const appBuildRaw = Number(data?.appBuild);
+  const appBuild = Number.isFinite(appBuildRaw) && appBuildRaw > 0 ?
+    Math.trunc(appBuildRaw) : 0;
 
   const tokenRef = db.collection('fcm_tokens').doc(token);
   const userRef = db.collection('users').doc(uid);
@@ -7936,6 +7966,7 @@ export const registerFcmToken = callables().https.onCall(async (data, context) =
       lang,
       locale,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...(appBuild > 0 ? {appBuild} : {}),
     };
 
     if (platform) {
@@ -8682,6 +8713,16 @@ export const onNotificationCreated = triggers()
         originalNotificationId: String(dataSafe?.originalNotificationId || ''),
         actorId: String(notificationData.actorId || actorId || ''),
         actorName: String(notificationData.actorName || dataSafe?.actorName || ''),
+        // 서로 필링(pairKey)·친구 요청(friendRequestId/세대)은 앱이 '보고 있는
+        // 대상'을 맞추는 데 쓴다(없으면 포어그라운드 자동 읽음이 맞지 않았다).
+        pairKey: String(notificationData.pairKey || dataSafe?.pairKey || ''),
+        friendRequestId: String(
+          dataSafe?.friendRequestId || notificationData.friendRequestId || '',
+        ),
+        notificationGeneration: String(
+          notificationData.notificationGeneration ??
+          dataSafe?.notificationGeneration ?? '',
+        ),
         ...(hasBadge ? { badge: String(finalBadge) } : {}),
       };
       const androidNotificationTag = 'notification_' + crypto
@@ -8689,6 +8730,9 @@ export const onNotificationCreated = triggers()
         .update(String(notificationId))
         .digest('hex')
         .slice(0, 40);
+      // iOS: 같은 대상(포스트·스낵·밋업·친구 요청 …)의 알림은 한 묶음으로 보이고,
+      // 같은 알림 문서가 다시 전달되면 기존 카드를 대체한다(쌓이지 않게).
+      const iosThreadId = notificationThreadIdFor(commonData);
 
       const sendForLang = async (lang: SupportedLang, tokens: string[]) => {
         const current = await snapshot.ref.get();
@@ -8716,10 +8760,12 @@ export const onNotificationCreated = triggers()
             headers: {
               'apns-push-type': 'alert',
               'apns-priority': '10',
+              'apns-collapse-id': androidNotificationTag,
             },
             payload: {
               aps: {
                 sound: 'default',
+                threadId: iosThreadId,
                 ...(hasBadge && { badge: finalBadge }),
               },
             },
@@ -10760,3 +10806,144 @@ void triggers().firestore
       return null;
     }
   });
+
+// ---------------------------------------------------------------------------
+// 읽음 동기화 푸시(read_sync): 다른 기기·서버에서 읽음이 바뀌면 같은 사용자의
+// 모든 기기에 조용한 데이터 푸시를 보내 알림센터 항목을 지우고 배지를 맞춘다.
+// 런타임 환경 변수 READ_SYNC_PUSH=true 일 때만 보낸다(기본 꺼짐). 앱이 먼저
+// 출시된 뒤 켠다. 같은 사용자의 2.5초 안 변경은 한 번으로 묶는다.
+// ---------------------------------------------------------------------------
+
+async function queueReadSync(userId: string, target: ReadSyncTarget): Promise<void> {
+  if (!userId || !readSyncEnabled(process.env)) return;
+  const ref = db.collection('read_sync_state').doc(userId);
+  const ticket = crypto.randomUUID();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const pending = mergePending(pendingFromDoc(snap.get('pending')), target, Date.now());
+    tx.set(ref, {
+      pending,
+      ticket,
+      changedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+  });
+  // 묶기: 마지막 변경을 만든 호출만 보낸다.
+  await new Promise((resolve) => setTimeout(resolve, READ_SYNC_DEBOUNCE_MS));
+  const pending = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.get('ticket') !== ticket) return null;
+    const current = pendingFromDoc(snap.get('pending'));
+    tx.set(ref, {
+      pending: emptyPending(),
+      ticket: '',
+      lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, {merge: true});
+    return current;
+  });
+  if (!pending || pendingIsEmpty(pending)) return;
+
+  const registered = await db.collection('fcm_tokens')
+    .where('userId', '==', userId).limit(20).get();
+  // READ_SYNC_MIN_BUILD가 있으면 그 빌드 이상 토큰에만 보낸다(구버전 보호).
+  const minBuild = Number(process.env.READ_SYNC_MIN_BUILD ?? 0) || 0;
+  const tokens = await filterPushTokensOwnedByUser(
+    userId,
+    registered.docs
+      .filter((doc) => minBuild <= 0 || Number(doc.get('appBuild') ?? 0) >= minBuild)
+      .map((doc) => doc.id),
+  );
+  if (tokens.length === 0) return;
+
+  let badge: number | null = null;
+  try {
+    const userSnap = await db.collection('users').doc(userId).get();
+    const userData = (userSnap.data() || {}) as Record<string, unknown>;
+    badge = await notificationUnreadForBadge(userId, userData) +
+      toNonNegativeInt(userData.dmUnreadTotal) +
+      await getVisibleSnackChatUnreadTotal(userId);
+  } catch (error) {
+    console.warn('read_sync badge 계산 실패: badge 생략', error);
+  }
+  const message = readSyncMessage({tokens, userId, pending, badge});
+  const res = await admin.messaging().sendEachForMulticast(
+    message as unknown as admin.messaging.MulticastMessage,
+  );
+  console.log('read_sync sent', {
+    userIdHash: crypto.createHash('sha256').update(userId).digest('hex').slice(0, 12),
+    tokens: tokens.length,
+    success: res.successCount,
+    failure: res.failureCount,
+  });
+}
+
+/** 일반 알림을 읽음(false → true)으로 바꾸면. */
+export const onNotificationReadSyncPush = triggers()
+  .firestore.document('notifications/{notificationId}')
+  .onUpdate(async (change, context) => {
+    if (!readSyncEnabled(process.env)) return null;
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    if (before.isRead === true || after.isRead !== true) return null;
+    if (after.type === 'dm_received') return null;
+    await queueReadSync(String(after.userId || ''), {
+      k: 'app',
+      id: String(context.params.notificationId),
+    });
+    return null;
+  });
+
+/** 안 읽은 일반 알림이 지워지면(친구 요청 수락·취소, 만료 등). */
+export const onNotificationDeletedReadSyncPush = triggers()
+  .firestore.document('notifications/{notificationId}')
+  .onDelete(async (snapshot, context) => {
+    if (!readSyncEnabled(process.env)) return null;
+    const before = snapshot.data() || {};
+    if (before.isRead === true || before.type === 'dm_received') return null;
+    await queueReadSync(String(before.userId || ''), {
+      k: 'app',
+      id: String(context.params.notificationId),
+    });
+    return null;
+  });
+
+/** DM 대화의 lastReadAtBy.{uid}가 앞으로 가면. */
+export const onConversationReadSyncPush = triggers()
+  .firestore.document('conversations/{conversationId}')
+  .onUpdate(async (change, context) => {
+    if (!readSyncEnabled(process.env)) return null;
+    const before = (change.before.get('lastReadAtBy') || {}) as Record<string, unknown>;
+    const after = (change.after.get('lastReadAtBy') || {}) as Record<string, unknown>;
+    const jobs: Promise<void>[] = [];
+    for (const [uid, value] of Object.entries(after)) {
+      if (!(value instanceof admin.firestore.Timestamp)) continue;
+      const previous = before[uid];
+      if (previous instanceof admin.firestore.Timestamp &&
+          previous.toMillis() >= value.toMillis()) continue;
+      jobs.push(queueReadSync(uid, {
+        k: 'dm',
+        room: String(context.params.conversationId),
+        ms: value.toMillis(),
+        s: value.seconds,
+        n: value.nanoseconds,
+      }));
+    }
+    await Promise.all(jobs);
+    return null;
+  });
+
+/** 스낵챗 members/{uid}.lastReadSequence가 커지면. */
+export const onSnackChatMemberReadSyncPush = triggers()
+  .firestore.document('snack_chats/{snackChatId}/members/{userId}')
+  .onUpdate(async (change, context) => {
+    if (!readSyncEnabled(process.env)) return null;
+    const before = toNonNegativeInt(change.before.get('lastReadSequence'));
+    const after = toNonNegativeInt(change.after.get('lastReadSequence'));
+    if (after <= before) return null;
+    await queueReadSync(String(context.params.userId), {
+      k: 'snack_chat',
+      room: String(context.params.snackChatId),
+      seq: after,
+    });
+    return null;
+  });
+

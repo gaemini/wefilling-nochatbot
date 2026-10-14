@@ -21,6 +21,7 @@ import '../../snapshot/mutual_feel_shown_store.dart';
 import '../../snapshot/snapshot_storage_image.dart';
 import '../../snapshot/snapshot_strings.dart';
 import '../widgets/user_avatar.dart';
+import '../../services/notification_service.dart';
 
 const Color _accent = Color(0xFF2C6BC0);
 
@@ -215,6 +216,13 @@ Future<void> showMutualFeelSheet(
   int otherPhotoVersion = 0,
   SnapshotMutualFeel? mutual,
 }) {
+  // 서로 필링 알림은 이 시트를 보면 읽음(어느 경로로 열어도).
+  if (otherUserId.trim().isNotEmpty) {
+    unawaited(NotificationService().markRelatedNotificationsAsRead(
+      types: const {'snapshot_mutual_feel'},
+      targets: {'actorId': otherUserId.trim()},
+    ));
+  }
   return showModalBottomSheet<void>(
     context: context,
     useSafeArea: false,

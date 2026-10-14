@@ -3270,6 +3270,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   Future<void> _releaseDeviceTokenBeforeSignOut() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
+    // 탈퇴·미완성 계정 등 일반 로그아웃이 아닌 경로도 배지 0과 알림센터 정리를
+    // 같이 한다(이전 계정의 알림이 남지 않게).
+    await BadgeService.clearBadgeOnSignOut();
     try {
       await _fcmService.reset();
     } catch (_) {}

@@ -21,6 +21,9 @@ import '../utils/account_status_helper.dart';
 import '../services/user_info_cache_service.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
+import '../services/active_content_registry.dart';
+import '../services/notification_service.dart';
+import 'dart:async';
 
 class ReviewDetailScreen extends StatefulWidget {
   final ReviewPost review;
@@ -44,14 +47,33 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   int _currentImageIndex = 0; // 현재 이미지 인덱스
   final PageController _pageController = PageController();
 
+  static const Set<String> _reviewNoticeTypes = {
+    'review_comment',
+    'review_like',
+  };
+
   @override
   void initState() {
     super.initState();
     _loadParticipants();
+    // 이 리뷰의 댓글·좋아요 알림은 리뷰를 보면 읽음(알림센터·배지도 함께).
+    final reviewId = widget.review.id.trim();
+    if (reviewId.isNotEmpty) {
+      unawaited(NotificationService().markRelatedNotificationsAsRead(
+        types: _reviewNoticeTypes,
+        targets: {'reviewId': reviewId},
+      ));
+      ActiveContentRegistry.register(
+        this,
+        types: _reviewNoticeTypes,
+        targets: {'reviewId': reviewId},
+      );
+    }
   }
 
   @override
   void dispose() {
+    ActiveContentRegistry.unregister(this);
     _pageController.dispose();
     super.dispose();
   }

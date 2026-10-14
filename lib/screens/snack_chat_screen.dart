@@ -86,6 +86,7 @@ import '../ui/widgets/together_proposal_banner.dart';
 import '../utils/avatar_image.dart';
 import '../services/clipboard_image_service.dart';
 import '../ui/widgets/translate_hints.dart';
+import '../services/active_content_registry.dart';
 
 @visibleForTesting
 bool isSnackChatMessageMeaningfullyVisible({
@@ -2429,14 +2430,21 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         );
       }
       if (entry.canAdvanceReadCursor && !_accountInvalidated) {
+        const roomNoticeTypes = {
+          'snack_chat_invite',
+          'snack_chat_together',
+          'snack_chat_together_accepted',
+        };
         unawaited(NotificationService().markRelatedNotificationsAsRead(
-          types: const {
-            'snack_chat_invite',
-            'snack_chat_together',
-            'snack_chat_together_accepted',
-          },
+          types: roomNoticeTypes,
           targets: {'snackChatId': widget.snackChatId},
         ));
+        // 방에 있는 동안 같은 방의 초대·같이하기 알림이 오면 배너 없이 읽음 처리.
+        ActiveContentRegistry.register(
+          this,
+          types: roomNoticeTypes,
+          targets: {'snackChatId': widget.snackChatId},
+        );
       }
 
       // Reading and unread-anchor positioning are independent. As soon as the
@@ -4105,6 +4113,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   @override
   void dispose() {
+    ActiveContentRegistry.unregister(this);
     NavigationService.routeObserver.unsubscribe(this);
     unawaited(_accountSubscription?.cancel());
     // 화면 이동은 막지 않고, 읽음 동기화 Future만 백그라운드에서 완료한다.

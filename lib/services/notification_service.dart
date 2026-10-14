@@ -618,6 +618,9 @@ class NotificationService {
     final session = FCMService().notificationSession;
     if (user == null) return false;
 
+    // 이 시각 전에 도착한 일반 알림은 알림센터에서 모두 지운다(이미 다른
+    // 기기에서 읽었거나 목록 범위 밖의 오래된 알림 포함). 뒤에 온 새 알림은 남긴다.
+    final markedAt = DateTime.now().millisecondsSinceEpoch;
     try {
       // Freeze one server snapshot. Re-querying unread after each commit also
       // consumed notifications that arrived during "mark all".
@@ -638,6 +641,14 @@ class NotificationService {
         }
         await batch.commit();
         _afterConfirmedRead(portion.map((doc) => doc.id), user.uid, session);
+      }
+      unawaited(FCMService().cancelAllAppNotifications(
+        expectedOwner: user.uid,
+        expectedSession: session,
+        throughDeliveredAtMillis: markedAt,
+      ));
+      if (documents.isEmpty) {
+        unawaited(_refreshBadgeAfterRead(owner: user.uid, session: session));
       }
       return true;
     } catch (e) {

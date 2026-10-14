@@ -226,7 +226,8 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
     )
     deliveredNotificationChannel.setMethodCallHandler { [weak self] call, result in
-      guard call.method == "removeDeliveredNotifications",
+      guard call.method == "removeDeliveredNotifications" ||
+              call.method == "listDeliveredNotifications",
             let arguments = call.arguments as? [String: Any] else {
         result(FlutterMethodNotImplemented)
         return
@@ -237,6 +238,10 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
           message: "Notification Center is unavailable.",
           details: nil
         ))
+        return
+      }
+      if call.method == "listDeliveredNotifications" {
+        self.listDeliveredNotifications(arguments: arguments, result: result)
         return
       }
       self.removeDeliveredNotifications(arguments: arguments, result: result)
@@ -895,6 +900,18 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
           guard !deliveredId.isEmpty, notificationIds.contains(deliveredId) else {
             return nil
           }
+        case "all_app":
+          // 알림 화면 '모두 읽음' / 다른 기기의 모두 읽음: DM·스낵챗·할 일·광고를
+          // 뺀 일반 알림 전체. 기준 시각 뒤에 온 새 알림은 남긴다.
+          let boundary = (arguments["throughDeliveredAtMillis"] as? NSNumber)?.doubleValue ?? 0
+          let excluded: Set<String> = [
+            "dm_received", "snack_chat_message", "personalTodoReminder", "ad_updates",
+          ]
+          guard !excluded.contains(type),
+                !self.notificationString(payload, "notificationId").isEmpty,
+                boundary <= 0 || notification.date.timeIntervalSince1970 * 1000 <= boundary else {
+            return nil
+          }
         case "snack_chat":
           let sequence = self.notificationInt64(payload, "messageSequence")
           guard type == "snack_chat_message",
@@ -941,6 +958,38 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
         }
         DispatchQueue.main.async { result(unchanged.isEmpty && hadMissingMetadata ? -1 : unchanged.count) }
       }
+    }
+  }
+
+  /// 알림센터에 남은 이 계정의 알림 메타데이터(앱 복귀 때 서버 읽음 상태와
+  /// 맞춰 정리하는 데 쓴다). 내용·제목은 돌려주지 않는다.
+  private func listDeliveredNotifications(
+    arguments: [String: Any],
+    result: @escaping FlutterResult
+  ) {
+    let ownerUserId = (arguments["ownerUserId"] as? String ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !ownerUserId.isEmpty else {
+      result([])
+      return
+    }
+    UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+      let items: [[String: Any]] = notifications.compactMap { notification in
+        let payload = self.deliveredNotificationPayload(notification)
+        guard self.notificationString(payload, "recipientUserId") == ownerUserId else {
+          return nil
+        }
+        return [
+          "type": self.notificationString(payload, "type"),
+          "notificationId": self.notificationString(payload, "notificationId"),
+          "conversationId": self.notificationString(payload, "conversationId"),
+          "snackChatId": self.notificationString(payload, "snackChatId"),
+          "messageSequence": self.notificationInt64(payload, "messageSequence"),
+          "sentAtMillis": self.notificationInt64(payload, "sentAtMillis"),
+          "deliveredAtMillis": Int64(notification.date.timeIntervalSince1970 * 1000),
+        ]
+      }
+      DispatchQueue.main.async { result(items) }
     }
   }
 

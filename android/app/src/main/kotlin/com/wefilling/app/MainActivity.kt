@@ -249,6 +249,8 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "removeDeliveredNotifications" ->
                     removeDeliveredNotifications(call.arguments as? Map<*, *>, result)
+                "listDeliveredNotifications" ->
+                    listDeliveredNotifications(call.arguments as? Map<*, *>, result)
                 "recordLocalNotificationMetadata" ->
                     recordLocalNotificationMetadata(call.arguments as? Map<*, *>, result)
                 "registerTodoNotificationMetadata" ->
@@ -426,29 +428,7 @@ class MainActivity : FlutterActivity() {
             var removed = 0
             var missingMetadata = false
             manager.activeNotifications.forEach activeLoop@{ active ->
-                val payload = mutableMapOf<String, String>()
-                val extras = active.notification.extras
-                extras.keySet().forEach extrasLoop@{ key ->
-                    val value = extras.get(key) ?: return@extrasLoop
-                    payload[key] = value.toString().trim()
-                }
-                extras.getString("payload")?.let { encoded ->
-                    runCatching {
-                        val json = JSONObject(encoded)
-                        val keys = json.keys()
-                        while (keys.hasNext()) {
-                            val key = keys.next()
-                            payload[key] = json.opt(key)?.toString()?.trim().orEmpty()
-                        }
-                    }
-                }
-                val metadataProof = if (payload["type"].isNullOrEmpty()) {
-                    NotificationDeliveryMetadataReceiver.read(this, active.tag, active.notification.`when`)
-                } else null
-                metadataProof?.let { encoded ->
-                    val json = JSONObject(encoded)
-                    json.keys().forEach { key -> payload[key] = json.optString(key) }
-                }
+                val (payload, metadataProof) = deliveredPayload(active)
                 // FCM's automatic renderer does not copy data into extras.
                 // Exact app-event tags are immutable. Chat requires the payload
                 // captured by the metadata-only receiver, never a tag alone.
@@ -473,6 +453,17 @@ class MainActivity : FlutterActivity() {
                         payload["bannerId"] == arguments["bannerId"]?.toString() &&
                         payload["notificationVersion"] == arguments["version"]?.toString())
                     "app" -> (payload["notificationId"]?.let { it.isNotEmpty() && it in notificationIds } == true) || exactTag
+                    // 알림 화면 '모두 읽음' / 다른 기기의 모두 읽음: DM·스낵챗·할 일·광고를
+                    // 뺀 일반 알림 전체. 기준 시각 뒤에 온 새 알림은 남긴다.
+                    "all_app" -> {
+                        val boundary = arguments["throughDeliveredAtMillis"]?.toString()?.toLongOrNull() ?: 0L
+                        payloadOwner == ownerUserId &&
+                            payload["type"] !in setOf(
+                                "dm_received", "snack_chat_message", "personalTodoReminder", "ad_updates",
+                            ) &&
+                            !payload["notificationId"].isNullOrEmpty() &&
+                            (boundary <= 0L || active.postTime <= boundary)
+                    }
                     "snack_chat" -> {
                         val sequence = payload["messageSequence"]?.toLongOrNull() ?: 0L
                         (removeAllInRoom && exactTag && roomId.isNotEmpty()) ||
@@ -521,6 +512,68 @@ class MainActivity : FlutterActivity() {
                 error.localizedMessage,
                 null,
             )
+        }
+    }
+
+    /// 알림의 데이터(extras, 로컬 카드 JSON, 메타데이터 수신기 기록)를 합친다.
+    private fun deliveredPayload(
+        active: android.service.notification.StatusBarNotification,
+    ): Pair<MutableMap<String, String>, String?> {
+        val payload = mutableMapOf<String, String>()
+        val extras = active.notification.extras
+        extras.keySet().forEach extrasLoop@{ key ->
+            val value = extras.get(key) ?: return@extrasLoop
+            payload[key] = value.toString().trim()
+        }
+        extras.getString("payload")?.let { encoded ->
+            runCatching {
+                val json = JSONObject(encoded)
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    payload[key] = json.opt(key)?.toString()?.trim().orEmpty()
+                }
+            }
+        }
+        val metadataProof = if (payload["type"].isNullOrEmpty()) {
+            NotificationDeliveryMetadataReceiver.read(this, active.tag, active.notification.`when`)
+        } else null
+        metadataProof?.let { encoded ->
+            val json = JSONObject(encoded)
+            json.keys().forEach { key -> payload[key] = json.optString(key) }
+        }
+        return payload to metadataProof
+    }
+
+    /// 알림센터에 남은 이 계정의 알림 메타데이터(앱 복귀 때 서버 읽음 상태와
+    /// 맞춰 정리하는 데 쓴다). 내용·제목은 돌려주지 않는다.
+    private fun listDeliveredNotifications(
+        rawArguments: Map<*, *>?,
+        result: MethodChannel.Result,
+    ) {
+        val ownerUserId = rawArguments?.get("ownerUserId")?.toString()?.trim().orEmpty()
+        if (ownerUserId.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            result.success(emptyList<Map<String, Any>>())
+            return
+        }
+        try {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val items = manager.activeNotifications.mapNotNull { active ->
+                val (payload, _) = deliveredPayload(active)
+                if (payload["recipientUserId"] != ownerUserId) return@mapNotNull null
+                mapOf(
+                    "type" to payload["type"].orEmpty(),
+                    "notificationId" to payload["notificationId"].orEmpty(),
+                    "conversationId" to payload["conversationId"].orEmpty(),
+                    "snackChatId" to payload["snackChatId"].orEmpty(),
+                    "messageSequence" to (payload["messageSequence"]?.toLongOrNull() ?: 0L),
+                    "sentAtMillis" to (payload["sentAtMillis"]?.toLongOrNull() ?: 0L),
+                    "deliveredAtMillis" to active.postTime,
+                )
+            }
+            result.success(items)
+        } catch (error: Throwable) {
+            result.error("notification-list-failed", error.localizedMessage, null)
         }
     }
 

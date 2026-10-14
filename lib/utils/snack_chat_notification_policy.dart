@@ -4,6 +4,9 @@ import 'package:crypto/crypto.dart';
 
 const int snackChatAndroidFcmNotificationId = 0;
 const String snackChatAndroidGroupKey = 'wefilling_snack_chat_messages';
+
+/// DM 로컬 카드 묶음 키(스낵챗과 같은 방식, 방마다 tag로 대체).
+const String dmAndroidGroupKey = 'wefilling_dm_messages';
 const Duration snackChatNotificationBurstWindow = Duration(seconds: 4);
 
 /// Mirrors the server-issued Android notification tag exactly. Keeping this

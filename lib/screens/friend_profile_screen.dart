@@ -884,15 +884,25 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
             ],
             if (!isMe) ...[
               const SizedBox(height: 14),
-              Row(
+              // 높이를 고정하면 글꼴·글자 배율에 따라 글자 아래가 잘린다. 최소 38로
+              // 두고 글자 배율은 1.3배까지만 키운다.
+              MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.3,
+                child: Row(
                 children: [
                   Expanded(
-                    child: SizedBox(
-                      height: 38,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 38),
                       child: FilledButton(
                         key: const ValueKey('profile_message_button'),
                         onPressed: _openDM,
                         style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 38),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           backgroundColor: const Color(0xFF2C6BC0),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
@@ -912,9 +922,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  SizedBox(
-                    width: 96,
-                    height: 38,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minWidth: 96,
+                      maxWidth: 140,
+                      minHeight: 38,
+                    ),
                     child: FilledButton(
                       key: const ValueKey('profile_relation_button'),
                       onPressed: isNonFriendPreview &&
@@ -923,7 +936,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                           ? _sendFriendRequestFromProfile
                           : null,
                       style: FilledButton.styleFrom(
-                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(96, 38),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         backgroundColor: const Color(0xFFF2F2F2),
                         disabledBackgroundColor: const Color(0xFFF2F2F2),
                         foregroundColor: Colors.black,
@@ -965,6 +983,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                     ),
                   ),
                 ],
+              ),
               ),
             ],
           ],

@@ -457,13 +457,16 @@ class _MyPageScreenState extends State<MyPageScreen>
       required VoidCallback onTap,
       bool primary = false,
     }) {
-      return SizedBox(
-        height: 38,
+      // 높이를 고정하면 글꼴·글자 배율에 따라 글자 아래가 잘린다. 최소 38.
+      return ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 38),
         child: FilledButton(
           key: key,
           onPressed: onTap,
           style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: const Size(0, 38),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             backgroundColor:
                 primary ? const Color(0xFF2C6BC0) : const Color(0xFFF2F2F2),
             foregroundColor: primary ? Colors.white : const Color(0xFF111827),

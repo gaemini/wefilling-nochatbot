@@ -23,6 +23,7 @@ import '../services/snapshot_archive_service.dart';
 import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_create_widgets.dart';
+import '../ui/widgets/keyboard_aware.dart';
 import '../snapshot/snapshot_share_view.dart';
 import '../providers/relationship_provider.dart';
 import 'package:provider/provider.dart';
@@ -2496,10 +2497,11 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     SnapshotStrings strings,
     BoxConstraints constraints,
   ) {
-    final padding = MediaQuery.paddingOf(context);
+    // 키보드와 무관한 안전 영역 값을 쓰고, 키보드 높이는 글자 패널 자리만 읽는다
+    // (편집 화면·영상 캔버스가 키보드 애니메이션 매 프레임 다시 그려지지 않게).
+    final padding = MediaQuery.viewPaddingOf(context);
     final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     final editingLayer = _textLayerById(_editingTextLayerId);
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final mediaBottom = 104 + padding.bottom;
     final isVideo = _mediaType == SnapshotMediaType.video &&
         _videoDuration > Duration.zero;
@@ -2612,13 +2614,14 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
               child: FadeTransition(opacity: animation, child: child),
             ),
             child: editingLayer != null
-                ? Padding(
+                ? KeyboardOpenBuilder(
                     key: const ValueKey('snapshot_text_panel_slot'),
-                    padding: EdgeInsets.only(bottom: keyboardInset),
-                    child: _buildTextEditPanel(
-                      strings,
-                      editingLayer,
-                      bottomPadding: keyboardInset > 0 ? 0 : padding.bottom,
+                    builder: (context, keyboardOpen) => KeyboardInsetPadding(
+                      child: _buildTextEditPanel(
+                        strings,
+                        editingLayer,
+                        bottomPadding: keyboardOpen ? 0 : padding.bottom,
+                      ),
                     ),
                   )
                 : Padding(

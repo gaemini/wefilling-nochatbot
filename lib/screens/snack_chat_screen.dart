@@ -1609,6 +1609,25 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         userInitiatedRetry: true,
         forceRefresh: forceRefresh,
       );
+      // 다시 실패하면 같은 화면이 반복되지 않게 짧게 알린다.
+      if (mounted &&
+          !_hasCurrentTranslation(message) &&
+          !_deferredTranslationOutcomes.containsKey(requestKey)) {
+        final zh = isChineseUi(context);
+        final isKo = Localizations.localeOf(context).languageCode == 'ko';
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 2),
+            content: Text(
+              zh
+                  ? '暂时无法翻译，请稍后再试'
+                  : isKo
+                      ? '지금은 번역하지 못했어요. 잠시 후 다시 시도해 주세요'
+                      : "Couldn't translate right now. Please try again shortly",
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _manualTranslationRetryKeys.remove(requestKey));

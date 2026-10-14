@@ -207,14 +207,40 @@ class _TranslatableContentState extends State<TranslatableContent> {
 
   Future<bool> _load() => _startLoad();
 
-  Future<bool> _retryManually() => _startLoad(manualRetry: true);
+  /// '다시 번역' 탭: 바로 '번역 중'으로 바꾸고(이전에는 다시 그리지 않아 버튼이
+  /// 끝날 때까지 그대로 보였다), 다시 실패하면 짧게 알린다.
+  Future<bool> _retryManually() async {
+    final future = _startLoad(manualRetry: true);
+    if (mounted) setState(() {});
+    final ok = await future;
+    if (!ok && mounted) {
+      final zh = isChineseUi(context);
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 2),
+          content: Text(
+            zh
+                ? '暂时无法翻译，请稍后再试'
+                : isKo
+                    ? '지금은 번역하지 못했어요. 잠시 후 다시 시도해 주세요'
+                    : "Couldn't translate right now. Please try again shortly",
+          ),
+        ),
+      );
+    }
+    return ok;
+  }
 
   Future<bool> _startLoad({bool manualRetry = false}) async {
     final active = _activeLoad;
     if (active != null) return active;
     late final Future<bool> future;
     future = _performLoad(manualRetry: manualRetry).whenComplete(() {
-      if (identical(_activeLoad, future)) _activeLoad = null;
+      if (identical(_activeLoad, future)) {
+        _activeLoad = null;
+        if (mounted) setState(() {});
+      }
     });
     _activeLoad = future;
     return future;

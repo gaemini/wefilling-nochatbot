@@ -3,7 +3,11 @@
 // Google 로그인 기능 제공
 // 인증 후 화면 전환 처리
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import '../ui/motion/auth_gate_hold.dart';
+import '../ui/motion/motion_dialog.dart';
 import '../ui/motion/logo_handoff.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -42,8 +46,8 @@ class _LoginScreenState extends State<LoginScreen>
     if (MotionTokens.reduceMotion(context)) return child;
     final total = _animationController.duration!.inMilliseconds;
     final start = (_staggerStep.inMilliseconds * index) / total;
-    final end = (start + MotionTokens.medium.inMilliseconds / total)
-        .clamp(0.0, 1.0);
+    final end =
+        (start + MotionTokens.medium.inMilliseconds / total).clamp(0.0, 1.0);
     final curved = CurvedAnimation(
       parent: _animationController,
       curve: Interval(start, end, curve: MotionTokens.curve),
@@ -100,19 +104,84 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  /// 누른 로그인 버튼(처리 중) / 성공 체크를 보이는 버튼.
+  _LoginMethod? _busyMethod;
+  _LoginMethod? _successMethod;
+
+  /// 버튼 아래 한 줄 오류(5초 뒤 또는 다른 버튼을 누르면 사라짐).
+  String? _inlineError;
+  int _failureCount = 0;
+  Timer? _inlineErrorTimer;
+
   @override
   void dispose() {
+    _inlineErrorTimer?.cancel();
     _animationController.dispose();
     super.dispose();
+  }
+
+  void _beginLogin(_LoginMethod method) {
+    _inlineErrorTimer?.cancel();
+    setState(() {
+      _busyMethod = method;
+      _successMethod = null;
+      _inlineError = null;
+    });
+    // 게이트 안 로그인 화면이면 성공 체크를 보여 줄 동안 화면 교체를 미룬다.
+    if (AuthGateScope.hosts(context)) AuthGateHold.instance.arm();
+  }
+
+  void _endLogin() {
+    if (mounted) setState(() => _busyMethod = null);
+    AuthGateHold.instance.release();
+  }
+
+  void _showInlineError(String message) {
+    _inlineErrorTimer?.cancel();
+    setState(() {
+      _busyMethod = null;
+      _failureCount++;
+      _inlineError = message;
+    });
+    AuthGateHold.instance.release();
+    _inlineErrorTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) setState(() => _inlineError = null);
+    });
+  }
+
+  /// 성공: 스피너 → 체크(medium), 300ms 뒤 다음 화면. 게이트 안이면 게이트가
+  /// 화면을 한 번만 바꾸고, 게이트 밖(로그아웃 뒤 push된 화면)이면 기존 이동.
+  Future<void> _completeLogin(
+    _LoginMethod method,
+    AuthProvider authProvider,
+  ) async {
+    setState(() {
+      _busyMethod = null;
+      _successMethod = method;
+      _inlineError = null;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    if (AuthGateScope.hosts(context)) {
+      AuthGateHold.instance.release();
+      return;
+    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => authProvider.isRegistrationComplete
+            ? const MainScreen()
+            : const NicknameSetupScreen(),
+      ),
+    );
   }
 
   Future<void> _showRegistrationRequiredDialog() async {
     if (!mounted) return;
 
-    final shouldStartSignup = await showDialog<bool>(
+    final shouldStartSignup = await showMotionDialog<bool>(
       context: context,
       barrierDismissible: true,
-      useSafeArea: true,
       builder: (dialogContext) {
         final l10n = AppLocalizations.of(dialogContext)!;
         final screenSize = MediaQuery.sizeOf(dialogContext);
@@ -228,321 +297,342 @@ class _LoginScreenState extends State<LoginScreen>
             compactLanguages: isCompactLanguageButton,
             content: Builder(
               builder: (context) => LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isShort = constraints.maxHeight < 760;
-                    final isVeryShort = constraints.maxHeight < 700;
-                    final hPadding = isVeryShort ? 16.0 : 24.0;
-                    final logoSize =
-                        isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
-                    final appNameSize =
-                        isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
-                    final isChineseBrand = isChineseUi(context);
-                    final cardVPadding = isVeryShort ? 14.0 : 20.0;
-                    final cardHPadding = isVeryShort ? 16.0 : 24.0;
-                    final buttonGap = isVeryShort ? 10.0 : 14.0;
-                    final titleGap = isVeryShort ? 4.0 : 6.0;
-                    final headerTopGap = ((constraints.maxHeight *
-                                (isVeryShort ? 0.065 : 0.095)) +
-                            (isVeryShort ? 14.0 : 24.0))
-                        .clamp(56.0, 108.0);
+                builder: (context, constraints) {
+                  final isShort = constraints.maxHeight < 760;
+                  final isVeryShort = constraints.maxHeight < 700;
+                  final hPadding = isVeryShort ? 16.0 : 24.0;
+                  final logoSize =
+                      isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
+                  final appNameSize =
+                      isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
+                  final isChineseBrand = isChineseUi(context);
+                  final cardVPadding = isVeryShort ? 14.0 : 20.0;
+                  final cardHPadding = isVeryShort ? 16.0 : 24.0;
+                  final buttonGap = isVeryShort ? 10.0 : 14.0;
+                  final titleGap = isVeryShort ? 4.0 : 6.0;
+                  final headerTopGap =
+                      ((constraints.maxHeight * (isVeryShort ? 0.065 : 0.095)) +
+                              (isVeryShort ? 14.0 : 24.0))
+                          .clamp(56.0, 108.0);
 
-                    return SingleChildScrollView(
-                      physics: const ClampingScrollPhysics(),
-                      padding: EdgeInsets.symmetric(horizontal: hPadding),
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: constraints.maxHeight,
-                        ),
-                        child: IntrinsicHeight(
-                          child: Column(
-                            children: [
-                              SizedBox(height: headerTopGap),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  // 앱 시작 로고가 이 자리로 옮겨 온다.
-                                  LogoHandoffTargetSlot(
-                                    target: LogoHandoffTarget.login,
-                                    child: Image.asset(
-                                      'assets/images/wefilling_boot_logo.png',
-                                      width: logoSize,
-                                      height: logoSize,
-                                      fit: BoxFit.contain,
-                                      errorBuilder:
-                                          (context, error, stackTrace) {
-                                        return Icon(
-                                          Icons.people_alt_rounded,
-                                          size: logoSize * 0.8,
-                                          color: Colors.blue.shade700,
-                                        );
-                                      },
-                                    ),
+                  return SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    padding: EdgeInsets.symmetric(horizontal: hPadding),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: IntrinsicHeight(
+                        child: Column(
+                          children: [
+                            SizedBox(height: headerTopGap),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // 앱 시작 로고가 이 자리로 옮겨 온다.
+                                LogoHandoffTargetSlot(
+                                  target: LogoHandoffTarget.login,
+                                  child: Image.asset(
+                                    'assets/images/wefilling_boot_logo.png',
+                                    width: logoSize,
+                                    height: logoSize,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Icon(
+                                        Icons.people_alt_rounded,
+                                        size: logoSize * 0.8,
+                                        color: Colors.blue.shade700,
+                                      );
+                                    },
                                   ),
-                                  SizedBox(height: isVeryShort ? 8 : 12),
-                                  _stagger(0, FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        ExcludeSemantics(
-                                          child: Opacity(
-                                            opacity: 0,
-                                            child: Text(
-                                              isChineseBrand
-                                                  ? 'Wefilling'
-                                                  : AppLocalizations.of(
-                                                      context,
-                                                    )!
-                                                      .appName,
-                                              maxLines: 1,
-                                              style: TextStyle(
-                                                fontSize: appNameSize,
-                                                fontWeight: FontWeight.bold,
-                                                fontFamily: 'Inter',
-                                                fontFamilyFallback: const [
-                                                  'NotoSansKR'
-                                                ],
-                                                color: Colors.black,
-                                                letterSpacing: 1.2,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        Positioned.fill(
-                                          child: Center(
-                                            child: Transform.scale(
-                                              scale: isChineseBrand ? 1.18 : 1,
+                                ),
+                                SizedBox(height: isVeryShort ? 8 : 12),
+                                _stagger(
+                                    0,
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          ExcludeSemantics(
+                                            child: Opacity(
+                                              opacity: 0,
                                               child: Text(
-                                                key: const ValueKey(
-                                                  'login_brand_name',
-                                                ),
-                                                AppLocalizations.of(context)!
-                                                    .appName,
+                                                isChineseBrand
+                                                    ? 'Wefilling'
+                                                    : AppLocalizations.of(
+                                                        context,
+                                                      )!
+                                                        .appName,
                                                 maxLines: 1,
                                                 style: TextStyle(
                                                   fontSize: appNameSize,
                                                   fontWeight: FontWeight.bold,
-                                                  fontFamily: isChineseBrand
-                                                      ? 'NotoSansSC'
-                                                      : 'Inter',
-                                                  fontFamilyFallback:
-                                                      _loginFontFallback(
-                                                    context,
-                                                  ),
+                                                  fontFamily: 'Inter',
+                                                  fontFamilyFallback: const [
+                                                    'NotoSansKR'
+                                                  ],
                                                   color: Colors.black,
-                                                  letterSpacing:
-                                                      isChineseBrand ? 3 : 1.2,
+                                                  letterSpacing: 1.2,
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  )),
-                                  SizedBox(height: isVeryShort ? 2 : 4),
-                                  _stagger(1, FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      AppLocalizations.of(context)!.appTagline,
-                                      maxLines: 1,
-                                      style: TextStyle(
-                                        fontFamily: 'Inter',
-                                        fontFamilyFallback:
-                                            _loginFontFallback(context),
-                                        fontSize: isVeryShort ? 15 : 18,
-                                        color: Colors.grey.shade700,
-                                        letterSpacing: 0.5,
+                                          Positioned.fill(
+                                            child: Center(
+                                              child: Transform.scale(
+                                                scale:
+                                                    isChineseBrand ? 1.18 : 1,
+                                                child: Text(
+                                                  key: const ValueKey(
+                                                    'login_brand_name',
+                                                  ),
+                                                  AppLocalizations.of(context)!
+                                                      .appName,
+                                                  maxLines: 1,
+                                                  style: TextStyle(
+                                                    fontSize: appNameSize,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontFamily: isChineseBrand
+                                                        ? 'NotoSansSC'
+                                                        : 'Inter',
+                                                    fontFamilyFallback:
+                                                        _loginFontFallback(
+                                                      context,
+                                                    ),
+                                                    color: Colors.black,
+                                                    letterSpacing:
+                                                        isChineseBrand
+                                                            ? 3
+                                                            : 1.2,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                  )),
+                                    )),
+                                SizedBox(height: isVeryShort ? 2 : 4),
+                                _stagger(
+                                    1,
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        AppLocalizations.of(context)!
+                                            .appTagline,
+                                        maxLines: 1,
+                                        style: TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback:
+                                              _loginFontFallback(context),
+                                          fontSize: isVeryShort ? 15 : 18,
+                                          color: Colors.grey.shade700,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    )),
+                              ],
+                            ),
+                            SizedBox(height: isVeryShort ? 8 : 12),
+                            Container(
+                              width: double.infinity,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: cardHPadding,
+                                vertical: cardVPadding,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    offset: const Offset(0, 3),
+                                    blurRadius: 10,
+                                    spreadRadius: 0,
+                                  ),
                                 ],
                               ),
-                              SizedBox(height: isVeryShort ? 8 : 12),
-                              Container(
-                                width: double.infinity,
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: cardHPadding,
-                                  vertical: cardVPadding,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      offset: const Offset(0, 3),
-                                      blurRadius: 10,
-                                      spreadRadius: 0,
-                                    ),
-                                  ],
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    _stagger(2, Text(
-                                      AppLocalizations.of(context)!
-                                          .welcomeTitle,
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontFamily: 'Inter',
-                                        fontFamilyFallback:
-                                            _loginFontFallback(context),
-                                        fontSize: isVeryShort ? 20 : 22,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.blue.shade800,
-                                      ),
-                                    )),
-                                    SizedBox(height: titleGap),
-                                    _stagger(2, Text(
-                                      AppLocalizations.of(context)!
-                                          .googleLoginDescription,
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontFamily: 'Inter',
-                                        fontFamilyFallback:
-                                            _loginFontFallback(context),
-                                        fontSize: isVeryShort ? 15 : 16,
-                                        height: 1.4,
-                                        color: Colors.grey.shade800,
-                                      ),
-                                    )),
-                                    SizedBox(height: isVeryShort ? 14 : 20),
-                                    _stagger(3, _LoginMethodButton(
-                                      label: AppLocalizations.of(context)!
-                                          .appleLogin,
-                                      onPressed: authProvider.isLoading
-                                          ? null
-                                          : () => _handleAppleLogin(
-                                                context,
-                                                authProvider,
-                                              ),
-                                      backgroundColor: const Color(0xFFF3F4F6),
-                                      foregroundColor: const Color(0xFF111827),
-                                      leading: Icon(
-                                        Icons.apple,
-                                        size: isVeryShort ? 19 : 20,
-                                        color: Colors.black,
-                                      ),
-                                    )),
-                                    SizedBox(height: buttonGap),
-                                    _stagger(4, _LoginMethodButton(
-                                      label: AppLocalizations.of(context)!
-                                          .googleLogin,
-                                      onPressed: authProvider.isLoading
-                                          ? null
-                                          : () => _handleGoogleLogin(
-                                                context,
-                                                authProvider,
-                                              ),
-                                      backgroundColor: const Color(0xFFF3F4F6),
-                                      foregroundColor: const Color(0xFF111827),
-                                      leading: Image.asset(
-                                        'assets/icons/google_logo.png',
-                                        width: isVeryShort ? 18 : 20,
-                                        height: isVeryShort ? 18 : 20,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                          return SizedBox(
-                                            width: isVeryShort ? 18 : 20,
-                                            height: isVeryShort ? 18 : 20,
-                                            child: CustomPaint(
-                                              painter: GoogleLogoPainter(),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    )),
-                                    SizedBox(height: buttonGap),
-                                    _stagger(5, _LoginMethodButton(
-                                      label: AppLocalizations.of(context)!
-                                          .emailLogin,
-                                      onPressed: authProvider.isLoading
-                                          ? null
-                                          : () {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      const EmailLoginScreen(),
-                                                ),
-                                              );
-                                            },
-                                      backgroundColor: const Color(0xFFF3F4F6),
-                                      foregroundColor: const Color(0xFF111827),
-                                      leading: Icon(
-                                        Icons.email_outlined,
-                                        size: isVeryShort ? 18 : 19,
-                                        color: const Color(0xFF374151),
-                                      ),
-                                    )),
-                                    SizedBox(height: buttonGap),
-                                    _stagger(6, _LoginMethodButton(
-                                      label:
-                                          AppLocalizations.of(context)!.signUp,
-                                      onPressed: authProvider.isLoading
-                                          ? null
-                                          : () =>
-                                              _navigateToSignUpFlow(context),
-                                      backgroundColor: Colors.white,
-                                      foregroundColor: const Color(0xFF147FC4),
-                                    )),
-                                    if (authProvider.isLoading)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 10),
-                                        child: Column(
-                                          children: [
-                                            const SizedBox(
-                                              height: 18,
-                                              width: 18,
-                                              child: CircularProgressIndicator(
-                                                valueColor:
-                                                    AlwaysStoppedAnimation<
-                                                        Color>(
-                                                  Colors.blue,
-                                                ),
-                                                strokeWidth: 2,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              AppLocalizations.of(context)!
-                                                  .loggingIn,
-                                              style: TextStyle(
-                                                fontFamily: 'Inter',
-                                                fontFamilyFallback:
-                                                    _loginFontFallback(context),
-                                                fontSize: isVeryShort ? 12 : 13,
-                                                color: Colors.grey.shade600,
-                                              ),
-                                            ),
-                                          ],
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  _stagger(
+                                      2,
+                                      Text(
+                                        AppLocalizations.of(context)!
+                                            .welcomeTitle,
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback:
+                                              _loginFontFallback(context),
+                                          fontSize: isVeryShort ? 20 : 22,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade800,
                                         ),
-                                      ),
-                                  ],
-                                ),
+                                      )),
+                                  SizedBox(height: titleGap),
+                                  _stagger(
+                                      2,
+                                      Text(
+                                        AppLocalizations.of(context)!
+                                            .googleLoginDescription,
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontFamilyFallback:
+                                              _loginFontFallback(context),
+                                          fontSize: isVeryShort ? 15 : 16,
+                                          height: 1.4,
+                                          color: Colors.grey.shade800,
+                                        ),
+                                      )),
+                                  SizedBox(height: isVeryShort ? 14 : 20),
+                                  _stagger(
+                                      3,
+                                      _LoginMethodButton(
+                                        label: AppLocalizations.of(context)!
+                                            .appleLogin,
+                                        phase: _phaseFor(_LoginMethod.apple),
+                                        busyLabel: AppLocalizations.of(context)!
+                                            .loggingIn,
+                                        onPressed: authProvider.isLoading ||
+                                                _busyMethod != null ||
+                                                _successMethod != null
+                                            ? null
+                                            : () => _handleAppleLogin(
+                                                  context,
+                                                  authProvider,
+                                                ),
+                                        backgroundColor:
+                                            const Color(0xFFF3F4F6),
+                                        foregroundColor:
+                                            const Color(0xFF111827),
+                                        leading: Icon(
+                                          Icons.apple,
+                                          size: isVeryShort ? 19 : 20,
+                                          color: Colors.black,
+                                        ),
+                                      )),
+                                  SizedBox(height: buttonGap),
+                                  _stagger(
+                                      4,
+                                      _LoginMethodButton(
+                                        label: AppLocalizations.of(context)!
+                                            .googleLogin,
+                                        phase: _phaseFor(_LoginMethod.google),
+                                        busyLabel: AppLocalizations.of(context)!
+                                            .loggingIn,
+                                        onPressed: authProvider.isLoading ||
+                                                _busyMethod != null ||
+                                                _successMethod != null
+                                            ? null
+                                            : () => _handleGoogleLogin(
+                                                  context,
+                                                  authProvider,
+                                                ),
+                                        backgroundColor:
+                                            const Color(0xFFF3F4F6),
+                                        foregroundColor:
+                                            const Color(0xFF111827),
+                                        leading: Image.asset(
+                                          'assets/icons/google_logo.png',
+                                          width: isVeryShort ? 18 : 20,
+                                          height: isVeryShort ? 18 : 20,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                            return SizedBox(
+                                              width: isVeryShort ? 18 : 20,
+                                              height: isVeryShort ? 18 : 20,
+                                              child: CustomPaint(
+                                                painter: GoogleLogoPainter(),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      )),
+                                  SizedBox(height: buttonGap),
+                                  _stagger(
+                                      5,
+                                      _LoginMethodButton(
+                                        label: AppLocalizations.of(context)!
+                                            .emailLogin,
+                                        onPressed: authProvider.isLoading ||
+                                                _busyMethod != null ||
+                                                _successMethod != null
+                                            ? null
+                                            : () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        const EmailLoginScreen(),
+                                                  ),
+                                                );
+                                              },
+                                        backgroundColor:
+                                            const Color(0xFFF3F4F6),
+                                        foregroundColor:
+                                            const Color(0xFF111827),
+                                        leading: Icon(
+                                          Icons.email_outlined,
+                                          size: isVeryShort ? 18 : 19,
+                                          color: const Color(0xFF374151),
+                                        ),
+                                      )),
+                                  SizedBox(height: buttonGap),
+                                  _stagger(
+                                      6,
+                                      _LoginMethodButton(
+                                        label: AppLocalizations.of(context)!
+                                            .signUp,
+                                        onPressed: authProvider.isLoading ||
+                                                _busyMethod != null ||
+                                                _successMethod != null
+                                            ? null
+                                            : () =>
+                                                _navigateToSignUpFlow(context),
+                                        backgroundColor: Colors.white,
+                                        foregroundColor:
+                                            const Color(0xFF147FC4),
+                                      )),
+                                  // 오류: 버튼 아래 한 줄(흔들기 없음). 두 번째
+                                  // 실패부터 이메일 로그인 안내를 덧붙인다.
+                                  AnimatedSwitcher(
+                                    duration: MotionTokens.of(
+                                      context,
+                                      MotionTokens.state,
+                                    ),
+                                    child: _inlineError == null
+                                        ? const SizedBox(
+                                            key: ValueKey('login_no_error'),
+                                            width: double.infinity,
+                                          )
+                                        : _buildInlineError(context),
+                                  ),
+                                ],
                               ),
-                              const Spacer(),
-                              Text(
-                                AppLocalizations.of(context)!.loginTermsNotice,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontFamilyFallback:
-                                      _loginFontFallback(context),
-                                  fontSize: isVeryShort ? 11 : 12,
-                                  color: Colors.grey.shade600,
-                                ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              AppLocalizations.of(context)!.loginTermsNotice,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontFamilyFallback: _loginFontFallback(context),
+                                fontSize: isVeryShort ? 11 : 12,
+                                color: Colors.grey.shade600,
                               ),
-                              SizedBox(height: isVeryShort ? 6 : 12),
-                            ],
-                          ),
+                            ),
+                            SizedBox(height: isVeryShort ? 6 : 12),
+                          ],
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
+            ),
 
             // 언어 선택 (상단 우측)
             languageSelector: Material(
@@ -625,39 +715,81 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   // 구글 로그인 처리 함수
+  _LoginButtonPhase _phaseFor(_LoginMethod method) {
+    if (_successMethod == method) return _LoginButtonPhase.success;
+    if (_busyMethod == method) return _LoginButtonPhase.busy;
+    return _LoginButtonPhase.idle;
+  }
+
+  Widget _buildInlineError(BuildContext context) {
+    final strings = _LoginMotionStrings.of(context);
+    return Padding(
+      key: ValueKey<String>('login_error_$_failureCount'),
+      padding: const EdgeInsets.only(top: 12),
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _inlineError!,
+              key: const ValueKey('login_inline_error'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                height: 18 / 13,
+                color: Color(0xFFD13438),
+              ),
+            ),
+            if (_failureCount >= 2)
+              TextButton(
+                key: const ValueKey('login_error_email_link'),
+                onPressed: () {
+                  _inlineErrorTimer?.cancel();
+                  setState(() => _inlineError = null);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const EmailLoginScreen()),
+                  );
+                },
+                child: Text(
+                  strings.loginWithEmail,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2C6BC0),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleGoogleLogin(
     BuildContext context,
     AuthProvider authProvider,
   ) async {
-    if (authProvider.isLoading) return;
+    if (authProvider.isLoading || _busyMethod != null) return;
+    _beginLogin(_LoginMethod.google);
     try {
       // Google 로그인 처리
       final success = await authProvider.signInWithGoogle();
 
-      if (!mounted) return;
+      if (!mounted) {
+        AuthGateHold.instance.release();
+        return;
+      }
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
         if (Logger.isVerboseEnabled) Logger.log("Google 로그인 성공");
-
-        if (!authProvider.isRegistrationComplete) {
-          if (Logger.isVerboseEnabled) Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
-          );
-          return;
-        }
-
-        // 닉네임 있으면 메인 화면
-        if (Logger.isVerboseEnabled) Logger.log("로그인 성공 -> 메인 화면으로 이동");
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const MainScreen()),
-        );
+        await _completeLogin(_LoginMethod.google, authProvider);
       }
       // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
+        _endLogin();
         if (authProvider.lastGoogleSignInWasCancelled) {
           if (Logger.isVerboseEnabled) Logger.log("사용자가 Google 로그인을 취소함");
           return;
@@ -680,13 +812,10 @@ class _LoginScreenState extends State<LoginScreen>
     } catch (e) {
       Logger.error("로그인 오류: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.loginErrorGeneric),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        // 스낵바 대신 버튼 아래 한 줄 문구(흔들기 없음).
+        _showInlineError(AppLocalizations.of(context)!.loginErrorGeneric);
+      } else {
+        AuthGateHold.instance.release();
       }
     }
   }
@@ -696,35 +825,25 @@ class _LoginScreenState extends State<LoginScreen>
     BuildContext context,
     AuthProvider authProvider,
   ) async {
-    if (authProvider.isLoading) return;
+    if (authProvider.isLoading || _busyMethod != null) return;
+    _beginLogin(_LoginMethod.apple);
     try {
       // Apple 로그인 처리
       final success = await authProvider.signInWithApple();
 
-      if (!mounted) return;
+      if (!mounted) {
+        AuthGateHold.instance.release();
+        return;
+      }
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
         if (Logger.isVerboseEnabled) Logger.log("Apple 로그인 성공");
-
-        if (!authProvider.isRegistrationComplete) {
-          if (Logger.isVerboseEnabled) Logger.log("미완료 회원가입 -> 프로필 완료 화면으로 이동");
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
-          );
-          return;
-        }
-
-        // 닉네임 있으면 메인 화면
-        if (Logger.isVerboseEnabled) Logger.log("로그인 성공 -> 메인 화면으로 이동");
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const MainScreen()),
-        );
+        await _completeLogin(_LoginMethod.apple, authProvider);
       }
       // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
+        _endLogin();
         Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
 
         // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
@@ -742,6 +861,7 @@ class _LoginScreenState extends State<LoginScreen>
       }
     } catch (e) {
       Logger.error("Apple 로그인 오류: $e");
+      _endLogin();
 
       // 사용자 친화적 에러 메시지 생성
       String errorMessage = '로그인 중 오류가 발생했습니다';
@@ -753,7 +873,7 @@ class _LoginScreenState extends State<LoginScreen>
         // Firebase Console에서 Apple Sign In 미활성화 상태
         // 사용자에게 명확한 안내 표시
         if (mounted) {
-          showDialog(
+          showMotionDialog<void>(
             context: context,
             builder: (dialogContext) => AlertDialog(
               shape: RoundedRectangleBorder(
@@ -863,12 +983,80 @@ class _LoginPageLayout extends StatelessWidget {
   }
 }
 
+enum _LoginMethod { apple, google }
+
+enum _LoginButtonPhase { idle, busy, success }
+
+class _LoginMotionStrings {
+  const _LoginMotionStrings._(this._code);
+  final String _code;
+  static _LoginMotionStrings of(BuildContext context) =>
+      _LoginMotionStrings._(Localizations.localeOf(context).languageCode);
+  String get loginWithEmail => switch (_code) {
+        'ko' => '이메일로 로그인',
+        'zh' => '使用邮箱登录',
+        _ => 'Log in with email',
+      };
+}
+
+/// 아이콘 자리: 처리 중이면 16px 스피너, 성공하면 체크(0 → 1.15 → 1).
+class _LoginButtonLeading extends StatelessWidget {
+  const _LoginButtonLeading({required this.phase, required this.icon});
+
+  final _LoginButtonPhase phase;
+  final Widget? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget child;
+    switch (phase) {
+      case _LoginButtonPhase.busy:
+        child = const SizedBox.square(
+          key: ValueKey('login_button_spinner'),
+          dimension: 16,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Color(0xFF2C6BC0),
+            backgroundColor: Color(0xFFC9D6E8),
+          ),
+        );
+      case _LoginButtonPhase.success:
+        child = TweenAnimationBuilder<double>(
+          key: const ValueKey('login_button_check'),
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: MotionTokens.of(context, MotionTokens.medium),
+          builder: (context, t, child) => Transform.scale(
+            // 0 → 1.15 → 1
+            scale: t < .7 ? (t / .7) * 1.15 : 1.15 - (t - .7) / .3 * .15,
+            child: child,
+          ),
+          child: const Icon(
+            Icons.check_rounded,
+            size: 18,
+            color: Color(0xFF2C6BC0),
+          ),
+        );
+      case _LoginButtonPhase.idle:
+        child = KeyedSubtree(
+          key: const ValueKey('login_button_icon'),
+          child: icon ?? const SizedBox.shrink(),
+        );
+    }
+    return AnimatedSwitcher(
+      duration: MotionTokens.of(context, MotionTokens.fast),
+      child: child,
+    );
+  }
+}
+
 class _LoginMethodButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final Widget? leading;
   final Color backgroundColor;
   final Color foregroundColor;
+  final _LoginButtonPhase phase;
+  final String? busyLabel;
 
   const _LoginMethodButton({
     required this.label,
@@ -876,48 +1064,66 @@ class _LoginMethodButton extends StatelessWidget {
     this.leading,
     required this.backgroundColor,
     required this.foregroundColor,
+    this.phase = _LoginButtonPhase.idle,
+    this.busyLabel,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: MotionPress(
-        enabled: onPressed != null,
-        pressedScale: .975,
-        child: FilledButton(
-          onPressed: onPressed,
-          style: FilledButton.styleFrom(
-            elevation: 0,
-            shadowColor: Colors.transparent,
-            backgroundColor: backgroundColor,
-            foregroundColor: foregroundColor,
-            disabledBackgroundColor: backgroundColor.withValues(alpha: 0.45),
-            disabledForegroundColor: foregroundColor.withValues(alpha: 0.55),
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (leading != null) ...[leading!, const SizedBox(width: 10)],
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontFamilyFallback: _loginFontFallback(context),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
+    // 누른 버튼은 흐려지지 않는다(다른 버튼만 45%).
+    final active = phase != _LoginButtonPhase.idle;
+    final leadingWidget = leading == null && !active
+        ? null
+        : _LoginButtonLeading(phase: phase, icon: leading);
+    return Semantics(
+      label: phase == _LoginButtonPhase.busy ? busyLabel : null,
+      child: SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: MotionPress(
+          enabled: onPressed != null,
+          pressedScale: .975,
+          child: FilledButton(
+            onPressed: onPressed,
+            style: FilledButton.styleFrom(
+              elevation: 0,
+              shadowColor: Colors.transparent,
+              backgroundColor: backgroundColor,
+              foregroundColor: foregroundColor,
+              disabledBackgroundColor: active
+                  ? backgroundColor
+                  : backgroundColor.withValues(alpha: 0.45),
+              disabledForegroundColor: active
+                  ? foregroundColor
+                  : foregroundColor.withValues(alpha: 0.55),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (leadingWidget != null) ...[
+                  leadingWidget,
+                  const SizedBox(width: 10),
+                ],
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontFamilyFallback: _loginFontFallback(context),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1024,46 +1230,47 @@ class _LoginLanguageChoice extends StatelessWidget {
         selected: isSelected,
         pressedScale: MotionSelectable.segmentScale,
         child: InkResponse(
-        onTap: onTap,
-        radius: 28,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minWidth: isCompact ? 42 : 46,
-            minHeight: 44,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedDefaultTextStyle(
-                  duration: MotionTokens.of(context, MotionTokens.state),
-                  curve: MotionTokens.curve,
-                  style: TextStyle(
-                    fontFamily: label == '简体中文' ? 'NotoSansSC' : 'Inter',
-                    fontSize: isCompact ? 13 : 14,
-                    height: 1.1,
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? Colors.black : Colors.black54,
+          onTap: onTap,
+          radius: 28,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: isCompact ? 42 : 46,
+              minHeight: 44,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedDefaultTextStyle(
+                    duration: MotionTokens.of(context, MotionTokens.state),
+                    curve: MotionTokens.curve,
+                    style: TextStyle(
+                      fontFamily: label == '简体中文' ? 'NotoSansSC' : 'Inter',
+                      fontSize: isCompact ? 13 : 14,
+                      height: 1.1,
+                      fontWeight:
+                          isSelected ? FontWeight.w800 : FontWeight.w600,
+                      color: isSelected ? Colors.black : Colors.black54,
+                    ),
+                    child: Text(label, maxLines: 1),
                   ),
-                  child: Text(label, maxLines: 1),
-                ),
-                const SizedBox(height: 4),
-                AnimatedContainer(
-                  duration: MotionTokens.of(context, MotionTokens.state),
-                  curve: MotionTokens.curve,
-                  width: isSelected ? 18 : 0,
-                  height: 2,
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.black : Colors.transparent,
-                    borderRadius: BorderRadius.circular(1),
+                  const SizedBox(height: 4),
+                  AnimatedContainer(
+                    duration: MotionTokens.of(context, MotionTokens.state),
+                    curve: MotionTokens.curve,
+                    width: isSelected ? 18 : 0,
+                    height: 2,
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.black : Colors.transparent,
+                      borderRadius: BorderRadius.circular(1),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
         ),
       ),
     );

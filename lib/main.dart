@@ -5,6 +5,7 @@
 
 import 'services/profile_link.dart';
 import 'ui/motion/logo_handoff.dart';
+import 'ui/motion/auth_gate_hold.dart';
 import 'design/tokens.dart';
 import 'dart:async';
 import 'dart:io';
@@ -624,6 +625,7 @@ class _MeetupAppState extends State<MeetupApp> {
 
   /// 직전에 그린 게이트 화면 종류(처음엔 부트 화면이 떠 있던 상태).
   String _lastGateKind = 'boot';
+  _GateScreen? _lastGateScreen;
 
   /// 부트 화면에서 로그인·메인으로 넘어갈 때 로고를 그 자리로 옮긴다.
   /// 동작 줄이기, 이메일 인증·닉네임·단체 화면처럼 도착할 로고가 없으면 교차만.
@@ -695,10 +697,23 @@ class _MeetupAppState extends State<MeetupApp> {
       navigatorKey: NavigationService.navigatorKey,
       navigatorObservers: [NavigationService.routeObserver],
       home: AnimatedBuilder(
-        animation: OrganizationAccountService.instance,
+        animation: Listenable.merge(<Listenable>[
+          OrganizationAccountService.instance,
+          AuthGateHold.instance,
+        ]),
         builder: (context, _) => Consumer<app_auth.AuthProvider>(
           builder: (context, authProvider, _) {
-            final screen = _resolveGate(context, authProvider);
+            var screen = _resolveGate(context, authProvider);
+            // 로그인 성공 체크를 보여 주는 잠깐(300ms)은 로그인 화면을 유지한다.
+            final held = _lastGateScreen;
+            if (AuthGateHold.instance.armed &&
+                held != null &&
+                held.kind == 'login' &&
+                screen.kind != 'login' &&
+                screen.kind != 'boot') {
+              screen = held;
+            }
+            _lastGateScreen = screen;
             _maybeStartLogoHandoff(context, screen);
             // 화면 종류가 바뀔 때만 교차한다(같은 화면 안 상태 변화는 그대로).
             return AnimatedSwitcher(
@@ -707,7 +722,7 @@ class _MeetupAppState extends State<MeetupApp> {
               switchOutCurve: MotionTokens.curve,
               child: KeyedSubtree(
                 key: ValueKey<String>('gate_${screen.kind}'),
-                child: screen.child,
+                child: AuthGateScope(child: screen.child),
               ),
             );
           },

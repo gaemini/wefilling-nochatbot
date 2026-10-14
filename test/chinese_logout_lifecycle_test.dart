@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wefilling/ui/widgets/wefilling_mark.dart';
 import 'package:provider/provider.dart';
 import 'package:wefilling/providers/auth_provider.dart';
 import 'package:wefilling/screens/login_screen.dart';
@@ -35,6 +36,9 @@ class _LogoutAuth extends Fake with ChangeNotifier implements AuthProvider {
 }
 
 void main() {
+  // 로그인 화면의 끝없는 움직임(로고 숨쉬기·대화 장면)을 꺼서 pumpAndSettle을 쓴다.
+  setUp(() => WefillingAmbientMotion.enabled = false);
+  tearDown(() => WefillingAmbientMotion.enabled = true);
   setUpAll(() async {
     for (final entry in {
       'Inter': 'assets/fonts/Inter/Inter-Variable.ttf',

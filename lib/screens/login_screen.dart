@@ -2,10 +2,15 @@
 // 로그인 화면 구현
 // Google 로그인 기능 제공
 // 인증 후 화면 전환 처리
+//
+// 위쪽 파란 영역(로고 묶음 + 대화 장면)과 아래 흰 시트(환영 문구·로그인
+// 버튼·회원가입·약관)로 나뉜다. 로그인 처리·다이얼로그·이동 목적지는 그대로다.
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../ui/motion/auth_gate_hold.dart';
 import '../ui/motion/motion_dialog.dart';
 import '../ui/motion/logo_handoff.dart';
@@ -18,12 +23,20 @@ import '../screens/signup_method_selection_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/widgets/app_button.dart';
+import '../ui/widgets/login_chat_scene.dart';
 import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/wefilling_mark.dart';
 import '../design/tokens.dart';
 import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_selectable.dart';
+
+// 이 화면은 다크 모드에서도 같은 고정 색이다.
+const Color _kTopStart = Color(0xFF1F64BC);
+const Color _kTopMid = Color(0xFF2C74CE);
+const Color _kTopEnd = Color(0xFF3B84DA);
+const Color _kTitle = Color(0xFF1565C0);
 
 class LoginScreen extends StatefulWidget {
   final bool showLogoutSuccess;
@@ -36,45 +49,71 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  static const Duration _staggerStep = Duration(milliseconds: 40);
-  static const int _staggerCount = 7;
+    with TickerProviderStateMixin {
+  /// 시트가 200ms 뒤 아래에서 올라오고(550ms), 이름(350ms)·문구(450ms 지연)가
+  /// 아래 8px에서 올라오며 나타난다. 버튼은 처음부터 누를 수 있다.
+  late final AnimationController _entrance = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 750),
+  );
 
-  /// [index]번째 항목: 투명도 0 → 1, 아래 8px에서 올라온다(동작 줄이기면 즉시).
-  Widget _stagger(int index, Widget child) {
-    if (MotionTokens.reduceMotion(context)) return child;
-    final total = _animationController.duration!.inMilliseconds;
-    final start = (_staggerStep.inMilliseconds * index) / total;
-    final end =
-        (start + MotionTokens.medium.inMilliseconds / total).clamp(0.0, 1.0);
-    final curved = CurvedAnimation(
-      parent: _animationController,
-      curve: Interval(start, end, curve: MotionTokens.curve),
-    );
-    return AnimatedBuilder(
-      animation: curved,
-      child: child,
-      builder: (context, child) => Opacity(
-        opacity: curved.value,
-        child: Transform.translate(
-          offset: Offset(0, 8 * (1 - curved.value)),
-          child: child,
-        ),
-      ),
+  /// 성공 연출(가입 완료 계정). 끝나면(1.8초) 다음 화면으로 한 번 바뀐다.
+  late final AnimationController _celebration = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  );
+
+  Animation<double> _interval(
+    AnimationController controller,
+    double startMs,
+    double endMs,
+    Curve curve,
+  ) {
+    final total = controller.duration!.inMilliseconds;
+    return CurvedAnimation(
+      parent: controller,
+      curve: Interval(startMs / total, endMs / total, curve: curve),
     );
   }
+
+  late final Animation<double> _sheetRise =
+      _interval(_entrance, 200, 750, MotionTokens.curve);
+  late final Animation<double> _nameIn =
+      _interval(_entrance, 350, 630, MotionTokens.curve);
+  late final Animation<double> _taglineIn =
+      _interval(_entrance, 450, 730, MotionTokens.curve);
+  late final Animation<double> _brandOut =
+      _interval(_celebration, 0, 300, Curves.easeOut);
+  late final Animation<double> _sheetDrop =
+      _interval(_celebration, 0, 500, const Cubic(.65, 0, .35, 1));
+  late final Animation<double> _welcomeIn =
+      _interval(_celebration, 600, 880, MotionTokens.curve);
+
+  final GlobalKey _logoKey = GlobalKey();
+  final GlobalKey _sceneKey = GlobalKey();
+
+  /// 로그인 중·성공이 아닐 때 로고 모드. 앱 시작 로고가 날아오면 등장 없이 숨쉬기.
+  WefillingMarkMode _restMarkMode = WefillingMarkMode.entrance;
+
+  bool _celebrating = false;
+  bool _celebrationFinished = false;
+  bool _celebrationHosted = false;
+  String? _welcomeName;
+  Offset? _collapseTarget;
+
+  /// 로그인 실패 뒤 대화 장면을 다음 장면으로 넘기는 신호.
+  int _sceneAdvance = 0;
 
   @override
   void initState() {
     super.initState();
-    // 제목·부제·카드·버튼 3개·가입 버튼이 40ms 간격으로 순서대로 나타난다.
-    _animationController = AnimationController(
-      vsync: this,
-      duration: MotionTokens.medium + _staggerStep * (_staggerCount - 1),
-    );
-
-    _animationController.forward();
+    if (LogoHandoff.instance.hidesTarget(LogoHandoffTarget.login)) {
+      _restMarkMode = WefillingMarkMode.idle;
+    }
+    _entrance.forward();
+    _celebration.addStatusListener((status) {
+      if (status == AnimationStatus.completed) _finishCelebration();
+    });
 
     // 화면 진입 시 처리
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -100,7 +139,7 @@ class _LoginScreenState extends State<LoginScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (MotionTokens.reduceMotion(context)) {
-      _animationController.value = 1;
+      _entrance.value = 1;
     }
   }
 
@@ -108,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen>
   _LoginMethod? _busyMethod;
   _LoginMethod? _successMethod;
 
-  /// 버튼 아래 한 줄 오류(5초 뒤 또는 다른 버튼을 누르면 사라짐).
+  /// 시트 위 흰 알약 오류(5초 뒤 또는 다른 버튼을 누르면 사라짐).
   String? _inlineError;
   int _failureCount = 0;
   Timer? _inlineErrorTimer;
@@ -116,7 +155,11 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void dispose() {
     _inlineErrorTimer?.cancel();
-    _animationController.dispose();
+    if (_celebrating && !_celebrationFinished && _celebrationHosted) {
+      AuthGateHold.instance.release();
+    }
+    _entrance.dispose();
+    _celebration.dispose();
     super.dispose();
   }
 
@@ -126,9 +169,14 @@ class _LoginScreenState extends State<LoginScreen>
       _busyMethod = method;
       _successMethod = null;
       _inlineError = null;
+      _restMarkMode = WefillingMarkMode.idle;
     });
-    // 게이트 안 로그인 화면이면 성공 체크를 보여 줄 동안 화면 교체를 미룬다.
-    if (AuthGateScope.hosts(context)) AuthGateHold.instance.arm();
+    // 게이트 안 로그인 화면이면 성공 연출을 보여 줄 동안 화면 교체를 미룬다.
+    // 계정 선택 창이 길게 떠 있어도 풀리지 않게 넉넉히 건다(실패·취소·성공
+    // 연출 끝에서 항상 푼다).
+    if (AuthGateScope.hosts(context)) {
+      AuthGateHold.instance.arm(max: const Duration(seconds: 30));
+    }
   }
 
   void _endLogin() {
@@ -142,6 +190,7 @@ class _LoginScreenState extends State<LoginScreen>
       _busyMethod = null;
       _failureCount++;
       _inlineError = message;
+      _sceneAdvance++;
     });
     AuthGateHold.instance.release();
     _inlineErrorTimer = Timer(const Duration(seconds: 5), () {
@@ -149,31 +198,78 @@ class _LoginScreenState extends State<LoginScreen>
     });
   }
 
-  /// 성공: 스피너 → 체크(medium), 300ms 뒤 다음 화면. 게이트 안이면 게이트가
-  /// 화면을 한 번만 바꾸고, 게이트 밖(로그아웃 뒤 push된 화면)이면 기존 이동.
+  /// 성공.
+  /// - 가입 미완료: 연출 없이 지금처럼(체크 300ms 뒤) 바로 이동.
+  /// - 가입 완료: 로고 성공·말풍선 빨려 들어감·시트 내려감·환영 문구, 1.8초
+  ///   뒤(탭하면 바로) 다음 화면. 게이트 안이면 게이트가 한 번만 바꾸고(연출
+  ///   동안 붙잡아 둠), 게이트 밖(로그아웃 뒤 push된 화면)이면 직접 바꾼다.
   Future<void> _completeLogin(
     _LoginMethod method,
     AuthProvider authProvider,
   ) async {
+    final hosted = AuthGateScope.hosts(context);
+    if (!authProvider.isRegistrationComplete) {
+      setState(() {
+        _busyMethod = null;
+        _successMethod = method;
+        _inlineError = null;
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+      if (hosted) {
+        AuthGateHold.instance.release();
+        return;
+      }
+      Navigator.pushReplacement(
+        context,
+        _fadeRoute(const NicknameSetupScreen()),
+      );
+      return;
+    }
+
+    if (hosted) AuthGateHold.instance.arm(max: const Duration(seconds: 4));
+    final nickname =
+        (authProvider.userData?['nickname'] ?? '').toString().trim();
+    _inlineErrorTimer?.cancel();
     setState(() {
       _busyMethod = null;
       _successMethod = method;
       _inlineError = null;
+      _celebrating = true;
+      _celebrationHosted = hosted;
+      _welcomeName = nickname.isEmpty ? null : nickname;
+      _collapseTarget = _logoCenterInScene();
     });
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
-    if (AuthGateScope.hosts(context)) {
+    _celebration.forward(from: 0);
+  }
+
+  /// 성공 연출 끝(또는 탭): 다음 화면으로 한 번만 바꾼다.
+  void _finishCelebration() {
+    if (!_celebrating || _celebrationFinished) return;
+    _celebrationFinished = true;
+    if (_celebrationHosted || !mounted) {
       AuthGateHold.instance.release();
       return;
     }
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => authProvider.isRegistrationComplete
-            ? const MainScreen()
-            : const NicknameSetupScreen(),
-      ),
-    );
+    Navigator.pushReplacement(context, _fadeRoute(const MainScreen()));
+  }
+
+  static Route<void> _fadeRoute(Widget screen) => PageRouteBuilder<void>(
+        transitionDuration: MotionTokens.medium,
+        reverseTransitionDuration: MotionTokens.medium,
+        pageBuilder: (_, __, ___) => screen,
+        transitionsBuilder: (_, animation, __, child) =>
+            FadeTransition(opacity: animation, child: child),
+      );
+
+  /// 대화 장면 좌표로 본 로고 가운데(말풍선이 빨려 들어갈 곳).
+  Offset? _logoCenterInScene() {
+    final logo = _logoKey.currentContext?.findRenderObject();
+    final scene = _sceneKey.currentContext?.findRenderObject();
+    if (logo is! RenderBox || scene is! RenderBox) return null;
+    if (!logo.hasSize || !scene.hasSize) return null;
+    return scene
+        .globalToLocal(logo.localToGlobal(logo.size.center(Offset.zero)));
   }
 
   Future<void> _showRegistrationRequiredDialog() async {
@@ -279,418 +375,417 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
-    final isCompactLanguageButton = MediaQuery.sizeOf(context).width < 360;
-    final currentLanguageCode = Localizations.localeOf(context).languageCode;
+    final l10n = AppLocalizations.of(context)!;
+    final languageCode = Localizations.localeOf(context).languageCode;
+    final padding = MediaQuery.paddingOf(context);
+    final screen = MediaQuery.sizeOf(context);
+    final small = screen.height < 700;
+    final locked =
+        authProvider.isLoading || _busyMethod != null || _successMethod != null;
+    final markMode = _celebrating
+        ? WefillingMarkMode.success
+        : _busyMethod != null
+            ? WefillingMarkMode.loading
+            : _successMethod != null
+                ? WefillingMarkMode.still
+                : _restMarkMode;
 
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.blue.shade100, Colors.blue.shade50, Colors.white],
-          ),
-        ),
-        child: SafeArea(
-          child: _LoginPageLayout(
-            compactLanguages: isCompactLanguageButton,
-            content: Builder(
-              builder: (context) => LayoutBuilder(
-                builder: (context, constraints) {
-                  final isShort = constraints.maxHeight < 760;
-                  final isVeryShort = constraints.maxHeight < 700;
-                  final hPadding = isVeryShort ? 16.0 : 24.0;
-                  final logoSize =
-                      isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
-                  final appNameSize =
-                      isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
-                  final isChineseBrand = isChineseUi(context);
-                  final cardVPadding = isVeryShort ? 14.0 : 20.0;
-                  final cardHPadding = isVeryShort ? 16.0 : 24.0;
-                  final buttonGap = isVeryShort ? 10.0 : 14.0;
-                  final titleGap = isVeryShort ? 4.0 : 6.0;
-                  final headerTopGap =
-                      ((constraints.maxHeight * (isVeryShort ? 0.065 : 0.095)) +
-                              (isVeryShort ? 14.0 : 24.0))
-                          .clamp(56.0, 108.0);
-
-                  return SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    padding: EdgeInsets.symmetric(horizontal: hPadding),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
-                      ),
-                      child: IntrinsicHeight(
-                        child: Column(
-                          children: [
-                            SizedBox(height: headerTopGap),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                // 앱 시작 로고가 이 자리로 옮겨 온다.
-                                LogoHandoffTargetSlot(
-                                  target: LogoHandoffTarget.login,
-                                  child: Image.asset(
-                                    'assets/images/wefilling_boot_logo.png',
-                                    width: logoSize,
-                                    height: logoSize,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Icon(
-                                        Icons.people_alt_rounded,
-                                        size: logoSize * 0.8,
-                                        color: Colors.blue.shade700,
-                                      );
-                                    },
-                                  ),
-                                ),
-                                SizedBox(height: isVeryShort ? 8 : 12),
-                                _stagger(
-                                    0,
-                                    FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          ExcludeSemantics(
-                                            child: Opacity(
-                                              opacity: 0,
-                                              child: Text(
-                                                isChineseBrand
-                                                    ? 'Wefilling'
-                                                    : AppLocalizations.of(
-                                                        context,
-                                                      )!
-                                                        .appName,
-                                                maxLines: 1,
-                                                style: TextStyle(
-                                                  fontSize: appNameSize,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontFamily: 'Inter',
-                                                  fontFamilyFallback: const [
-                                                    'NotoSansKR'
-                                                  ],
-                                                  color: Colors.black,
-                                                  letterSpacing: 1.2,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          Positioned.fill(
-                                            child: Center(
-                                              child: Transform.scale(
-                                                scale:
-                                                    isChineseBrand ? 1.18 : 1,
-                                                child: Text(
-                                                  key: const ValueKey(
-                                                    'login_brand_name',
-                                                  ),
-                                                  AppLocalizations.of(context)!
-                                                      .appName,
-                                                  maxLines: 1,
-                                                  style: TextStyle(
-                                                    fontSize: appNameSize,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontFamily: isChineseBrand
-                                                        ? 'NotoSansSC'
-                                                        : 'Inter',
-                                                    fontFamilyFallback:
-                                                        _loginFontFallback(
-                                                      context,
-                                                    ),
-                                                    color: Colors.black,
-                                                    letterSpacing:
-                                                        isChineseBrand
-                                                            ? 3
-                                                            : 1.2,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    )),
-                                SizedBox(height: isVeryShort ? 2 : 4),
-                                _stagger(
-                                    1,
-                                    FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text(
-                                        AppLocalizations.of(context)!
-                                            .appTagline,
-                                        maxLines: 1,
-                                        style: TextStyle(
-                                          fontFamily: 'Inter',
-                                          fontFamilyFallback:
-                                              _loginFontFallback(context),
-                                          fontSize: isVeryShort ? 15 : 18,
-                                          color: Colors.grey.shade700,
-                                          letterSpacing: 0.5,
-                                        ),
-                                      ),
-                                    )),
-                              ],
-                            ),
-                            SizedBox(height: isVeryShort ? 8 : 12),
-                            Container(
-                              width: double.infinity,
-                              padding: EdgeInsets.symmetric(
-                                horizontal: cardHPadding,
-                                vertical: cardVPadding,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    offset: const Offset(0, 3),
-                                    blurRadius: 10,
-                                    spreadRadius: 0,
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  _stagger(
-                                      2,
-                                      Text(
-                                        AppLocalizations.of(context)!
-                                            .welcomeTitle,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontFamily: 'Inter',
-                                          fontFamilyFallback:
-                                              _loginFontFallback(context),
-                                          fontSize: isVeryShort ? 20 : 22,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.blue.shade800,
-                                        ),
-                                      )),
-                                  SizedBox(height: titleGap),
-                                  _stagger(
-                                      2,
-                                      Text(
-                                        AppLocalizations.of(context)!
-                                            .googleLoginDescription,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontFamily: 'Inter',
-                                          fontFamilyFallback:
-                                              _loginFontFallback(context),
-                                          fontSize: isVeryShort ? 15 : 16,
-                                          height: 1.4,
-                                          color: Colors.grey.shade800,
-                                        ),
-                                      )),
-                                  SizedBox(height: isVeryShort ? 14 : 20),
-                                  _stagger(
-                                      3,
-                                      _LoginMethodButton(
-                                        label: AppLocalizations.of(context)!
-                                            .appleLogin,
-                                        phase: _phaseFor(_LoginMethod.apple),
-                                        busyLabel: AppLocalizations.of(context)!
-                                            .loggingIn,
-                                        onPressed: authProvider.isLoading ||
-                                                _busyMethod != null ||
-                                                _successMethod != null
-                                            ? null
-                                            : () => _handleAppleLogin(
-                                                  context,
-                                                  authProvider,
-                                                ),
-                                        backgroundColor:
-                                            const Color(0xFFF3F4F6),
-                                        foregroundColor:
-                                            const Color(0xFF111827),
-                                        leading: Icon(
-                                          Icons.apple,
-                                          size: isVeryShort ? 19 : 20,
-                                          color: Colors.black,
-                                        ),
-                                      )),
-                                  SizedBox(height: buttonGap),
-                                  _stagger(
-                                      4,
-                                      _LoginMethodButton(
-                                        label: AppLocalizations.of(context)!
-                                            .googleLogin,
-                                        phase: _phaseFor(_LoginMethod.google),
-                                        busyLabel: AppLocalizations.of(context)!
-                                            .loggingIn,
-                                        onPressed: authProvider.isLoading ||
-                                                _busyMethod != null ||
-                                                _successMethod != null
-                                            ? null
-                                            : () => _handleGoogleLogin(
-                                                  context,
-                                                  authProvider,
-                                                ),
-                                        backgroundColor:
-                                            const Color(0xFFF3F4F6),
-                                        foregroundColor:
-                                            const Color(0xFF111827),
-                                        leading: Image.asset(
-                                          'assets/icons/google_logo.png',
-                                          width: isVeryShort ? 18 : 20,
-                                          height: isVeryShort ? 18 : 20,
-                                          errorBuilder:
-                                              (context, error, stackTrace) {
-                                            return SizedBox(
-                                              width: isVeryShort ? 18 : 20,
-                                              height: isVeryShort ? 18 : 20,
-                                              child: CustomPaint(
-                                                painter: GoogleLogoPainter(),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      )),
-                                  SizedBox(height: buttonGap),
-                                  _stagger(
-                                      5,
-                                      _LoginMethodButton(
-                                        label: AppLocalizations.of(context)!
-                                            .emailLogin,
-                                        onPressed: authProvider.isLoading ||
-                                                _busyMethod != null ||
-                                                _successMethod != null
-                                            ? null
-                                            : () {
-                                                Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(
-                                                    builder: (_) =>
-                                                        const EmailLoginScreen(),
-                                                  ),
-                                                );
-                                              },
-                                        backgroundColor:
-                                            const Color(0xFFF3F4F6),
-                                        foregroundColor:
-                                            const Color(0xFF111827),
-                                        leading: Icon(
-                                          Icons.email_outlined,
-                                          size: isVeryShort ? 18 : 19,
-                                          color: const Color(0xFF374151),
-                                        ),
-                                      )),
-                                  SizedBox(height: buttonGap),
-                                  _stagger(
-                                      6,
-                                      _LoginMethodButton(
-                                        label: AppLocalizations.of(context)!
-                                            .signUp,
-                                        onPressed: authProvider.isLoading ||
-                                                _busyMethod != null ||
-                                                _successMethod != null
-                                            ? null
-                                            : () =>
-                                                _navigateToSignUpFlow(context),
-                                        backgroundColor: Colors.white,
-                                        foregroundColor:
-                                            const Color(0xFF147FC4),
-                                      )),
-                                  // 오류: 버튼 아래 한 줄(흔들기 없음). 두 번째
-                                  // 실패부터 이메일 로그인 안내를 덧붙인다.
-                                  AnimatedSwitcher(
-                                    duration: MotionTokens.of(
-                                      context,
-                                      MotionTokens.state,
-                                    ),
-                                    child: _inlineError == null
-                                        ? const SizedBox(
-                                            key: ValueKey('login_no_error'),
-                                            width: double.infinity,
-                                          )
-                                        : _buildInlineError(context),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Spacer(),
-                            Text(
-                              AppLocalizations.of(context)!.loginTermsNotice,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontFamilyFallback: _loginFontFallback(context),
-                                fontSize: isVeryShort ? 11 : 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                            SizedBox(height: isVeryShort ? 6 : 12),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: _kTopStart,
+        resizeToAvoidBottomInset: false,
+        body: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          child: GestureDetector(
+            // 성공 연출 중 탭하면 바로 다음 화면.
+            behavior: HitTestBehavior.translucent,
+            onTap: _celebrating ? _finishCelebration : null,
+            child: DecoratedBox(
+              key: const ValueKey('login_top_area'),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [_kTopStart, _kTopMid, _kTopEnd],
+                  stops: [0, .55, 1],
+                ),
               ),
-            ),
-
-            // 언어 선택 (상단 우측)
-            languageSelector: Material(
-              color: Colors.transparent,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              child: CustomMultiChildLayout(
+                delegate: _LoginLayoutDelegate(
+                  safeTop: padding.top,
+                  safeBottom: padding.bottom,
+                  small: small,
+                ),
                 children: [
-                  _LoginLanguageChoice(
-                    label: 'KOR',
-                    semanticsLabel: '한국어',
-                    isSelected: currentLanguageCode == 'ko',
-                    isCompact: isCompactLanguageButton,
-                    onTap: () => MeetupApp.of(context)?.changeLanguage('ko'),
+                  LayoutId(
+                    id: _LoginSlot.scene,
+                    child: _buildScene(languageCode, small),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Text(
-                      '/',
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontSize: isCompactLanguageButton ? 13 : 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black45,
-                      ),
+                  LayoutId(
+                    id: _LoginSlot.header,
+                    child: _buildHeader(context, l10n, markMode, languageCode),
+                  ),
+                  LayoutId(
+                    id: _LoginSlot.sheet,
+                    child: _buildSheet(
+                      context,
+                      l10n,
+                      authProvider,
+                      locked,
+                      padding.bottom,
+                      languageCode,
                     ),
                   ),
-                  _LoginLanguageChoice(
-                    label: 'ENG',
-                    semanticsLabel: 'English',
-                    isSelected: currentLanguageCode == 'en',
-                    isCompact: isCompactLanguageButton,
-                    onTap: () => MeetupApp.of(context)?.changeLanguage('en'),
+                  LayoutId(
+                    id: _LoginSlot.error,
+                    child: _buildInlineError(context),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Text(
-                      '/',
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontSize: isCompactLanguageButton ? 13 : 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black45,
-                      ),
+                  LayoutId(
+                    id: _LoginSlot.language,
+                    // 언어 선택 (상단 우측)
+                    child: _LoginLanguageSelector(
+                      languageCode: languageCode,
+                      compact: screen.width < 360,
+                      onSelect: (code) =>
+                          MeetupApp.of(context)?.changeLanguage(code),
                     ),
                   ),
-                  _LoginLanguageChoice(
-                    label: '简体中文',
-                    semanticsLabel: '简体中文',
-                    isSelected: currentLanguageCode == 'zh',
-                    isCompact: isCompactLanguageButton,
-                    onTap: () =>
-                        MeetupApp.of(context)?.changeLanguage('zh_Hans'),
+                  LayoutId(
+                    id: _LoginSlot.welcome,
+                    child: _buildWelcome(context, l10n),
                   ),
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 대화 장면: 남는 공간에 맞춰 4줄 / 3줄(작은 화면) / 숨김.
+  Widget _buildScene(String languageCode, bool small) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final compact =
+          small || constraints.maxHeight < LoginChatScene.fullHeight;
+      final need =
+          compact ? LoginChatScene.compactHeight : LoginChatScene.fullHeight;
+      if (constraints.maxHeight < need) return const SizedBox.shrink();
+      return Align(
+        alignment: Alignment.topCenter,
+        child: LoginChatScene(
+          key: _sceneKey,
+          languageCode: languageCode,
+          compact: compact,
+          frozen: _busyMethod != null || _successMethod != null,
+          collapseTarget: _celebrating ? _collapseTarget : null,
+          advanceSignal: _sceneAdvance,
+        ),
+      );
+    });
+  }
+
+  /// 로고 48 + `Wefilling` + 한 줄 문구.
+  Widget _buildHeader(
+    BuildContext context,
+    AppLocalizations l10n,
+    WefillingMarkMode markMode,
+    String languageCode,
+  ) {
+    final reduce = MotionTokens.reduceMotion(context);
+    Widget rise(Animation<double> animation, Widget child) => AnimatedBuilder(
+          animation: animation,
+          child: child,
+          builder: (context, child) => Opacity(
+            opacity: animation.value.clamp(0.0, 1.0),
+            child: Transform.translate(
+              offset: Offset(0, reduce ? 0 : 8 * (1 - animation.value)),
+              child: child,
+            ),
+          ),
+        );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 앱 시작 로고가 이 자리로 옮겨 온다.
+        LogoHandoffTargetSlot(
+          target: LogoHandoffTarget.login,
+          child: KeyedSubtree(
+            key: _logoKey,
+            child: WefillingMark(
+              size: 48,
+              mode: markMode,
+              nodSignal: languageCode,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: FadeTransition(
+            opacity: ReverseAnimation(_brandOut),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                rise(
+                  _nameIn,
+                  const Text(
+                    'Wefilling',
+                    key: ValueKey('login_brand_name'),
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 27,
+                      height: 30 / 27,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.8,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                rise(
+                  _taglineIn,
+                  AnimatedSwitcher(
+                    duration: MotionTokens.of(context, MotionTokens.fast),
+                    layoutBuilder: (current, previous) => Stack(
+                      alignment: Alignment.centerLeft,
+                      children: [...previous, if (current != null) current],
+                    ),
+                    child: Text(
+                      l10n.loginTagline,
+                      key: ValueKey<String>('login_tagline_$languageCode'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: _loginFontFallback(context),
+                        fontSize: 12.5,
+                        height: 16 / 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: .78),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 흰 시트: 환영 문구, 로그인 버튼 3개, 회원가입, 약관.
+  Widget _buildSheet(
+    BuildContext context,
+    AppLocalizations l10n,
+    AuthProvider authProvider,
+    bool locked,
+    double bottomInset,
+    String languageCode,
+  ) {
+    final reduce = MotionTokens.reduceMotion(context);
+    final copy = Column(
+      key: ValueKey<String>('login_sheet_copy_$languageCode'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          l10n.welcomeTitle,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: _loginFontFallback(context),
+            fontSize: 22,
+            height: 28 / 22,
+            fontWeight: FontWeight.w800,
+            color: _kTitle,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          l10n.googleLoginDescription,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: _loginFontFallback(context),
+            fontSize: 14,
+            height: 20 / 14,
+            color: const Color(0xFF4B5563),
+          ),
+        ),
+      ],
+    );
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        AnimatedSwitcher(
+          duration: MotionTokens.of(context, MotionTokens.fast),
+          child: copy,
+        ),
+        const SizedBox(height: 14),
+        _LoginMethodButton(
+          label: l10n.appleLogin,
+          phase: _phaseFor(_LoginMethod.apple),
+          busyLabel: l10n.loggingIn,
+          onPressed:
+              locked ? null : () => _handleAppleLogin(context, authProvider),
+          backgroundColor: const Color(0xFFF3F4F6),
+          foregroundColor: const Color(0xFF111827),
+          leading: const Icon(Icons.apple, size: 20, color: Colors.black),
+        ),
+        const SizedBox(height: 10),
+        _LoginMethodButton(
+          label: l10n.googleLogin,
+          phase: _phaseFor(_LoginMethod.google),
+          busyLabel: l10n.loggingIn,
+          onPressed:
+              locked ? null : () => _handleGoogleLogin(context, authProvider),
+          backgroundColor: const Color(0xFFF3F4F6),
+          foregroundColor: const Color(0xFF111827),
+          leading: Image.asset(
+            'assets/icons/google_logo.png',
+            width: 20,
+            height: 20,
+            errorBuilder: (context, error, stackTrace) {
+              return SizedBox(
+                width: 20,
+                height: 20,
+                child: CustomPaint(painter: GoogleLogoPainter()),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 10),
+        _LoginMethodButton(
+          label: l10n.emailLogin,
+          onPressed: locked
+              ? null
+              : () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const EmailLoginScreen(),
+                    ),
+                  );
+                },
+          backgroundColor: const Color(0xFFF3F4F6),
+          foregroundColor: const Color(0xFF111827),
+          leading: const Icon(
+            Icons.email_outlined,
+            size: 19,
+            color: Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _LoginMethodButton(
+          label: l10n.signUp,
+          height: 42,
+          onPressed: locked ? null : () => _navigateToSignUpFlow(context),
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF147FC4),
+        ),
+        // 두 번째 실패부터 이메일 로그인 안내를 덧붙인다.
+        if (_inlineError != null && _failureCount >= 2)
+          _buildEmailFallback(context),
+        const SizedBox(height: 6),
+        Text(
+          l10n.loginTermsNotice,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: uiFontFamily(context, 'Inter'),
+            fontFamilyFallback: _loginFontFallback(context),
+            fontSize: 11.5,
+            height: 16 / 11.5,
+            color: const Color(0xFF8A8A8A),
+          ),
+        ),
+      ],
+    );
+    final sheet = DecoratedBox(
+      key: const ValueKey('login_sheet'),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x1F0A2A5A),
+            offset: Offset(0, -8),
+            blurRadius: 30,
+          ),
+        ],
+      ),
+      child: SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(24, 22, 24, 12 + bottomInset),
+        child: content,
+      ),
+    );
+    return AnimatedBuilder(
+      animation: Listenable.merge([_sheetRise, _sheetDrop]),
+      child: sheet,
+      builder: (context, child) {
+        if (reduce) {
+          // 동작 줄이기: 올라오지 않고 바로 보이며, 성공 때는 교차만.
+          return Opacity(opacity: 1 - _sheetDrop.value, child: child);
+        }
+        return FractionalTranslation(
+          translation:
+              Offset(0, 1.1 * (1 - _sheetRise.value) + 1.1 * _sheetDrop.value),
+          child: child,
+        );
+      },
+    );
+  }
+
+  /// 성공 연출: 가운데 환영 문구.
+  Widget _buildWelcome(BuildContext context, AppLocalizations l10n) {
+    if (!_celebrating) return const SizedBox.shrink();
+    final reduce = MotionTokens.reduceMotion(context);
+    final name = _welcomeName;
+    return AnimatedBuilder(
+      animation: _welcomeIn,
+      builder: (context, child) => Opacity(
+        opacity: _welcomeIn.value.clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset(0, reduce ? 0 : 8 * (1 - _welcomeIn.value)),
+          child: child,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            name == null
+                ? l10n.loginWelcomeBackNoName
+                : l10n.loginWelcomeBack(name),
+            key: const ValueKey('login_welcome_back'),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: _loginFontFallback(context),
+              fontSize: 24,
+              height: 30 / 24,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            l10n.loginFriendsWaiting,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: _loginFontFallback(context),
+              fontSize: 14,
+              color: Colors.white.withValues(alpha: .8),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -721,47 +816,75 @@ class _LoginScreenState extends State<LoginScreen>
     return _LoginButtonPhase.idle;
   }
 
+  /// 오류: 시트 위쪽 바깥 10에 흰 알약(위로 올라오며 등장, 흔들기 없음).
   Widget _buildInlineError(BuildContext context) {
-    final strings = _LoginMotionStrings.of(context);
-    return Padding(
-      key: ValueKey<String>('login_error_$_failureCount'),
-      padding: const EdgeInsets.only(top: 12),
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.3,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _inlineError!,
-              key: const ValueKey('login_inline_error'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 13,
-                height: 18 / 13,
-                color: Color(0xFFD13438),
-              ),
-            ),
-            if (_failureCount >= 2)
-              TextButton(
-                key: const ValueKey('login_error_email_link'),
-                onPressed: () {
-                  _inlineErrorTimer?.cancel();
-                  setState(() => _inlineError = null);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const EmailLoginScreen()),
-                  );
-                },
-                child: Text(
-                  strings.loginWithEmail,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2C6BC0),
+    final message = _inlineError;
+    return AnimatedSwitcher(
+      duration: MotionTokens.of(context, MotionTokens.state),
+      switchInCurve: MotionTokens.curve,
+      switchOutCurve: MotionTokens.curve,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, .4), end: Offset.zero)
+              .animate(animation),
+          child: child,
+        ),
+      ),
+      child: message == null || _celebrating
+          ? const SizedBox(key: ValueKey('login_no_error'))
+          : Container(
+              key: ValueKey<String>('login_error_$_failureCount'),
+              constraints: const BoxConstraints(minHeight: 38),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x2908214A),
+                    offset: Offset(0, 6),
+                    blurRadius: 18,
                   ),
+                ],
+              ),
+              child: Text(
+                message,
+                key: const ValueKey('login_inline_error'),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: _loginFontFallback(context),
+                  fontSize: 13,
+                  height: 18 / 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFFB42318),
                 ),
               ),
-          ],
+            ),
+    );
+  }
+
+  Widget _buildEmailFallback(BuildContext context) {
+    final strings = _LoginMotionStrings.of(context);
+    return TextButton(
+      key: const ValueKey('login_error_email_link'),
+      onPressed: () {
+        _inlineErrorTimer?.cancel();
+        setState(() => _inlineError = null);
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const EmailLoginScreen()),
+        );
+      },
+      child: Text(
+        strings.loginWithEmail,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF2C6BC0),
         ),
       ),
     );
@@ -813,7 +936,7 @@ class _LoginScreenState extends State<LoginScreen>
       Logger.error("로그인 오류: $e");
       if (mounted) {
         // 스낵바 대신 버튼 아래 한 줄 문구(흔들기 없음).
-        _showInlineError(AppLocalizations.of(context)!.loginErrorGeneric);
+        _showInlineError(AppLocalizations.of(context)!.loginErrorInline);
       } else {
         AuthGateHold.instance.release();
       }
@@ -958,29 +1081,112 @@ List<String> _loginFontFallback(BuildContext context) => isChineseUi(context)
     ? const ['NotoSansSC', 'NotoSansKR']
     : const ['NotoSansKR'];
 
-/// All UI languages share the original login layout.
-class _LoginPageLayout extends StatelessWidget {
-  const _LoginPageLayout({
-    required this.compactLanguages,
-    required this.content,
-    required this.languageSelector,
+enum _LoginSlot { language, header, scene, sheet, error, welcome }
+
+/// 위쪽 파란 영역 + 아래 흰 시트 배치.
+/// - 언어 선택: 안전 영역 위 + 4, 오른쪽
+/// - 로고 묶음: 언어 선택 아래(안전 영역 위 + 56, 작은 화면 + 52), 가운데
+/// - 시트: 아래에 붙고 기준 높이 366(+ 아래 안전 영역), 내용에 맞춰 늘어나며
+///   로고 묶음 아래까지만 커진다(넘치면 시트 안만 스크롤). 태블릿 최대 폭 480
+/// - 대화 장면: 로고 묶음 아래 24(작은 화면 16) ~ 시트 위 8, 최대 폭 420
+/// - 오류 알약: 시트 위쪽 바깥 10
+class _LoginLayoutDelegate extends MultiChildLayoutDelegate {
+  _LoginLayoutDelegate({
+    required this.safeTop,
+    required this.safeBottom,
+    required this.small,
   });
 
-  final bool compactLanguages;
-  final Widget content;
-  final Widget languageSelector;
+  final double safeTop;
+  final double safeBottom;
+  final bool small;
+
+  static const double sheetBaseHeight = 366;
+  static const double sheetMaxWidth = 480;
+  static const double sceneMaxWidth = 420;
 
   @override
-  Widget build(BuildContext context) {
-    return Stack(children: [
-      content,
-      Positioned(
-        top: compactLanguages ? 12 : 16,
-        right: compactLanguages ? 12 : 16,
-        child: languageSelector,
+  void performLayout(Size size) {
+    final side = size.width < 360 ? 12.0 : 16.0;
+    final language = layoutChild(
+      _LoginSlot.language,
+      BoxConstraints(maxWidth: math.max(0, size.width - side * 2)),
+    );
+    positionChild(
+      _LoginSlot.language,
+      Offset(size.width - side - language.width, safeTop + 4),
+    );
+
+    final headerTop = safeTop + (small ? 52 : 56);
+    final header = layoutChild(
+      _LoginSlot.header,
+      BoxConstraints(maxWidth: math.max(0, size.width - 32)),
+    );
+    positionChild(
+      _LoginSlot.header,
+      Offset((size.width - header.width) / 2, headerTop),
+    );
+    final headerBottom = headerTop + header.height;
+
+    final sheetWidth = math.min(size.width, sheetMaxWidth);
+    final maxSheet = math.max(0.0, size.height - headerBottom - 8);
+    final sheet = layoutChild(
+      _LoginSlot.sheet,
+      BoxConstraints(
+        minWidth: sheetWidth,
+        maxWidth: sheetWidth,
+        minHeight: math.min(sheetBaseHeight + safeBottom, maxSheet),
+        maxHeight: maxSheet,
       ),
-    ]);
+    );
+    final sheetTop = size.height - sheet.height;
+    positionChild(
+      _LoginSlot.sheet,
+      Offset((size.width - sheetWidth) / 2, sheetTop),
+    );
+
+    final sceneTop = headerBottom + (small ? 16 : 24);
+    final sceneWidth = math.max(0.0, math.min(size.width - 36, sceneMaxWidth));
+    final sceneHeight = math.max(0.0, sheetTop - 8 - sceneTop);
+    layoutChild(
+      _LoginSlot.scene,
+      BoxConstraints.tightFor(width: sceneWidth, height: sceneHeight),
+    );
+    positionChild(
+      _LoginSlot.scene,
+      Offset((size.width - sceneWidth) / 2, sceneTop),
+    );
+
+    final error = layoutChild(
+      _LoginSlot.error,
+      BoxConstraints(maxWidth: math.max(0, size.width - 32)),
+    );
+    positionChild(
+      _LoginSlot.error,
+      Offset((size.width - error.width) / 2, sheetTop - 10 - error.height),
+    );
+
+    final welcome = layoutChild(
+      _LoginSlot.welcome,
+      BoxConstraints(
+        maxWidth: math.max(0, size.width - 48),
+        maxHeight: size.height,
+      ),
+    );
+    positionChild(
+      _LoginSlot.welcome,
+      Offset(
+        (size.width - welcome.width) / 2,
+        (size.height - welcome.height) / 2,
+      ),
+    );
   }
+
+  @override
+  bool shouldRelayout(_LoginLayoutDelegate oldDelegate) =>
+      oldDelegate.safeTop != safeTop ||
+      oldDelegate.safeBottom != safeBottom ||
+      oldDelegate.small != small;
 }
 
 enum _LoginMethod { apple, google }
@@ -999,7 +1205,7 @@ class _LoginMotionStrings {
       };
 }
 
-/// 아이콘 자리: 처리 중이면 16px 스피너, 성공하면 체크(0 → 1.15 → 1).
+/// 아이콘 자리: 처리 중이면 18px 스피너, 성공하면 체크(0 → 1.15 → 1).
 class _LoginButtonLeading extends StatelessWidget {
   const _LoginButtonLeading({required this.phase, required this.icon});
 
@@ -1013,11 +1219,11 @@ class _LoginButtonLeading extends StatelessWidget {
       case _LoginButtonPhase.busy:
         child = const SizedBox.square(
           key: ValueKey('login_button_spinner'),
-          dimension: 16,
+          dimension: 18,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            color: Color(0xFF2C6BC0),
-            backgroundColor: Color(0xFFC9D6E8),
+            color: _kTitle,
+            backgroundColor: Color(0xFFD6E4F5),
           ),
         );
       case _LoginButtonPhase.success:
@@ -1033,7 +1239,7 @@ class _LoginButtonLeading extends StatelessWidget {
           child: const Icon(
             Icons.check_rounded,
             size: 18,
-            color: Color(0xFF2C6BC0),
+            color: _kTitle,
           ),
         );
       case _LoginButtonPhase.idle:
@@ -1057,6 +1263,7 @@ class _LoginMethodButton extends StatelessWidget {
   final Color foregroundColor;
   final _LoginButtonPhase phase;
   final String? busyLabel;
+  final double height;
 
   const _LoginMethodButton({
     required this.label,
@@ -1066,63 +1273,227 @@ class _LoginMethodButton extends StatelessWidget {
     required this.foregroundColor,
     this.phase = _LoginButtonPhase.idle,
     this.busyLabel,
+    this.height = 52,
   });
 
   @override
   Widget build(BuildContext context) {
-    // 누른 버튼은 흐려지지 않는다(다른 버튼만 45%).
+    // 누른 버튼은 흐려지지 않는다(다른 버튼과 회원가입만 .4 + 탭 막힘).
     final active = phase != _LoginButtonPhase.idle;
+    final dimmed = onPressed == null && !active;
     final leadingWidget = leading == null && !active
         ? null
         : _LoginButtonLeading(phase: phase, icon: leading);
     return Semantics(
       label: phase == _LoginButtonPhase.busy ? busyLabel : null,
-      child: SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: MotionPress(
-          enabled: onPressed != null,
-          pressedScale: .975,
-          child: FilledButton(
-            onPressed: onPressed,
-            style: FilledButton.styleFrom(
-              elevation: 0,
-              shadowColor: Colors.transparent,
-              backgroundColor: backgroundColor,
-              foregroundColor: foregroundColor,
-              disabledBackgroundColor: active
-                  ? backgroundColor
-                  : backgroundColor.withValues(alpha: 0.45),
-              disabledForegroundColor: active
-                  ? foregroundColor
-                  : foregroundColor.withValues(alpha: 0.55),
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (leadingWidget != null) ...[
-                  leadingWidget,
-                  const SizedBox(width: 10),
-                ],
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontFamilyFallback: _loginFontFallback(context),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
+      child: AnimatedOpacity(
+        opacity: dimmed ? .4 : 1,
+        duration: MotionTokens.of(context, MotionTokens.state),
+        curve: MotionTokens.curve,
+        child: SizedBox(
+          width: double.infinity,
+          height: height,
+          child: MotionPress(
+            enabled: onPressed != null,
+            pressedScale: .975,
+            child: FilledButton(
+              onPressed: onPressed,
+              style: FilledButton.styleFrom(
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                backgroundColor: backgroundColor,
+                foregroundColor: foregroundColor,
+                disabledBackgroundColor: backgroundColor,
+                disabledForegroundColor: foregroundColor,
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (leadingWidget != null) ...[
+                    leadingWidget,
+                    const SizedBox(width: 10),
+                  ],
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontFamilyFallback: _loginFontFallback(context),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
                     ),
                   ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// KOR / ENG / 简体中文. 밑줄 하나가 선택한 언어 아래로 미끄러진다.
+class _LoginLanguageSelector extends StatelessWidget {
+  const _LoginLanguageSelector({
+    required this.languageCode,
+    required this.compact,
+    required this.onSelect,
+  });
+
+  final String languageCode;
+  final bool compact;
+
+  /// 'ko' | 'en' | 'zh_Hans'
+  final ValueChanged<String> onSelect;
+
+  static const List<(String, String, String, String)> _choices = [
+    ('ko', 'ko', 'KOR', '한국어'),
+    ('en', 'en', 'ENG', 'English'),
+    ('zh', 'zh_Hans', '简体中文', '简体中文'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final fontSize = compact ? 13.0 : 14.0;
+    final minWidth = compact ? 42.0 : 46.0;
+    TextStyle style(String label, bool selected) => TextStyle(
+          fontFamily: label == '简体中文' ? 'NotoSansSC' : 'Inter',
+          fontSize: fontSize,
+          height: 1.1,
+          fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+          color: selected ? Colors.white : Colors.white.withValues(alpha: .65),
+        );
+    final separatorStyle = TextStyle(
+      fontFamily: 'Inter',
+      fontSize: fontSize,
+      fontWeight: FontWeight.w500,
+      color: Colors.white.withValues(alpha: .35),
+    );
+    Size measure(String text, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final size = painter.size;
+      painter.dispose();
+      return size;
+    }
+
+    // 밑줄 위치: 선택한 글자 폭(글자 아래 4).
+    var x = 0.0;
+    var underlineLeft = 0.0;
+    var underlineWidth = 0.0;
+    var underlineTop = 0.0;
+    final separatorWidth = measure('/', separatorStyle).width + 4;
+    final children = <Widget>[];
+    for (var i = 0; i < _choices.length; i++) {
+      final (code, target, label, semantics) = _choices[i];
+      final selected = languageCode == code;
+      final text = measure(label, style(label, selected));
+      final width = math.max(minWidth, text.width + 16);
+      final height = math.max(44.0, text.height);
+      if (selected) {
+        underlineLeft = x + (width - text.width) / 2;
+        underlineWidth = text.width;
+        underlineTop = height / 2 + text.height / 2 + 4;
+      }
+      if (i > 0) {
+        children.add(Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text('/', style: separatorStyle),
+        ));
+      }
+      children.add(_LoginLanguageChoice(
+        label: label,
+        semanticsLabel: semantics,
+        isSelected: selected,
+        width: width,
+        style: style(label, selected),
+        onTap: () => onSelect(target),
+      ));
+      x += width + separatorWidth;
+    }
+    final duration = MotionTokens.of(context, MotionTokens.state);
+    return Material(
+      color: Colors.transparent,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Row(mainAxisSize: MainAxisSize.min, children: children),
+          if (underlineWidth > 0)
+            AnimatedPositioned(
+              key: const ValueKey('login_language_underline'),
+              duration: duration,
+              curve: MotionTokens.curve,
+              left: underlineLeft,
+              top: underlineTop,
+              width: underlineWidth,
+              height: 3,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.all(Radius.circular(2)),
                 ),
-              ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// 로그인 화면 언어 선택 항목
+class _LoginLanguageChoice extends StatelessWidget {
+  final String label;
+  final String semanticsLabel;
+  final bool isSelected;
+  final double width;
+  final TextStyle style;
+  final VoidCallback onTap;
+
+  const _LoginLanguageChoice({
+    required this.label,
+    required this.semanticsLabel,
+    required this.isSelected,
+    required this.width,
+    required this.style,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: semanticsLabel,
+      child: MotionSelectable(
+        selected: isSelected,
+        pressedScale: MotionSelectable.segmentScale,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 28,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: width, minHeight: 44),
+            child: Center(
+              widthFactor: 1,
+              child: AnimatedDefaultTextStyle(
+                duration: MotionTokens.of(context, MotionTokens.state),
+                curve: MotionTokens.curve,
+                style: style,
+                child: Text(label, maxLines: 1),
+              ),
             ),
           ),
         ),
@@ -1202,77 +1573,4 @@ class GoogleLogoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// 로그인 화면 언어 선택 항목
-class _LoginLanguageChoice extends StatelessWidget {
-  final String label;
-  final String semanticsLabel;
-  final bool isSelected;
-  final bool isCompact;
-  final VoidCallback onTap;
-
-  const _LoginLanguageChoice({
-    required this.label,
-    required this.semanticsLabel,
-    required this.isSelected,
-    required this.isCompact,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: isSelected,
-      label: semanticsLabel,
-      child: MotionSelectable(
-        selected: isSelected,
-        pressedScale: MotionSelectable.segmentScale,
-        child: InkResponse(
-          onTap: onTap,
-          radius: 28,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minWidth: isCompact ? 42 : 46,
-              minHeight: 44,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedDefaultTextStyle(
-                    duration: MotionTokens.of(context, MotionTokens.state),
-                    curve: MotionTokens.curve,
-                    style: TextStyle(
-                      fontFamily: label == '简体中文' ? 'NotoSansSC' : 'Inter',
-                      fontSize: isCompact ? 13 : 14,
-                      height: 1.1,
-                      fontWeight:
-                          isSelected ? FontWeight.w800 : FontWeight.w600,
-                      color: isSelected ? Colors.black : Colors.black54,
-                    ),
-                    child: Text(label, maxLines: 1),
-                  ),
-                  const SizedBox(height: 4),
-                  AnimatedContainer(
-                    duration: MotionTokens.of(context, MotionTokens.state),
-                    curve: MotionTokens.curve,
-                    width: isSelected ? 18 : 0,
-                    height: 2,
-                    decoration: BoxDecoration(
-                      color: isSelected ? Colors.black : Colors.transparent,
-                      borderRadius: BorderRadius.circular(1),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

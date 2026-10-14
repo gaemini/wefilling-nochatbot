@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wefilling/ui/widgets/wefilling_mark.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
@@ -87,6 +88,9 @@ Future<void> capture(WidgetTester tester, String name) async {
 }
 
 void main() {
+  // 로그인 화면의 끝없는 움직임(로고 숨쉬기·대화 장면)을 꺼서 pumpAndSettle을 쓴다.
+  setUp(() => WefillingAmbientMotion.enabled = false);
+  tearDown(() => WefillingAmbientMotion.enabled = true);
   TestWidgetsFlutterBinding.ensureInitialized();
   final backend = TranslationTestBackend();
 

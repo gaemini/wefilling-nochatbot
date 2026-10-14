@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wefilling/ui/widgets/wefilling_mark.dart';
 import 'package:provider/provider.dart';
 import 'package:wefilling/l10n/app_localizations.dart';
 import 'package:wefilling/providers/auth_provider.dart';
@@ -61,6 +62,9 @@ Widget app(Widget child,
 }
 
 void main() {
+  // 로그인 화면의 끝없는 움직임(로고 숨쉬기·대화 장면)을 꺼서 pumpAndSettle을 쓴다.
+  setUp(() => WefillingAmbientMotion.enabled = false);
+  tearDown(() => WefillingAmbientMotion.enabled = true);
   testWidgets(
       'delayed boot hint does not move the logo or animate while hidden',
       (tester) async {

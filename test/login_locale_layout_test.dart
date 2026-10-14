@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:wefilling/l10n/app_localizations.dart';
 import 'package:wefilling/providers/auth_provider.dart';
 import 'package:wefilling/screens/login_screen.dart';
+import 'package:wefilling/ui/widgets/login_chat_scene.dart';
+import 'package:wefilling/ui/widgets/wefilling_mark.dart';
 
 import 'chinese_ui_localization_test.dart' show app, chinese, capture;
 
@@ -28,197 +30,158 @@ void main() {
           .load();
     }
   });
+  setUp(() => WefillingAmbientMotion.enabled = false);
+  tearDown(() => WefillingAmbientMotion.enabled = true);
 
-  for (final size in [
-    const Size(320, 568),
-    const Size(360, 640),
-    const Size(390, 844),
-    const Size(430, 932),
-    const Size(568, 320),
-  ]) {
-    for (final scale in [1.0, 1.3, 2.0]) {
-      testWidgets('shared login layout at $size / ${scale}x', (tester) async {
-        tester.view.devicePixelRatio = 1;
-        tester.view.physicalSize = size;
-        tester.view.padding = const FakeViewPadding(top: 24, bottom: 48);
-        tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 48);
-        addTearDown(tester.view.reset);
-        final auth = _LoginAuth();
-        addTearDown(auth.dispose);
-        Rect? originalLogo;
-        double? originalTaglineTop;
-        double? originalWelcomeTop;
-        List<Object?>? originalLayout;
+  // 오버플로우 없음: 폭 320/375/430 × 높이 640/812 × 배율 1.0/1.3/2.0 × ko·en·zh.
+  for (final width in [320.0, 375.0, 430.0]) {
+    for (final height in [640.0, 812.0]) {
+      for (final scale in [1.0, 1.3, 2.0]) {
+        final size = Size(width, height);
+        testWidgets('login layout at $size / ${scale}x', (tester) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = size;
+          tester.view.padding = const FakeViewPadding(top: 24, bottom: 48);
+          tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 48);
+          addTearDown(tester.view.reset);
+          final auth = _LoginAuth();
+          addTearDown(auth.dispose);
 
-        for (final locale in [
-          const Locale('ko'),
-          const Locale('en'),
-          chinese
-        ]) {
-          await tester.pumpWidget(ChangeNotifierProvider<AuthProvider>.value(
-            value: auth,
-            child: app(const LoginScreen(), locale: locale, scale: scale),
-          ));
-          await tester.pumpAndSettle();
-          final context = tester.element(find.byType(LoginScreen));
-          await tester.runAsync(() async {
-            await precacheImage(
-                const AssetImage('assets/images/wefilling_boot_logo.png'),
-                context);
-            await precacheImage(
-                const AssetImage('assets/icons/google_logo.png'), context);
-          });
-          await tester.pumpAndSettle();
-          final strings = AppLocalizations.of(context)!;
-          final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
-          final background = scaffold.body! as Container;
-          expect(
-              background.decoration,
-              BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.blue.shade100,
-                    Colors.blue.shade50,
-                    Colors.white
-                  ],
-                ),
-              ));
+          for (final locale in [
+            const Locale('ko'),
+            const Locale('en'),
+            chinese
+          ]) {
+            await tester.pumpWidget(ChangeNotifierProvider<AuthProvider>.value(
+              value: auth,
+              child: app(const LoginScreen(), locale: locale, scale: scale),
+            ));
+            await tester.pumpAndSettle();
+            expect(tester.takeException(), isNull);
+            final context = tester.element(find.byType(LoginScreen));
+            final strings = AppLocalizations.of(context)!;
 
-          final logo = find.byWidgetPredicate((widget) =>
-              widget is Image &&
-              widget.image is AssetImage &&
-              (widget.image as AssetImage)
-                  .assetName
-                  .endsWith('wefilling_boot_logo.png'));
-          final brand = find.byKey(const ValueKey('login_brand_name'));
-          final tagline = find.text(strings.appTagline);
-          final welcome = find.text(strings.welcomeTitle);
-          originalLogo ??= tester.getRect(logo);
-          if (locale.languageCode == 'en') {
-            originalTaglineTop = tester.getTopLeft(tagline).dy;
-            originalWelcomeTop = tester.getTopLeft(welcome).dy;
-          }
-          expect(tester.getRect(logo), originalLogo);
-          expect(tester.getCenter(brand).dx, size.width / 2);
-          if (locale.languageCode == 'zh') {
-            expect(strings.appName, '微邻');
-            expect(tester.getTopLeft(tagline).dy, originalTaglineTop);
-            expect(tester.getTopLeft(welcome).dy, originalWelcomeTop);
-            final brandRect = tester.getRect(brand);
-            expect(brandRect.left, greaterThanOrEqualTo(0));
-            expect(brandRect.right, lessThanOrEqualTo(size.width));
-          }
-          expect(
-            tester.widget<Text>(brand).style!.fontFamily,
-            locale.languageCode == 'zh' ? 'NotoSansSC' : 'Inter',
-          );
-
-          // Compare authored layout/style properties, not translated paragraph
-          // heights: existing Korean/English descriptions already wrap differently.
-          final layout = <Object?>[
-            for (final widget in tester.widgetList(find.descendant(
-              of: find.byType(SingleChildScrollView),
-              matching: find.byWidgetPredicate((widget) =>
-                  widget is Container ||
-                  widget is Positioned ||
-                  widget is SingleChildScrollView ||
-                  widget is Image),
-            )))
-              if (widget is Container) ...[
-                widget.padding,
-                widget.margin,
-                widget.decoration,
-                widget.constraints,
-              ] else if (widget is Positioned) ...[
-                widget.top,
-                widget.right,
-                widget.bottom,
-                widget.left,
-              ] else if (widget is SingleChildScrollView)
-                widget.padding
-              else if (widget is Image) ...[
-                widget.width,
-                widget.height,
-                widget.fit
-              ],
-          ];
-          originalLayout ??= layout;
-          expect(layout, originalLayout);
-          for (final button
-              in tester.widgetList<FilledButton>(find.byType(FilledButton))) {
-            expect(tester.getSize(find.byWidget(button)).height, 48);
-            expect(button.style!.padding!.resolve({}),
-                const EdgeInsets.symmetric(horizontal: 18));
+            // 파란 위쪽 영역(고정 색 그라데이션).
+            final top = tester.widget<DecoratedBox>(
+                find.byKey(const ValueKey('login_top_area')));
             expect(
-                button.style!.shape!.resolve({}),
-                RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)));
-          }
+              (top.decoration as BoxDecoration).gradient,
+              const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF1F64BC),
+                  Color(0xFF2C74CE),
+                  Color(0xFF3B84DA)
+                ],
+                stops: [0, .55, 1],
+              ),
+            );
 
-          final separators = find.text('/');
-          expect(separators, findsNWidgets(2));
-          final selector = find
-              .ancestor(of: separators.first, matching: find.byType(Row))
-              .first;
-          final row = tester.widget<Row>(selector);
-          expect(row.mainAxisSize, MainAxisSize.min);
-          expect(row.children.length, 5);
-          expect(((row.children[1] as Padding).child! as Text).data, '/');
-          expect(((row.children[3] as Padding).child! as Text).data, '/');
-          final items = [
-            find.text('KOR'),
-            separators.at(0),
-            find.text('ENG'),
-            separators.at(1),
-            find.text('简体中文')
-          ];
-          double previousRight = 0;
-          for (final item in items) {
-            final rect = tester.getRect(item);
-            expect(rect.left, greaterThanOrEqualTo(previousRight));
-            expect(rect.right, lessThanOrEqualTo(size.width));
-            expect(rect.top, greaterThanOrEqualTo(24));
-            expect(rect.overlaps(tester.getRect(selector)), isTrue);
-            expect(tester.renderObject<RenderParagraph>(item).didExceedMaxLines,
-                isFalse);
-            previousRight = rect.right;
+            // 로고 48 + 이름: 화면 안, 언어 선택과 겹치지 않음.
+            final mark = tester.getRect(find.byType(WefillingMark));
+            expect(mark.size, const Size(48, 48));
+            final brand =
+                tester.getRect(find.byKey(const ValueKey('login_brand_name')));
+            expect(brand.left, greaterThanOrEqualTo(0));
+            expect(brand.right, lessThanOrEqualTo(width));
+            final kor = tester.getRect(find.text('KOR'));
+            expect(mark.top, greaterThan(kor.bottom));
+
+            // 언어 선택: 글자 잘림 없음, 순서대로, 밑줄 하나가 선택한 글자 아래.
+            double previousRight = 0;
+            for (final label in ['KOR', 'ENG', '简体中文']) {
+              final finder = find.text(label);
+              final rect = tester.getRect(finder);
+              expect(rect.left, greaterThanOrEqualTo(previousRight));
+              expect(rect.right, lessThanOrEqualTo(width));
+              expect(rect.top, greaterThanOrEqualTo(24));
+              expect(
+                  tester.renderObject<RenderParagraph>(finder).didExceedMaxLines,
+                  isFalse);
+              previousRight = rect.right;
+            }
+            final selected = locale.languageCode == 'ko'
+                ? 'KOR'
+                : locale.languageCode == 'en'
+                    ? 'ENG'
+                    : '简体中文';
+            final underline = tester.getRect(
+                find.byKey(const ValueKey('login_language_underline')));
+            final selectedRect = tester.getRect(find.text(selected));
+            expect(underline.height, 3);
+            expect(underline.width, closeTo(selectedRect.width, 1.5));
+            expect(underline.center.dx, closeTo(selectedRect.center.dx, 1.5));
+            expect(underline.top, greaterThan(selectedRect.bottom));
+
+            // 시트: 화면 아래에 붙고, 버튼 52(회원가입 42).
+            final sheet =
+                tester.getRect(find.byKey(const ValueKey('login_sheet')));
+            expect(sheet.bottom, closeTo(height, .5));
+            expect(sheet.top, greaterThanOrEqualTo(mark.bottom));
+            for (final label in [
+              strings.appleLogin,
+              strings.googleLogin,
+              strings.emailLogin
+            ]) {
+              final button = find.ancestor(
+                  of: find.text(label), matching: find.byType(FilledButton));
+              expect(tester.getSize(button).height, 52, reason: label);
+            }
+            expect(
+                tester
+                    .getSize(find.ancestor(
+                        of: find.text(strings.signUp),
+                        matching: find.byType(FilledButton)))
+                    .height,
+                42);
+
+            // 대화 장면: 있으면 로고 아래, 시트와 겹치지 않음.
+            final scene = find.byKey(const ValueKey('login_chat_scene'));
+            if (scene.evaluate().isNotEmpty) {
+              final rect = tester.getRect(scene);
+              expect(rect.top, greaterThan(mark.bottom));
+              expect(rect.bottom, lessThanOrEqualTo(sheet.top));
+              expect(rect.width, lessThanOrEqualTo(420));
+            } else {
+              expect(height, lessThan(700));
+            }
+
+            // 약관은 시트 안 회원가입 아래(시트 안 스크롤로 보인다).
+            final terms = find.text(strings.loginTermsNotice);
+            expect(tester.getTopLeft(terms).dy,
+                greaterThan(tester.getBottomLeft(find.text(strings.signUp)).dy));
+            await tester.ensureVisible(terms);
+            await tester.pumpAndSettle();
+            expect(tester.getBottomRight(terms).dy,
+                lessThanOrEqualTo(height - 48));
+            expect(tester.takeException(), isNull);
+            if (size == const Size(375, 812) && scale == 1.0) {
+              await capture(tester, 'login-v2-${locale.languageCode}');
+            }
+            await tester.pumpWidget(const SizedBox.shrink());
           }
-          final firstGap = tester.getRect(find.text('ENG')).left -
-              tester.getRect(separators.at(0)).right;
-          final chineseGap = tester.getRect(find.text('简体中文')).left -
-              tester.getRect(separators.at(1)).right;
-          expect(chineseGap, closeTo(firstGap, 1));
-          for (final label in ['KOR', 'ENG', '简体中文']) {
-            final selected = label ==
-                (locale.languageCode == 'ko'
-                    ? 'KOR'
-                    : locale.languageCode == 'en'
-                        ? 'ENG'
-                        : '简体中文');
-            final choice = find
-                .ancestor(
-                    of: find.text(label), matching: find.byType(InkResponse))
-                .first;
-            expect(tester.widget<InkResponse>(choice).onTap, isNotNull);
-            final underline = tester.widget<AnimatedContainer>(find.descendant(
-                of: choice, matching: find.byType(AnimatedContainer)));
-            expect(underline.constraints!.maxWidth, selected ? 18 : 0);
-          }
-          expect(tester.takeException(), isNull);
-          if (size == const Size(390, 844) && scale == 1.0) {
-            await capture(tester, 'login-shared-${locale.languageCode}');
-          }
-          await tester.ensureVisible(find.text(strings.loginTermsNotice));
-          await tester.pumpAndSettle();
-          expect(tester.getBottomRight(find.text(strings.loginTermsNotice)).dy,
-              lessThanOrEqualTo(size.height - 48));
-          expect(tester.takeException(), isNull);
-          // Reset scroll state before the next locale comparison.
-          await tester.pumpWidget(const SizedBox.shrink());
-        }
-      });
+        });
+      }
     }
   }
+
+  testWidgets('태블릿: 시트 최대 480, 대화 장면 최대 420, 가운데', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(820, 1180);
+    addTearDown(tester.view.reset);
+    final auth = _LoginAuth();
+    addTearDown(auth.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider<AuthProvider>.value(
+      value: auth,
+      child: app(const LoginScreen(), locale: const Locale('ko'), scale: 1),
+    ));
+    await tester.pumpAndSettle();
+    final sheet = tester.getRect(find.byKey(const ValueKey('login_sheet')));
+    expect(sheet.width, 480);
+    expect(sheet.center.dx, 410);
+    final scene = tester.getRect(find.byType(LoginChatScene));
+    expect(scene.width, 420);
+    expect(scene.center.dx, 410);
+  });
 }

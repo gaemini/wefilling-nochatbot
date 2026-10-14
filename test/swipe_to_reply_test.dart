@@ -49,7 +49,7 @@ void main() {
 
   testWidgets('80px 밀면 onReply 1회, 제자리로 돌아온다', (tester) async {
     final r = await pump(tester);
-    await tester.dragFrom(start(tester, 2), const Offset(80, 0));
+    await tester.dragFrom(start(tester, 2), const Offset(-80, 0));
     await tester.pumpAndSettle();
     expect(r.events, ['reply2']);
     expect(find.byKey(const ValueKey('swipe-to-reply-icon')), findsNothing);
@@ -58,21 +58,21 @@ void main() {
 
   testWidgets('30px면 답장하지 않는다', (tester) async {
     final r = await pump(tester);
-    await tester.dragFrom(start(tester, 2), const Offset(30, 0));
+    await tester.dragFrom(start(tester, 2), const Offset(-30, 0));
     await tester.pumpAndSettle();
     expect(r.events, isEmpty);
   });
 
-  testWidgets('왼쪽으로 밀면 반응하지 않는다(오른쪽으로만)', (tester) async {
+  testWidgets('오른쪽으로 밀면 반응하지 않는다(왼쪽으로만)', (tester) async {
     final r = await pump(tester);
-    await tester.dragFrom(start(tester, 2), const Offset(-90, 0));
+    await tester.dragFrom(start(tester, 2), const Offset(90, 0));
     await tester.pumpAndSettle();
     expect(r.events, isEmpty);
   });
 
-  testWidgets('RTL에서는 왼쪽으로 밀어야 답장한다', (tester) async {
+  testWidgets('RTL에서는 오른쪽으로 밀어야 답장한다', (tester) async {
     final r = await pump(tester, direction: TextDirection.rtl);
-    await tester.dragFrom(start(tester, 2), const Offset(-80, 0));
+    await tester.dragFrom(start(tester, 2), const Offset(80, 0));
     await tester.pumpAndSettle();
     expect(r.events, ['reply2']);
   });
@@ -85,17 +85,18 @@ void main() {
     expect(r.events, isEmpty);
   });
 
-  testWidgets('화면 왼쪽 가장자리 24px 안에서 시작하면 무시한다', (tester) async {
+  testWidgets('화면 오른쪽 가장자리 24px 안에서 시작하면 무시한다', (tester) async {
     final r = await pump(tester);
     final y = start(tester, 2).dy;
-    await tester.dragFrom(Offset(10, y), const Offset(120, 0));
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    await tester.dragFrom(Offset(width - 10, y), const Offset(-120, 0));
     await tester.pumpAndSettle();
     expect(r.events, isEmpty);
   });
 
   testWidgets('enabled: false면 반응이 없다', (tester) async {
     final r = await pump(tester, enabled: false);
-    await tester.dragFrom(start(tester, 2), const Offset(100, 0));
+    await tester.dragFrom(start(tester, 2), const Offset(-100, 0));
     await tester.pumpAndSettle();
     expect(r.events, isEmpty);
   });

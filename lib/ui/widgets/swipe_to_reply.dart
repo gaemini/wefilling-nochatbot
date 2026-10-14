@@ -1,5 +1,6 @@
 // lib/ui/widgets/swipe_to_reply.dart
-// 메시지 행을 오른쪽으로 밀어 답장하기(포스트 대화·스낵챗·DM 공용).
+// 메시지 행을 왼쪽(끝 → 시작 방향)으로 밀어 답장하기(포스트 대화·스낵챗·DM 공용).
+// RTL에서는 반대로 오른쪽으로 민다.
 //
 // 수평 드래그 인식기 하나만 쓴다. 세로로 먼저 움직이면 목록 스크롤이 이기고,
 // 움직이지 않은 탭·길게 누르기·두 번 탭(포인터 리스너)은 자식이 그대로 받는다.
@@ -88,10 +89,11 @@ class _SwipeToReplyState extends State<SwipeToReply>
   void _onStart(DragStartDetails details) {
     final width = MediaQuery.sizeOf(context).width;
     final x = details.globalPosition.dx;
-    // 화면 가장자리에서 시작한 드래그는 시스템 뒤로 가기에 양보한다.
+    // 미는 방향의 반대쪽 가장자리(안드로이드 뒤로 가기 제스처)에서 시작한
+    // 드래그는 시스템에 양보한다.
     _ignoring = _isRtl
-        ? x > width - SwipeToReply.edgeGuard
-        : x < SwipeToReply.edgeGuard;
+        ? x < SwipeToReply.edgeGuard
+        : x > width - SwipeToReply.edgeGuard;
     _controller.stop();
     _returnAnimation = null;
     _drag = 0;
@@ -100,7 +102,7 @@ class _SwipeToReplyState extends State<SwipeToReply>
 
   void _onUpdate(DragUpdateDetails details) {
     if (_ignoring) return;
-    final delta = _isRtl ? -details.delta.dx : details.delta.dx;
+    final delta = _isRtl ? details.delta.dx : -details.delta.dx;
     _drag = (_drag + delta).clamp(0, double.infinity);
     final next = _visualOffset(_drag);
     if (!_passedThreshold && next >= SwipeToReply.threshold) {
@@ -134,7 +136,7 @@ class _SwipeToReplyState extends State<SwipeToReply>
   Widget build(BuildContext context) {
     if (!_active) return widget.child;
     final progress = (_offset / SwipeToReply.threshold).clamp(0.0, 1.0);
-    final direction = _isRtl ? -1.0 : 1.0;
+    final direction = _isRtl ? 1.0 : -1.0;
 
     return Semantics(
       customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
@@ -160,11 +162,11 @@ class _SwipeToReplyState extends State<SwipeToReply>
         },
         child: Stack(
           clipBehavior: Clip.none,
-          alignment: AlignmentDirectional.centerStart,
+          alignment: AlignmentDirectional.centerEnd,
           children: [
             if (_offset > 0)
               PositionedDirectional(
-                start: 4,
+                end: 4,
                 top: 0,
                 bottom: 0,
                 child: IgnorePointer(

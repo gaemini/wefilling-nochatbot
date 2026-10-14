@@ -460,6 +460,8 @@ class _SnapshotMediaPickerState extends State<SnapshotMediaPicker> {
           children: [
             SizedBox(height: topPadding),
             SizedBox(
+              // 폭을 화면 전체로 둬야 닫기 버튼이 왼쪽 끝에 붙는다.
+              width: double.infinity,
               height: 50,
               child: Stack(
                 alignment: Alignment.center,

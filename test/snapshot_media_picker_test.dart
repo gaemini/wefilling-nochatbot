@@ -148,6 +148,11 @@ void main() {
     }
     expect(find.byIcon(Icons.check_rounded), findsNothing);
     expect(find.text('최근 항목'), findsOneWidget);
+    // 닫기 버튼은 화면 왼쪽 끝에 있다.
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('snapshot_picker_close'))).dx,
+      lessThan(12),
+    );
   });
 
   testWidgets('첫 칸은 카메라, 사진·영상 칸 탭은 바로 콜백', (tester) async {

@@ -1829,22 +1829,6 @@ class _MyPageScreenState extends State<MyPageScreen>
                   ),
                 ),
                 const SizedBox(height: 20),
-                _buildMenuItem(
-                  context,
-                  (isChineseUi(context) ? '收藏的动态' : Localizations.localeOf(context).languageCode == 'ko'
-                      ? '저장된 게시글'
-                      : 'Saved Posts'),
-                  Icons.bookmark_border_rounded,
-                  () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      this.context,
-                      MaterialPageRoute(
-                        builder: (context) => const SavedPostsScreen(),
-                      ),
-                    );
-                  },
-                ),
                 // 내 게시글 메뉴 숨김 처리 (기존 UserPostsScreen 페이지 제거됨)
                 _buildMenuItem(
                     context,
@@ -2033,21 +2017,6 @@ class MyPageSettingsSheet {
                   ),
                 ),
                 const SizedBox(height: 20),
-                _menuItem(
-                  sheetContext,
-                  (isChineseUi(context) ? '收藏的动态' : Localizations.localeOf(sheetContext).languageCode == 'ko'
-                      ? '저장된 게시글'
-                      : 'Saved Posts'),
-                  Icons.bookmark_border_rounded,
-                  () {
-                    Navigator.pop(sheetContext);
-                    Navigator.push(
-                      rootContext,
-                      MaterialPageRoute(
-                          builder: (_) => const SavedPostsScreen()),
-                    );
-                  },
-                ),
                 _menuItem(
                   sheetContext,
                   AppLocalizations.of(sheetContext)!.notificationSettings,

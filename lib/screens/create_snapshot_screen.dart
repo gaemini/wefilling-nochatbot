@@ -25,6 +25,7 @@ import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_create_widgets.dart';
 import '../snapshot/snapshot_media_picker.dart';
+import '../snapshot/snapshot_photo_crop_screen.dart';
 import '../ui/widgets/keyboard_aware.dart';
 import '../snapshot/snapshot_share_view.dart';
 import '../providers/relationship_provider.dart';
@@ -2391,32 +2392,22 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                     ),
                   ),
                   const SizedBox(height: 12),
+                  // 자르기: 사진은 비율·영역 자르기 화면, 영상은 12초 구간 막대.
                   SnapshotToolCircle(
-                    key: const ValueKey('snapshot_tool_location'),
-                    semanticLabel: strings.locationTool,
-                    onTap: _textLayers.length < 5
-                        ? () => _addTextLayer(initialText: '📍 ')
-                        : null,
+                    key: const ValueKey('snapshot_tool_crop'),
+                    semanticLabel: isVideo ? strings.trimTool : strings.cropTool,
+                    selected: isVideo && _trimOpen,
+                    onTap: isVideo
+                        ? () => setState(() => _trimOpen = !_trimOpen)
+                        : (_mediaType == SnapshotMediaType.photo
+                            ? () => unawaited(_openPhotoCrop())
+                            : null),
                     child: const Icon(
-                      Icons.location_on_outlined,
-                      size: 21,
+                      Icons.crop_rounded,
+                      size: 20,
                       color: Colors.white,
                     ),
                   ),
-                  if (isVideo) ...[
-                    const SizedBox(height: 12),
-                    SnapshotToolCircle(
-                      key: const ValueKey('snapshot_tool_trim'),
-                      semanticLabel: strings.trimTool,
-                      selected: _trimOpen,
-                      onTap: () => setState(() => _trimOpen = !_trimOpen),
-                      child: const Icon(
-                        Icons.crop_rounded,
-                        size: 20,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
                   if (_textLayers.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _buildMediaTextActions(strings),
@@ -2511,6 +2502,31 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         ),
       ],
     );
+  }
+
+  /// 사진 자르기 화면을 열고, 자른 사진으로 바꾼다(글자 레이어는 그대로).
+  Future<void> _openPhotoCrop() async {
+    final source = _sourceFile;
+    if (source == null || _composing || _uploading) return;
+    await _finishOverlayEditing();
+    if (!mounted) return;
+    final cropped = await Navigator.of(context).push<File>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => SnapshotPhotoCropScreen(file: source),
+      ),
+    );
+    if (!mounted || cropped == null) return;
+    try {
+      await _useImageFile(cropped);
+    } catch (_) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: SnapshotStrings.of(context).photoFailed,
+        type: AppSnackBarType.error,
+      );
+    }
   }
 
   /// 아래 알약 문구: `전체 공개 · 답장까지`처럼 지금 공개 범위와 받는 방식.

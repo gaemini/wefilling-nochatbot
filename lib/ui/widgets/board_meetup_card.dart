@@ -74,7 +74,7 @@ class BoardMeetupCard extends StatelessWidget {
     final participants = currentParticipants ?? meetup.currentParticipants;
     // 글자·여백은 고정값(화면 비례 없음). 확대는 1.2배까지만 따른다.
     const horizontal = 16.0;
-    final dateRailSize = meetup.hasPublicTimeLimit ? 76.0 : 64.0;
+    final dateRailSize = meetup.hasPublicTimeLimit ? 76.0 : 66.0;
     final metaStyle = TextStyle(
       fontFamily: uiFontFamily(context, 'Inter'),
       fontFamilyFallback: const ['NotoSansKR'],

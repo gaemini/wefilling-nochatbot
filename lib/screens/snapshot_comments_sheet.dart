@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../ui/widgets/keyboard_aware.dart';
 import '../ui/widgets/motion_press.dart';
 import 'package:flutter/services.dart';
 
@@ -201,7 +202,9 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
     final uid = FirebaseAuth.instance.currentUser!.uid;
     final generation = ++_gifInputGeneration;
     final bytes = await readKeyboardGif(content);
-    if (!mounted || _sending || generation != _gifInputGeneration ||
+    if (!mounted ||
+        _sending ||
+        generation != _gifInputGeneration ||
         FirebaseAuth.instance.currentUser?.uid != uid) {
       return;
     }
@@ -301,439 +304,483 @@ class _SnapshotCommentsSheetState extends State<SnapshotCommentsSheet> {
   @override
   Widget build(BuildContext context) {
     final strings = SnapshotStrings.of(context);
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final screenHeight = MediaQuery.sizeOf(context).height;
     final horizontal = MediaQuery.sizeOf(context).width < 360
         ? 12.0
         : context.rs(16).clamp(14, 20).toDouble();
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: DraggableScrollableSheet(
-        initialChildSize: bottomInset > 0 ? .94 : screenHeight < 700 ? .84 : .74,
-        minChildSize: bottomInset > 0 ? .8 : screenHeight < 700 ? .58 : .46,
-        maxChildSize: .94,
-        expand: false,
-        builder: (context, scrollController) =>
-            MediaQuery.withClampedTextScaling(
-          maxScaleFactor: 1.3,
-          child: Material(
-            color: Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                const SizedBox(height: 9),
-                Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD0D5DD),
-                    borderRadius: BorderRadius.circular(99),
+    // 키보드 높이는 바깥 여백만 읽고, 시트 내용은 열림 여부가 바뀔 때만 다시
+    // 만든다(키보드 애니메이션 중 댓글 목록 전체 재빌드 방지).
+    return KeyboardInsetPadding(
+      child: KeyboardOpenBuilder(
+        builder: (context, keyboardOpen) => DraggableScrollableSheet(
+          initialChildSize: keyboardOpen
+              ? .94
+              : screenHeight < 700
+                  ? .84
+                  : .74,
+          minChildSize: keyboardOpen
+              ? .8
+              : screenHeight < 700
+                  ? .58
+                  : .46,
+          maxChildSize: .94,
+          expand: false,
+          builder: (context, scrollController) =>
+              MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.3,
+            child: Material(
+              color: Colors.white,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  const SizedBox(height: 9),
+                  Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD0D5DD),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(horizontal, 8, 4, 2),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            text: strings.everyoneOneLiner,
-                            children: [
-                              if (widget.snapshot.commentCount > 0)
-                                TextSpan(
-                                  text: '  ${widget.snapshot.commentCount}',
-                                  style: const TextStyle(
-                                    color: Color(0xFF707070),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                            ],
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF000000),
-                            height: isChineseUi(context) ? 1.3 : 1.2,
-                          ),
-                        ),
-                      ),
-                      if (_hasTranslatableComments) _buildTranslationSplit(),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        tooltip: MaterialLocalizations.of(context)
-                            .closeButtonTooltip,
-                        icon: Icon(
-                          Icons.close_rounded,
-                          size: context.ri(23).clamp(22, 25).toDouble(),
-                          color: const Color(0xFF344054),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (bottomInset == 0)
                   Padding(
-                    padding: EdgeInsets.fromLTRB(horizontal, 0, 4, 6),
+                    padding: EdgeInsets.fromLTRB(horizontal, 8, 4, 2),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.schedule_rounded,
-                          size: 15,
-                          color: Color(0xFF707070),
-                        ),
-                        const SizedBox(width: 6),
                         Expanded(
-                          child: Text(
-                            _disappearLabel(strings),
-                            key: const ValueKey('snapshot_comments_notice'),
+                          child: Text.rich(
+                            TextSpan(
+                              text: strings.everyoneOneLiner,
+                              children: [
+                                if (widget.snapshot.commentCount > 0)
+                                  TextSpan(
+                                    text: '  ${widget.snapshot.commentCount}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF707070),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                              ],
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontFamily: uiFontFamily(context, 'Inter'),
                               fontFamilyFallback: const ['NotoSansKR'],
-                              color: const Color(0xFF707070),
-                              fontSize: 12,
-                              height: isChineseUi(context) ? 1.4 : 1.25,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF000000),
+                              height: isChineseUi(context) ? 1.3 : 1.2,
                             ),
                           ),
                         ),
+                        if (_hasTranslatableComments) _buildTranslationSplit(),
                         IconButton(
-                          key: const ValueKey('snapshot_comments_notice_info'),
-                          onPressed: _showArchiveNotice,
-                          tooltip: strings.authorArchiveNoticeTitle,
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(
-                            Icons.info_outline_rounded,
-                            size: 18,
-                            color: Color(0xFF707070),
+                          onPressed: () => Navigator.pop(context),
+                          tooltip: MaterialLocalizations.of(context)
+                              .closeButtonTooltip,
+                          icon: Icon(
+                            Icons.close_rounded,
+                            size: context.ri(23).clamp(22, 25).toDouble(),
+                            color: const Color(0xFF344054),
                           ),
                         ),
                       ],
                     ),
                   ),
-                if (widget.readOnly)
-                  Padding(
-                    key: const ValueKey('snapshot_comments_read_only'),
-                    padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 8),
-                    child: Text(
-                      strings.feelOnlyNotice,
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 12,
-                        height: 17 / 12,
-                        color: const Color(0xFF707070),
+                  if (!keyboardOpen)
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(horizontal, 0, 4, 6),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule_rounded,
+                            size: 15,
+                            color: Color(0xFF707070),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _disappearLabel(strings),
+                              key: const ValueKey('snapshot_comments_notice'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: uiFontFamily(context, 'Inter'),
+                                fontFamilyFallback: const ['NotoSansKR'],
+                                color: const Color(0xFF707070),
+                                fontSize: 12,
+                                height: isChineseUi(context) ? 1.4 : 1.25,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            key:
+                                const ValueKey('snapshot_comments_notice_info'),
+                            onPressed: _showArchiveNotice,
+                            tooltip: strings.authorArchiveNoticeTitle,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(
+                              Icons.info_outline_rounded,
+                              size: 18,
+                              color: Color(0xFF707070),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                Expanded(
-                  child: StreamBuilder<List<SnapshotComment>>(
-                    stream: _stream,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return _CommentsMessage(
-                          icon: Icons.error_outline_rounded,
-                          message: strings.commentsLoadFailed,
-                        );
-                      }
-                      if (!snapshot.hasData) {
-                        return const Center(
-                          child: SizedBox.square(
-                            dimension: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        );
-                      }
-                      final comments = _orderedComments(snapshot.data!);
-                      _syncTranslatableComments(comments);
-                      if (comments.isEmpty) {
-                        return _CommentsMessage(
-                          icon: Icons.chat_bubble_outline_rounded,
-                          message: strings.noComments,
-                        );
-                      }
-                      return ListView.builder(
-                        controller: scrollController,
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        itemCount: comments.length,
-                        itemBuilder: (context, index) {
-                          final comment = comments[index];
-                          final previous =
-                              index > 0 ? comments[index - 1] : null;
-                          final replyNick =
-                              (comment.replyToUserNickname ?? '').trim();
-                          final row = SnapshotCommentRow(
-                            key: ValueKey(comment.id),
-                            comment: comment,
-                            isMine: comment.userId ==
-                                FirebaseAuth.instance.currentUser?.uid,
-                            topGap: previous != null &&
-                                    previous.userId == comment.userId &&
-                                    !comment.isReply
-                                ? 2
-                                : 10,
-                            replyToLabel: comment.isReply && replyNick.isNotEmpty
-                                ? strings.replyingToName(replyNick)
-                                : null,
-                            translatable: isSnapshotCommentTranslationCandidate(
-                              comment,
-                              FirebaseAuth.instance.currentUser?.uid,
-                            ),
-                            highlighted: widget.focusCommentId == comment.id,
-                            onReply: comment.isDeleted
-                                ? null
-                                : () {
-                                    setState(() => _replyingTo = comment);
-                                    _focusNode.requestFocus();
-                                  },
-                            onMore: () => _showActions(comment),
-                            replyLabel: strings.reply,
-                            deletedLabel: strings.deletedComment,
-                          );
-                          if (comment.isDeleted) return row;
-                          return NotificationReadObserver(
-                            key: ValueKey('read:${comment.id}'),
-                            types: const {
-                              'snapshot_feed_comment',
-                              'snapshot_feed_comment_reply'
-                            },
-                            targets: {
-                              'snapshotId': widget.snapshot.id,
-                              'commentId': comment.id
-                            },
-                            child: row,
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-                if (!widget.readOnly) ...[
-                const Divider(height: 1, color: Color(0xFFEAECF0)),
-                SafeArea(
-                  top: false,
-                  minimum: EdgeInsets.fromLTRB(
-                    horizontal,
-                    _replyingTo == null ? 6 : 2,
-                    horizontal - 2,
-                    screenHeight < 700 ? 6 : 8,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_selectedGif != null)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Stack(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.memory(
-                                    _selectedGif!,
-                                    width: 76,
-                                    height: bottomInset > 0 ? 44 : 76,
-                                    fit: BoxFit.cover,
-                                    cacheWidth: 228,
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 0,
-                                  right: 0,
-                                  child: IconButton.filledTonal(
-                                    tooltip: MaterialLocalizations.of(context)
-                                        .deleteButtonTooltip,
-                                    onPressed: _sending ? null : () => setState(() {
-                                    _selectedGif = null;
-                                    _pendingRequestId = null;
-                                    _gifInputGeneration++;
-                                    }),
-                                    icon: const Icon(Icons.close_rounded, size: 16),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                  if (widget.readOnly)
+                    Padding(
+                      key: const ValueKey('snapshot_comments_read_only'),
+                      padding:
+                          EdgeInsets.fromLTRB(horizontal, 0, horizontal, 8),
+                      child: Text(
+                        strings.feelOnlyNotice,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 12,
+                          height: 17 / 12,
+                          color: const Color(0xFF707070),
                         ),
-                      if (_replyingTo != null)
-                        Container(
-                          key: const ValueKey('snapshot_reply_banner'),
-                          height: 34,
-                          margin: const EdgeInsets.only(bottom: 4),
-                          padding: const EdgeInsets.only(left: 10),
-                          decoration: const BoxDecoration(
-                            border: Border(
-                              left: BorderSide(
-                                color: Color(0xFF2C6BC0),
-                                width: 2,
+                      ),
+                    ),
+                  Expanded(
+                    child: StreamBuilder<List<SnapshotComment>>(
+                      stream: _stream,
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return _CommentsMessage(
+                            icon: Icons.error_outline_rounded,
+                            message: strings.commentsLoadFailed,
+                          );
+                        }
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: SizedBox.square(
+                              dimension: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        }
+                        final comments = _orderedComments(snapshot.data!);
+                        _syncTranslatableComments(comments);
+                        if (comments.isEmpty) {
+                          return _CommentsMessage(
+                            icon: Icons.chat_bubble_outline_rounded,
+                            message: strings.noComments,
+                          );
+                        }
+                        return ListView.builder(
+                          controller: scrollController,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          itemCount: comments.length,
+                          itemBuilder: (context, index) {
+                            final comment = comments[index];
+                            final previous =
+                                index > 0 ? comments[index - 1] : null;
+                            final replyNick =
+                                (comment.replyToUserNickname ?? '').trim();
+                            final row = SnapshotCommentRow(
+                              key: ValueKey(comment.id),
+                              comment: comment,
+                              isMine: comment.userId ==
+                                  FirebaseAuth.instance.currentUser?.uid,
+                              topGap: previous != null &&
+                                      previous.userId == comment.userId &&
+                                      !comment.isReply
+                                  ? 2
+                                  : 10,
+                              replyToLabel:
+                                  comment.isReply && replyNick.isNotEmpty
+                                      ? strings.replyingToName(replyNick)
+                                      : null,
+                              translatable:
+                                  isSnapshotCommentTranslationCandidate(
+                                comment,
+                                FirebaseAuth.instance.currentUser?.uid,
+                              ),
+                              highlighted: widget.focusCommentId == comment.id,
+                              onReply: comment.isDeleted
+                                  ? null
+                                  : () {
+                                      setState(() => _replyingTo = comment);
+                                      _focusNode.requestFocus();
+                                    },
+                              onMore: () => _showActions(comment),
+                              replyLabel: strings.reply,
+                              deletedLabel: strings.deletedComment,
+                            );
+                            if (comment.isDeleted) return row;
+                            return NotificationReadObserver(
+                              key: ValueKey('read:${comment.id}'),
+                              types: const {
+                                'snapshot_feed_comment',
+                                'snapshot_feed_comment_reply'
+                              },
+                              targets: {
+                                'snapshotId': widget.snapshot.id,
+                                'commentId': comment.id
+                              },
+                              child: row,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  if (!widget.readOnly) ...[
+                    const Divider(height: 1, color: Color(0xFFEAECF0)),
+                    SafeArea(
+                      top: false,
+                      minimum: EdgeInsets.fromLTRB(
+                        horizontal,
+                        _replyingTo == null ? 6 : 2,
+                        horizontal - 2,
+                        screenHeight < 700 ? 6 : 8,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_selectedGif != null)
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.memory(
+                                        _selectedGif!,
+                                        width: 76,
+                                        height: keyboardOpen ? 44 : 76,
+                                        fit: BoxFit.cover,
+                                        cacheWidth: 228,
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 0,
+                                      right: 0,
+                                      child: IconButton.filledTonal(
+                                        tooltip:
+                                            MaterialLocalizations.of(context)
+                                                .deleteButtonTooltip,
+                                        onPressed: _sending
+                                            ? null
+                                            : () => setState(() {
+                                                  _selectedGif = null;
+                                                  _pendingRequestId = null;
+                                                  _gifInputGeneration++;
+                                                }),
+                                        icon: const Icon(Icons.close_rounded,
+                                            size: 16),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                          child: Row(
+                          if (_replyingTo != null)
+                            Container(
+                              key: const ValueKey('snapshot_reply_banner'),
+                              height: 34,
+                              margin: const EdgeInsets.only(bottom: 4),
+                              padding: const EdgeInsets.only(left: 10),
+                              decoration: const BoxDecoration(
+                                border: Border(
+                                  left: BorderSide(
+                                    color: Color(0xFF2C6BC0),
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      strings.replyingTo(
+                                        _replyingTo!.authorNickname,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontFamily:
+                                            uiFontFamily(context, 'Inter'),
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
+                                        color: const Color(0xFF5F5F5F),
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox.square(
+                                    dimension: 34,
+                                    child: IconButton(
+                                      onPressed: () =>
+                                          setState(() => _replyingTo = null),
+                                      tooltip: MaterialLocalizations.of(context)
+                                          .cancelButtonLabel,
+                                      padding: EdgeInsets.zero,
+                                      icon: const Icon(
+                                        Icons.close_rounded,
+                                        size: 18,
+                                        color: Color(0xFF707070),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Expanded(
-                                child: Text(
-                                  strings.replyingTo(
-                                    _replyingTo!.authorNickname,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontFamily: uiFontFamily(context, 'Inter'),
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    color: const Color(0xFF5F5F5F),
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              SizedBox.square(
-                                dimension: 34,
-                                child: IconButton(
-                                  onPressed: () =>
-                                      setState(() => _replyingTo = null),
-                                  tooltip: MaterialLocalizations.of(context)
-                                      .cancelButtonLabel,
-                                  padding: EdgeInsets.zero,
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 18,
-                                    color: Color(0xFF707070),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(minHeight: 48),
-                              child: TextField(
-                                controller: _controller,
-                                focusNode: _focusNode,
-                                contentInsertionConfiguration:
-                                    ContentInsertionConfiguration(
-                                  allowedMimeTypes: const ['image/gif'],
-                                  onContentInserted: _onKeyboardContent,
-                                ),
-                                contextMenuBuilder: (context, state) =>
-                                    commentGifContextMenu(context, state, (bytes) {
-                                  if (!mounted || _sending ||
-                                      FirebaseAuth.instance.currentUser == null) {
-                                    return;
-                                  }
-                                  setState(() {
-                                    _selectedGif = bytes;
-                                    _pendingRequestId = null;
-                                    _gifInputGeneration++;
-                                  });
-                                }),
-                                autofocus: widget.focusInput,
-                                minLines: 1,
-                                maxLines: screenHeight < 700 ? 3 : 4,
-                                maxLength: 500,
-                                textInputAction: TextInputAction.newline,
-                                cursorColor: AppColors.pointColor,
-                                style: TextStyle(
-                                  fontFamily: uiFontFamily(context, 'Inter'),
-                                  fontFamilyFallback: const ['NotoSansKR'],
-                                  fontSize:
-                                      context.rf(15).clamp(14, 16).toDouble(),
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF111827),
-                                  height: isChineseUi(context) ? 1.45 : 1.35,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: strings.everyoneOneLinerHint,
-                                  hintStyle: TextStyle(
-                                    fontFamily: uiFontFamily(context, 'Inter'),
-                                    fontFamilyFallback: const ['NotoSansKR'],
-                                    fontSize:
-                                        context.rf(15).clamp(14, 16).toDouble(),
-                                    fontWeight: FontWeight.w400,
-                                    color: const Color(0xFF98A2B3),
-                                  ),
-                                  counterText: '',
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    vertical: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          ValueListenableBuilder<TextEditingValue>(
-                            valueListenable: _controller,
-                            builder: (context, value, _) {
-                              final canSend =
-                                  !_sending &&
-                                  (value.text.trim().isNotEmpty ||
-                                      _selectedGif != null);
-                              final buttonSize =
-                                  context.rh(48, min: 48, max: 52).toDouble();
-                              return MotionPress(
-                                enabled: canSend,
-                                pressedScale: .90,
-                                child: Semantics(
-                                  button: true,
-                                  enabled: canSend,
-                                  label: strings.sendComment,
-                                  child: Tooltip(
-                                    message: strings.sendComment,
-                                    child: Material(
-                                      color: Colors.transparent,
-                                      child: InkResponse(
-                                        onTap: canSend ? _send : null,
-                                        radius: buttonSize / 2,
-                                        child: SizedBox.square(
-                                          dimension: buttonSize,
-                                          child: Center(
-                                            child: _sending
-                                                ? const SizedBox.square(
-                                                    dimension: 19,
-                                                    child: CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                      color: AppColors.pointColor,
-                                                    ),
-                                                  )
-                                                : Icon(
-                                                    Icons.arrow_upward_rounded,
-                                                    size: context.ri(25).clamp(24, 27).toDouble(),
-                                                    color: canSend
-                                                        ? AppColors.pointColor
-                                                        : const Color(0xFFB8C0CC),
-                                                  ),
-                                          ),
-                                        ),
+                                child: ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(minHeight: 48),
+                                  child: TextField(
+                                    controller: _controller,
+                                    focusNode: _focusNode,
+                                    contentInsertionConfiguration:
+                                        ContentInsertionConfiguration(
+                                      allowedMimeTypes: const ['image/gif'],
+                                      onContentInserted: _onKeyboardContent,
+                                    ),
+                                    contextMenuBuilder: (context, state) =>
+                                        commentGifContextMenu(context, state,
+                                            (bytes) {
+                                      if (!mounted ||
+                                          _sending ||
+                                          FirebaseAuth.instance.currentUser ==
+                                              null) {
+                                        return;
+                                      }
+                                      setState(() {
+                                        _selectedGif = bytes;
+                                        _pendingRequestId = null;
+                                        _gifInputGeneration++;
+                                      });
+                                    }),
+                                    autofocus: widget.focusInput,
+                                    minLines: 1,
+                                    maxLines: screenHeight < 700 ? 3 : 4,
+                                    maxLength: 500,
+                                    textInputAction: TextInputAction.newline,
+                                    cursorColor: AppColors.pointColor,
+                                    style: TextStyle(
+                                      fontFamily:
+                                          uiFontFamily(context, 'Inter'),
+                                      fontFamilyFallback: const ['NotoSansKR'],
+                                      fontSize: context
+                                          .rf(15)
+                                          .clamp(14, 16)
+                                          .toDouble(),
+                                      fontWeight: FontWeight.w500,
+                                      color: const Color(0xFF111827),
+                                      height:
+                                          isChineseUi(context) ? 1.45 : 1.35,
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: strings.everyoneOneLinerHint,
+                                      hintStyle: TextStyle(
+                                        fontFamily:
+                                            uiFontFamily(context, 'Inter'),
+                                        fontFamilyFallback: const [
+                                          'NotoSansKR'
+                                        ],
+                                        fontSize: context
+                                            .rf(15)
+                                            .clamp(14, 16)
+                                            .toDouble(),
+                                        fontWeight: FontWeight.w400,
+                                        color: const Color(0xFF98A2B3),
+                                      ),
+                                      counterText: '',
+                                      border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      isDense: true,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        vertical: 13,
                                       ),
                                     ),
                                   ),
                                 ),
-                              );
-                            },
+                              ),
+                              const SizedBox(width: 8),
+                              ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: _controller,
+                                builder: (context, value, _) {
+                                  final canSend = !_sending &&
+                                      (value.text.trim().isNotEmpty ||
+                                          _selectedGif != null);
+                                  final buttonSize = context
+                                      .rh(48, min: 48, max: 52)
+                                      .toDouble();
+                                  return MotionPress(
+                                    enabled: canSend,
+                                    pressedScale: .90,
+                                    child: Semantics(
+                                      button: true,
+                                      enabled: canSend,
+                                      label: strings.sendComment,
+                                      child: Tooltip(
+                                        message: strings.sendComment,
+                                        child: Material(
+                                          color: Colors.transparent,
+                                          child: InkResponse(
+                                            onTap: canSend ? _send : null,
+                                            radius: buttonSize / 2,
+                                            child: SizedBox.square(
+                                              dimension: buttonSize,
+                                              child: Center(
+                                                child: _sending
+                                                    ? const SizedBox.square(
+                                                        dimension: 19,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          color: AppColors
+                                                              .pointColor,
+                                                        ),
+                                                      )
+                                                    : Icon(
+                                                        Icons
+                                                            .arrow_upward_rounded,
+                                                        size: context
+                                                            .ri(25)
+                                                            .clamp(24, 27)
+                                                            .toDouble(),
+                                                        color: canSend
+                                                            ? AppColors
+                                                                .pointColor
+                                                            : const Color(
+                                                                0xFFB8C0CC),
+                                                      ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -1019,7 +1066,8 @@ class _CommentGifState extends State<_CommentGif> {
     final currentViewerId = FirebaseAuth.instance.currentUser?.uid;
     if (_viewerId != currentViewerId) _load();
     return FutureBuilder<Uint8List>(
-      key: ValueKey<String>('${currentViewerId ?? ''}:${widget.comment.gifStoragePath}'),
+      key: ValueKey<String>(
+          '${currentViewerId ?? ''}:${widget.comment.gifStoragePath}'),
       future: _bytes,
       builder: (context, snapshot) {
         if (snapshot.hasError) {

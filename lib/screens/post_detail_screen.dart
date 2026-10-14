@@ -76,6 +76,8 @@ import '../services/comment_image_upload.dart';
 import '../utils/avatar_image.dart';
 import '../ui/widgets/heart_motion.dart';
 import '../utils/motion_haptics.dart';
+import '../ui/widgets/list_skeletons.dart';
+import '../ui/widgets/new_items_pill.dart';
 
 /// Keeps Material route behavior (including back navigation) while making the
 /// feed-to-detail change perceptible without waiting for an animation.
@@ -86,9 +88,17 @@ const Color _kDetailFillSubtle = Color(0xFFEEEEEE);
 const Color _kDetailHairline = Color(0xFFEBEBEB);
 const Color _kDetailPointStrong = Color(0xFF2C6BC0);
 
+/// 상세를 열 때 처음 보일 곳. 댓글 아이콘·댓글 알림은 [comments]로 연다.
+enum PostDetailFocus { post, comments }
+
 class PostDetailMotionRoute extends MaterialPageRoute<bool> {
-  PostDetailMotionRoute({required Post post})
-      : super(builder: (_) => PostDetailScreen(post: post));
+  PostDetailMotionRoute({
+    required Post post,
+    PostDetailFocus initialFocus = PostDetailFocus.post,
+  }) : super(
+          builder: (_) =>
+              PostDetailScreen(post: post, initialFocus: initialFocus),
+        );
 
   @override
   Duration get transitionDuration => MotionTokens.medium;
@@ -128,7 +138,15 @@ class PostDetailMotionRoute extends MaterialPageRoute<bool> {
 class PostDetailScreen extends StatefulWidget {
   final Post post;
 
-  const PostDetailScreen({Key? key, required this.post}) : super(key: key);
+  /// [PostDetailFocus.comments]면 전환이 끝난 뒤 댓글 첫 줄로 내려간다
+  /// (입력창에 포커스는 주지 않는다).
+  final PostDetailFocus initialFocus;
+
+  const PostDetailScreen({
+    Key? key,
+    required this.post,
+    this.initialFocus = PostDetailFocus.post,
+  }) : super(key: key);
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -302,6 +320,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<bool>? _postSnackMembershipFuture;
   bool _isLiked = false;
   bool _isTogglingLike = false;
+  // 댓글 보기(모션 2부 D).
+  final GlobalKey _commentsSectionKey = GlobalKey();
+  final Completer<void> _commentsFirstShown = Completer<void>();
+  DateTime? _commentsShownAt;
+  Set<String>? _seenCommentIds;
+  int _newCommentCount = 0;
   // 사진 두 번 탭 하트(모션 2부 C-2).
   int _photoHeartPop = 0;
   bool _isSaved = false;
@@ -386,6 +410,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _validateAccessAndRefreshPost();
     });
+    _scrollController.addListener(_onDetailScrollForNewComments);
+    if (widget.initialFocus == PostDetailFocus.comments) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_focusCommentsAfterRoute());
+      });
+    }
     // 디버그용: 이미지 URL 확인
     if (kDebugMode) {
       _logImageUrls();
@@ -1255,6 +1285,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onDetailScrollForNewComments);
     _translationService.removeListener(_handleTranslationServiceChange);
     ActiveContentRegistry.unregister(this);
     _engagementSubscription?.cancel();
@@ -3024,9 +3055,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           !comment.isDeleted &&
           !hidden(comment) &&
           !_blockedCommentAuthorIds.contains(comment.userId);
+      final rowIndex = i;
       children.add(KeyedSubtree(
         key: _commentKeys.putIfAbsent(comment.id, GlobalKey.new),
-        child: SwipeToReply(
+        child: StaggerIn(
+          index: rowIndex,
+          shownAt: _commentsShownAt ?? DateTime.now(),
+          child: SwipeToReply(
           enabled: canSwipeReply,
           onReply: comment.isDeleted ? null : enterReply,
           semanticsLabel: l10n.reply,
@@ -3059,6 +3094,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 : () => _jumpToComment(quote!.targetId),
             highlighted: _highlightedCommentId == comment.id,
           ),
+        ),
         ),
       ));
     }
@@ -3100,16 +3136,98 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
+  /// 댓글로 열기: 전환이 끝나고 댓글이 처음 보인 뒤 댓글 첫 줄로 내려간다.
+  Future<void> _focusCommentsAfterRoute() async {
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation != null && !animation.isCompleted) {
+      final done = Completer<void>();
+      void onStatus(AnimationStatus status) {
+        if (status == AnimationStatus.completed && !done.isCompleted) {
+          done.complete();
+        }
+      }
+
+      animation.addStatusListener(onStatus);
+      await done.future.timeout(const Duration(seconds: 1), onTimeout: () {});
+      animation.removeStatusListener(onStatus);
+    }
+    await _commentsFirstShown.future
+        .timeout(const Duration(seconds: 4), onTimeout: () {});
+    if (!mounted) return;
+    final target = _commentsSectionKey.currentContext;
+    if (target == null || !target.mounted) return;
+    await Scrollable.ensureVisible(
+      target,
+      duration: MotionTokens.of(context, MotionTokens.medium),
+      curve: MotionTokens.curve,
+    );
+  }
+
+  bool get _isNearCommentsBottom {
+    if (!_scrollController.hasClients) return true;
+    final position = _scrollController.position;
+    return position.maxScrollExtent - position.pixels <= 120;
+  }
+
+  void _onDetailScrollForNewComments() {
+    if (_newCommentCount > 0 && _isNearCommentsBottom) {
+      setState(() => _newCommentCount = 0);
+    }
+  }
+
+  /// 새 댓글(남이 쓴 것): 아래쪽을 보고 있으면 따라 내려가고, 아니면 알약을 띄운다.
+  void _trackNewComments(List<Comment> comments, String? currentUserId) {
+    final ids = comments.map((c) => c.id).toSet();
+    final seen = _seenCommentIds;
+    _seenCommentIds = ids;
+    if (seen == null) return;
+    final fresh = comments
+        .where((c) => !seen.contains(c.id) && c.userId != currentUserId)
+        .length;
+    if (fresh == 0) return;
+    final followBottom = _isNearCommentsBottom;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      if (followBottom) {
+        _scrollCommentsToBottom();
+      } else {
+        setState(() => _newCommentCount += fresh);
+      }
+    });
+  }
+
+  void _scrollCommentsToBottom() {
+    if (!_scrollController.hasClients) return;
+    final duration = MotionTokens.of(context, MotionTokens.medium);
+    final target = _scrollController.position.maxScrollExtent;
+    if (duration == Duration.zero) {
+      _scrollController.jumpTo(target);
+    } else {
+      unawaited(_scrollController.animateTo(
+        target,
+        duration: duration,
+        curve: MotionTokens.curve,
+      ));
+    }
+    if (_newCommentCount > 0) setState(() => _newCommentCount = 0);
+  }
+
+  static String _newCommentsLabel(BuildContext context, int count) {
+    if (isChineseUi(context)) return '新评论 $count';
+    return Localizations.localeOf(context).languageCode == 'ko'
+        ? '새 댓글 $count'
+        : '$count new ${count == 1 ? 'comment' : 'comments'}';
+  }
+
   /// 인용 줄을 탭하면 대상 메시지로 스크롤하고 1.2초 강조한다.
   void _jumpToComment(String commentId) {
     final targetContext = _commentKeys[commentId]?.currentContext;
     if (targetContext == null) return;
-    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     unawaited(Scrollable.ensureVisible(
       targetContext,
       alignment: .3,
-      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 280),
-      curve: Curves.easeOut,
+      duration: MotionTokens.of(context, MotionTokens.medium),
+      curve: MotionTokens.curve,
     ));
     _highlightTimer?.cancel();
     setState(() => _highlightedCommentId = commentId);
@@ -4159,7 +4277,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             children: [
               // 게시글 내용
               Expanded(
-                child: SingleChildScrollView(
+                child: Stack(
+                  children: [
+                SingleChildScrollView(
                   controller: _scrollController,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -4169,18 +4289,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       const SizedBox(height: DesignTokens.s8),
 
                       // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
-                      StreamBuilder<List<Comment>>(
+                      KeyedSubtree(
+                        key: _commentsSectionKey,
+                        child: StreamBuilder<List<Comment>>(
                         stream: _commentsStream,
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                                   ConnectionState.waiting &&
                               !snapshot.hasData) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: CircularProgressIndicator(),
-                              ),
-                            );
+                            return const CommentListSkeleton();
                           }
 
                           if (snapshot.hasError) {
@@ -4206,7 +4323,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           );
                           _syncCommentTranslationScope(allComments);
                           final currentUser = FirebaseAuth.instance.currentUser;
+                          if (!_commentsFirstShown.isCompleted) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!_commentsFirstShown.isCompleted) {
+                                _commentsFirstShown.complete();
+                              }
+                            });
+                          }
                           if (allComments.isEmpty) {
+                            _seenCommentIds ??= <String>{};
                             return Padding(
                               padding: const EdgeInsets.all(16.0),
                               child: Center(
@@ -4216,13 +4341,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             );
                           }
                           if (!_prepareCommentAuthorProfiles(allComments)) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: CircularProgressIndicator(),
-                              ),
-                            );
+                            return const CommentListSkeleton();
                           }
+                          _commentsShownAt ??= DateTime.now();
+                          _trackNewComments(allComments, currentUser?.uid);
 
                           final commentList = _buildCommentConversation(
                             allComments,
@@ -4237,8 +4359,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           );
                         },
                       ),
+                      ),
                     ],
                   ),
+                ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 12,
+                    child: Center(
+                      child: NewItemsPill(
+                        key: const ValueKey('post_detail_new_comments_pill'),
+                        visible: _newCommentCount > 0,
+                        label: _newCommentsLabel(context, _newCommentCount),
+                        icon: Icons.arrow_downward_rounded,
+                        onTap: _scrollCommentsToBottom,
+                      ),
+                    ),
+                  ),
+                ],
                 ),
               ),
 

@@ -184,12 +184,15 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
     if (mounted) await _loadInitial(forceRefresh: true);
   }
 
-  Future<void> _openPost(Post post) async {
+  Future<void> _openPost(
+    Post post, {
+    PostDetailFocus focus = PostDetailFocus.post,
+  }) async {
     final preservedOffset =
         _scrollController.hasClients ? _scrollController.offset : null;
     final wasDeleted = await Navigator.push<bool>(
       context,
-      PostDetailMotionRoute(post: post),
+      PostDetailMotionRoute(post: post, initialFocus: focus),
     );
     if (!mounted) return;
 
@@ -392,6 +395,10 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
                         index: index,
                         preloadImage: index < 3,
                         onTap: () => _openPost(post),
+                        onCommentTap: () => _openPost(
+                          post,
+                          focus: PostDetailFocus.comments,
+                        ),
                         onCategoryTap: _openPostCategory,
                       ),
                     ),

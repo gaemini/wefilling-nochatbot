@@ -211,10 +211,15 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
     await _loadFirstPage(showLoading: false);
   }
 
-  Future<void> _openPost(Post post) async {
+  Future<void> _openPost(
+    Post post, {
+    PostDetailFocus focus = PostDetailFocus.post,
+  }) async {
     await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
+      MaterialPageRoute(
+        builder: (_) => PostDetailScreen(post: post, initialFocus: focus),
+      ),
     );
   }
 
@@ -239,6 +244,7 @@ class _AllPostsScreenState extends State<AllPostsScreen> {
           index: index,
           preloadImage: index < 3,
           onTap: () => _openPost(post),
+          onCommentTap: () => _openPost(post, focus: PostDetailFocus.comments),
           onCategoryTap: _openCategory,
         ),
       ),

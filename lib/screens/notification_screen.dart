@@ -352,7 +352,17 @@ class _NotificationScreenState extends State<NotificationScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PostDetailScreen(post: post),
+            builder: (context) => PostDetailScreen(
+              post: post,
+              // 댓글 알림은 댓글이 보이게 연다(모션 2부 D-1).
+              initialFocus: const {
+                'new_comment',
+                'comment_reply',
+                'comment_like',
+              }.contains(notification.type)
+                  ? PostDetailFocus.comments
+                  : PostDetailFocus.post,
+            ),
           ),
         );
       } else if (mounted) {

@@ -58,6 +58,9 @@ class OptimizedPostCard extends StatefulWidget {
   final Post post;
   final int index;
   final VoidCallback onTap;
+
+  /// 댓글 아이콘·댓글 줄을 눌렀을 때(댓글로 열기). 없으면 [onTap].
+  final VoidCallback? onCommentTap;
   final ValueChanged<PostCategory>? onCategoryTap;
 
   /// 수동 새로고침 시 계산한 댓글 수를 카드에 우선 반영하기 위한 오버라이드 값
@@ -75,6 +78,7 @@ class OptimizedPostCard extends StatefulWidget {
     required this.post,
     required this.index,
     required this.onTap,
+    this.onCommentTap,
     this.onCategoryTap,
     this.externalCommentCountOverride,
     this.preloadImage = false,
@@ -879,7 +883,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                               ),
                               post: post,
                               commentCount: _effectiveCommentCount(post),
-                              onOpenComments: widget.onTap,
+                              onOpenComments: widget.onCommentTap ?? widget.onTap,
                             ),
                         ],
                       ),
@@ -1434,7 +1438,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         if (_likeSheetOpenedByHold) return;
         await _toggleLikeFromHeartButton();
       },
-      onCommentTap: widget.onTap,
+      onCommentTap: widget.onCommentTap ?? widget.onTap,
       compact: true,
       iconSizeOverride: 15,
       countFontSizeOverride: 12.5,

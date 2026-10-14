@@ -1322,6 +1322,10 @@ class BoardScreenState extends State<BoardScreen> {
                   post: post,
                   index: postIndex,
                   onTap: () => _navigateToPostDetail(post),
+                  onCommentTap: () => _navigateToPostDetail(
+                    post,
+                    focus: PostDetailFocus.comments,
+                  ),
                   onCategoryTap: _openPostCategory,
                   externalCommentCountOverride: _commentCountOverrides[post.id],
                   preloadImage: postIndex < 3,
@@ -1678,6 +1682,10 @@ class BoardScreenState extends State<BoardScreen> {
                       post: item,
                       index: itemIndex,
                       onTap: () => _navigateToPostDetail(item),
+                      onCommentTap: () => _navigateToPostDetail(
+                        item,
+                        focus: PostDetailFocus.comments,
+                      ),
                       onCategoryTap: _openPostCategory,
                       externalCommentCountOverride:
                           _commentCountOverrides[item.id],
@@ -1711,6 +1719,10 @@ class BoardScreenState extends State<BoardScreen> {
                       post: post,
                       index: todayCombined.length + i,
                       onTap: () => _navigateToPostDetail(post),
+                      onCommentTap: () => _navigateToPostDetail(
+                        post,
+                        focus: PostDetailFocus.comments,
+                      ),
                       onCategoryTap: _openPostCategory,
                       externalCommentCountOverride:
                           _commentCountOverrides[post.id],
@@ -1925,6 +1937,10 @@ class BoardScreenState extends State<BoardScreen> {
                 post: item,
                 index: i,
                 onTap: () => _navigateToPostDetail(item),
+                onCommentTap: () => _navigateToPostDetail(
+                  item,
+                  focus: PostDetailFocus.comments,
+                ),
                 onCategoryTap: _openPostCategory,
                 externalCommentCountOverride: _commentCountOverrides[item.id],
                 preloadImage: i < 3,
@@ -1942,13 +1958,16 @@ class BoardScreenState extends State<BoardScreen> {
   }
 
   /// 게시글 상세 화면으로 이동
-  void _navigateToPostDetail(Post post) async {
+  void _navigateToPostDetail(
+    Post post, {
+    PostDetailFocus focus = PostDetailFocus.post,
+  }) async {
     final controller = _activeScrollController;
     final preservedOffset = controller.hasClients ? controller.offset : null;
 
     final wasDeleted = await Navigator.push<bool>(
       context,
-      PostDetailMotionRoute(post: post),
+      PostDetailMotionRoute(post: post, initialFocus: focus),
     );
 
     if (!mounted) return;

@@ -255,7 +255,16 @@ class NavigationService {
                 .timeout(const Duration(seconds: 12), onTimeout: () => null);
             if (post != null) {
               await nav.push(MaterialPageRoute(
-                  builder: (_) => PostDetailScreen(post: post)));
+                  builder: (_) => PostDetailScreen(
+                        post: post,
+                        initialFocus: const {
+                          'new_comment',
+                          'comment_reply',
+                          'comment_like',
+                        }.contains(type)
+                            ? PostDetailFocus.comments
+                            : PostDetailFocus.post,
+                      )));
               return;
             }
             break;

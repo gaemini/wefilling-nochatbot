@@ -685,6 +685,9 @@ class _DMChatScreenState extends State<DMChatScreen>
       _translationShowsOriginal = showingOriginal;
       if (languageChanged) {
         _translationStateGeneration++;
+        // 스낵챗과 같이: 세대가 바뀌면 진행 중이던 준비 결과가 버려지므로
+        // 준비를 다시 한다(그렇지 않으면 번역 버튼이 비활성으로 남는다).
+        _translationModeReady = false;
         _translationMicroBatchTimer?.cancel();
         _translationMicroBatchTimer = null;
         _translationRetryTimer?.cancel();
@@ -710,7 +713,11 @@ class _DMChatScreenState extends State<DMChatScreen>
         _deferredTranslationOutcomes.clear();
       }
     });
-    if (!showingOriginal) _scheduleVisibleTranslations();
+    if (languageChanged) {
+      unawaited(_prepareTranslationMode());
+    } else if (_translationModeReady && !showingOriginal) {
+      _scheduleVisibleTranslations();
+    }
   }
 
   bool _canTranslateMessage(DMMessage message) {

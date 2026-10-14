@@ -170,6 +170,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 클립보드 이미지 복사용 임시 파일 공유(cache/clipboard 만). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.clipboard_provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/clipboard_paths" />
+        </provider>
     </application>
 
     <!-- Required to query activities that can process text, see:

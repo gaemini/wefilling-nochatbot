@@ -31,6 +31,8 @@ plugins {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    // 클립보드 이미지 복사(FileProvider).
+    implementation("androidx.core:core-ktx:1.13.1")
 }
 
 

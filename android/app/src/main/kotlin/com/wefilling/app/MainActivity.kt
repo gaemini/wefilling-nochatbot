@@ -2,6 +2,8 @@ package com.wefilling.app
 
 import android.app.Activity
 import android.app.NotificationManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContentValues
 import android.content.Intent
@@ -16,6 +18,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.annotation.NonNull
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -45,6 +48,8 @@ class MainActivity : FlutterActivity() {
     private val notificationCenterChannelName =
         "com.wefilling.app/notification_center"
     private val keyboardGifChannelName = "com.wefilling.app/keyboard_gif"
+    private val clipboardImageChannelName = "com.wefilling.app/clipboard_image"
+    private val maxClipboardImageBytes = 20 * 1024 * 1024
     private val maxDocumentBytes = 20L * 1024L * 1024L
     private val legacyPhotoSaveRequest = 7241
     private var pendingImageBytes: ByteArray? = null
@@ -97,6 +102,88 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }.start()
+        }
+        // 클립보드 이미지 복사·붙여넣기(댓글·스낵챗·DM).
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            clipboardImageChannelName,
+        ).setMethodCallHandler { call, result ->
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            when (call.method) {
+                "hasImage" -> result.success(clipboardImageUri(clipboard) != null)
+                "readImage" -> {
+                    val uri = clipboardImageUri(clipboard)
+                    if (uri == null) {
+                        result.success(null)
+                        return@setMethodCallHandler
+                    }
+                    Thread {
+                        try {
+                            val mime = contentResolver.getType(uri) ?: "image/*"
+                            val output = ByteArrayOutputStream()
+                            contentResolver.openInputStream(uri).use { input ->
+                                requireNotNull(input)
+                                val buffer = ByteArray(8192)
+                                while (true) {
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    if (output.size() + count > maxClipboardImageBytes) {
+                                        throw IllegalArgumentException("Image exceeds size limit")
+                                    }
+                                    output.write(buffer, 0, count)
+                                }
+                            }
+                            val bytes = output.toByteArray()
+                            runOnUiThread {
+                                result.success(mapOf("bytes" to bytes, "mimeType" to mime))
+                            }
+                        } catch (error: Exception) {
+                            runOnUiThread { result.error("clipboard-image-unavailable", error.message, null) }
+                        }
+                    }.start()
+                }
+                "writeImage" -> {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    val mime = call.argument<String>("mimeType") ?: "image/png"
+                    if (bytes == null || bytes.isEmpty() || bytes.size > maxClipboardImageBytes) {
+                        result.error("invalid-image-data", "Image bytes are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    Thread {
+                        try {
+                            val dir = File(cacheDir, "clipboard").apply { mkdirs() }
+                            // 이전에 복사한 임시 파일은 지운다(클립보드에는 최신 하나만 남는다).
+                            dir.listFiles()?.forEach { it.delete() }
+                            val ext = when (mime) {
+                                "image/jpeg" -> "jpg"
+                                "image/gif" -> "gif"
+                                "image/webp" -> "webp"
+                                else -> "png"
+                            }
+                            val file = File(dir, "wefilling_${System.currentTimeMillis()}.$ext")
+                            FileOutputStream(file).use { it.write(bytes) }
+                            val uri = FileProvider.getUriForFile(
+                                this,
+                                "$packageName.clipboard_provider",
+                                file,
+                            )
+                            runOnUiThread {
+                                try {
+                                    clipboard.setPrimaryClip(
+                                        ClipData.newUri(contentResolver, "image", uri),
+                                    )
+                                    result.success(true)
+                                } catch (error: Exception) {
+                                    result.error("clipboard-write-failed", error.message, null)
+                                }
+                            }
+                        } catch (error: Exception) {
+                            runOnUiThread { result.error("clipboard-write-failed", error.message, null) }
+                        }
+                    }.start()
+                }
+                else -> result.notImplemented()
+            }
         }
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -854,5 +941,21 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }.start()
+    }
+
+    /** 클립보드 첫 항목이 이미지 URI면 돌려준다(텍스트만 있으면 null). */
+    private fun clipboardImageUri(clipboard: ClipboardManager): Uri? {
+        if (!clipboard.hasPrimaryClip()) return null
+        val clip = clipboard.primaryClip ?: return null
+        if (clip.itemCount == 0) return null
+        val uri = clip.getItemAt(0).uri ?: return null
+        val described = (0 until clip.description.mimeTypeCount)
+            .any { clip.description.getMimeType(it).startsWith("image/") }
+        val resolved = try {
+            contentResolver.getType(uri)?.startsWith("image/") == true
+        } catch (_: Exception) {
+            false
+        }
+        return if (described || resolved) uri else null
     }
 }

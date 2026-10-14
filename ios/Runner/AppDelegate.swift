@@ -60,6 +60,7 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mediaSaverChannel: FlutterMethodChannel?
   private var keyboardGifChannel: FlutterMethodChannel?
+  private var clipboardImageChannel: FlutterMethodChannel?
   private var snapshotVideoEditorChannel: FlutterMethodChannel?
   private var externalShareChannel: FlutterMethodChannel?
   private var sharedFirebaseAuthChannel: FlutterMethodChannel?
@@ -120,6 +121,68 @@ class OrganizationInviteSceneDelegate: FlutterSceneDelegate {
       result(FlutterStandardTypedData(bytes: data))
     }
     keyboardGifChannel = keyboardGifBridge
+
+    // 클립보드 이미지 복사·붙여넣기(댓글·스낵챗·DM).
+    let clipboardBridge = FlutterMethodChannel(
+      name: "com.wefilling.app/clipboard_image",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    clipboardBridge.setMethodCallHandler { call, result in
+      let pasteboard = UIPasteboard.general
+      let maxBytes = 20 * 1024 * 1024
+      switch call.method {
+      case "hasImage":
+        result(pasteboard.hasImages)
+      case "readImage":
+        guard pasteboard.hasImages else {
+          result(nil)
+          return
+        }
+        let typed: [(String, String)] = [
+          ("public.png", "image/png"),
+          ("public.jpeg", "image/jpeg"),
+          ("com.compuserve.gif", "image/gif"),
+          ("org.webmproject.webp", "image/webp"),
+        ]
+        for (type, mime) in typed {
+          if let data = pasteboard.data(forPasteboardType: type),
+             data.count > 0, data.count <= maxBytes {
+            result(["bytes": FlutterStandardTypedData(bytes: data), "mimeType": mime])
+            return
+          }
+        }
+        // HEIC 등 그 밖의 형식은 JPEG로 바꿔 넘긴다.
+        if let image = pasteboard.image,
+           let data = image.jpegData(compressionQuality: 0.92),
+           data.count <= maxBytes {
+          result(["bytes": FlutterStandardTypedData(bytes: data), "mimeType": "image/jpeg"])
+          return
+        }
+        result(nil)
+      case "writeImage":
+        guard let args = call.arguments as? [String: Any],
+              let typed = args["bytes"] as? FlutterStandardTypedData,
+              typed.data.count > 0, typed.data.count <= maxBytes else {
+          result(FlutterError(code: "invalid-image-data", message: "Image bytes are required.", details: nil))
+          return
+        }
+        let mime = (args["mimeType"] as? String) ?? "image/png"
+        if mime == "image/gif" {
+          pasteboard.setData(typed.data, forPasteboardType: "com.compuserve.gif")
+          result(true)
+          return
+        }
+        guard let image = UIImage(data: typed.data) else {
+          result(FlutterError(code: "invalid-image-data", message: "Unsupported image.", details: nil))
+          return
+        }
+        pasteboard.image = image
+        result(true)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    clipboardImageChannel = clipboardBridge
 
     let authChannel = FlutterMethodChannel(
       name: "com.wefilling.app/shared_firebase_auth",

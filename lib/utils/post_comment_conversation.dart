@@ -34,9 +34,9 @@ String? postCommentQuoteTargetId(Comment comment) {
   return parent.isEmpty ? null : parent;
 }
 
-/// 인용 줄을 그릴지. 대상이 바로 앞에 보이는 메시지면 생략한다.
+/// 인용 줄을 그릴지. 답장이면 대상이 바로 앞에 있어도 항상 보여 준다
+/// (내가 단 답장도 어느 말에 대한 답장인지 알 수 있게).
 bool shouldShowPostCommentQuote(Comment comment, Comment? previousVisible) {
   final target = postCommentQuoteTargetId(comment);
-  if (target == null || target == comment.id) return false;
-  return previousVisible?.id != target;
+  return target != null && target != comment.id;
 }

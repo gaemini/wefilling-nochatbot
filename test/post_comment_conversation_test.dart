@@ -98,10 +98,10 @@ void main() {
       expect(postCommentQuoteTargetId(_c('top', at: t0)), isNull);
     });
 
-    test('대상이 바로 앞 메시지면 생략한다', () {
+    test('답장은 대상이 바로 앞 메시지여도 인용을 보여 준다', () {
       final target = _c('p1', at: t0);
       final reply = _c('r', at: t0, parent: 'p1');
-      expect(shouldShowPostCommentQuote(reply, target), isFalse);
+      expect(shouldShowPostCommentQuote(reply, target), isTrue);
       expect(
         shouldShowPostCommentQuote(reply, _c('other', at: t0)),
         isTrue,

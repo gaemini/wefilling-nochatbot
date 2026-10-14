@@ -33,6 +33,8 @@ import '../../snapshot/snapshot_strings.dart';
 import '../../utils/comment_gif_input.dart';
 import '../../utils/chat_message_typography.dart';
 import 'user_avatar.dart';
+import 'snack_chat_message_extras.dart' show SnackChatStorageImage;
+import '../../services/clipboard_image_service.dart';
 
 // 포스트 상세 v2 댓글 스레드 값. 위필링 디자인 시스템 토큰을 이 화면용 이름으로 모은다.
 const Color _kInk = Color(0xFF000000);
@@ -157,10 +159,14 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final l10n = AppLocalizations.of(context)!;
 
     final canReport = !isMyComment;
+    // 길게 누르면 모든 댓글에서 이 시트를 연다(답글은 밀어서 답장과 같은 조건).
     final canReply = !isMyComment &&
         !widget.directInteractionBlocked &&
-        widget.isAnonymousPost &&
         widget.onReplyTap != null;
+    final canCopyText =
+        !widget.comment.isDeleted && widget.comment.content.trim().isNotEmpty;
+    final canCopyImage =
+        !widget.comment.isDeleted && widget.comment.imagePaths.isNotEmpty;
     final canDelete = isMyComment;
     final canBlock = !isMyComment &&
         !widget.isAnonymousPost &&
@@ -198,8 +204,43 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         widget.onReplyTap?.call();
                       },
                     ),
-                  if (canReply &&
-                      (canReport || canBlock || canHideAnonymousComment))
+                  if (canReply && (canCopyText || canCopyImage))
+                    const _ActionDivider(),
+                  if (canCopyText)
+                    _ActionRow(
+                      icon: Icons.content_copy_rounded,
+                      label: _localizedText(ko: '복사', en: 'Copy', zh: '复制'),
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        await ClipboardImageService.instance
+                            .copyText(widget.comment.content);
+                        _showCopied(ok: true);
+                      },
+                    ),
+                  if (canCopyText && canCopyImage) const _ActionDivider(),
+                  if (canCopyImage)
+                    _ActionRow(
+                      icon: Icons.image_outlined,
+                      label: _localizedText(
+                        ko: '이미지 복사',
+                        en: 'Copy image',
+                        zh: '复制图片',
+                      ),
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        final bytes = await SnackChatStorageImage.loadBytes(
+                          widget.comment.imagePaths.first,
+                          widget.comment.storageBucket,
+                        );
+                        final ok = bytes != null &&
+                            await ClipboardImageService.instance
+                                .writeImage(bytes);
+                        _showCopied(ok: ok);
+                      },
+                    ),
+                  if ((canReply || canCopyText || canCopyImage) &&
+                      (canReport || canBlock || canHideAnonymousComment ||
+                          canDelete))
                     const _ActionDivider(),
                   if (canReport)
                     _ActionRow(
@@ -668,9 +709,21 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             : 'This comment cannot be restored after deletion.');
   }
 
-  String _localizedText({required String ko, required String en}) {
+  String _localizedText({required String ko, required String en, String? zh}) {
+    if (zh != null && isChineseUi(context)) return zh;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     return isKo ? ko : en;
+  }
+
+  void _showCopied({required bool ok}) {
+    if (!mounted) return;
+    AppSnackBar.show(
+      context,
+      message: ok
+          ? _localizedText(ko: '복사했어요', en: 'Copied', zh: '已复制')
+          : _localizedText(ko: '복사하지 못했어요', en: 'Couldn\'t copy', zh: '无法复制'),
+      type: ok ? AppSnackBarType.success : AppSnackBarType.error,
+    );
   }
 
   /// 대화 흐름 가운데 한 줄 시스템 표시(삭제·숨김).
@@ -1520,18 +1573,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           // - 내 댓글: 액션 시트
           // - 익명 게시글의 타인 댓글: 신고/댓글차단 액션 시트
           // - 그 외 타인 댓글: 답글 모드
-          if (isMyComment) {
-            _showCommentActionsSheet(isMyComment: true);
-          } else if (widget.isAnonymousPost) {
-            _showCommentActionsSheet(isMyComment: false);
-          } else if (!widget.directInteractionBlocked) {
-            // 답글 모드로 진입
-            if (widget.onReplyTap != null) {
-              widget.onReplyTap!();
-            }
-          } else {
-            _showCommentActionsSheet(isMyComment: false);
-          }
+          // 길게 누르면 항상 메뉴(답글·복사·신고 등)를 연다. 답글은 밀어서도 된다.
+          _showCommentActionsSheet(isMyComment: isMyComment);
         },
         child: Container(
           margin: _commentMargin(),

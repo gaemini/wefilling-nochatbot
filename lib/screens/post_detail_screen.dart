@@ -69,6 +69,7 @@ import '../services/active_content_registry.dart';
 import '../l10n/ui_locale.dart';
 import '../snapshot/snapshot_strings.dart';
 import '../utils/comment_gif_input.dart';
+import '../services/clipboard_image_service.dart';
 import '../utils/chat_date_label.dart';
 import '../utils/post_comment_conversation.dart';
 import '../services/comment_image_upload.dart';
@@ -216,8 +217,59 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
   }
 
+  /// 붙여넣거나 키보드로 넣은 사진을 댓글 사진 칸에 담는다(사진 고르기와 같은 제한).
+  Future<void> _addPastedCommentImage(ClipboardImage image) async {
+    if (_isSubmittingComment ||
+        _commentGif != null ||
+        FirebaseAuth.instance.currentUser == null) {
+      return;
+    }
+    final l10n = AppLocalizations.of(context)!;
+    if (_commentImages.length >= maxCommentImages) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.commentPhotoLimit(maxCommentImages)),
+      ));
+      return;
+    }
+    final file = await ClipboardImageService.instance.saveToTemporaryFile(image);
+    if (!mounted || _isSubmittingComment || _commentGif != null) return;
+    if (_commentImages.length >= maxCommentImages) return;
+    setState(() => _commentImages = <File>[..._commentImages, file]);
+  }
+
+  /// 클립보드 이미지: GIF는 기존 GIF 댓글로, 그 밖의 사진은 사진 칸으로.
+  void _handlePastedCommentImage(ClipboardImage image) {
+    if (!mounted || _isSubmittingComment ||
+        FirebaseAuth.instance.currentUser == null) {
+      return;
+    }
+    if (image.isGif &&
+        _commentImages.isEmpty &&
+        validatedKeyboardGif(KeyboardInsertedContent(
+              mimeType: 'image/gif',
+              uri: 'pasteboard://gif',
+              data: image.bytes,
+            )) !=
+            null) {
+      setState(() {
+        _commentGif = image.bytes;
+        _commentGifId = _firestore.collection('comments').doc().id;
+        _commentGifInputGeneration++;
+      });
+      return;
+    }
+    unawaited(_addPastedCommentImage(image));
+  }
+
   Future<void> _onKeyboardCommentContent(KeyboardInsertedContent content) async {
     if (_isSubmittingComment || FirebaseAuth.instance.currentUser == null) return;
+    // GIF가 아닌 사진(키보드 클립보드·스티커)은 사진 칸에 담는다.
+    if (content.mimeType.toLowerCase() != 'image/gif') {
+      final image = await readKeyboardInsertedImage(content);
+      if (!mounted || image == null) return;
+      await _addPastedCommentImage(image);
+      return;
+    }
     // 사진을 담은 상태에서는 GIF를 함께 담지 않는다.
     if (_commentImages.isNotEmpty) return;
     final uid = FirebaseAuth.instance.currentUser!.uid;
@@ -4228,23 +4280,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               focusNode: _commentFocusNode,
                               contentInsertionConfiguration:
                                   ContentInsertionConfiguration(
-                                allowedMimeTypes: const ['image/gif'],
+                                allowedMimeTypes: kPastableImageMimeTypes,
                                 onContentInserted: _onKeyboardCommentContent,
                               ),
+                              // 붙여넣기: 클립보드에 사진이 있으면 사진(GIF는 GIF 댓글)으로,
+                              // 없으면 글자를 붙여넣는다.
                               contextMenuBuilder: (context, state) =>
-                                  commentGifContextMenu(context, state, (bytes) {
-                                if (!mounted || _isSubmittingComment ||
-                                    _commentImages.isNotEmpty ||
-                                    FirebaseAuth.instance.currentUser == null) {
-                                  return;
-                                }
-                                setState(() {
-                                  _commentGif = bytes;
-                                  _commentGifId = _firestore
-                                      .collection('comments').doc().id;
-                                  _commentGifInputGeneration++;
-                                });
-                              }),
+                                  pasteImageAwareContextMenu(
+                                context,
+                                state,
+                                _handlePastedCommentImage,
+                              ),
                               enabled: isLoggedIn,
                               style: const TextStyle(fontSize: 16),
                               decoration: InputDecoration(

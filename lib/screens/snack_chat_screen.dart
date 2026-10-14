@@ -251,6 +251,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const Color _incomingText = SnackChatPalette.ink;
   static const Color _secondaryText = SnackChatPalette.inkSecondary;
   static const Color _tertiaryText = SnackChatPalette.inkTertiary;
+  static const Color _readCountText = SnackChatPalette.pointStrong;
   static const Duration _peopleLookupDeadline = Duration(seconds: 8);
   static const int _translationPrimaryBatchSize = 5;
   static const int _translationOverflowBatchSize = 2;
@@ -7388,42 +7389,24 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             bottom: context.rs(10).clamp(8, 14).toDouble(),
             child: Semantics(
               button: true,
+              // 개수 숫자는 보이지 않고 '새 메시지로 이동' 버튼만 둔다.
               label: (isChineseUi(context)
-                  ? '查看${_newMessageCount}条新消息'
+                  ? '查看新消息'
                   : isKo
-                      ? '새 메시지 $_newMessageCount개로 이동'
-                      : 'Jump to $_newMessageCount new messages'),
+                      ? '새 메시지로 이동'
+                      : 'Jump to new messages'),
               child: Material(
                 color: const Color(0xFF344054),
                 borderRadius: BorderRadius.circular(22),
                 child: InkWell(
                   onTap: _scrollToLatest,
                   borderRadius: BorderRadius.circular(22),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          color: Colors.white,
-                          size: 19,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '$_newMessageCount',
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: Colors.white,
+                      size: 19,
                     ),
                   ),
                 ),
@@ -8703,6 +8686,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     String timeText,
     bool showTimeText,
   ) {
+    final receipt = _readReceiptFor(message);
+    final hasReceipt = receipt.total > 0;
+    final remainingUnread = receipt.unread.length;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final failureReason = message.errorMessage?.trim() ?? '';
     final failureLabel = isKo
@@ -8749,8 +8735,37 @@ class _SnackChatScreenState extends State<SnackChatScreen>
                   ),
                 ),
               ),
+            )
+          else if (hasReceipt && remainingUnread > 0)
+            Tooltip(
+              message: (isChineseUi(context)
+                  ? '${remainingUnread}人未读'
+                  : isKo
+                      ? '$remainingUnread명 미확인'
+                      : '$remainingUnread not seen'),
+              child: InkWell(
+                onTap: () => _showReadReceiptDetails(message),
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 28,
+                  height: 24,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '$remainingUnread',
+                      style: TextStyle(
+                        fontFamily: uiFontFamily(context, 'Inter'),
+                        fontFamilyFallback: const ['NotoSansKR'],
+                        fontSize: ChatMetrics.readCountSize,
+                        fontWeight: FontWeight.w700,
+                        color: _readCountText,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
-          // 안 읽은 사람 수 숫자는 표시하지 않는다(말풍선을 누르면 읽은 사람 상세).
           if (showTimeText) _messageTimeText(timeText),
         ],
       ),

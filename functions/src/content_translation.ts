@@ -6,6 +6,7 @@ import * as https from 'https';
 import {COL} from './firestore_paths';
 import {hasActiveHanyangClaim} from './hanyang_verification';
 import {runtimeInfo, runtimeLogsEnabled} from './runtime_logging';
+import {chatHotRunWithOptions} from './runtime_scaling';
 import {
   detectSourceLanguageHint,
   detectTemporalProfile,
@@ -1243,6 +1244,11 @@ async function callGeminiModel(
       ].join('\n')}]}],
       generationConfig: {
         temperature: 0.1,
+        // 번역은 추론이 거의 필요 없다. 기본 사고 단계가 지연의 대부분이라
+        // Lite는 minimal, 품질 모델(Flash 폴백)은 low로 둔다.
+        thinkingConfig: {
+          thinkingLevel: model === GEMINI_FALLBACK_MODEL ? 'low' : 'minimal',
+        },
         responseMimeType: 'application/json',
         responseJsonSchema: {
           type: 'object',
@@ -1291,7 +1297,8 @@ async function callGeminiModel(
         },
       },
     },
-    45_000,
+    // 한 번의 호출이 함수 제한(60초)을 다 쓰지 않게 짧게 끊고 폴백으로 넘긴다.
+    model === GEMINI_FALLBACK_MODEL ? 22_000 : 18_000,
     {requestStage: 'translation_request', model},
   ) as Record<string, unknown>;
   const candidates = response.candidates as Array<Record<string, unknown>> | undefined;
@@ -1824,15 +1831,29 @@ async function callGemini(
       false,
     );
   } catch (error) {
-    if (isProviderUnavailableError(error)) throw error;
-    console.warn('content_translation_batch_structure_retry', {
-      targetLanguage,
-      modelUsed: GEMINI_MODEL,
-      translationVersion: TRANSLATION_VERSION,
-      promptVersion: PROMPT_VERSION,
-      cacheSource: 'gemini',
-      ...geminiErrorLogFields(error),
-    });
+    if (isProviderUnavailableError(error)) {
+      // Lite가 일시적으로 응답하지 않으면(429·5xx·시간 초과) 바로 실패시키지
+      // 않고 품질 모델로 한 번 더 시도한다. 그것도 실패하면 원래 오류를 낸다.
+      try {
+        batch = await callGeminiModel(
+          items,
+          targetLanguage,
+          GEMINI_FALLBACK_MODEL,
+          false,
+        );
+      } catch (_) {
+        throw error;
+      }
+    } else {
+      console.warn('content_translation_batch_structure_retry', {
+        targetLanguage,
+        modelUsed: GEMINI_MODEL,
+        translationVersion: TRANSLATION_VERSION,
+        promptVersion: PROMPT_VERSION,
+        cacheSource: 'gemini',
+        ...geminiErrorLogFields(error),
+      });
+    }
   }
   const results = new Map<string, GeminiTranslation>();
   const safeFallbacks = new Map<string, GeminiTranslation>();
@@ -2086,7 +2107,13 @@ async function consumeTranslationProviderQuota(
 }
 
 export const translateContentBatch = callables()
-  .runWith({secrets: ['GEMINI_API_KEY'], timeoutSeconds: 60, memory: '512MB'})
+  // 채팅 핫 경로와 같이 따뜻한 인스턴스 1개를 유지해 첫 번역의 콜드 스타트를 없앤다.
+  .runWith({
+    secrets: ['GEMINI_API_KEY'],
+    timeoutSeconds: 60,
+    memory: '512MB',
+    ...chatHotRunWithOptions(),
+  })
   .https.onCall(async (raw, context) => {
     const uid = context.auth?.uid;
     if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Sign-in is required.');
@@ -2458,11 +2485,16 @@ export const translateContentBatch = callables()
       }
     }
 
-    for (const item of resolved) {
+    // 남은 항목은 한 번에 읽는다(하나씩 기다리지 않음).
+    const remaining = resolved.filter((item) => !responses.has(requestKey(item)));
+    const remainingSnaps = remaining.length === 0 ? [] : await db.getAll(
+      ...remaining.map((item) => db.collection(COL.contentTranslations)
+        .doc(cacheId(item, targetLanguage))),
+    );
+    for (let index = 0; index < remaining.length; index++) {
+      const item = remaining[index];
       const key = requestKey(item);
-      if (responses.has(key)) continue;
-      const snap = await db.collection(COL.contentTranslations)
-        .doc(cacheId(item, targetLanguage)).get();
+      const snap = remainingSnaps[index];
       const cached = snap.data();
       if (isCurrentCompletedCache(cached, item, targetLanguage)) {
         responses.set(key, {

@@ -10,6 +10,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../l10n/translation_source_language.dart';
@@ -124,7 +125,11 @@ class _PostChatTranslatedTextState extends State<PostChatTranslatedText> {
       _service.detachScopeLoader(previous, _scopeLoaderToken);
     }
     _attachedScope = widget.scope;
-    _service.attachScopeLoader(widget.scope, _scopeLoaderToken, _startLoad);
+    _service.attachScopeLoader(
+      widget.scope,
+      _scopeLoaderToken,
+      _startLoadFromScope,
+    );
   }
 
   void _handleServiceChange() {
@@ -162,6 +167,43 @@ class _PostChatTranslatedTextState extends State<PostChatTranslatedText> {
     _result = latest;
     _requested = latest.isReady;
     _registerResultAfterNotification(latest);
+  }
+
+  /// '다시 번역' 탭: 바로 '번역 중'으로 바꾸고(이전에는 다시 그리지 않아 버튼이
+  /// 그대로 보였다), 다시 실패하면 짧게 알린다.
+  Future<void> _retryFromTap() async {
+    final future = _startLoad(manualRetry: true);
+    if (mounted) setState(() {});
+    final ok = await future;
+    if (ok || !mounted) return;
+    final zh = isChineseUi(context);
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text(
+          zh
+              ? '暂时无法翻译，请稍后再试'
+              : isKo
+                  ? '지금은 번역하지 못했어요. 잠시 후 다시 시도해 주세요'
+                  : "Couldn't translate right now. Please try again shortly",
+        ),
+      ),
+    );
+  }
+
+  /// 상단 번역 버튼의 재시도(retryOneFailedScopeItem)도 바로 '번역 중'을 보인다.
+  /// 빌드 중에 불릴 수 있어 다시 그리기는 프레임 뒤로 미룬다.
+  Future<bool> _startLoadFromScope({bool manualRetry = false}) {
+    final future = _startLoad(manualRetry: manualRetry);
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
+      if (mounted) setState(() {});
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+    return future;
   }
 
   Future<bool> _startLoad({bool manualRetry = false}) {
@@ -309,7 +351,7 @@ class _PostChatTranslatedTextState extends State<PostChatTranslatedText> {
       // 발 줄은 상태만 알린다(번역 중 / 원문 언어 / 다시 번역). '번역 보기'·
       // '원문 보기' 링크는 두지 않는다.
       onRetry: state == SnackChatTranslationState.failed
-          ? () => unawaited(_startLoad(manualRetry: true))
+          ? () => unawaited(_retryFromTap())
           : null,
     );
   }

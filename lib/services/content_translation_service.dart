@@ -178,7 +178,7 @@ class ContentTranslationService extends ChangeNotifier {
     'mn': 'Монгол',
   };
 
-  // translateContentBatch는 us-central1에 배포된 callable이다. 기기나
+  // translateContentBatch는 서울(asia-northeast3)에 배포된 callable이다. 기기나
   // Firebase 초기화 환경에 따라 기본 region이 달라져도 같은 함수를
   // 호출하도록 명시한다.
   final FirebaseFunctions _functions =
@@ -800,6 +800,16 @@ class ContentTranslationService extends ChangeNotifier {
         _reportPersistentCacheFailure(stage, error, stackTrace);
       }
     }());
+  }
+
+  /// 번역이 있는 화면을 열 때 미리 불러 둔다(번역 언어 확인 + 기기 저장소 열기).
+  /// 첫 번역 요청이 이 두 가지를 기다리지 않게 한다. 실패해도 무시한다.
+  void warmUp({String? uiLanguageCode}) {
+    unawaited(
+      targetLanguage(uiLanguageCode: uiLanguageCode)
+          .then<void>((_) {}, onError: (_) {}),
+    );
+    unawaited(_ensureBox().then<void>((_) {}, onError: (_) {}));
   }
 
   Future<String> targetLanguage({String? uiLanguageCode}) {
@@ -1609,6 +1619,8 @@ class ContentTranslationService extends ChangeNotifier {
         return blockedFailure.result;
       }
       _blockedFailures.remove(key);
+      // 같은 콘텐츠를 보는 다른 위젯도 실패 표시를 함께 거둔다.
+      _notifyResultsChanged();
     }
 
     final queued = _QueuedTranslation(

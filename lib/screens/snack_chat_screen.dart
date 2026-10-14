@@ -255,11 +255,12 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   static const int _translationPrimaryBatchSize = 5;
   static const int _translationOverflowBatchSize = 2;
   static const int _maxConcurrentTranslationBatches = 2;
-  static const int _maxTranslationRequestsInFlight = 7;
+  static const int _maxTranslationRequestsInFlight = 10;
   static const int _maxLiveMessageWindow = 200;
   static const int _translationAdjacentPrefetchLimit = 2;
+  // 한 프레임 남짓만 모아 보낸다(70 → 24ms). 지나간 메시지는 보낼 때 다시 걸러진다.
   static const Duration _translationMicroBatchWindow =
-      Duration(milliseconds: 70);
+      Duration(milliseconds: 24);
   static const double _senderAvatarSize = ChatMetrics.avatar;
   static const double _senderAvatarGap = ChatMetrics.avatarGap;
 
@@ -474,6 +475,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   @override
   void initState() {
     super.initState();
+    // 번역 언어·기기 저장소를 미리 열어 첫 번역이 기다리지 않게 한다.
+    ContentTranslationService.instance.warmUp();
     if (TranslateHintFlags.firstHint) unawaited(_loadTranslateHintState());
     _accountSubscription =
         FirebaseAuth.instance.authStateChanges().listen((user) {

@@ -152,6 +152,39 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets('다시 번역: 누르면 바로 번역 중, 성공하면 번역문', (tester) async {
+    final item = fresh();
+    backend.handler = (batch) => {
+          'items': (batch['items'] as List)
+              .cast<Map>()
+              .map((raw) => {
+                    'id': backend.idOf(raw),
+                    'status': 'failed',
+                    'errorCode': 'internal',
+                  })
+              .toList(),
+        };
+    await pump(tester, item.request, item.scope);
+    await waitFor(tester, () => find.text('다시 번역').evaluate().isNotEmpty);
+    final callsBefore = backend.calls.length;
+
+    final held = Completer<Object?>();
+    backend.handler = (_) => held.future;
+    await tester.tap(find.text('다시 번역'));
+    await tester.pump();
+    // 누른 즉시 '다시 번역'이 사라진다(이전에는 응답까지 그대로 남았다).
+    expect(find.text('다시 번역'), findsNothing);
+
+    backend.handler = backend.completedBatch;
+    held.complete(backend.completedBatch(
+      backend.calls.isEmpty ? <String, dynamic>{} : backend.calls.last,
+    ));
+    final translated = 'Translated ${item.request.contentId}';
+    await waitFor(tester, () => find.text(translated).evaluate().isNotEmpty);
+    expect(backend.calls.length, greaterThan(callsBefore));
+    await settle(tester);
+  });
+
   testWidgets('대상 아님(내 댓글 등): 원문만, 요청·발 줄 없음', (tester) async {
     final item = fresh();
     await pump(tester, item.request, item.scope, isCandidate: false);

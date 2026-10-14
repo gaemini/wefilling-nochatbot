@@ -399,11 +399,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   late bool _postScopeShowsOriginal;
   late bool _commentsScopeShowsOriginal;
   bool _hasTranslatableComments = false;
+  final Set<String> _prefetchedCommentTranslationIds = <String>{};
 
   @override
   void initState() {
     super.initState();
     _currentPost = widget.post;
+    // 번역 언어·기기 저장소를 미리 열어 댓글 첫 번역이 기다리지 않게 한다.
+    ContentTranslationService.instance.warmUp();
 
     // 작성자 여부/좋아요 상태는 로컬 데이터로 즉시 결정 (초기 렌더 품질/깜빡임 방지)
     final user = FirebaseAuth.instance.currentUser;
@@ -652,11 +655,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final hasCandidates = allComments.any(
       (comment) => isCommentTranslationCandidate(comment, currentUserId),
     );
+    _prefetchCachedCommentTranslations(allComments, currentUserId);
     if (_hasTranslatableComments == hasCandidates) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _hasTranslatableComments == hasCandidates) return;
       setState(() => _hasTranslatableComments = hasCandidates);
     });
+  }
+
+  /// 댓글 번역 캐시(메모리·기기)를 한 번에 읽어 둔다. 댓글마다 따로 기다리지
+  /// 않고 첫 화면부터 이미 번역된 댓글이 바로 보인다. 새 댓글만 다시 읽는다.
+  void _prefetchCachedCommentTranslations(
+    List<Comment> allComments,
+    String? currentUserId,
+  ) {
+    final fresh = allComments
+        .where((comment) =>
+            !_prefetchedCommentTranslationIds.contains(comment.id) &&
+            isCommentTranslationCandidate(comment, currentUserId))
+        .toList();
+    if (fresh.isEmpty) return;
+    _prefetchedCommentTranslationIds.addAll(fresh.map((comment) => comment.id));
+    unawaited(_translationService
+        .cachedResultsFor(fresh.map((comment) =>
+            commentTranslationRequest(comment, postId: _currentPost.id)))
+        .then<void>((_) {}, onError: (_) {}));
   }
 
   /// 화면에 보이는 댓글의 고유 작성자 uid. 삭제 계정과 빈 uid는 제외한다.

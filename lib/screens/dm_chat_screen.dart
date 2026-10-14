@@ -197,8 +197,9 @@ class _DMChatScreenState extends State<DMChatScreen>
   final Map<String, DateTime> _translationRetryAfter = <String, DateTime>{};
   final Map<String, _DmTranslationOutcome> _deferredTranslationOutcomes =
       <String, _DmTranslationOutcome>{};
+  // 한 프레임 남짓만 모아 보낸다(70 → 24ms).
   static const Duration _translationMicroBatchWindow =
-      Duration(milliseconds: 70);
+      Duration(milliseconds: 24);
   static const int _translationBatchSize = 5;
   static const int _translationAdjacentPrefetchLimit = 2;
   Timer? _translationMicroBatchTimer;
@@ -542,6 +543,7 @@ class _DMChatScreenState extends State<DMChatScreen>
         _translationService.showsOriginal(_translationScope);
     _translationService.addListener(_handleTranslationServiceChange);
     _translationLifecycleInitialized = true;
+    _translationService.warmUp();
     unawaited(_prepareTranslationMode());
     if (TranslateHintFlags.firstHint) unawaited(_loadTranslateHintState());
     _otherUserInfoStream =
@@ -1260,8 +1262,9 @@ class _DMChatScreenState extends State<DMChatScreen>
           _translationFailures[outcome.requestKey] = failures;
           if (failures < 2 &&
               (outcome.result == null || outcome.result!.isTransientFailure)) {
+            // 일시적 실패의 첫 재시도는 스낵챗과 같이 2초 뒤.
             _translationRetryAfter[outcome.requestKey] = DateTime.now().add(
-              const Duration(seconds: 15),
+              const Duration(seconds: 2),
             );
           } else {
             _translationRetryAfter.remove(outcome.requestKey);

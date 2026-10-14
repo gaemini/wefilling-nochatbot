@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../ui/widgets/keyboard_aware.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -1558,7 +1559,6 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
         final isOwner =
             FirebaseAuth.instance.currentUser?.uid == current.authorId;
         final barHeight = _snapshotBottomBarHeight(context);
-        final keyboard = MediaQuery.viewInsetsOf(context).bottom;
         final selected =
             _reactedLocally || (_reactionStatusResolved && _hasReacted);
         final showCaption = current.hasTranslatedCaption;
@@ -1711,12 +1711,17 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
               Positioned(
                 left: 12,
                 right: 12,
-                bottom: keyboard > 0 ? keyboard + 8 : 0,
-                child: Padding(
+                bottom: 0,
+                // 키보드 높이는 이 작은 Builder만 읽는다(스낵 화면 전체가 키보드
+                // 애니메이션 매 프레임 다시 그려지지 않게). 위치 값은 기존과 같다.
+                child: Builder(
+                  builder: (context) {
+                    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+                    return Padding(
                   padding: EdgeInsets.only(
                     top: 12,
                     bottom: keyboard > 0
-                        ? 0
+                        ? keyboard + 8
                         : math.max(MediaQuery.paddingOf(context).bottom, 12.0),
                   ),
                   child: SnapshotFeelBar(
@@ -1730,6 +1735,8 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
                     onViewers: widget.onViewers,
                     onSnackReply: widget.onSnackReply,
                   ),
+                    );
+                  },
                 ),
               ),
             // 친구 스낵 DM 답장: 검정 55% 막 + 화면 하단에 붙는 입력부.
@@ -1753,8 +1760,9 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: keyboard,
-                child: TweenAnimationBuilder<double>(
+                bottom: 0,
+                child: KeyboardInsetPadding(
+                  child: TweenAnimationBuilder<double>(
                   tween: Tween<double>(begin: 1, end: 0),
                   duration: MotionTokens.reduceMotion(context)
                       ? Duration.zero
@@ -1787,6 +1795,7 @@ class _SnapshotDetailPageState extends State<_SnapshotDetailPage> {
                       return ok;
                     },
                   ),
+                ),
                 ),
               ),
             ],

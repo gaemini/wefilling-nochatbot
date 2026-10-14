@@ -233,19 +233,30 @@ class SnapshotEditorToolRow extends StatelessWidget {
       maxScaleFactor: 1.25,
       child: Row(
         children: [
-          SnapshotToolTextButton(
-            key: const ValueKey('snapshot_tool_text'),
-            label: strings.textTool,
-            onTap: onAddText,
-          ),
-          if (isVideo)
-            SnapshotToolTextButton(
-              key: const ValueKey('snapshot_tool_trim'),
-              label: strings.trimTool,
-              active: trimOpen,
-              onTap: onToggleTrim,
+          // 좁은 폭·큰 글자에서도 [다음]을 밀어내지 않도록 도구는 남는 폭 안에 둔다.
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SnapshotToolTextButton(
+                    key: const ValueKey('snapshot_tool_text'),
+                    label: strings.textTool,
+                    onTap: onAddText,
+                  ),
+                  if (isVideo)
+                    SnapshotToolTextButton(
+                      key: const ValueKey('snapshot_tool_trim'),
+                      label: strings.trimTool,
+                      active: trimOpen,
+                      onTap: onToggleTrim,
+                    ),
+                ],
+              ),
             ),
-          const Spacer(),
+          ),
+          const SizedBox(width: 8),
           SizedBox(
             width: 120,
             child: SnapshotPillButton(

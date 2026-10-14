@@ -342,6 +342,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                   : isBlocked
                       ? _buildLockedProfile(l10n)
                       : RefreshIndicator(
+                          color: AppColors.pointColor,
                           onRefresh: _refreshProfile,
                           child: CustomScrollView(
                             key: PageStorageKey<String>(

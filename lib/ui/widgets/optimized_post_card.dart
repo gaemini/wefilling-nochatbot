@@ -1347,7 +1347,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             memCacheWidth: _feedImageCacheWidth,
             fit: BoxFit.cover,
             useOldImageOnUrlChange: true,
-            fadeInDuration: Duration.zero,
+            // 네트워크에서 온 이미지만 fast로 나타난다. 메모리 캐시에 있으면
+            // 동기로 그려져 페이드 없이 바로 보인다(되돌아올 때 깜빡임 없음).
+            fadeInDuration: MotionTokens.fast,
             fadeOutDuration: Duration.zero,
             placeholder: (_, __) => const _PostImagePlaceholder(),
             errorWidget: (_, __, ___) => const _PostImageError(),
@@ -2135,7 +2137,7 @@ class _ImageSliderState extends State<_ImageSlider> {
                     memCacheWidth: _OptimizedPostCardState._feedImageCacheWidth,
                     fit: index == 0 ? BoxFit.cover : BoxFit.contain,
                     useOldImageOnUrlChange: true,
-                    fadeInDuration: Duration.zero,
+                    fadeInDuration: MotionTokens.fast,
                     fadeOutDuration: Duration.zero,
                     placeholder: (_, __) => const _PostImagePlaceholder(),
                     errorWidget: (_, __, ___) => const _PostImageError(),

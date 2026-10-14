@@ -7,6 +7,8 @@
 
 import 'package:flutter/material.dart';
 
+export 'list_skeletons.dart' show StaggerIn, PeopleListSkeleton;
+
 import '../../design/tokens.dart';
 
 const Color kLikeColor = Color(0xFF2C6BC0);
@@ -222,128 +224,6 @@ class LikeHoldRing extends StatelessWidget {
             color: kLikeColor,
             backgroundColor: Colors.transparent,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 목록 행 순차 등장(행마다 40ms 늦게, `medium` 동안 투명 → 선명 + 8px 올라옴). 목록이 처음
-/// 보인 시각 [shownAt]을 기준으로 하므로 스크롤로 다시 만들어진 행은 바로 보인다.
-class StaggerIn extends StatefulWidget {
-  const StaggerIn({
-    super.key,
-    required this.index,
-    required this.shownAt,
-    required this.child,
-    this.maxStaggered = 8,
-  });
-
-  final int index;
-  final DateTime shownAt;
-  final Widget child;
-
-  /// 이보다 뒤 행은 마지막 행과 함께 나온다.
-  final int maxStaggered;
-
-  @override
-  State<StaggerIn> createState() => _StaggerInState();
-}
-
-class _StaggerInState extends State<StaggerIn>
-    with SingleTickerProviderStateMixin {
-  AnimationController? _controller;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_controller != null) return;
-    final delay = Duration(
-      milliseconds: 40 * widget.index.clamp(0, widget.maxStaggered),
-    );
-    final total = delay + MotionTokens.medium;
-    final elapsed = DateTime.now().difference(widget.shownAt);
-    if (MotionTokens.reduceMotion(context) || elapsed >= total) return;
-    final controller = AnimationController(vsync: this, duration: total);
-    final start = elapsed.inMicroseconds / total.inMicroseconds;
-    controller.forward(from: start.clamp(0.0, 1.0));
-    _controller = controller;
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = _controller;
-    if (controller == null) return widget.child;
-    final total = controller.duration!.inMicroseconds;
-    final begin =
-        (total - MotionTokens.medium.inMicroseconds) / total.clamp(1, 1 << 62);
-    final curved = CurvedAnimation(
-      parent: controller,
-      curve: Interval(begin, 1, curve: MotionTokens.curve),
-    );
-    return AnimatedBuilder(
-      animation: curved,
-      child: widget.child,
-      builder: (context, child) => Opacity(
-        opacity: curved.value,
-        child: Transform.translate(
-          offset: Offset(0, 8 * (1 - curved.value)),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-/// 사람 목록 자리표시(원 40 + 막대 두 줄). 불러오는 동안 스피너 대신 쓴다.
-class PeopleListSkeleton extends StatelessWidget {
-  const PeopleListSkeleton({super.key, this.rows = 3, this.avatarSize = 40});
-
-  final int rows;
-  final double avatarSize;
-
-  @override
-  Widget build(BuildContext context) {
-    const fill = Color(0xFFF0F1F3);
-    Widget bar(double width, double height) => Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            color: fill,
-            borderRadius: BorderRadius.circular(height / 2),
-          ),
-        );
-    return ListView.builder(
-      key: const ValueKey('people_list_skeleton'),
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      itemCount: rows,
-      itemBuilder: (context, index) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Container(
-              width: avatarSize,
-              height: avatarSize,
-              decoration:
-                  const BoxDecoration(color: fill, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                bar(index.isEven ? 120 : 96, 12),
-                const SizedBox(height: 6),
-                bar(64, 10),
-              ],
-            ),
-          ],
         ),
       ),
     );

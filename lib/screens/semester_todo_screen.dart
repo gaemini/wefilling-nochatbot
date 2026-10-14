@@ -511,6 +511,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
       });
     }
     return RefreshIndicator(
+      color: AppColors.pointColor,
       onRefresh: controller.load,
       child: CustomScrollView(
         key: PageStorageKey(

@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../constants/app_constants.dart';
 
 class MeetupParticipantsScreen extends StatefulWidget {
   final Meetup meetup;
@@ -243,6 +244,7 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
     }
 
     return RefreshIndicator(
+      color: AppColors.pointColor,
       onRefresh: _loadParticipants,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),

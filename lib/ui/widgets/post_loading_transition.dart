@@ -17,9 +17,7 @@ class PostLoadingTransition extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedSwitcher(
-      duration: MotionTokens.reduceMotion(context)
-          ? Duration.zero
-          : const Duration(milliseconds: 180),
+      duration: MotionTokens.of(context, MotionTokens.state),
       switchInCurve: MotionTokens.curve,
       switchOutCurve: Curves.easeIn,
       transitionBuilder: (child, animation) => FadeTransition(

@@ -36,9 +36,9 @@ class MotionStrings {
 
   static String slowConnection(BuildContext context) => _pick(
         context,
-        ko: '연결이 느려요. 조금만 기다려 주세요',
-        en: 'Slow connection. Hang on a moment',
-        zh: '网络较慢，请稍候',
+        ko: '연결이 느려요 · 계속 불러오는 중',
+        en: 'Slow connection · Still loading',
+        zh: '网络较慢 · 仍在加载',
       );
 
   static String newPosts(BuildContext context, int count) => _pick(

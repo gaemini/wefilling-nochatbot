@@ -4893,8 +4893,8 @@ class _DMChatScreenState extends State<DMChatScreen>
                     child: CachedNetworkImage(
                       imageUrl: img,
                       fit: BoxFit.cover,
-                      fadeInDuration: const Duration(milliseconds: 150),
-                      fadeOutDuration: const Duration(milliseconds: 150),
+                      fadeInDuration: MotionTokens.fast,
+                      fadeOutDuration: Duration.zero,
                       placeholder: (_, __) => _buildMediaPlaceholder(
                         isMine: isMine,
                         borderRadius: const BorderRadius.vertical(
@@ -5014,8 +5014,8 @@ class _DMChatScreenState extends State<DMChatScreen>
               child: RetryableChatNetworkImage(
                 imageUrl: imageUrl,
                 fit: BoxFit.cover,
-                fadeInDuration: const Duration(milliseconds: 150),
-                fadeOutDuration: const Duration(milliseconds: 150),
+                fadeInDuration: MotionTokens.fast,
+                fadeOutDuration: Duration.zero,
                 placeholder: (_, __) => _buildMediaPlaceholder(
                   isMine: isMine,
                   borderRadius: BorderRadius.circular(14),

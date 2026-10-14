@@ -27,6 +27,9 @@ import '../l10n/together_strings.dart';
 import '../ui/sheets/mutual_feel_sheet.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/list_skeletons.dart';
+import '../ui/widgets/post_loading_transition.dart';
+import '../constants/app_constants.dart';
 
 class NotificationScreen extends StatefulWidget {
   /// true면 화면이 열릴 때 "모두 읽음"을 즉시 실행한다.
@@ -46,6 +49,7 @@ class NotificationScreen extends StatefulWidget {
 }
 
 class _NotificationScreenState extends State<NotificationScreen> {
+  DateTime? _listShownAt;
   final NotificationService _notificationService = NotificationService();
   final PostService _postService = PostService();
   final UserInfoCacheService _userInfoCache = UserInfoCacheService();
@@ -1059,59 +1063,77 @@ class _NotificationScreenState extends State<NotificationScreen> {
       body: StreamBuilder<List<AppNotification>>(
         stream: _notificationsStream,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          final loading =
+              snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData;
+          // 자리표시 → 내용은 교차(state), 처음 6줄만 40ms 간격(모션 2부 F-1).
+          return PostLoadingTransition(
+            loading: loading,
+            child: Builder(builder: (context) {
+              if (loading) {
+                return const ListLoadingSkeleton(
+                  avatarSize: 40,
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+                );
+              }
+              final listShownAt = _listShownAt ??= DateTime.now();
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                  '${AppLocalizations.of(context)!.notificationLoadError}: ${snapshot.error}'),
-            );
-          }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text(
+                      '${AppLocalizations.of(context)!.notificationLoadError}: ${snapshot.error}'),
+                );
+              }
 
-          final notifications = snapshot.data ?? [];
+              final notifications = snapshot.data ?? [];
 
-          if (notifications.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.notifications_off_outlined,
-                    size: 64,
-                    color: Color(0xFFD1D5DB),
+              if (notifications.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.notifications_off_outlined,
+                        size: 64,
+                        color: Color(0xFFD1D5DB),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        AppLocalizations.of(context)!.noNotifications,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    AppLocalizations.of(context)!.noNotifications,
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: const ['NotoSansKR'],
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
+                );
+              }
 
-          return RefreshIndicator(
-            onRefresh: () async {
-              // 당겨서 새로고침 시 상태 업데이트
-              setState(() {});
-            },
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              itemCount: notifications.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 6),
-              itemBuilder: (context, index) {
-                return _buildNotificationItem(notifications[index]);
-              },
-            ),
+              return RefreshIndicator(
+                color: AppColors.pointColor,
+                onRefresh: () async {
+                  // 당겨서 새로고침 시 상태 업데이트
+                  setState(() {});
+                },
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  itemCount: notifications.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 6),
+                  itemBuilder: (context, index) {
+                    return StaggerIn(
+                      index: index,
+                      shownAt: listShownAt,
+                      maxStaggered: 6,
+                      child: _buildNotificationItem(notifications[index]),
+                    );
+                  },
+                ),
+              );
+            }),
           );
         },
       ),

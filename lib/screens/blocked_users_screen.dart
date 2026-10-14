@@ -11,6 +11,7 @@ import '../design/tokens.dart';
 import '../ui/widgets/empty_state.dart';
 import '../utils/logger.dart';
 import '../l10n/ui_locale.dart';
+import '../constants/app_constants.dart';
 
 class BlockedUsersScreen extends StatefulWidget {
   const BlockedUsersScreen({super.key});
@@ -396,6 +397,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     final hasAnonymousPosts = _blockedAnonymousPosts.isNotEmpty;
 
     return RefreshIndicator(
+      color: AppColors.pointColor,
       onRefresh: _loadBlockedUsers,
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

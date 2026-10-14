@@ -16,6 +16,7 @@ import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/list_skeletons.dart';
 
 class UserFriendsListScreen extends StatefulWidget {
   final String userId;
@@ -181,11 +182,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: Color(0xFF667085),
-        ),
-      );
+      return const ListLoadingSkeleton();
     }
 
     if (_errorMessage != null) {
@@ -271,7 +268,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
     final l10n = AppLocalizations.of(context)!;
 
     return RefreshIndicator(
-      color: const Color(0xFF667085),
+      color: AppColors.pointColor,
       onRefresh: _loadFriends,
       child: CustomScrollView(
         controller: _scrollController,

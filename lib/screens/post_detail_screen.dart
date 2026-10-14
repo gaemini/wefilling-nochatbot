@@ -3665,19 +3665,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       cacheManager: AppImageCacheManager.instance,
       memCacheWidth: isFullScreen ? null : _detailImageCacheWidth,
       fit: fit,
-      fadeInDuration: const Duration(milliseconds: 140),
-      fadeOutDuration: const Duration(milliseconds: 120),
+      // 모션 2부 F-2: 색 자리 → fast 페이드(메모리 캐시면 페이드 없음).
+      fadeInDuration: MotionTokens.fast,
+      fadeOutDuration: Duration.zero,
       placeholder: (context, url) {
-        // 인스타처럼 "즉시" 회색 플레이트를 보여주고 로딩은 최소 표시
-        return Container(
-          color: Colors.grey.shade100,
-          child: Center(
-            child: SizedBox(
-              width: isFullScreen ? 28 : 22,
-              height: isFullScreen ? 28 : 22,
-              child: const CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
+        return const ColoredBox(
+          key: ValueKey('post_detail_image_placeholder'),
+          color: BrandColors.imagePlaceholder,
+          child: SizedBox.expand(),
         );
       },
       imageBuilder: (context, imageProvider) {

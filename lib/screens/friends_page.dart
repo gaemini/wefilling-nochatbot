@@ -33,6 +33,7 @@ import 'social_tag_explorer_screen.dart';
 import '../widgets/user_tile.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/list_skeletons.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -215,8 +216,7 @@ class _FriendsPageState extends State<FriendsPage> {
   Widget _buildUserSearchResults(RelationshipProvider provider, String query) {
     // 로딩
     if (provider.isSearchLoading) {
-      return const Center(
-          child: CircularProgressIndicator(color: AppColors.pointColor));
+      return const ListLoadingSkeleton();
     }
 
     if (provider.errorMessage != null) {

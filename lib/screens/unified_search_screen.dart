@@ -32,6 +32,8 @@ import '../utils/latest_request_guard.dart';
 import '../l10n/ui_locale.dart';
 import 'organization_profile_screen.dart';
 import '../ui/widgets/motion_selectable.dart';
+import '../ui/widgets/list_skeletons.dart';
+import '../ui/widgets/post_loading_transition.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
   /// 0: 이름(유저), 1: 게시글, 2: 모임
@@ -862,8 +864,15 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                       controller: _tabController,
                       children: [
                         _buildUsersTab(),
-                        _buildPostsTab(),
-                        _buildMeetupsTab(),
+                        // 자리표시 → 결과는 교차(모션 2부 F-1).
+                        PostLoadingTransition(
+                          loading: _isLoadingPosts,
+                          child: _buildPostsTab(),
+                        ),
+                        PostLoadingTransition(
+                          loading: _isLoadingMeetups,
+                          child: _buildMeetupsTab(),
+                        ),
                       ],
                     ),
                   ),
@@ -884,7 +893,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     );
 
     if (!_relationshipInitialized) {
-      return const Center(child: CircularProgressIndicator());
+      return const ListLoadingSkeleton();
     }
 
     if (q.isEmpty) {
@@ -895,7 +904,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       builder: (context, provider, _) {
         if (provider.isSearchLoading ||
             (organizationsEnabled && _isLoadingOrganizations)) {
-          return const Center(child: CircularProgressIndicator());
+          return const ListLoadingSkeleton();
         }
 
         if ((provider.errorMessage != null ||
@@ -1272,10 +1281,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (provider.isSearchLoading) {
       return const [
         SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 40),
-            child: Center(child: CircularProgressIndicator()),
-          ),
+          child: ListLoadingSkeleton(rows: 4),
         ),
       ];
     }
@@ -1423,7 +1429,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     }
 
     if (_isLoadingPosts) {
-      return const Center(child: CircularProgressIndicator());
+      return const ListLoadingSkeleton(avatarSize: 56, avatarRadius: 10);
     }
 
     if (_postsError != null) {
@@ -1477,7 +1483,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     }
 
     if (_isLoadingMeetups) {
-      return const Center(child: CircularProgressIndicator());
+      return const ListLoadingSkeleton(avatarSize: 56, avatarRadius: 10);
     }
 
     if (_meetupsError != null) {

@@ -17,6 +17,7 @@ import '../../l10n/app_localizations.dart';
 import '../../l10n/ui_locale.dart';
 import 'chat_reaction_widgets.dart';
 import '../../utils/chat_message_typography.dart';
+import '../../design/tokens.dart';
 
 class SnackChatStorageImage extends StatefulWidget {
   const SnackChatStorageImage({
@@ -518,6 +519,8 @@ class SnackChatReplyPreviewView extends StatelessWidget {
                               imageUrl: preview.imageUrl!,
                               cacheManager: AppImageCacheManager.instance,
                               fit: BoxFit.cover,
+                              fadeInDuration: MotionTokens.fast,
+                              fadeOutDuration: Duration.zero,
                               errorWidget: (_, __, ___) => const Icon(
                                 Icons.image_not_supported_outlined,
                                 size: 17,
@@ -865,6 +868,8 @@ class SnackChatLinkPreviewCard extends StatelessWidget {
                         width: 54,
                         height: 54,
                         fit: BoxFit.cover,
+                        fadeInDuration: MotionTokens.fast,
+                        fadeOutDuration: Duration.zero,
                         errorWidget: (_, __, ___) => const SizedBox.shrink(),
                       ),
                     ),

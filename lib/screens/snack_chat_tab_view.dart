@@ -16,6 +16,7 @@ import 'snack_chat_info_screen.dart';
 import 'snack_chat_screen.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/list_skeletons.dart';
 
 class SnackChatTabView extends StatefulWidget {
   const SnackChatTabView({
@@ -569,9 +570,12 @@ class _SectionLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 16),
-      child: Center(child: CircularProgressIndicator()),
+    // 채팅방 줄(72) 모양 자리표시(모션 2부 F-1).
+    return const ListLoadingSkeleton(
+      rows: 4,
+      avatarSize: 48,
+      rowSpacing: 24,
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 12),
     );
   }
 }

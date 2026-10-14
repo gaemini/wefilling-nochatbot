@@ -44,6 +44,7 @@ import '../ui/widgets/hanyang_verification_gate.dart';
 import '../services/notification_service.dart';
 import '../services/active_content_registry.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/list_skeletons.dart';
 // NOTE: 단체 톡방(확성기) 기능 제거됨
 
 class MeetupDetailScreen extends StatefulWidget {
@@ -621,7 +622,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
                   children: [
                     Expanded(
                       child: RefreshIndicator(
-                        color: const Color(0xFF111827),
+                        color: AppColors.pointColor,
                         backgroundColor: Colors.white,
                         onRefresh: () async {
                           await Future.wait([
@@ -1082,18 +1083,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen>
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done &&
                 !snapshot.hasData) {
+              // 참여자 줄 자리표시(모션 2부 F-1): 아바타 + 막대.
               return const SizedBox(
                 height: 58,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFF667085),
-                    ),
-                  ),
+                child: ListLoadingSkeleton(
+                  rows: 1,
+                  avatarSize: 36,
+                  padding: EdgeInsets.symmetric(vertical: 11),
+                  showSlowHint: false,
                 ),
               );
             }

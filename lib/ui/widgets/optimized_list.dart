@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
+import '../../constants/app_constants.dart';
 
 /// 성능 최적화된 리스트뷰
 ///
@@ -157,6 +158,7 @@ class _OptimizedListViewState<T> extends State<OptimizedListView<T>> {
     // 새로고침 지원
     if (widget.onRefresh != null) {
       listView = RefreshIndicator(
+        color: AppColors.pointColor,
         onRefresh: widget.onRefresh!,
         child: listView,
       );

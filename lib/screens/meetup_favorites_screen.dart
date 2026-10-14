@@ -264,6 +264,7 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
+              color: AppColors.pointColor,
               onRefresh: _load,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),

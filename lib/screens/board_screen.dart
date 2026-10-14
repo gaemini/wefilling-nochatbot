@@ -35,6 +35,9 @@ import '../utils/logger.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/widgets/post_translation_feed.dart';
 import '../l10n/ui_locale.dart';
+import '../ui/widgets/new_items_pill.dart';
+import '../ui/motion/motion_strings.dart';
+import '../design/tokens.dart';
 
 class BoardScreen extends StatefulWidget {
   final VoidCallback onOpenMeetups;
@@ -108,6 +111,8 @@ class BoardScreenState extends State<BoardScreen> {
 
   // 캐시된 데이터를 저장하여 부드러운 전환 구현
   List<Post>? _cachedTodayPosts;
+  // 맨 위가 아닐 때 위에 새로 생긴 포스트 수(모션 2부 F-3 알약).
+  int _newPostsAboveCount = 0;
   bool _isInitialLoad = true;
   Future<void>? _refreshInFlight;
 
@@ -759,6 +764,10 @@ class BoardScreenState extends State<BoardScreen> {
       unawaited(_loadMoreHistoricalPosts());
     }
 
+    if (_newPostsAboveCount > 0 && offset <= position.minScrollExtent + 40) {
+      setState(() => _newPostsAboveCount = 0);
+    }
+
     if (offset <= position.minScrollExtent + 8) {
       _lastScrollOffset = offset;
       _directionalScrollDistance = 0;
@@ -832,14 +841,41 @@ class BoardScreenState extends State<BoardScreen> {
           constraints: const BoxConstraints(maxWidth: 600),
           child: SizedBox(
             width: double.infinity,
-            child: NotificationListener<ScrollNotification>(
-              onNotification: _handleBoardScrollNotification,
-              child: StreamBuilder<List<Post>>(
-                stream: _postsStream,
-                builder: (context, postSnap) {
-                  return _buildTodayPostsTab(postSnap);
-                },
-              ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _handleBoardScrollNotification,
+                    child: StreamBuilder<List<Post>>(
+                      stream: _postsStream,
+                      builder: (context, postSnap) {
+                        return _buildTodayPostsTab(postSnap);
+                      },
+                    ),
+                  ),
+                ),
+                // ↑ 새 포스트 {n}: 포인트 바탕, 위에서 내려온다(모션 2부 F-3).
+                Positioned(
+                  top: 8,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: NewItemsPill(
+                      key: const ValueKey('board_new_posts_pill'),
+                      visible: _newPostsAboveCount > 0,
+                      label: MotionStrings.newPosts(
+                        context,
+                        _newPostsAboveCount,
+                      ),
+                      icon: Icons.arrow_upward_rounded,
+                      fromTop: true,
+                      color: AppColors.pointColor,
+                      shadowColor: const Color(0x442C6BC0),
+                      onTap: _scrollToNewPosts,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -862,6 +898,44 @@ class BoardScreenState extends State<BoardScreen> {
         ),
       ),
     );
+  }
+
+  /// 맨 위가 아닐 때 기존 첫 포스트보다 새 포스트가 위에 생기면 알약으로 알린다.
+  /// 화면 위치는 기존 앵커 복원이 그대로 지킨다(스크롤을 움직이지 않음).
+  void _countNewPostsAbove(List<String> previousIds, List<Post> next) {
+    if (previousIds.isEmpty || _cachedTodayPosts == null) return;
+    if (!_controllersInitialized || !_todayScrollController.hasClients) return;
+    if (_todayScrollController.offset <= 40) return;
+    final previous = previousIds.toSet();
+    final previousNewest = _cachedTodayPosts!.isEmpty
+        ? null
+        : _cachedTodayPosts!
+            .map((post) => post.createdAt)
+            .reduce((a, b) => a.isAfter(b) ? a : b);
+    final fresh = next
+        .where((post) =>
+            !previous.contains(post.id) &&
+            (previousNewest == null || post.createdAt.isAfter(previousNewest)))
+        .length;
+    if (fresh == 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _newPostsAboveCount += fresh);
+    });
+  }
+
+  void _scrollToNewPosts() {
+    setState(() => _newPostsAboveCount = 0);
+    if (!_todayScrollController.hasClients) return;
+    final duration = MotionTokens.of(context, MotionTokens.medium);
+    if (duration == Duration.zero) {
+      _todayScrollController.jumpTo(0);
+    } else {
+      unawaited(_todayScrollController.animateTo(
+        0,
+        duration: duration,
+        curve: MotionTokens.curve,
+      ));
+    }
   }
 
   /// 오늘 게시글 탭 (posts 스트림은 build()에서 1회 구독)
@@ -897,6 +971,7 @@ class BoardScreenState extends State<BoardScreen> {
       final nextIds = todayPosts.map((post) => post.id).toList(growable: false);
       if (!_samePostIdOrder(previousIds, nextIds)) {
         _captureVisiblePostAnchor();
+        _countNewPostsAbove(previousIds, todayPosts);
       }
       _cachedTodayPosts = todayPosts;
       unawaited(_postMediaPrefetch.prefetchPosts(todayPosts, maxPosts: 4));
@@ -1473,25 +1548,40 @@ class BoardScreenState extends State<BoardScreen> {
     final error =
         _pagedPosts.isEmpty ? _historyInitialError : _historyLoadMoreError;
     if (error != null) {
-      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      // 실패: "불러오지 못했어요" + [다시 시도](모션 2부 F-3).
       return Padding(
+        key: const ValueKey('board_history_error'),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 22),
-        child: Center(
-          child: TextButton(
-            key: const ValueKey('board_history_retry'),
-            onPressed: () {
-              if (_pagedPosts.isEmpty) {
-                unawaited(_loadFirstHistoricalPage());
-              } else {
-                unawaited(_loadMoreHistoricalPosts());
-              }
-            },
-            child: Text((isChineseUi(context)
-                ? '重新加载更早的动态'
-                : isKo
-                    ? '이전 포스트 다시 불러오기'
-                    : 'Retry earlier posts')),
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              MotionStrings.loadMoreFailed(context),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF707070)),
+            ),
+            TextButton(
+              key: const ValueKey('board_history_retry'),
+              onPressed: () {
+                if (_pagedPosts.isEmpty) {
+                  unawaited(_loadFirstHistoricalPage());
+                } else {
+                  unawaited(_loadMoreHistoricalPosts());
+                }
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.pointColor,
+                minimumSize: const Size(44, 36),
+              ),
+              child: Text(
+                MotionStrings.retry(context),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -2015,36 +2105,58 @@ class BoardScreenState extends State<BoardScreen> {
     );
   }
 
-  /// 에러 위젯 빌드
+  /// 에러 위젯 빌드(모션 2부 F-3: 빨간 큰 아이콘 없이 제목·설명·버튼)
   Widget _buildErrorWidget(String error) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.error_outline,
-            size: 64,
-            color: Colors.red,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '오류가 발생했습니다',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            error,
-            style: Theme.of(context).textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () => unawaited(
-              _refreshBoardFeed(_cachedTodayPosts ?? const <Post>[]),
+      child: Padding(
+        key: const ValueKey('board_full_error'),
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              AppLocalizations.of(context)?.error ?? '오류가 발생했습니다',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111111),
+              ),
             ),
-            child: const Text('다시 시도'),
-          ),
-        ],
+            const SizedBox(height: 6),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF707070)),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 40,
+              child: FilledButton(
+                key: const ValueKey('board_full_error_retry'),
+                onPressed: () => unawaited(
+                  _refreshBoardFeed(_cachedTodayPosts ?? const <Post>[]),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.pointColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                child: Text(
+                  MotionStrings.retry(context),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

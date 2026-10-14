@@ -18,6 +18,7 @@ import '../widgets/relationship_action_button.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/motion_selectable.dart';
+import '../ui/widgets/list_skeletons.dart';
 
 class RequestsPage extends StatefulWidget {
   const RequestsPage({super.key});
@@ -218,9 +219,7 @@ class _RequestsPageState extends State<RequestsPage>
         top: false,
         bottom: false,
         child: !_isInitialized
-            ? const Center(
-                child: CircularProgressIndicator(color: Color(0xFF667085)),
-              )
+            ? const ListLoadingSkeleton()
             : Column(
                 children: [
                   SizedBox(
@@ -286,9 +285,7 @@ class _RequestsPageState extends State<RequestsPage>
     return Consumer<RelationshipProvider>(
       builder: (context, provider, child) {
         if (provider.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(color: Color(0xFF667085)),
-          );
+          return const ListLoadingSkeleton();
         }
 
         if (provider.errorMessage != null) {
@@ -340,9 +337,7 @@ class _RequestsPageState extends State<RequestsPage>
     return Consumer<RelationshipProvider>(
       builder: (context, provider, child) {
         if (provider.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(color: Color(0xFF667085)),
-          );
+          return const ListLoadingSkeleton();
         }
 
         if (provider.errorMessage != null) {

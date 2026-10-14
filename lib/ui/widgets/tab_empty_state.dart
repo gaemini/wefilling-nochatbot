@@ -20,8 +20,9 @@ class TabEmptyStateText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final zh = isChineseUi(context);
+    // 바깥 배치(TabEmptyStateLayout)가 좌우 24를 주므로 안쪽은 8만.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -79,24 +80,71 @@ class TabEmptyStateButton extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(23),
           onTap: onPressed,
+          // 글자 폭에 맞춘 알약(최소 200). 화면 끝까지 늘어나지 않는다.
           child: Container(
-            height: 46,
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 15,
-                height: 20 / 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
+            height: 48,
+            constraints: const BoxConstraints(minWidth: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Center(
+              widthFactor: 1,
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 15,
+                  height: 20 / 15,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 스낵챗·그룹 빈 화면이 함께 쓰는 배치.
+///
+/// - 기준: 탭 본문(상단 탭 아래 ~ 하단 바 위)의 남는 높이. 시스템 하단 여백
+///   (Android 내비게이션 바·iOS 홈 표시줄)은 하단 바가 이미 처리하므로 여기서는
+///   다시 빼지 않는다. 그래서 Android와 iOS에서 같은 위치에 놓인다.
+/// - 위치: 남는 높이의 가운데보다 살짝 위(시각적 중앙).
+/// - 좌우 24 여백, 최대 폭 480. 작은 화면에서 넘치면 스크롤한다.
+class TabEmptyStateLayout extends StatelessWidget {
+  const TabEmptyStateLayout({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return MediaQuery.removePadding(
+      context: context,
+      removeBottom: true,
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: CustomScrollView(
+          physics: const ClampingScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Align(
+                key: const ValueKey('tab_empty_layout'),
+                alignment: const Alignment(0, -0.12),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+                    child: child,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -166,7 +214,8 @@ class SnackChatEmptyPreview extends StatelessWidget {
     );
   }
 
-  Widget _row(BuildContext context, {required bool first, required List<double> bars}) {
+  Widget _row(BuildContext context,
+      {required bool first, required List<double> bars}) {
     return SizedBox(
       height: rowHeight,
       child: Padding(

@@ -43,129 +43,102 @@ class _GroupsEmptyStateState extends State<GroupsEmptyState> {
     final chips = strings.groupNameChips;
     final selected = _selected;
 
-    return SafeArea(
-      top: false,
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.3,
-        child: CustomScrollView(
-          physics: const ClampingScrollPhysics(),
-          slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 44, bottom: 24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (!noFriends) ...[
-                          Semantics(
-                            label: friendCount == null
-                                ? null
-                                : strings.friendsCount(friendCount),
-                            child: ExcludeSemantics(
-                              child: Row(
-                                key: const ValueKey('groups_empty_faces'),
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  GroupFaceStack(
-                                    members: widget.faces,
-                                    avatarSize: 36,
-                                    overlap: 9,
-                                    maxShown: 6,
-                                    borderWidth: 2.5,
-                                    reserveOverflowSlot: false,
-                                    placeholderCount: 6,
-                                  ),
-                                  if (friendCount != null) ...[
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Text(
-                                      strings.friendsCount(friendCount),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontFamily:
-                                            uiFontFamily(context, 'Inter'),
-                                        fontFamilyFallback: const [
-                                          'NotoSansKR'
-                                        ],
-                                        fontSize: 13,
-                                        height: 19 / 13,
-                                        color: const Color(0xFF8A8A8A),
-                                      ),
-                                    ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-                        TabEmptyStateText(
-                          title: strings.groupsEmptyTitle,
-                          body: noFriends
-                              ? strings.groupsNoFriends
-                              : strings.groupsEmptyBody,
-                        ),
-                        if (!noFriends) ...[
-                          const SizedBox(height: 26),
-                          Text(
-                            strings.groupsNamePrompt,
-                            style: TextStyle(
-                              fontFamily: uiFontFamily(context, 'Inter'),
-                              fontFamilyFallback: const ['NotoSansKR'],
-                              fontSize: 12,
-                              height: 16 / 12,
-                              color: const Color(0xFF8A8A8A),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Wrap(
-                              alignment: WrapAlignment.center,
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                for (final name in chips)
-                                  _NameChip(
-                                    key: ValueKey<String>('groups_chip_$name'),
-                                    label: name,
-                                    selected: selected == name,
-                                    onTap: () => setState(
-                                      () => _selected =
-                                          selected == name ? null : name,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 16),
-                        TabEmptyStateButton(
-                          key: const Key('groups_empty_create_button'),
-                          label: noFriends
-                              ? strings.findFriendsButton
-                              : (selected == null
-                                  ? strings.groupsFirstButton
-                                  : strings.createNamedGroup(selected)),
-                          onPressed: noFriends
-                              ? widget.onFindFriends
-                              : () => widget.onCreate(selected),
-                        ),
-                      ],
+    return TabEmptyStateLayout(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!noFriends) ...[
+            Semantics(
+              label: friendCount == null
+                  ? null
+                  : strings.friendsCount(friendCount),
+              child: ExcludeSemantics(
+                child: Row(
+                  key: const ValueKey('groups_empty_faces'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GroupFaceStack(
+                      members: widget.faces,
+                      avatarSize: 36,
+                      overlap: 9,
+                      maxShown: 6,
+                      borderWidth: 2.5,
+                      reserveOverflowSlot: false,
+                      placeholderCount: 6,
                     ),
-                  ),
+                    if (friendCount != null) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          strings.friendsCount(friendCount),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: 13,
+                            height: 19 / 13,
+                            color: const Color(0xFF8A8A8A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
+            const SizedBox(height: 16),
           ],
-        ),
+          TabEmptyStateText(
+            title: strings.groupsEmptyTitle,
+            body: noFriends ? strings.groupsNoFriends : strings.groupsEmptyBody,
+          ),
+          if (!noFriends) ...[
+            const SizedBox(height: 24),
+            Text(
+              strings.groupsNamePrompt,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 12,
+                height: 16 / 12,
+                color: const Color(0xFF8A8A8A),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final name in chips)
+                    _NameChip(
+                      key: ValueKey<String>('groups_chip_$name'),
+                      label: name,
+                      selected: selected == name,
+                      onTap: () => setState(
+                        () => _selected = selected == name ? null : name,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          TabEmptyStateButton(
+            key: const Key('groups_empty_create_button'),
+            label: noFriends
+                ? strings.findFriendsButton
+                : (selected == null
+                    ? strings.groupsFirstButton
+                    : strings.createNamedGroup(selected)),
+            onPressed: noFriends
+                ? widget.onFindFriends
+                : () => widget.onCreate(selected),
+          ),
+        ],
       ),
     );
   }
@@ -224,4 +197,3 @@ class _NameChip extends StatelessWidget {
     );
   }
 }
-

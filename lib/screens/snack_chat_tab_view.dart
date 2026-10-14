@@ -596,56 +596,33 @@ class SnackChatEmptyState extends StatelessWidget {
     // 높이 700 미만이면 미리보기를 2줄로 줄이고, 그래도 넘치면 스크롤한다.
     final previewRows = MediaQuery.sizeOf(context).height < 700 ? 2 : 3;
 
-    return SafeArea(
-      top: false,
-      child: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.3,
-        child: CustomScrollView(
-          // 내용이 화면 안에 들어오면 빈 화면이 위아래로 끌리지 않는다.
-          // 작은 화면에서 실제로 넘칠 때만 스크롤해 overflow를 피한다.
-          physics: const ClampingScrollPhysics(),
-          slivers: [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 16, bottom: 24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SnackChatEmptyPreview(
-                          rows: previewRows,
-                          sampleTitle: strings.sampleTitle,
-                          sampleRemaining: strings.sampleRemaining,
-                          sampleMessage: strings.sampleMessage,
-                        ),
-                        const SizedBox(height: 20),
-                        TabEmptyStateText(
-                          title: strings.snackChatEmptyTitle,
-                          body: strings.snackChatEmptyBody,
-                        ),
-                        if (onCreate != null) ...[
-                          const SizedBox(height: 16),
-                          Center(
-                            child: TabEmptyStateButton(
-                              key: const Key('snack_chat_empty_create_button'),
-                              label: strings.snackChatEmptyButton,
-                              onPressed: onCreate!,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
+    return TabEmptyStateLayout(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SnackChatEmptyPreview(
+            rows: previewRows,
+            sampleTitle: strings.sampleTitle,
+            sampleRemaining: strings.sampleRemaining,
+            sampleMessage: strings.sampleMessage,
+          ),
+          const SizedBox(height: 28),
+          TabEmptyStateText(
+            title: strings.snackChatEmptyTitle,
+            body: strings.snackChatEmptyBody,
+          ),
+          if (onCreate != null) ...[
+            const SizedBox(height: 24),
+            Center(
+              child: TabEmptyStateButton(
+                key: const Key('snack_chat_empty_create_button'),
+                label: strings.snackChatEmptyButton,
+                onPressed: onCreate!,
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }

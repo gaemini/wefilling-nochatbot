@@ -1086,11 +1086,6 @@ class SnapshotStrings {
   // --- 스낵 만들기 고르기·편집 단계 ---
   String _pick(String zh, String ko, String en) =>
       isChinese ? zh : (isKorean ? ko : en);
-  String get pickerRecent => _pick('最近', '최근', 'Recent');
-  String get pickerPhotos => _pick('照片', '사진', 'Photos');
-  String get pickerVideos => _pick('视频', '영상', 'Videos');
-  String get videoLimitShort =>
-      _pick('视频最长12秒', '영상은 12초까지', 'Videos up to 12s');
   String get repick => _pick('重新选择', '다시 고르기', 'Choose again');
   String get textTool => _pick('文字', '글자', 'Text');
   String get trimTool => _pick('剪辑', '자르기', 'Trim');
@@ -1102,5 +1097,46 @@ class SnapshotStrings {
   String get editDone => _pick('完成', '완료', 'Done');
   String get bringForwardShort => _pick('置前', '앞으로', 'Forward');
   String get dragToMove => _pick('拖动移动', '끌어서 옮기기', 'Drag to move');
-  String get openSettings => _pick('打开设置', '설정 열기', 'Open Settings');
+
+  // --- 스낵 만들기 고르기 v4 ---
+  String get albumRecents => _pick('最近项目', '최근 항목', 'Recents');
+  String get albumVideos => _pick('视频', '영상', 'Videos');
+  String albumPickerA11y(String name) => _pick(
+        '选择相册，当前$name',
+        '앨범 선택, 현재 $name',
+        'Choose album, current $name',
+      );
+  String get pickerLimitedNote => _pick(
+        '仅可查看部分照片',
+        '일부 사진만 볼 수 있어요',
+        'Only some photos are available',
+      );
+  String get pickerSelectMore => _pick('选择更多', '더 고르기', 'Select more');
+  String get pickerPermissionTitle => _pick(
+        '需要访问权限才能查看照片和视频',
+        '사진과 영상을 보려면 접근 권한이 필요해요',
+        'Allow access to see your photos and videos',
+      );
+  String get pickerPermissionBody => _pick(
+        '请在设置中允许访问照片',
+        '설정에서 사진 접근을 허용해 주세요',
+        'Turn on photo access in Settings',
+      );
+  String get pickerOpenSettings => _pick('打开设置', '설정 열기', 'Open Settings');
+  String get pickerFromAlbum => _pick('从相册选择', '앨범에서 고르기', 'Choose from album');
+  String get pickerEmpty => _pick('没有照片或视频', '사진이나 영상이 없어요', 'No photos or videos');
+  String get pickerLoadFailed =>
+      _pick('无法加载照片', '사진을 불러오지 못했어요', 'Couldn\'t load photos');
+  String get trimLimitHint => _pick(
+        '仅上传12秒 · 拖动选择片段',
+        '12초만 올라가요 · 끌어서 구간을 골라요',
+        'Only 12 seconds are shared · Drag to choose',
+      );
+  String pickerPhotoA11y(String date) =>
+      _pick('照片，$date', '사진, $date', 'Photo, $date');
+  String pickerVideoA11y(int seconds, String date) => _pick(
+        '视频$seconds秒，$date',
+        '영상 $seconds초, $date',
+        'Video $seconds seconds, $date',
+      );
 }

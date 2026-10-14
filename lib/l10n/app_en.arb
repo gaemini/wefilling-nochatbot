@@ -1534,5 +1534,11 @@
   "commentPhotoLimit": "You can add up to {count} photos",
   "@commentPhotoLimit": { "placeholders": { "count": { "type": "int" } } },
   "commentPhotoUploadFailed": "Couldn't upload the photos. Please try again.",
-  "commentRemovePhoto": "Remove photo"
+  "commentRemovePhoto": "Remove photo",
+  "loginTagline": "Connect Together",
+  "loginWelcomeBack": "Welcome back, {name}",
+  "loginWelcomeBackNoName": "Welcome back!",
+  "loginFriendsWaiting": "Your friends are waiting",
+  "loginErrorInline": "Couldn't log in. Please try again",
+  "translationOriginalLanguage": "Original: {lang}"
 }

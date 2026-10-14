@@ -1530,5 +1530,13 @@
   "commentPhotoLimit": "사진은 최대 {count}장까지 올릴 수 있어요",
   "@commentPhotoLimit": { "placeholders": { "count": { "type": "int" } } },
   "commentPhotoUploadFailed": "사진을 올리지 못했어요. 다시 시도해 주세요.",
-  "commentRemovePhoto": "사진 빼기"
+  "commentRemovePhoto": "사진 빼기",
+  "loginTagline": "언어가 달라도, 함께",
+  "loginWelcomeBack": "환영해요, {name}",
+  "@loginWelcomeBack": {"placeholders": {"name": {"type": "String"}}},
+  "loginWelcomeBackNoName": "환영해요!",
+  "loginFriendsWaiting": "친구들이 기다리고 있어요",
+  "loginErrorInline": "로그인하지 못했어요. 다시 시도해 주세요",
+  "translationOriginalLanguage": "원문 언어 {lang}",
+  "@translationOriginalLanguage": {"placeholders": {"lang": {"type": "String"}}}
 }

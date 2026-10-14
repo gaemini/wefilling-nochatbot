@@ -6429,6 +6429,42 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'사진 빼기'**
   String get commentRemovePhoto;
+
+  /// No description provided for @loginTagline.
+  ///
+  /// In ko, this message translates to:
+  /// **'언어가 달라도, 함께'**
+  String get loginTagline;
+
+  /// No description provided for @loginWelcomeBack.
+  ///
+  /// In ko, this message translates to:
+  /// **'환영해요, {name}'**
+  String loginWelcomeBack(String name);
+
+  /// No description provided for @loginWelcomeBackNoName.
+  ///
+  /// In ko, this message translates to:
+  /// **'환영해요!'**
+  String get loginWelcomeBackNoName;
+
+  /// No description provided for @loginFriendsWaiting.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구들이 기다리고 있어요'**
+  String get loginFriendsWaiting;
+
+  /// No description provided for @loginErrorInline.
+  ///
+  /// In ko, this message translates to:
+  /// **'로그인하지 못했어요. 다시 시도해 주세요'**
+  String get loginErrorInline;
+
+  /// No description provided for @translationOriginalLanguage.
+  ///
+  /// In ko, this message translates to:
+  /// **'원문 언어 {lang}'**
+  String translationOriginalLanguage(String lang);
 }
 
 class _AppLocalizationsDelegate

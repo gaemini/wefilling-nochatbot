@@ -3401,4 +3401,26 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get commentRemovePhoto => '移除照片';
+
+  @override
+  String get loginTagline => '语言不同，也能相连';
+
+  @override
+  String loginWelcomeBack(String name) {
+    return '欢迎回来，$name';
+  }
+
+  @override
+  String get loginWelcomeBackNoName => '欢迎回来！';
+
+  @override
+  String get loginFriendsWaiting => '朋友们在等你';
+
+  @override
+  String get loginErrorInline => '登录失败，请重试';
+
+  @override
+  String translationOriginalLanguage(String lang) {
+    return '原文语言 $lang';
+  }
 }

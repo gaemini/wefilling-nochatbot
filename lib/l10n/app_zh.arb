@@ -1514,5 +1514,11 @@
   "commentPhotoLimit": "最多可添加{count}张照片",
   "@commentPhotoLimit": { "placeholders": { "count": { "type": "int" } } },
   "commentPhotoUploadFailed": "照片上传失败，请重试。",
-  "commentRemovePhoto": "移除照片"
+  "commentRemovePhoto": "移除照片",
+  "loginTagline": "语言不同，也能相连",
+  "loginWelcomeBack": "欢迎回来，{name}",
+  "loginWelcomeBackNoName": "欢迎回来！",
+  "loginFriendsWaiting": "朋友们在等你",
+  "loginErrorInline": "登录失败，请重试",
+  "translationOriginalLanguage": "原文语言 {lang}"
 }

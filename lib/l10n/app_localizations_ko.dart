@@ -3453,4 +3453,26 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get commentRemovePhoto => '사진 빼기';
+
+  @override
+  String get loginTagline => '언어가 달라도, 함께';
+
+  @override
+  String loginWelcomeBack(String name) {
+    return '환영해요, $name';
+  }
+
+  @override
+  String get loginWelcomeBackNoName => '환영해요!';
+
+  @override
+  String get loginFriendsWaiting => '친구들이 기다리고 있어요';
+
+  @override
+  String get loginErrorInline => '로그인하지 못했어요. 다시 시도해 주세요';
+
+  @override
+  String translationOriginalLanguage(String lang) {
+    return '원문 언어 $lang';
+  }
 }

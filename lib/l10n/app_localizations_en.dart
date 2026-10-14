@@ -3596,4 +3596,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get commentRemovePhoto => 'Remove photo';
+
+  @override
+  String get loginTagline => 'Connect Together';
+
+  @override
+  String loginWelcomeBack(String name) {
+    return 'Welcome back, $name';
+  }
+
+  @override
+  String get loginWelcomeBackNoName => 'Welcome back!';
+
+  @override
+  String get loginFriendsWaiting => 'Your friends are waiting';
+
+  @override
+  String get loginErrorInline => 'Couldn\'t log in. Please try again';
+
+  @override
+  String translationOriginalLanguage(String lang) {
+    return 'Original: $lang';
+  }
 }

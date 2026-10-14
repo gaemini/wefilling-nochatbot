@@ -47,35 +47,42 @@ void main() {
     expect(nearestSnapshotTextScale(1.75), snapshotTextScaleLarge);
   });
 
-  testWidgets('도구 줄: 자르기는 영상일 때만, 펼침 상태에 따라 밝기가 바뀐다',
-      (tester) async {
-    var toggles = 0;
-    var nexts = 0;
-    Widget row({required bool video, required bool open}) => _host(
-          (s) => SnapshotEditorToolRow(
-            strings: s,
-            isVideo: video,
-            trimOpen: open,
-            onAddText: () {},
-            onToggleTrim: () => toggles++,
-            onNext: () => nexts++,
+  testWidgets('아래 줄: 공개 범위 요약과 다음, 도구 원 켜짐 표시', (tester) async {
+    var audience = 0;
+    var next = 0;
+    await tester.pumpWidget(_host(
+      (s) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SnapshotEditorBottomBar(
+            audienceLabel: s.editorAudienceSummary(
+              s.shareChoicePublic,
+              repliesOn: true,
+            ),
+            nextLabel: s.next,
+            onAudience: () => audience++,
+            onNext: () => next++,
           ),
-        );
-    await tester.pumpWidget(row(video: false, open: false));
-    expect(find.byKey(const ValueKey('snapshot_tool_trim')), findsNothing);
-    expect(find.text('글자'), findsOneWidget);
-
-    await tester.pumpWidget(row(video: true, open: false));
-    expect(find.byKey(const ValueKey('snapshot_tool_trim')), findsOneWidget);
-    Color trimColor() => tester.widget<Text>(find.text('자르기')).style!.color!;
-    expect(trimColor().a, closeTo(.4, .01));
-    await tester.tap(find.byKey(const ValueKey('snapshot_tool_trim')));
-    expect(toggles, 1);
-
-    await tester.pumpWidget(row(video: true, open: true));
-    expect(trimColor().a, closeTo(1, .01));
+          SnapshotToolCircle(
+            key: const ValueKey('trim'),
+            semanticLabel: s.trimTool,
+            selected: true,
+            onTap: () {},
+            child: const Icon(Icons.crop_rounded),
+          ),
+        ],
+      ),
+    ));
+    expect(find.text('전체 공개 · 답장까지'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('snapshot_editor_audience')));
     await tester.tap(find.byKey(const ValueKey('snapshot_editor_next')));
-    expect(nexts, 1);
+    expect(audience, 1);
+    expect(next, 1);
+    final circle = tester.widget<Container>(find.descendant(
+      of: find.byKey(const ValueKey('trim')),
+      matching: find.byType(Container),
+    ));
+    expect((circle.decoration as BoxDecoration).color, Colors.white);
   });
 
   testWidgets('글자 패널: 밝게/어둡게·작게/보통/크게·앞으로·완료', (tester) async {
@@ -121,38 +128,19 @@ void main() {
     expect(forward, 1);
   });
 
-  testWidgets('다음 알약: 선택이 없으면 비활성(35%)', (tester) async {
-    var taps = 0;
-    await tester.pumpWidget(_host(
-      (s) => SnapshotPillButton(label: s.next, onPressed: null),
-    ));
-    expect(tester.widget<Opacity>(find.byType(Opacity)).opacity, .35);
-    await tester.tap(find.text('다음'));
-    expect(taps, 0);
-
-    await tester.pumpWidget(_host(
-      (s) => SnapshotPillButton(label: s.next, onPressed: () => taps++),
-    ));
-    await tester.tap(find.text('다음'));
-    expect(taps, 1);
-  });
-
   testWidgets('UI 글자는 15를 넘지 않는다', (tester) async {
     await tester.pumpWidget(_host(
       (s) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SnapshotCreateTopBar(
-            icon: Icons.chevron_left_rounded,
-            label: s.repick,
-            onBack: () {},
-          ),
-          SnapshotEditorToolRow(
-            strings: s,
-            isVideo: true,
-            trimOpen: false,
-            onAddText: () {},
-            onToggleTrim: () {},
+          SnapshotLifetimeChip(label: s.lifetime24h),
+          SnapshotEditorBottomBar(
+            audienceLabel: s.editorAudienceSummary(
+              s.shareChoicePublic,
+              repliesOn: true,
+            ),
+            nextLabel: s.next,
+            onAudience: () {},
             onNext: () {},
           ),
           SnapshotTextEditPanel(
@@ -184,19 +172,16 @@ void main() {
             (s) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SnapshotCreateTopBar(
-                  icon: Icons.chevron_left_rounded,
-                  label: s.repick,
-                  onBack: () {},
-                      ),
+                SnapshotLifetimeChip(label: s.lifetime24h),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 20, 20),
-                  child: SnapshotEditorToolRow(
-                    strings: s,
-                    isVideo: true,
-                    trimOpen: true,
-                    onAddText: () {},
-                    onToggleTrim: () {},
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                  child: SnapshotEditorBottomBar(
+                    audienceLabel: s.editorAudienceSummary(
+                      s.shareChoiceGroups,
+                      repliesOn: false,
+                    ),
+                    nextLabel: s.next,
+                    onAudience: () {},
                     onNext: () {},
                   ),
                 ),

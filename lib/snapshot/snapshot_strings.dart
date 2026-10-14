@@ -1139,4 +1139,15 @@ class SnapshotStrings {
         '영상 $seconds초, $date',
         'Video $seconds seconds, $date',
       );
+
+  // --- 스낵 편집 v4 ---
+  String get lifetime24h => _pick('24小时', '24시간', '24h');
+  String get locationTool => _pick('位置', '위치', 'Location');
+  /// `전체 공개 · 답장까지` / `친구 공개 · 필링만`.
+  String editorAudienceSummary(String audience, {required bool repliesOn}) {
+    final mode = repliesOn
+        ? _pick('可回复', '답장까지', 'Replies on')
+        : _pick('仅心动', '필링만', 'Feel only');
+    return _pick('$audience可见 · $mode', '$audience 공개 · $mode', '$audience · $mode');
+  }
 }

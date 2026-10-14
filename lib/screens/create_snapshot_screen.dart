@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -256,7 +257,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     }
   }
 
-  Future<void> _addTextLayer() async {
+  Future<void> _addTextLayer({String initialText = ''}) async {
     if (_sourceFile == null || _composing || _uploading) return;
     if (_textLayers.length >= 5) {
       AppSnackBar.show(
@@ -275,6 +276,14 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       id: 'snapshot_text_${DateTime.now().microsecondsSinceEpoch}_$layerNumber',
       position: Offset(.5, (.42 + offsetStep).clamp(.2, .8)),
     );
+    if (initialText.isNotEmpty) {
+      // 위치 도구: `📍 ` 다음에 장소를 바로 적도록 커서를 끝에 둔다.
+      layer.text = initialText;
+      layer.controller.value = TextEditingValue(
+        text: initialText,
+        selection: TextSelection.collapsed(offset: initialText.length),
+      );
+    }
     layer.focusListener = () => _syncOverlayFocus(layer.id);
     layer.focusNode.addListener(layer.focusListener);
     setState(() {
@@ -2246,21 +2255,21 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     );
   }
 
-  /// 편집: 미디어(위는 상태바 뒤까지, 아래는 하단 바 위 104에서 끝남) + 도구 줄.
-  /// 합성 캔버스(_compositionKey 아래 AspectRatio)는 그대로 두고 둘레만 바꾼다.
+  /// 편집(v4 디자인): 사진·영상을 화면 가득 보여 주고, 왼쪽 위 닫기와 `24시간`,
+  /// 오른쪽 위 다시 고르기, 오른쪽 도구 원(Aa 글자·위치·자르기), 아래 공개 범위
+  /// 알약과 [다음]. 합성 캔버스(_compositionKey 아래 AspectRatio)는 그대로다.
   Widget _buildMediaEditor(
     SnapshotStrings strings,
     BoxConstraints constraints,
   ) {
-    // 키보드와 무관한 안전 영역 값을 쓰고, 키보드 높이는 글자 패널 자리만 읽는다
-    // (편집 화면·영상 캔버스가 키보드 애니메이션 매 프레임 다시 그려지지 않게).
     final padding = MediaQuery.viewPaddingOf(context);
     final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     final editingLayer = _textLayerById(_editingTextLayerId);
-    final mediaBottom = 104 + padding.bottom;
+    final bottomBar = 68 + padding.bottom;
     final isVideo = _mediaType == SnapshotMediaType.video &&
         _videoDuration > Duration.zero;
     final showTrim = isVideo && _trimOpen && editingLayer == null;
+    final toolsTop = padding.top + 64;
 
     return Stack(
       fit: StackFit.expand,
@@ -2269,7 +2278,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           left: 0,
           right: 0,
           top: 0,
-          bottom: mediaBottom,
+          bottom: bottomBar,
           child: ClipRRect(
             borderRadius:
                 const BorderRadius.vertical(bottom: Radius.circular(16)),
@@ -2312,41 +2321,116 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                       ),
                     ),
                   ),
-                  const _SnapshotEdgeFades(top: 110, bottom: 0),
-                  if (_textLayers.isNotEmpty &&
-                      _editingTextLayerId == null &&
-                      !_composing)
-                    Positioned(
-                      top: padding.top + 56,
-                      right: 12,
-                      bottom: 12,
-                      child: SingleChildScrollView(
-                        child: _buildMediaTextActions(strings),
-                      ),
-                    ),
+                  const _SnapshotEdgeFades(top: 120, bottom: 0),
                 ],
               ),
             ),
           ),
         ),
+        // 왼쪽 위: 닫기 + 24시간.
         Positioned(
           top: padding.top + 6,
-          left: 0,
-          right: 0,
-          child: SnapshotCreateTopBar(
-            icon: Icons.chevron_left_rounded,
-            label: strings.repick,
-            onBack: _uploading || _composing
+          left: 6,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SnapshotOverlayIconButton(
+                key: const ValueKey('snapshot_editor_close'),
+                icon: CupertinoIcons.xmark,
+                semanticLabel:
+                    MaterialLocalizations.of(context).closeButtonTooltip,
+                onTap: _uploading || _composing
+                    ? null
+                    : () async {
+                        if (await _confirmExit() && mounted) {
+                          Navigator.of(this.context).pop();
+                        }
+                      },
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: SnapshotLifetimeChip(label: strings.lifetime24h),
+              ),
+            ],
+          ),
+        ),
+        // 오른쪽 위: 다시 고르기 + 도구 원.
+        Positioned(
+          top: padding.top + 6,
+          right: 6,
+          child: SnapshotOverlayIconButton(
+            key: const ValueKey('snapshot_editor_repick'),
+            icon: Icons.photo_library_outlined,
+            semanticLabel: strings.repick,
+            onTap: _uploading || _composing
                 ? null
                 : () => unawaited(_returnToMediaSelection()),
           ),
         ),
+        if (editingLayer == null && !_composing)
+          Positioned(
+            top: toolsTop,
+            right: 10,
+            bottom: bottomBar + 12,
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  SnapshotToolCircle(
+                    key: const ValueKey('snapshot_tool_text'),
+                    semanticLabel: strings.textTool,
+                    onTap: _textLayers.length < 5 ? _addTextLayer : null,
+                    child: const Text(
+                      'Aa',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: -.3,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SnapshotToolCircle(
+                    key: const ValueKey('snapshot_tool_location'),
+                    semanticLabel: strings.locationTool,
+                    onTap: _textLayers.length < 5
+                        ? () => _addTextLayer(initialText: '📍 ')
+                        : null,
+                    child: const Icon(
+                      Icons.location_on_outlined,
+                      size: 21,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (isVideo) ...[
+                    const SizedBox(height: 12),
+                    SnapshotToolCircle(
+                      key: const ValueKey('snapshot_tool_trim'),
+                      semanticLabel: strings.trimTool,
+                      selected: _trimOpen,
+                      onTap: () => setState(() => _trimOpen = !_trimOpen),
+                      child: const Icon(
+                        Icons.crop_rounded,
+                        size: 20,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                  if (_textLayers.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _buildMediaTextActions(strings),
+                  ],
+                ],
+              ),
+            ),
+          ),
         if (showTrim)
           Positioned(
             key: const ValueKey('snapshot_trim_panel'),
             left: 0,
             right: 0,
-            bottom: mediaBottom,
+            bottom: bottomBar,
             child: Container(
               color: Colors.black.withValues(alpha: .55),
               padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
@@ -2404,17 +2488,17 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
                 : Padding(
                     key: const ValueKey('snapshot_tool_row_slot'),
                     padding:
-                        EdgeInsets.fromLTRB(16, 12, 20, padding.bottom + 20),
-                    child: SnapshotEditorToolRow(
-                      strings: strings,
-                      isVideo: isVideo,
-                      trimOpen: _trimOpen,
+                        EdgeInsets.fromLTRB(12, 12, 12, padding.bottom + 12),
+                    child: SnapshotEditorBottomBar(
+                      audienceLabel: _audienceSummary(strings),
+                      nextLabel: strings.next,
                       busy: _composing,
-                      onAddText: _textLayers.length < 5 && !_composing
-                          ? _addTextLayer
-                          : null,
-                      onToggleTrim: () =>
-                          setState(() => _trimOpen = !_trimOpen),
+                      onAudience: _composing
+                          ? null
+                          : () {
+                              if (_trimOpen) setState(() => _trimOpen = false);
+                              unawaited(_continueFromEditor());
+                            },
                       onNext: _composing
                           ? null
                           : () {
@@ -2426,6 +2510,19 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           ),
         ),
       ],
+    );
+  }
+
+  /// 아래 알약 문구: `전체 공개 · 답장까지`처럼 지금 공개 범위와 받는 방식.
+  String _audienceSummary(SnapshotStrings strings) {
+    final audience = switch (_visibility) {
+      SnapshotVisibility.public => strings.shareChoicePublic,
+      SnapshotVisibility.friends => strings.shareChoiceFriends,
+      SnapshotVisibility.category => strings.shareChoiceGroups,
+    };
+    return strings.editorAudienceSummary(
+      audience,
+      repliesOn: _responseMode == SnapshotResponseMode.replies,
     );
   }
 

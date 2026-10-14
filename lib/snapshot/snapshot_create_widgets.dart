@@ -35,14 +35,16 @@ class SnapshotCreateTopBar extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onBack,
-    required this.lifetime,
+    this.lifetime,
     this.semanticLabel,
   });
 
   final IconData icon;
   final String? label;
   final VoidCallback? onBack;
-  final String lifetime;
+
+  /// 고르기·편집에서는 비운다(`24시간 뒤 사라져요`는 공유 화면에만 둔다).
+  final String? lifetime;
   final String? semanticLabel;
 
   @override
@@ -86,11 +88,12 @@ class SnapshotCreateTopBar extends StatelessWidget {
               ),
             ),
             const Spacer(),
+            if (lifetime != null)
             Flexible(
               child: Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Text(
-                  lifetime,
+                  lifetime!,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.end,
@@ -371,232 +374,6 @@ class SnapshotTextEditPanel extends StatelessWidget {
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 고르기 탭 줄: `최근 · 사진 · 영상` + 오른쪽 `영상은 12초까지`.
-/// 갤러리는 이미지 필터만 있어서 `사진`·`영상`은 기존 시스템 보관함 선택을 연다.
-class SnapshotPickerTabRow extends StatelessWidget {
-  const SnapshotPickerTabRow({
-    super.key,
-    required this.strings,
-    required this.onPhotos,
-    required this.onVideos,
-  });
-
-  final SnapshotStrings strings;
-  final VoidCallback? onPhotos;
-  final VoidCallback? onVideos;
-
-  @override
-  Widget build(BuildContext context) {
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.25,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 7),
-        child: Row(
-          children: [
-            Flexible(
-              flex: 3,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: ShareChoiceGroup<String>(
-                  keyPrefix: 'snapshot_picker_tab',
-                  value: 'recent',
-                  options: [
-                    ('recent', strings.pickerRecent),
-                    ('photos', strings.pickerPhotos),
-                    ('videos', strings.pickerVideos),
-                  ],
-                  onChanged: (value) {
-                    if (value == 'photos') onPhotos?.call();
-                    if (value == 'videos') onVideos?.call();
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 9),
-                child: Text(
-                  strings.videoLimitShort,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: shareTextStyle(context, ShareTextSpec.hint),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 그리드 한 칸의 선택 표시: 오른쪽 위 원 18(1.5pt 흰 80%), 선택되면 파란 채움 +
-/// 흰 체크, 칸 안쪽 2pt 흰 테두리.
-class SnapshotGridSelection extends StatelessWidget {
-  const SnapshotGridSelection({super.key, required this.selected});
-
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (selected)
-            DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: 2),
-              ),
-            ),
-          Positioned(
-            top: 6,
-            right: 6,
-            child: Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: selected ? snapshotCreateAccent : Colors.transparent,
-                border: Border.all(
-                  color: selected
-                      ? snapshotCreateAccent
-                      : Colors.white.withValues(alpha: .8),
-                  width: 1.5,
-                ),
-              ),
-              child: selected
-                  ? const Icon(Icons.check_rounded, size: 12, color: Colors.white)
-                  : null,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 고르기 하단 카메라 원(44, 흰 12% 바탕, 아이콘 20). 길게 누르면 영상 촬영.
-class SnapshotCameraCircle extends StatelessWidget {
-  const SnapshotCameraCircle({
-    super.key,
-    required this.label,
-    required this.onTap,
-    this.onLongPress,
-  });
-
-  final String label;
-  final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      excludeSemantics: true,
-      child: GestureDetector(
-        key: const ValueKey('snapshot_picker_camera'),
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: .12),
-          ),
-          child: const Icon(
-            Icons.photo_camera_outlined,
-            size: 20,
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 권한 거부·불러오기 실패 안내(검정 바탕, 14 흰 70% + 알약 버튼).
-class SnapshotPickerNotice extends StatelessWidget {
-  const SnapshotPickerNotice({
-    super.key,
-    required this.message,
-    required this.primaryLabel,
-    required this.onPrimary,
-    this.secondaryLabel,
-    this.onSecondary,
-  });
-
-  final String message;
-  final String primaryLabel;
-  final VoidCallback onPrimary;
-  final String? secondaryLabel;
-  final VoidCallback? onSecondary;
-
-  @override
-  Widget build(BuildContext context) {
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.25,
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: shareTextStyle(
-                  context,
-                  const ShareTextSpec(14, 20, FontWeight.w500, .7),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Semantics(
-                button: true,
-                label: primaryLabel,
-                excludeSemantics: true,
-                child: GestureDetector(
-                  key: const ValueKey('snapshot_picker_notice_primary'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onPrimary,
-                  child: Container(
-                    height: 40,
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .12),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Center(
-                      widthFactor: 1,
-                      child: Text(
-                        primaryLabel,
-                        maxLines: 1,
-                        style: shareTextStyle(context, ShareTextSpec.choiceOn),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              if (secondaryLabel != null && onSecondary != null)
-                SnapshotToolTextButton(
-                  label: secondaryLabel!,
-                  active: false,
-                  onTap: onSecondary,
-                ),
             ],
           ),
         ),

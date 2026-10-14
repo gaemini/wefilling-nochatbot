@@ -23,6 +23,7 @@ import '../services/snapshot_archive_service.dart';
 import '../services/snapshot_service.dart';
 import '../snapshot/snapshot_storage_video.dart';
 import '../snapshot/snapshot_create_widgets.dart';
+import '../snapshot/snapshot_media_picker.dart';
 import '../ui/widgets/keyboard_aware.dart';
 import '../snapshot/snapshot_share_view.dart';
 import '../providers/relationship_provider.dart';
@@ -101,13 +102,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   static const MethodChannel _snapshotVideoEditorChannel = MethodChannel(
     'com.wefilling.app/snapshot_video_editor',
   );
-  static const PermissionRequestOption _galleryPermissionRequestOption =
-      PermissionRequestOption(
-    androidPermission: AndroidPermission(
-      type: RequestType.image,
-      mediaLocation: false,
-    ),
-  );
 
   final ImagePicker _picker = ImagePicker();
   final GlobalKey _compositionKey = GlobalKey();
@@ -151,19 +145,15 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
   String? _pendingUploadSnapshotId;
   double _uploadProgress = 0;
   int _step = 0;
-  List<AssetEntity> _recentPhotos = const <AssetEntity>[];
-  AssetPathEntity? _recentPhotoAlbum;
-  int _galleryTotalCount = 0;
-  int _galleryNextPage = 0;
-  bool _loadingGallery = true;
-  bool _loadingMoreGallery = false;
-  bool _galleryPermissionDenied = false;
-  bool _galleryPermissionLimited = false;
-  bool _galleryLoadFailed = false;
-  int _galleryLoadSequence = 0;
+  /// 고르기(v4) 상태: 보던 앨범·목록·스크롤을 편집에 다녀와도 유지한다.
+  late final SnapshotPickerController _pickerController =
+      SnapshotPickerController(
+    source: const PhotoManagerGallerySource(),
+    pageSize: _galleryPageSize,
+  );
 
-  /// 고르기 그리드에서 고른 사진(미리보기). 없으면 가장 최근 항목을 보여 준다.
-  AssetEntity? _pickedAsset;
+  /// 불러오는 중인 목록 칸(로딩 표시).
+  String? _loadingAssetId;
 
   /// 편집 단계 영상 자르기 편집기 펼침 여부.
   bool _trimOpen = false;
@@ -193,7 +183,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             .toList(growable: false);
       });
     });
-    unawaited(_loadRecentPhotos());
+    unawaited(_pickerController.load());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {
@@ -209,191 +199,18 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      unawaited(_refreshRecentPhotosAfterResume());
-    }
-  }
-
-  Future<void> _refreshRecentPhotosAfterResume() async {
-    if (_loadingGallery || _loadingPhoto || _uploading || _sourceFile != null) {
-      return;
-    }
-    final refreshSequence = ++_galleryLoadSequence;
-    try {
-      final permission = await PhotoManager.getPermissionState(
-        requestOption: _galleryPermissionRequestOption,
-      );
-      if (!mounted || refreshSequence != _galleryLoadSequence) return;
-      if (permission.hasAccess) {
-        await _loadRecentPhotos(requestPermission: false);
-        return;
-      }
-      setState(() {
-        _recentPhotos = const <AssetEntity>[];
-        _recentPhotoAlbum = null;
-        _galleryTotalCount = 0;
-        _galleryNextPage = 0;
-        _galleryPermissionDenied = true;
-        _galleryPermissionLimited = false;
-        _galleryLoadFailed = false;
-      });
-    } on PlatformException {
-      // Keep the current gallery state. The visible retry action still lets
-      // the user request access again if this platform check was interrupted.
-    }
-  }
-
-  Future<void> _loadRecentPhotos({bool requestPermission = true}) async {
-    final loadSequence = ++_galleryLoadSequence;
-    if (mounted) {
-      setState(() {
-        _loadingGallery = true;
-        _loadingMoreGallery = false;
-        _galleryPermissionDenied = false;
-        _galleryPermissionLimited = false;
-        _galleryLoadFailed = false;
-        _recentPhotoAlbum = null;
-        _galleryTotalCount = 0;
-        _galleryNextPage = 0;
-      });
-    }
-    try {
-      final permission = requestPermission
-          ? await PhotoManager.requestPermissionExtend(
-              requestOption: _galleryPermissionRequestOption,
-            )
-          : await PhotoManager.getPermissionState(
-              requestOption: _galleryPermissionRequestOption,
-            );
-      if (!mounted || loadSequence != _galleryLoadSequence) return;
-      if (!permission.hasAccess) {
-        if (!mounted) return;
-        setState(() {
-          _recentPhotos = const <AssetEntity>[];
-          _galleryPermissionDenied = true;
-          _galleryPermissionLimited = false;
-          _galleryLoadFailed = false;
-        });
-        return;
-      }
-      if (mounted) {
-        setState(() => _galleryPermissionLimited = permission.isLimited);
-      }
-      final albums = await PhotoManager.getAssetPathList(
-        type: RequestType.image,
-        onlyAll: true,
-        filterOption: FilterOptionGroup(
-          orders: const <OrderOption>[
-            OrderOption(type: OrderOptionType.createDate, asc: false),
-          ],
-        ),
-      );
-      if (!mounted || loadSequence != _galleryLoadSequence) return;
-      if (albums.isEmpty) {
-        if (!mounted) return;
-        setState(() => _recentPhotos = const <AssetEntity>[]);
-        return;
-      }
-
-      final album = albums.first;
-      final results = await Future.wait<dynamic>([
-        album.assetCountAsync,
-        album.getAssetListPaged(page: 0, size: _galleryPageSize),
-      ]);
-      final totalCount = results[0] as int;
-      final photos = results[1] as List<AssetEntity>;
-      if (!mounted || loadSequence != _galleryLoadSequence) return;
-      setState(() {
-        _recentPhotoAlbum = album;
-        _galleryTotalCount = totalCount;
-        _galleryNextPage = 1;
-        _recentPhotos = List<AssetEntity>.unmodifiable(photos);
-      });
-    } on PlatformException catch (error, stackTrace) {
-      if (!mounted || loadSequence != _galleryLoadSequence) return;
-      Logger.error('최근 사진 불러오기 실패', error, stackTrace);
-      setState(() {
-        _recentPhotos = const <AssetEntity>[];
-        _galleryLoadFailed = true;
-      });
-    } catch (error, stackTrace) {
-      if (!mounted || loadSequence != _galleryLoadSequence) return;
-      Logger.error('최근 사진 불러오기 실패', error, stackTrace);
-      setState(() {
-        _recentPhotos = const <AssetEntity>[];
-        _galleryLoadFailed = true;
-      });
-    } finally {
-      if (mounted && loadSequence == _galleryLoadSequence) {
-        setState(() => _loadingGallery = false);
-      }
-    }
-  }
-
-  Future<void> _selectMorePhotos() async {
-    if (_loadingGallery || _loadingPhoto || _uploading) return;
-    final strings = SnapshotStrings.of(context);
-    setState(() => _loadingGallery = true);
-    try {
-      await PhotoManager.presentLimited(type: RequestType.image);
-      if (!mounted) return;
-      await _loadRecentPhotos(requestPermission: false);
-    } catch (error, stackTrace) {
-      if (!mounted) return;
-      Logger.error('사진 선택 범위 변경 실패', error, stackTrace);
-      setState(() => _loadingGallery = false);
-      AppSnackBar.show(
-        context,
-        message: strings.permissionFailed,
-        type: AppSnackBarType.warning,
-      );
-    }
-  }
-
-  Future<void> _loadMoreRecentPhotos() async {
-    final album = _recentPhotoAlbum;
-    if (album == null ||
-        _loadingGallery ||
-        _loadingMoreGallery ||
-        _recentPhotos.length >= _galleryTotalCount) {
-      return;
-    }
-
-    final requestedPage = _galleryNextPage;
-    setState(() => _loadingMoreGallery = true);
-    try {
-      final photos = await album.getAssetListPaged(
-        page: requestedPage,
-        size: _galleryPageSize,
-      );
-      if (!mounted || !identical(album, _recentPhotoAlbum)) return;
-
-      final knownIds = _recentPhotos.map((photo) => photo.id).toSet();
-      final nextPhotos = photos
-          .where((photo) => knownIds.add(photo.id))
-          .toList(growable: false);
-      setState(() {
-        _galleryNextPage = requestedPage + 1;
-        _recentPhotos = List<AssetEntity>.unmodifiable(
-          <AssetEntity>[..._recentPhotos, ...nextPhotos],
-        );
-      });
-    } on PlatformException {
-      // Keep the already loaded photos usable. A later scroll can retry this
-      // exact page because the cursor advances only after a successful read.
-    } catch (_) {
-      // Asset providers can be temporarily unavailable while the device is
-      // syncing cloud photos. Preserve the current page and allow a retry.
-    } finally {
-      if (mounted && identical(album, _recentPhotoAlbum)) {
-        setState(() => _loadingMoreGallery = false);
-      }
+    if (state == AppLifecycleState.resumed &&
+        _sourceFile == null &&
+        !_loadingPhoto &&
+        !_uploading) {
+      unawaited(_pickerController.onResumed());
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _pickerController.dispose();
     _categoriesSubscription?.cancel();
     _friendCategoryService.dispose();
     final pendingCommit = _overlayCommitCompleter;
@@ -700,19 +517,69 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     }
   }
 
-  Future<void> _selectRecentPhoto(AssetEntity asset) async {
+  /// 목록 칸을 눌렀을 때: 영상은 기존 `_useVideoFile`, 사진은 `_useImageFile`.
+  /// iCloud 등 원격 항목은 오래 걸릴 수 있어 30초로 제한한다.
+  Future<void> _selectGalleryAsset(AssetEntity asset) async {
     if (_loadingPhoto || _uploading) return;
     final strings = SnapshotStrings.of(context);
-    setState(() => _loadingPhoto = true);
+    final isVideo = asset.type == AssetType.video;
+    setState(() {
+      _loadingPhoto = true;
+      _loadingAssetId = asset.id;
+    });
     try {
-      final file = await asset.file;
+      final file = await (() async => await asset.file ?? await asset.originFile)()
+          .timeout(const Duration(seconds: 30));
       if (file == null) throw StateError('asset-file-unavailable');
-      await _useImageFile(file);
-    } catch (_) {
+      if (isVideo) {
+        await _useVideoFile(file);
+      } else {
+        await _useImageFile(file);
+      }
+    } catch (error, stackTrace) {
+      if (isVideo) Logger.error('스낵 영상 선택 실패', error, stackTrace);
       if (mounted) {
         AppSnackBar.show(
           context,
-          message: strings.photoFailed,
+          message: isVideo ? strings.videoUnsupported : strings.photoFailed,
+          type: AppSnackBarType.error,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingPhoto = false;
+          _loadingAssetId = null;
+        });
+      }
+    }
+  }
+
+  /// 권한 없이 쓰는 시스템 선택기(사진·영상 함께). 권한 거부 화면에서 쓴다.
+  Future<void> _pickFromSystemPicker() async {
+    if (_loadingPhoto || _uploading) return;
+    final strings = SnapshotStrings.of(context);
+    setState(() => _loadingPhoto = true);
+    var isVideo = false;
+    try {
+      final picked = await _picker.pickMedia(requestFullMetadata: false);
+      if (picked == null) return;
+      final lower = picked.path.toLowerCase();
+      final mime = (picked.mimeType ?? '').toLowerCase();
+      isVideo = mime.startsWith('video/') ||
+          const ['.mp4', '.mov', '.m4v', '.3gp', '.webm', '.mkv']
+              .any(lower.endsWith);
+      if (isVideo) {
+        await _useVideoFile(File(picked.path));
+      } else {
+        await _useImageFile(File(picked.path));
+      }
+    } catch (error, stackTrace) {
+      Logger.error('스낵 시스템 선택기 실패', error, stackTrace);
+      if (mounted) {
+        AppSnackBar.show(
+          context,
+          message: isVideo ? strings.videoUnsupported : strings.photoFailed,
           type: AppSnackBarType.error,
         );
       }
@@ -765,6 +632,8 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
         _sourceVideoController = controller;
         _videoDuration = duration;
         _videoTrimSeconds = RangeValues(0, trimEnd);
+        // 12초보다 긴 영상은 자르기 막대를 처음부터 연다.
+        _trimOpen = durationSeconds > 12;
         _sourceWidth = size.width.round();
         _sourceHeight = size.height.round();
         _step = 0;
@@ -1267,7 +1136,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
       _trimOpen = false;
     });
     await _disposeVideoControllers();
-    unawaited(_loadRecentPhotos(requestPermission: false));
   }
 
   Future<void> _continueFromEditor() async {
@@ -2359,135 +2227,22 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
     );
   }
 
-  /// 고르기: 위쪽 미리보기 + 탭 줄 + 4열 그리드 + [카메라][다음].
+  /// 고르기(v4): 앨범 고르기 + 3열 목록(첫 칸 카메라). 칸을 누르면 바로 편집.
   Widget _buildPicker(SnapshotStrings strings, BoxConstraints constraints) {
-    final padding = MediaQuery.paddingOf(context);
-    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    final previewHeight =
-        (constraints.maxHeight * .5).clamp(0.0, 420.0).toDouble();
-    final picked = _pickedAsset != null &&
-            _recentPhotos.any((photo) => photo.id == _pickedAsset!.id)
-        ? _pickedAsset
-        : (_recentPhotos.isNotEmpty ? _recentPhotos.first : null);
-    final busy = _loadingPhoto || _uploading;
-
-    return ColoredBox(
-      color: Colors.black,
-      child: Column(
-        children: [
-          SizedBox(
-            height: previewHeight,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                AnimatedSwitcher(
-                  duration: reduce
-                      ? Duration.zero
-                      : const Duration(milliseconds: 150),
-                  child: picked == null
-                      ? const ColoredBox(
-                          key: ValueKey('snapshot_picker_preview_empty'),
-                          color: Colors.black,
-                        )
-                      : Image(
-                          key: ValueKey('snapshot_picker_preview_${picked.id}'),
-                          image: AssetEntityImageProvider(
-                            picked,
-                            isOriginal: false,
-                            thumbnailSize: const ThumbnailSize.square(1080),
-                          ),
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, __, ___) =>
-                              const ColoredBox(color: Colors.black),
-                        ),
-                ),
-                const _SnapshotEdgeFades(top: 110, bottom: 120),
-                Positioned(
-                  top: padding.top + 6,
-                  left: 0,
-                  right: 0,
-                  child: SnapshotCreateTopBar(
-                    icon: Icons.close_rounded,
-                    label: null,
-                    semanticLabel:
-                        MaterialLocalizations.of(context).closeButtonTooltip,
-                    lifetime: strings.shareLifetimeNote,
-                    onBack: _uploading
-                        ? null
-                        : () async {
-                            if (await _confirmExit() && mounted) {
-                              Navigator.of(this.context).pop();
-                            }
-                          },
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: SnapshotPickerTabRow(
-                    strings: strings,
-                    onPhotos:
-                        busy ? null : () => _pickImage(ImageSource.gallery),
-                    onVideos:
-                        busy ? null : () => _pickVideo(ImageSource.gallery),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _RecentPhotoGallery(
-              loading: _loadingGallery,
-              selecting: _loadingPhoto,
-              permissionDenied: _galleryPermissionDenied,
-              permissionLimited: _galleryPermissionLimited,
-              loadFailed: _galleryLoadFailed,
-              photos: _recentPhotos,
-              picked: picked,
-              hasMore: _recentPhotos.length < _galleryTotalCount,
-              loadingMore: _loadingMoreGallery,
-              addPhotosLabel: strings.addPhotos,
-              settingsLabel: strings.openSettings,
-              permissionMessage: strings.galleryPermissionRequired,
-              loadFailedMessage: strings.photoFailed,
-              retryLabel: strings.retry,
-              onAddPhotos: _selectMorePhotos,
-              onRetry: _loadRecentPhotos,
-              onOpenSettings: PhotoManager.openSetting,
-              onLoadMore: _loadMoreRecentPhotos,
-              onPhotoTap: (photo) => setState(() => _pickedAsset = photo),
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(20, 12, 20, padding.bottom + 20),
-            child: Row(
-              children: [
-                SnapshotCameraCircle(
-                  label: strings.camera,
-                  onTap: busy ? null : _chooseCameraMedia,
-                  onLongPress:
-                      busy ? null : () => _pickVideo(ImageSource.camera),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SnapshotPillButton(
-                    key: const ValueKey('snapshot_picker_next'),
-                    label: strings.next,
-                    busy: _loadingPhoto,
-                    onPressed: picked == null || _uploading
-                        ? null
-                        : () => _selectRecentPhoto(picked),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return SnapshotMediaPicker(
+      controller: _pickerController,
+      busy: _loadingPhoto || _uploading,
+      loadingAssetId: _loadingAssetId,
+      onClose: _uploading
+          ? null
+          : () async {
+              if (await _confirmExit() && mounted) {
+                Navigator.of(this.context).pop();
+              }
+            },
+      onCamera: _chooseCameraMedia,
+      onAssetTap: (asset) => unawaited(_selectGalleryAsset(asset)),
+      onPickFromSystem: () => unawaited(_pickFromSystemPicker()),
     );
   }
 
@@ -2581,7 +2336,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
           child: SnapshotCreateTopBar(
             icon: Icons.chevron_left_rounded,
             label: strings.repick,
-            lifetime: strings.shareLifetimeNote,
             onBack: _uploading || _composing
                 ? null
                 : () => unawaited(_returnToMediaSelection()),
@@ -2596,7 +2350,30 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen>
             child: Container(
               color: Colors.black.withValues(alpha: .55),
               padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
-              child: _buildVideoTrimEditor(strings),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildVideoTrimEditor(strings),
+                  // 12초보다 긴 영상만: 앞 12초가 기본 구간이고 끌어서 바꾼다.
+                  if (_videoDuration > const Duration(seconds: 12)) ...[
+                    const SizedBox(height: 8),
+                    MediaQuery.withClampedTextScaling(
+                      maxScaleFactor: 1.3,
+                      child: Text(
+                        strings.trimLimitHint,
+                        key: const ValueKey('snapshot_trim_limit_hint'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: uiFontFamily(context, 'Inter'),
+                          fontFamilyFallback: const ['NotoSansKR'],
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: .7),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         Positioned(
@@ -2808,193 +2585,6 @@ class _TrimHandle extends StatelessWidget {
           boxShadow: [BoxShadow(color: Colors.black45, blurRadius: 3)],
         ),
       ),
-    );
-  }
-}
-
-/// 고르기 그리드: 4열·간격 2·정사각, 한 장만 고른다. 페이징·권한 거부·
-/// 불러오기 실패·제한 접근(사진 더 보기) 경로는 기존과 같다.
-class _RecentPhotoGallery extends StatelessWidget {
-  const _RecentPhotoGallery({
-    required this.loading,
-    required this.selecting,
-    required this.permissionDenied,
-    required this.permissionLimited,
-    required this.loadFailed,
-    required this.photos,
-    required this.picked,
-    required this.hasMore,
-    required this.loadingMore,
-    required this.addPhotosLabel,
-    required this.settingsLabel,
-    required this.permissionMessage,
-    required this.loadFailedMessage,
-    required this.retryLabel,
-    required this.onAddPhotos,
-    required this.onRetry,
-    required this.onOpenSettings,
-    required this.onLoadMore,
-    required this.onPhotoTap,
-  });
-
-  final bool loading;
-  final bool selecting;
-  final bool permissionDenied;
-  final bool permissionLimited;
-  final bool loadFailed;
-  final List<AssetEntity> photos;
-  final AssetEntity? picked;
-  final bool hasMore;
-  final bool loadingMore;
-  final String addPhotosLabel;
-  final String settingsLabel;
-  final String permissionMessage;
-  final String loadFailedMessage;
-  final String retryLabel;
-  final VoidCallback onAddPhotos;
-  final VoidCallback onRetry;
-  final VoidCallback onOpenSettings;
-  final VoidCallback onLoadMore;
-  final ValueChanged<AssetEntity> onPhotoTap;
-
-  @override
-  Widget build(BuildContext context) {
-    if (loading) {
-      return const Center(
-        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-      );
-    }
-
-    if (permissionDenied) {
-      return SnapshotPickerNotice(
-        message: permissionMessage,
-        primaryLabel: settingsLabel,
-        onPrimary: onOpenSettings,
-        secondaryLabel: retryLabel,
-        onSecondary: onRetry,
-      );
-    }
-
-    if (loadFailed) {
-      return SnapshotPickerNotice(
-        message: loadFailedMessage,
-        primaryLabel: retryLabel,
-        onPrimary: onRetry,
-      );
-    }
-
-    final leadingItemCount = permissionLimited ? 1 : 0;
-    final cacheWidth =
-        (MediaQuery.sizeOf(context).width / 4 * MediaQuery.devicePixelRatioOf(context))
-            .ceil()
-            .clamp(120, 360);
-    return Stack(
-      children: [
-        NotificationListener<ScrollNotification>(
-          onNotification: (notification) {
-            if (hasMore &&
-                !loadingMore &&
-                notification.metrics.extentAfter < 600) {
-              onLoadMore();
-            }
-            return false;
-          },
-          child: GridView.builder(
-            key: const ValueKey('snapshot_picker_grid'),
-            padding: const EdgeInsets.only(top: 2),
-            physics: const BouncingScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 2,
-              crossAxisSpacing: 2,
-            ),
-            itemCount: photos.length + leadingItemCount + (loadingMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (permissionLimited && index == 0) {
-                return Semantics(
-                  button: true,
-                  label: addPhotosLabel,
-                  excludeSemantics: true,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: selecting ? null : onAddPhotos,
-                    child: ColoredBox(
-                      color: Colors.white.withValues(alpha: .08),
-                      child: const Center(
-                        child: Icon(
-                          Icons.add_rounded,
-                          size: 24,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }
-              final photoIndex = index - leadingItemCount;
-              if (photoIndex >= photos.length) {
-                return const Center(
-                  child: SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  ),
-                );
-              }
-              final photo = photos[photoIndex];
-              final selected = picked?.id == photo.id;
-              return Semantics(
-                button: true,
-                selected: selected,
-                label: '${photoIndex + 1}',
-                excludeSemantics: true,
-                child: GestureDetector(
-                  key: ValueKey<String>('snapshot_picker_cell_${photo.id}'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: selecting ? null : () => onPhotoTap(photo),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ColoredBox(
-                        color: const Color(0xFF1A1A1A),
-                        child: Image(
-                          image: ResizeImage(
-                            AssetEntityImageProvider(
-                              photo,
-                              isOriginal: false,
-                              thumbnailSize: const ThumbnailSize.square(360),
-                            ),
-                            width: cacheWidth,
-                          ),
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.medium,
-                          errorBuilder: (_, __, ___) =>
-                              const SizedBox.shrink(),
-                        ),
-                      ),
-                      SnapshotGridSelection(selected: selected),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        if (selecting)
-          Positioned.fill(
-            child: ColoredBox(
-              color: Colors.black.withValues(alpha: .5),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-      ],
     );
   }
 }

@@ -63,7 +63,7 @@ void main() {
     )));
     expect(find.text('↩ 민수에게'), findsOneWidget);
     expect(find.widgetWithText(TextButton, '답글'), findsNothing);
-    await tester.fling(find.text('맞아요'), const Offset(200, 0), 1500);
+    await tester.fling(find.text('맞아요'), const Offset(-200, 0), 1500);
     await tester.pumpAndSettle();
     expect(replies, 1);
   });

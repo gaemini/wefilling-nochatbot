@@ -91,9 +91,11 @@ class _SwipeToReplyState extends State<SwipeToReply>
     final x = details.globalPosition.dx;
     // 미는 방향의 반대쪽 가장자리(안드로이드 뒤로 가기 제스처)에서 시작한
     // 드래그는 시스템에 양보한다.
-    _ignoring = _isRtl
-        ? x < SwipeToReply.edgeGuard
-        : x > width - SwipeToReply.edgeGuard;
+    // 폭을 모르면(크기 정보가 없는 MediaQuery) 가장자리 판정을 하지 않는다.
+    _ignoring = width > 0 &&
+        (_isRtl
+            ? x < SwipeToReply.edgeGuard
+            : x > width - SwipeToReply.edgeGuard);
     _controller.stop();
     _returnAnimation = null;
     _drag = 0;

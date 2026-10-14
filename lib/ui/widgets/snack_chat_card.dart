@@ -233,12 +233,8 @@ class SnackChatCard extends StatelessWidget {
           child: MediaQuery.withClampedTextScaling(
             maxScaleFactor: 1.3,
             child: Container(
+              // 구분선 없이 줄 높이와 여백만으로 나눈다.
               height: 72,
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Color(0xFFF2F2F2)),
-                ),
-              ),
               child: Stack(
                 children: [
                   Padding(

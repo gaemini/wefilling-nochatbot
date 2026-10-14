@@ -39,6 +39,10 @@ class SnackChatStorageImage extends StatefulWidget {
 
   @override
   State<SnackChatStorageImage> createState() => _SnackChatStorageImageState();
+
+  /// 저장소 경로의 사진 바이트(화면 표시와 같은 캐시를 거친다). 복사 등에서 쓴다.
+  static Future<Uint8List?> loadBytes(String path, String? bucket) =>
+      _SnackChatStorageImageState.loadBytes(path, bucket);
 }
 
 class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
@@ -95,7 +99,11 @@ class _SnackChatStorageImageState extends State<SnackChatStorageImage> {
         );
   }
 
-  Future<Uint8List?> _load(String path, String? bucket) {
+  Future<Uint8List?> _load(String path, String? bucket) =>
+      loadBytes(path, bucket);
+
+  /// 저장소 경로의 사진 바이트(메모리·디스크 캐시를 거친다). 복사 등에서 쓴다.
+  static Future<Uint8List?> loadBytes(String path, String? bucket) {
     final viewerId = FirebaseAuth.instance.currentUser?.uid;
     final normalizedPath = path.trim();
     if (viewerId == null || viewerId.isEmpty || normalizedPath.isEmpty) {

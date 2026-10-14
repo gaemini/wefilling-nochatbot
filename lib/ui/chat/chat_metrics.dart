@@ -118,8 +118,23 @@ class ChatTextScope extends StatelessWidget {
 
   /// [child]의 글자를 메시지 본문 배율로 그린다.
   static Widget body(BuildContext context, {required Widget child}) {
+    // MediaQuery 전체 구독은 이 작은 위젯이 맡는다. 호출한 말풍선의 context로
+    // MediaQuery.of를 부르면 키보드가 움직이는 매 프레임마다 모든 말풍선이
+    // 다시 그려졌다.
+    return _ChatBodyTextScope(child: child);
+  }
+}
+
+class _ChatBodyTextScope extends StatelessWidget {
+  const _ChatBodyTextScope({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: bodyScaler(context)),
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: ChatTextScope.bodyScaler(context)),
       child: child,
     );
   }

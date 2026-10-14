@@ -42,6 +42,7 @@ import 'translatable_content.dart';
 import 'post_translation_feed.dart';
 import 'relationship_orbit_for_user.dart';
 import 'post_card_comment_invite.dart';
+import '../sheets/translation_language_sheet.dart';
 import '../../l10n/ui_locale.dart';
 import 'post_card_friend_button.dart';
 import 'post_card_header_line.dart';
@@ -709,6 +710,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
   }
 
+  Future<void> _openTranslationLanguageSettings() async {
+    await showTranslationLanguageSheet(context);
+  }
+
   // 투표 배지는 제거됨: 카드 본문에 투표 항목을 직접 노출한다.
 
   @override
@@ -1224,19 +1229,18 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                             usesLimitedAudienceIdentity,
                       ),
                     ),
+                    if (showTranslationToggle) ...[
+                      const SizedBox(height: 1),
+                      TranslationScopeToggle(
+                        scope: PostTranslationFeed.scopeOf(context, post.id),
+                        postCardHeader: true,
+                        onSettingsPressed: _openTranslationLanguageSettings,
+                      ),
+                    ],
                     const SizedBox(height: 2),
                     // TranslatableContent가 이 영역 안에서 원문과 번역문만
                     // 교체한다.
                     threadContent,
-                    // 번역 상태 + 스위치: 본문 아래 오른쪽 끝.
-                    if (showTranslationToggle)
-                      Align(
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: TranslationScopeToggle(
-                          scope: PostTranslationFeed.scopeOf(context, post.id),
-                          postCardHeader: true,
-                        ),
-                      ),
                   ],
                 ),
               ),

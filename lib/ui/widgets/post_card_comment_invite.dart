@@ -152,6 +152,13 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite> {
                                     ),
                                   ),
                                 ),
+                                const SizedBox(width: 6),
+                                // 어떤 언어로 써도 번역돼 전달된다는 신호.
+                                const Icon(
+                                  Icons.translate_rounded,
+                                  size: 15,
+                                  color: Color(0xFF98A2B3),
+                                ),
                               ],
                             ),
                           ),
@@ -461,15 +468,16 @@ class _CardCommentComposerSheetState extends State<_CardCommentComposerSheet> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    // 번역 아이콘은 누를 수 있는 곳에만 쓴다(장식용 아이콘 제거).
-                    if (_failed) ...[
-                      const Icon(
-                        Icons.error_outline_rounded,
-                        size: 14,
-                        color: Color(0xFFD92D20),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
+                    Icon(
+                      _failed
+                          ? Icons.error_outline_rounded
+                          : Icons.translate_rounded,
+                      size: 14,
+                      color: _failed
+                          ? const Color(0xFFD92D20)
+                          : const Color(0xFF98A2B3),
+                    ),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         _failed

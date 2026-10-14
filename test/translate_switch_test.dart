@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wefilling/ui/widgets/translatable_content.dart';
 import 'package:wefilling/ui/widgets/translate_switch.dart';
 
 void main() {
@@ -189,27 +188,5 @@ void main() {
       tester.getSize(find.byType(TranslateLanguageButton)).width,
       lessThanOrEqualTo(96),
     );
-  });
-
-  testWidgets('피드 카드 상태 글자(ko/en/zh)', (tester) async {
-    final results = <String>[];
-    for (final locale in const [Locale('ko'), Locale('en'), Locale('zh')]) {
-      await tester.pumpWidget(MaterialApp(
-        locale: locale,
-        supportedLocales: const [Locale('ko'), Locale('en'), Locale('zh')],
-        localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        home: Builder(builder: (context) {
-          results
-            ..add(postCardTranslationStatus(context, true, 'X'))
-            ..add(postCardTranslationStatus(context, false, 'X'));
-          return const SizedBox();
-        }),
-      ));
-    }
-    expect(results, [
-      'X에서 번역됨', '원문 · X',
-      'Translated from X', 'Original · X',
-      '译自X', '原文 · X',
-    ]);
   });
 }

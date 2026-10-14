@@ -7,8 +7,9 @@
     <uses-permission
         android:name="com.google.android.gms.permission.AD_ID"
         tools:node="remove" />
-    <!-- 스낵 생성 화면에서 최근 사진을 바로 표시하기 위한 미디어 권한 -->
+    <!-- 스낵에 사진·영상을 올리기 위한 미디어 권한(고르기 화면 목록) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <!-- Android 14의 '선택한 사진만 허용' 접근도 지원합니다. -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
@@ -16,10 +17,7 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <!-- 앱은 사진만 조회하므로 나머지 미디어 권한은 제거합니다. -->
-    <uses-permission
-        android:name="android.permission.READ_MEDIA_VIDEO"
-        tools:node="remove" />
+    <!-- 오디오는 조회하지 않으므로 제거합니다. -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_AUDIO"
         tools:node="remove" />

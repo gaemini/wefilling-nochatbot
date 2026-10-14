@@ -393,7 +393,9 @@ class SnapshotEditorBottomBar extends StatelessWidget {
                   behavior: HitTestBehavior.opaque,
                   onTap: onAudience,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    // 높이를 [다음]과 같은 44로 맞춘다(없으면 글자 높이로 줄어든다).
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(22),
                       border: Border.all(

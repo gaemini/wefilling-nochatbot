@@ -74,6 +74,15 @@ void main() {
       ),
     ));
     expect(find.text('전체 공개 · 답장까지'), findsOneWidget);
+    // 공개 범위 알약과 [다음]은 같은 높이(44).
+    expect(
+      tester.getSize(find.byKey(const ValueKey('snapshot_editor_audience'))).height,
+      44,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('snapshot_editor_next'))).height,
+      44,
+    );
     await tester.tap(find.byKey(const ValueKey('snapshot_editor_audience')));
     await tester.tap(find.byKey(const ValueKey('snapshot_editor_next')));
     expect(audience, 1);

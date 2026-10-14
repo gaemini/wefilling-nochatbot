@@ -4191,9 +4191,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Stack(children: [
-                            Image.memory(_commentGif!, width: 76,
-                                height: MediaQuery.viewInsetsOf(context).bottom > 0 ? 44 : 76,
-                                fit: BoxFit.contain, cacheWidth: 228),
+                            // 입력 중(키보드 표시)에는 작게. 키보드 높이를 매 프레임
+                            // 읽지 않고 입력창 포커스만 따른다.
+                            ListenableBuilder(
+                              listenable: _commentFocusNode,
+                              builder: (context, _) => Image.memory(
+                                _commentGif!,
+                                width: 76,
+                                height: _commentFocusNode.hasFocus ? 44 : 76,
+                                fit: BoxFit.contain,
+                                cacheWidth: 228,
+                              ),
+                            ),
                             Positioned(right: 0, top: 0, child: IconButton(
                               tooltip: MaterialLocalizations.of(context).deleteButtonTooltip,
                               onPressed: _isSubmittingComment ? null : () => setState(() {
@@ -4207,17 +4216,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         ),
                       ),
                     if (_commentImages.isNotEmpty) _buildCommentImageTray(),
-                    Padding(
-                      padding: EdgeInsets.only(
-                        // 사진 버튼(44)이 자체 여백을 가져 왼쪽은 8로 줄인다.
-                        left: isLoggedIn ? 8.0 : 16.0,
-                        right: 12.0,
-                        top: 8.0,
-                        bottom: MediaQuery.of(context).viewInsets.bottom > 0
-                            ? 8.0 // 키보드가 올라온 경우
-                            : MediaQuery.of(context).padding.bottom +
-                                8.0, // 하단 safe area 고려
-                      ),
+                    _ComposerBottomInset(
+                      // 사진 버튼(44)이 자체 여백을 가져 왼쪽은 8로 줄인다.
+                      left: isLoggedIn ? 8.0 : 16.0,
                       child: Row(
                         children: [
                           if (isLoggedIn) _buildCommentPhotoButton(),
@@ -4398,4 +4399,25 @@ class _PostAudienceUser {
     required this.photoURL,
     required this.photoVersion,
   });
+}
+
+
+/// 댓글 입력줄 아래 여백. 하단 안전 영역이 키보드와 함께 줄어드는 값을 그대로
+/// 써서 여백이 한 번에 튀지 않는다. 이 위젯에서만 읽어 화면 전체 재빌드를 막는다.
+class _ComposerBottomInset extends StatelessWidget {
+  const _ComposerBottomInset({required this.left, required this.child});
+
+  final double left;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // MediaQuery.padding은 키보드가 올라오는 만큼 이미 줄어든 값이다(시스템 값).
+    // 본문은 Scaffold가 viewInsets를 지운 MediaQuery를 받으므로 이 값을 쓴다.
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(left: left, right: 12, top: 8, bottom: bottom + 8),
+      child: child,
+    );
+  }
 }

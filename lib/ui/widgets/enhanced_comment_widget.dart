@@ -1115,11 +1115,10 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             right: 6,
             bottom: _kBadgeBottomInset,
           ),
-          child: MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              textScaler:
-                  MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3),
-            ),
+          // MediaQuery.of(context)는 키보드 애니메이션 매 프레임마다 다시 그리게 하므로
+          // 글자 배율만 제한한다.
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.3,
             child: Container(
               height: _kBadgeHeight,
               padding: const EdgeInsets.symmetric(horizontal: 6),

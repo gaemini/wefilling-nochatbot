@@ -16,7 +16,7 @@ import 'snapshot_strings.dart';
 const Color _accent = Color(0xFF2C6BC0);
 
 /// 3장 표의 글자 사양. 테스트가 이 값을 그대로 검사한다.
-@visibleForTesting
+/// 고르기·편집 단계(snapshot_create_widgets.dart)도 같은 사양을 쓴다.
 class ShareTextSpec {
   const ShareTextSpec(this.size, this.lineHeight, this.weight, this.alpha);
   final double size;

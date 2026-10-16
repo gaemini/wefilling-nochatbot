@@ -1592,7 +1592,7 @@
   "contentTagPickerTitle": "Which #tags fit?",
   "contentTagLimit": "You can add up to 3 tags",
   "tagAudienceBadge": "People with #{tag}",
-  "tagShareTo": "＋ Share to #{tag}",
+  "tagShareTo": "Share to #{tag}",
   "tagShareWritePost": "Write a post",
   "tagShareCreateMeetup": "Create a meetup",
   "tagPostsEmpty": "No posts with this tag yet",

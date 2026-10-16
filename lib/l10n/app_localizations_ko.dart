@@ -3653,7 +3653,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String tagShareTo(String tag) {
-    return '＋ #$tag에 공유';
+    return '#$tag에 공유';
   }
 
   @override

@@ -1601,7 +1601,7 @@
   "contentTagLimit": "태그는 3개까지 붙일 수 있어요",
   "tagAudienceBadge": "#{tag} 가진 사람",
   "@tagAudienceBadge": {"placeholders": {"tag": {"type": "String"}}},
-  "tagShareTo": "＋ #{tag}에 공유",
+  "tagShareTo": "#{tag}에 공유",
   "@tagShareTo": {"placeholders": {"tag": {"type": "String"}}},
   "tagShareWritePost": "포스트 쓰기",
   "tagShareCreateMeetup": "모임 만들기",

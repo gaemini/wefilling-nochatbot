@@ -3601,7 +3601,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String tagShareTo(String tag) {
-    return '＋ 分享到 #$tag';
+    return '分享到 #$tag';
   }
 
   @override

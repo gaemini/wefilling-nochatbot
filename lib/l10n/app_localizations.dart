@@ -6775,7 +6775,7 @@ abstract class AppLocalizations {
   /// No description provided for @tagShareTo.
   ///
   /// In ko, this message translates to:
-  /// **'＋ #{tag}에 공유'**
+  /// **'#{tag}에 공유'**
   String tagShareTo(String tag);
 
   /// No description provided for @tagShareWritePost.

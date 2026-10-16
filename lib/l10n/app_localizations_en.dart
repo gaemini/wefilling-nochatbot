@@ -3797,7 +3797,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String tagShareTo(String tag) {
-    return '＋ Share to #$tag';
+    return 'Share to #$tag';
   }
 
   @override

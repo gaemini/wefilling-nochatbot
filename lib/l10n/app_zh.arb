@@ -1572,7 +1572,7 @@
   "contentTagPickerTitle": "要添加哪些 #标签？",
   "contentTagLimit": "最多可添加3个标签",
   "tagAudienceBadge": "拥有 #{tag} 的人",
-  "tagShareTo": "＋ 分享到 #{tag}",
+  "tagShareTo": "分享到 #{tag}",
   "tagShareWritePost": "写帖子",
   "tagShareCreateMeetup": "创建聚会",
   "tagPostsEmpty": "还没有带这个标签的帖子",

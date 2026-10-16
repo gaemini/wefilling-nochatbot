@@ -27,6 +27,10 @@ export const COL = {
   identityHandles: 'identity_handles',
   searchEntities: 'search_entities',
 
+  // Interest tags (#태그). Server-written only.
+  tags: 'tags',
+  usersPrivate: 'users_private',
+
   // Content
   posts: 'posts',
   postSearchIndex: 'post_search_index',

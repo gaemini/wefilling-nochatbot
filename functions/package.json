@@ -30,7 +30,9 @@
     "repair:nickname-search-tokens": "npm run build && node scripts/repair_nickname_search_tokens.js",
     "audit:nickname-normalization": "npm run build && node scripts/audit_nickname_normalization.js",
     "migrate:friend-counts": "npm run build && node scripts/migrate_friend_counts.js",
-    "migrate:review-projections": "node scripts/migrate_review_profile_projections.js"
+    "migrate:review-projections": "node scripts/migrate_review_profile_projections.js",
+    "test:interest-tags": "npm run build && node scripts/test_interest_tags.js",
+    "migrate:interest-tags": "npm run build && node scripts/migrate_interest_tags.js"
   },
   "engines": {
     "node": "22"

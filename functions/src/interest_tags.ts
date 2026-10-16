@@ -1,0 +1,389 @@
+// #관심 태그: 프로필에 다는 라벨. 가입·관리자·채팅방 없이 tags/{tagId} 하나로 관리한다.
+// tagId는 정규화한 이름이라 문서 id만으로 중복이 막힌다.
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import {FieldPath, FieldValue} from 'firebase-admin/firestore';
+import {callables} from './backend';
+import {COL} from './firestore_paths';
+import {isSearchableUser} from './searchable_user_policy';
+
+const db = () => admin.firestore();
+
+export const MAX_PROFILE_TAGS = 8;
+export const MAX_CONTENT_TAGS = 3;
+/** 구버전 앱이 읽는 users.interests는 최대 5개였다. */
+const LEGACY_INTEREST_LIMIT = 5;
+export const DAILY_TAG_CREATE_LIMIT = 5;
+const TAG_NAME_MIN = 2;
+const TAG_NAME_MAX = 20;
+
+/** 운영 금칙어. 정규화한 tagId에 포함되면 만들 수 없다. */
+export const BANNED_TAG_WORDS: readonly string[] = [
+  'admin', 'wefilling', '위필링', '운영자', '관리자', '공지',
+  'fuck', 'shit', '씨발', '시발', '병신', '좆', '섹스', 'sex', 'porn',
+];
+
+export type OfficialTag = {id: string; ko: string; en: string; zh: string};
+
+/** lib/models/social_profile_data.dart SocialProfileCatalog.interests와 같은 표. */
+export const OFFICIAL_INTEREST_TAGS: readonly OfficialTag[] = [
+  {id: 'restaurants', ko: '맛집', en: 'Food spots', zh: '美食探店'},
+  {id: 'cafe', ko: '카페', en: 'Cafes', zh: '咖啡馆'},
+  {id: 'running', ko: '러닝', en: 'Running', zh: '跑步'},
+  {id: 'fitness', ko: '헬스', en: 'Fitness', zh: '健身'},
+  {id: 'soccer', ko: '축구', en: 'Soccer', zh: '足球'},
+  {id: 'basketball', ko: '농구', en: 'Basketball', zh: '篮球'},
+  {id: 'travel', ko: '여행', en: 'Travel', zh: '旅行'},
+  {id: 'photo', ko: '사진', en: 'Photography', zh: '摄影'},
+  {id: 'movie', ko: '영화', en: 'Movies', zh: '电影'},
+  {id: 'music', ko: '음악', en: 'Music', zh: '音乐'},
+  {id: 'game', ko: '게임', en: 'Gaming', zh: '游戏'},
+  {id: 'reading', ko: '독서', en: 'Reading', zh: '阅读'},
+  {id: 'language', ko: '외국어', en: 'Languages', zh: '外语'},
+  {id: 'study', ko: '스터디', en: 'Study', zh: '学习'},
+  {id: 'exhibition', ko: '전시', en: 'Exhibitions', zh: '展览'},
+  {id: 'performance', ko: '공연', en: 'Performances', zh: '演出'},
+  {id: 'volunteer', ko: '봉사', en: 'Volunteering', zh: '志愿服务'},
+  {id: 'startup', ko: '창업', en: 'Startups', zh: '创业'},
+  {id: 'development', ko: '개발', en: 'Development', zh: '开发'},
+  {id: 'ai', ko: 'AI', en: 'AI', zh: 'AI'},
+];
+
+export const OFFICIAL_TAG_IDS = new Set(OFFICIAL_INTEREST_TAGS.map((t) => t.id));
+
+const PICTOGRAPHIC = /\p{Extended_Pictographic}/u;
+
+function cleanTagText(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.normalize('NFKC').trim().replace(/^#+/, '');
+  // 이모지는 지우지 않고 거부한다. 지우면 '러닝🏃'과 '러닝'이 몰래 같은 태그가 된다.
+  if (PICTOGRAPHIC.test(value)) return null;
+  return value
+    .replace(/[^\p{L}\p{N}_\s]/gu, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+/** 태그 이름 → tagId. 규칙에 맞지 않으면 null. */
+export function normalizeTagName(raw: unknown): string | null {
+  const value = cleanTagText(raw);
+  if (value == null) return null;
+  const length = Array.from(value).length;
+  if (length < TAG_NAME_MIN || length > TAG_NAME_MAX) return null;
+  if (!/^[\p{L}\p{N}_]+$/u.test(value)) return null;
+  return value;
+}
+
+/** 검색어: 태그 이름과 같은 규칙이지만 1글자부터 받는다. */
+export function normalizeTagQuery(raw: unknown): string | null {
+  const value = cleanTagText(raw);
+  if (!value) return null;
+  return Array.from(value).slice(0, TAG_NAME_MAX).join('');
+}
+
+export function isBannedTagId(id: string): boolean {
+  return BANNED_TAG_WORDS.some((word) => id.includes(word));
+}
+
+/** 공식 태그를 다른 이름(라벨)으로 찾기 위한 별칭. 예: running → ['러닝','跑步']. */
+export function officialTagAliases(tag: OfficialTag): string[] {
+  return Array.from(new Set(
+    [tag.ko, tag.en, tag.zh]
+      .map((label) => normalizeTagName(label))
+      .filter((alias): alias is string => alias != null && alias !== tag.id),
+  ));
+}
+
+/** 공식 태그 문서의 고정 필드(이전 스크립트와 같이 쓴다). 개수·상태는 넣지 않는다. */
+export function officialTagFields(tag: OfficialTag): Record<string, unknown> {
+  return {
+    name: tag.id,
+    displayName: tag.en,
+    aliases: officialTagAliases(tag),
+    labels: {ko: tag.ko, en: tag.en, zh: tag.zh},
+    official: true,
+    createdBy: 'system',
+  };
+}
+
+/** 프로필 태그 목록 정리: 정규화, 중복 제거, 최대 8. */
+export function sanitizeProfileTagIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const ids = raw
+    .map((item) => normalizeTagName(item))
+    .filter((id): id is string => id != null);
+  return Array.from(new Set(ids)).slice(0, MAX_PROFILE_TAGS);
+}
+
+/** 구버전 앱 표시용 users.interests: 공식 태그만, 최대 5. */
+export function legacyInterestsFor(tagIds: readonly string[]): string[] {
+  return tagIds.filter((id) => OFFICIAL_TAG_IDS.has(id)).slice(0, LEGACY_INTEREST_LIMIT);
+}
+
+export function tagIdDiff(prev: readonly string[], next: readonly string[]) {
+  return {
+    added: next.filter((id) => !prev.includes(id)),
+    removed: prev.filter((id) => !next.includes(id)),
+  };
+}
+
+/**
+ * 구버전 앱이 interests만 바꿨을 때 interestTagIds를 맞춘다.
+ * 사용자 태그는 그대로 두고, 공식 태그만 interests 기준으로 바꾼다.
+ */
+export function mergeLegacyInterests(
+  currentTagIds: readonly string[],
+  legacyInterests: unknown,
+): string[] {
+  const official = Array.isArray(legacyInterests)
+    ? legacyInterests.map((id) => String(id ?? '').trim().toLowerCase())
+      .filter((id) => OFFICIAL_TAG_IDS.has(id))
+    : [];
+  const kept = currentTagIds.filter((id) => !OFFICIAL_TAG_IDS.has(id) || official.includes(id));
+  const appended = official.filter((id) => !kept.includes(id));
+  return Array.from(new Set([...kept, ...appended])).slice(0, MAX_PROFILE_TAGS);
+}
+
+function stringArray(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function tagRef(id: string) {
+  return db().collection(COL.tags).doc(id);
+}
+
+/** 트랜잭션 안에서 태그별 holderCount를 올리고 내린다(쓰기만, 읽기 없음). */
+export function writeHolderDelta(
+  tx: admin.firestore.Transaction,
+  added: readonly string[],
+  removed: readonly string[],
+): void {
+  const inc = FieldValue.increment;
+  const now = FieldValue.serverTimestamp();
+  added.forEach((id) => tx.set(tagRef(id), {holderCount: inc(1), lastHeldAt: now}, {merge: true}));
+  removed.forEach((id) => tx.set(tagRef(id), {holderCount: inc(-1)}, {merge: true}));
+}
+
+/**
+ * 가입 확정 트랜잭션에서 고른 관심사(공식 태그 id)를 interestTagIds로도 저장한다.
+ * 모든 읽기가 끝난 뒤 호출해야 한다.
+ */
+export function signupProfileTagFields(
+  tx: admin.firestore.Transaction,
+  existing: Record<string, unknown>,
+  interests: readonly string[],
+): {interestTagIds: string[]} {
+  const next = Array.from(new Set(interests.filter((id) => OFFICIAL_TAG_IDS.has(id))))
+    .slice(0, MAX_PROFILE_TAGS);
+  const {added, removed} = tagIdDiff(stringArray(existing.interestTagIds), next);
+  writeHolderDelta(tx, added, removed);
+  return {interestTagIds: next};
+}
+
+/**
+ * users 갱신 트리거에서 호출. 구버전 앱은 interests만 직접 쓰므로,
+ * interests가 바뀌고 interestTagIds는 그대로면 태그 쪽을 따라 맞춘다.
+ */
+export async function syncLegacyInterestsToTags(
+  ref: admin.firestore.DocumentReference,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): Promise<void> {
+  const interestsChanged = JSON.stringify(stringArray(before.interests)) !==
+    JSON.stringify(stringArray(after.interests));
+  const tagsChanged = JSON.stringify(stringArray(before.interestTagIds)) !==
+    JSON.stringify(stringArray(after.interestTagIds));
+  if (!interestsChanged || tagsChanged) return;
+  await db().runTransaction(async (tx) => {
+    const latest = (await tx.get(ref)).data() ?? {};
+    const prev = stringArray(latest.interestTagIds);
+    const next = mergeLegacyInterests(prev, latest.interests);
+    const {added, removed} = tagIdDiff(prev, next);
+    if (added.length === 0 && removed.length === 0) return;
+    writeHolderDelta(tx, added, removed);
+    tx.update(ref, {interestTagIds: next});
+  });
+}
+
+function requireUid(context: functions.https.CallableContext): string {
+  const uid = context.auth?.uid?.trim() ?? '';
+  if (!uid) throw new functions.https.HttpsError('unauthenticated', 'login-required');
+  return uid;
+}
+
+function pickPublic(data: admin.firestore.DocumentData) {
+  return {
+    name: String(data.name ?? ''),
+    displayName: String(data.displayName ?? data.name ?? ''),
+    labels: data.labels && typeof data.labels === 'object' ? data.labels : {},
+    official: data.official === true,
+    holderCount: Math.max(0, Number(data.holderCount ?? 0) || 0),
+    postCount: Math.max(0, Number(data.postCount ?? 0) || 0),
+    meetupCount: Math.max(0, Number(data.meetupCount ?? 0) || 0),
+  };
+}
+
+function officialMatchingQuery(q: string): string[] {
+  return OFFICIAL_INTEREST_TAGS
+    .filter((tag) => tag.id.startsWith(q) ||
+      officialTagAliases(tag).some((alias) => alias.startsWith(q)))
+    .map((tag) => tag.id);
+}
+
+/** 태그 검색: 이름 접두어 + 별칭 일치 + 공식 태그 라벨 접두어. 많이 단 순. */
+export const searchTags = callables()
+  .runWith({timeoutSeconds: 10, memory: '256MB'})
+  .https.onCall(async (data) => {
+    const q = normalizeTagQuery(data?.q);
+    if (!q) return {items: [], exact: false, normalized: null};
+    const tags = db().collection(COL.tags);
+    const officialIds = officialMatchingQuery(q);
+    const [byName, byAlias, official] = await Promise.all([
+      tags.where('status', '==', 'active').orderBy('name')
+        .startAt(q).endAt(q + '').limit(8).get(),
+      tags.where('status', '==', 'active').where('aliases', 'array-contains', q)
+        .limit(4).get(),
+      officialIds.length ? db().getAll(...officialIds.map(tagRef)) : Promise.resolve([]),
+    ]);
+    const seen = new Set<string>();
+    const items = [...byName.docs, ...byAlias.docs, ...official]
+      .filter((doc) => doc.exists && doc.get('status') === 'active')
+      .filter((doc) => !seen.has(doc.id) && seen.add(doc.id) != null)
+      .map((doc) => ({id: doc.id, ...pickPublic(doc.data() ?? {})}))
+      .sort((a, b) => b.holderCount - a.holderCount)
+      .slice(0, 12);
+    const normalized = normalizeTagName(data?.q);
+    const exact = normalized != null && items.some((item) => item.id === normalized);
+    return {items, exact, normalized};
+  });
+
+/**
+ * 새 태그 만들기. 같은 이름(또는 공식 태그의 다른 이름)이 있으면 그 태그를 돌려준다.
+ * 하루 5개, 금칙어 거부.
+ */
+export const createTag = callables()
+  .runWith({timeoutSeconds: 10, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const id = normalizeTagName(data?.name);
+    if (!id) throw new functions.https.HttpsError('invalid-argument', 'tag-invalid');
+    if (isBannedTagId(id)) throw new functions.https.HttpsError('failed-precondition', 'tag-blocked');
+    const official = OFFICIAL_INTEREST_TAGS.find((tag) => tag.id === id ||
+      officialTagAliases(tag).includes(id));
+    if (official) return {id: official.id, created: false};
+    const alias = await db().collection(COL.tags)
+      .where('aliases', 'array-contains', id).limit(1).get();
+    if (!alias.empty) {
+      const doc = alias.docs[0];
+      if (doc.get('status') !== 'active') {
+        throw new functions.https.HttpsError('failed-precondition', 'tag-unavailable');
+      }
+      return {id: doc.id, created: false};
+    }
+    const display = Array.from(String(data?.name).normalize('NFKC').trim().replace(/^#+/, ''))
+      .slice(0, TAG_NAME_MAX).join('');
+    const day = new Date().toISOString().slice(0, 10);
+    const quotaRef = db().collection(COL.usersPrivate).doc(uid).collection('tag_quota').doc(day);
+    return db().runTransaction(async (tx) => {
+      const [quota, tag] = await Promise.all([tx.get(quotaRef), tx.get(tagRef(id))]);
+      if (tag.exists) {
+        if (tag.get('status') !== 'active') {
+          throw new functions.https.HttpsError('failed-precondition', 'tag-unavailable');
+        }
+        return {id, created: false};
+      }
+      const used = Number(quota.get('count') ?? 0) || 0;
+      if (used >= DAILY_TAG_CREATE_LIMIT) {
+        throw new functions.https.HttpsError('resource-exhausted', 'tag-daily-limit');
+      }
+      const now = FieldValue.serverTimestamp();
+      tx.set(tagRef(id), {
+        name: id, displayName: display, aliases: [], labels: {}, official: false,
+        holderCount: 0, postCount: 0, meetupCount: 0, status: 'active',
+        createdBy: uid, createdAt: now, updatedAt: now,
+      });
+      tx.set(quotaRef, {count: used + 1, updatedAt: now}, {merge: true});
+      return {id, created: true};
+    });
+  });
+
+/**
+ * 프로필 태그 저장(최대 8). 클라이언트는 users.interestTagIds를 직접 쓰지 못한다.
+ * 새로 단 태그는 active여야 하고, 이미 달려 있던 태그가 숨김·차단되면 조용히 뺀다.
+ * 구버전 앱 표시용 interests(공식 태그 최대 5)도 같이 맞춘다.
+ */
+export const setProfileTags = callables()
+  .runWith({timeoutSeconds: 15, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const requested = sanitizeProfileTagIds(data?.tagIds);
+    const userRef = db().collection(COL.users).doc(uid);
+    return db().runTransaction(async (tx) => {
+      const user = await tx.get(userRef);
+      if (!user.exists || !isSearchableUser(uid, user.data())) {
+        throw new functions.https.HttpsError('failed-precondition', 'account-unavailable');
+      }
+      const prev = stringArray(user.get('interestTagIds'));
+      const snaps = requested.length ? await tx.getAll(...requested.map(tagRef)) : [];
+      const next: string[] = [];
+      snaps.forEach((snap) => {
+        const active = snap.exists && snap.get('status') === 'active';
+        if (active) next.push(snap.id);
+        else if (!prev.includes(snap.id)) {
+          throw new functions.https.HttpsError('failed-precondition', `tag-unavailable:${snap.id}`);
+        }
+      });
+      const {added, removed} = tagIdDiff(prev, next);
+      writeHolderDelta(tx, added, removed);
+      tx.update(userRef, {
+        interestTagIds: next,
+        interests: legacyInterestsFor(next),
+        profileUpdatedAt: FieldValue.serverTimestamp(),
+      });
+      return {tagIds: next};
+    });
+  });
+
+/** 태그를 단 사람(본인·비활성·차단·숨긴 사람 제외). 문서 id 커서 페이지. */
+export const listTagHolders = callables()
+  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const tagId = normalizeTagName(data?.tagId);
+    if (!tagId) throw new functions.https.HttpsError('invalid-argument', 'tag-invalid');
+    const limit = Math.max(1, Math.min(30, Math.trunc(Number(data?.limit) || 30)));
+    const rawCursor = String(data?.cursor ?? '').trim();
+    if (rawCursor.length > 128 || rawCursor.includes('/')) {
+      throw new functions.https.HttpsError('invalid-argument', 'cursor-invalid');
+    }
+    let query = db().collection(COL.users)
+      .where('interestTagIds', 'array-contains', tagId)
+      .orderBy(FieldPath.documentId())
+      .limit(limit);
+    if (rawCursor) query = query.startAfter(rawCursor);
+    const snapshot = await query.get();
+    const candidates = snapshot.docs.filter((doc) =>
+      doc.id !== uid && isSearchableUser(doc.id, doc.data()));
+    const related = candidates.length === 0 ? [] : await db().getAll(
+      ...candidates.flatMap((doc) => [
+        db().collection(COL.blocks).doc(`${uid}_${doc.id}`),
+        db().collection(COL.blocks).doc(`${doc.id}_${uid}`),
+        db().collection(COL.usersPrivate).doc(doc.id),
+      ]),
+    );
+    const users = candidates.filter((_, index) => {
+      const hidden = related[index * 3 + 2]?.get(`tagPrefs.${tagId}.hidden`) === true;
+      return !related[index * 3]?.exists && !related[index * 3 + 1]?.exists && !hidden;
+    }).map((doc) => {
+      const profile = doc.data();
+      return {
+        uid: doc.id,
+        nickname: String(profile.nickname || '').trim(),
+        photoURL: String(profile.photoURL || '').trim(),
+        nationality: String(profile.nationality || '').trim(),
+        university: String(profile.university || '').trim(),
+      };
+    });
+    const cursor = snapshot.size === limit ? snapshot.docs[snapshot.size - 1].id : null;
+    return {users, cursor};
+  });

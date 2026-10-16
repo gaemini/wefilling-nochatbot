@@ -116,6 +116,8 @@ export {
 } from './hanyang_verification';
 
 export {translateContentBatch} from './content_translation';
+export {searchTags, createTag, setProfileTags, listTagHolders} from './interest_tags';
+import {signupProfileTagFields, syncLegacyInterestsToTags} from './interest_tags';
 import {
   READ_SYNC_DEBOUNCE_MS,
   ReadSyncTarget,
@@ -664,6 +666,12 @@ export const onUserProfileUpdatedPropagateAuthorInfo = triggers()
           error,
         );
       }
+    }
+
+    try {
+      await syncLegacyInterestsToTags(change.after.ref, before, after);
+    } catch (error) {
+      console.error(`onUserProfileUpdatedPropagateAuthorInfo: interest tag sync failed userId=${userId}:`, error);
     }
 
     // 관심 필드 변화가 없으면 스킵
@@ -1654,6 +1662,7 @@ export const finalizePendingRegistration = callables()
         updatedAt: now,
         lastLogin: now,
         ...completedProfileFields(profile),
+        ...signupProfileTagFields(tx, existing, profile.interests),
         pendingHanyangEmail: admin.firestore.FieldValue.delete(),
         pendingHanyangVerificationLinked: admin.firestore.FieldValue.delete(),
         pendingHanyangVerifiedAt: admin.firestore.FieldValue.delete(),
@@ -1854,6 +1863,7 @@ export const finalizeHanyangEmailVerification = callables()
       tx.set(userRef, {
         ...schemaFill,
         ...completedProfileFields(profile),
+        ...signupProfileTagFields(tx, existing, profile.interests),
         hanyangEmail: email,
         hanyangEmailVerified: true,
         hanyangEmailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2092,6 +2102,7 @@ export const finalizeEnglishSocialSignup = callables()
       tx.set(userRef, {
         ...schemaFill,
         ...completedProfileFields(profile),
+        ...signupProfileTagFields(tx, existing, profile.interests),
         uid,
         email: authEmail,
         signupLanguage,
@@ -5060,6 +5071,7 @@ export const createGeneralEmailSignup = callables()
         email: normalizedEmail,
         ...missingSchoolDefaults,
         ...completedProfileFields(profile),
+        ...signupProfileTagFields(transaction, current, profile.interests),
         photoURL: String(current.photoURL || ''),
         photoPath: String(current.photoPath || ''),
         photoAccessToken: String(current.photoAccessToken || ''),

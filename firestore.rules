@@ -378,6 +378,16 @@ service cloud.firestore {
     match /nicknamePolicyState/{document} {
       allow read, write: if false;
     }
+    // #관심 태그. 만들기·개수는 Cloud Functions만 쓴다.
+    match /tags/{tagId} {
+      allow read: if currentUserAccountAllowed()
+        && resource.data.get('status', '') == 'active';
+      allow write: if false;
+    }
+    // 태그 설정(숨김·알림)과 하루 만들기 횟수는 서버 전용.
+    match /users_private/{userId}/{document=**} {
+      allow read, write: if false;
+    }
 
     // ===== 단체 계정/프로필 =====
     // All lifecycle, ownership, invitation and handle writes are performed by
@@ -489,7 +499,9 @@ service cloud.firestore {
           'notificationUnreadReconciledAt',
           'friendsCount',
           'nickname', 'nicknameKey', 'nicknameSearchTokens',
-          'nicknameUpdatedAt'
+          'nicknameUpdatedAt',
+          // #태그는 setProfileTags만 바꾼다(태그 존재·개수 검증).
+          'interestTagIds'
         ]);
       allow delete: if false; // 사용자 삭제는 금지
       

@@ -140,7 +140,7 @@ void main() {
     expect(find.byKey(const ValueKey('tag_explore_climbing')), findsOneWidget);
     // '#사진과 함께'(받침 있으면 '과').
     expect(find.text('${l10n.tagCountPeople(40)} · #사진과 함께'), findsOneWidget);
-    expect(find.text(l10n.tagAdded), findsOneWidget);
+    expect(find.text(l10n.tagAddedShort), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_friends')));
     await tester.pumpAndSettle();

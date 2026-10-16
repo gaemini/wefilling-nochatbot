@@ -267,7 +267,7 @@ class _AudienceSheetState extends State<AudienceSheet> {
                   child: TagPrimaryButton(
                     key: const ValueKey('audience_done'),
                     label: l10n.done,
-                    height: 52,
+                    height: 48,
                     onPressed: _done,
                   ),
                 ),

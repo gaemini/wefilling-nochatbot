@@ -1681,5 +1681,6 @@
   "audienceRowLabel": "공개 범위",
   "postUploadAction": "올리기",
   "tagMoreTags": "더 많은 태그",
-  "tagPageLink": "태그 페이지"
+  "tagPageLink": "태그 페이지",
+  "tagAddedShort": "추가됨"
 }

@@ -4024,4 +4024,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tagPageLink => 'Tag page';
+
+  @override
+  String get tagAddedShort => 'Added';
 }

@@ -1635,5 +1635,6 @@
   "audienceRowLabel": "公开范围",
   "postUploadAction": "发布",
   "tagMoreTags": "更多标签",
-  "tagPageLink": "标签页"
+  "tagPageLink": "标签页",
+  "tagAddedShort": "已添加"
 }

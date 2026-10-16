@@ -1655,5 +1655,6 @@
   "audienceRowLabel": "Audience",
   "postUploadAction": "Post",
   "tagMoreTags": "More tags",
-  "tagPageLink": "Tag page"
+  "tagPageLink": "Tag page",
+  "tagAddedShort": "Added"
 }

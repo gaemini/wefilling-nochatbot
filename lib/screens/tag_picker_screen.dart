@@ -419,7 +419,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
                 ),
               ),
               SizedBox(
-                width: 120,
+                width: 104,
                 child: TagPrimaryButton(
                   key: const ValueKey('tag_picker_done'),
                   label: l10n.done,

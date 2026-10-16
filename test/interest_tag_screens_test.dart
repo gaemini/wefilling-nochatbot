@@ -227,7 +227,7 @@ void main() {
         of: find.byKey(const ValueKey('tag_result_running')),
         matching: find.text(l10n.tagAdd)));
     await tester.pump();
-    expect(find.text(l10n.tagAdded), findsOneWidget);
+    expect(find.text(l10n.tagAddedShort), findsOneWidget);
 
     // 정확히 같은 태그가 없으면 새로 만들기.
     await tester.enterText(

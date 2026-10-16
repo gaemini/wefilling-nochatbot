@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../l10n/ui_locale.dart';
 import 'motion_press.dart';
 
@@ -418,13 +419,71 @@ class PlainChoiceChip extends StatelessWidget {
   }
 }
 
-/// 주 버튼(파랑, 높이 48, 모서리 12, 15/700). onPressed가 null이면 회색.
+/// 태그 화면 버튼 크기: 큰 버튼 44(글자 14), 작은 버튼 32(글자 13).
+/// 앱 테마의 버튼 최소 크기(120×48)를 쓰지 않고 글자 폭에 맞춘다.
+ButtonStyle _tagButtonStyle({
+  required double height,
+  required Color background,
+  required Color foreground,
+  Color? pressed,
+  bool enabled = true,
+}) {
+  final small = height < 40;
+  return ButtonStyle(
+    minimumSize: WidgetStatePropertyAll(Size(0, height)),
+    fixedSize: WidgetStatePropertyAll(Size.fromHeight(height)),
+    maximumSize: const WidgetStatePropertyAll(Size(double.infinity, 56)),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
+    padding: WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: small ? 12 : 16)),
+    elevation: const WidgetStatePropertyAll(0),
+    shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(small ? 9 : 12))),
+    backgroundColor: WidgetStateProperty.resolveWith((states) {
+      if (!enabled || states.contains(WidgetState.disabled)) {
+        return enabled ? background : TagColors.disabled;
+      }
+      if (states.contains(WidgetState.pressed) && pressed != null) return pressed;
+      return background;
+    }),
+    foregroundColor: WidgetStatePropertyAll(
+        enabled ? foreground : TagColors.disabledText),
+    overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+  );
+}
+
+Widget _buttonLabel(BuildContext context, String label, IconData? icon,
+    double height, Color color) {
+  final small = height < 40;
+  // 큰 글자 배율에서도 버튼 밖으로 넘치지 않게 줄여 맞춘다.
+  return FittedBox(
+    fit: BoxFit.scaleDown,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: small ? 15 : 17, color: color),
+          const SizedBox(width: 4),
+        ],
+        Text(
+          label,
+          maxLines: 1,
+          style: tagTextStyle(
+              context, small ? 13 : 14, FontWeight.w700, color),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 주 버튼(파랑). onPressed가 null이면 회색.
 class TagPrimaryButton extends StatelessWidget {
   const TagPrimaryButton({
     super.key,
     required this.label,
     required this.onPressed,
-    this.height = 48,
+    this.height = 44,
     this.busy = false,
     this.icon,
   });
@@ -437,72 +496,37 @@ class TagPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = onPressed != null && !busy;
+    final enabled = onPressed != null || busy;
     return MotionPress(
-      enabled: enabled,
-      child: SizedBox(
-        height: height,
-        child: FilledButton(
-          onPressed: enabled ? onPressed : null,
-          style: ButtonStyle(
-            padding: const WidgetStatePropertyAll(
-                EdgeInsets.symmetric(horizontal: 16)),
-            elevation: const WidgetStatePropertyAll(0),
-            shape: WidgetStatePropertyAll(RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12))),
-            backgroundColor: WidgetStateProperty.resolveWith((states) {
-              if (busy) return TagColors.blue;
-              if (states.contains(WidgetState.disabled)) {
-                return TagColors.disabled;
-              }
-              if (states.contains(WidgetState.pressed)) {
-                return TagColors.bluePressed;
-              }
-              return TagColors.blue;
-            }),
-            foregroundColor: WidgetStateProperty.resolveWith((states) =>
-                states.contains(WidgetState.disabled) && !busy
-                    ? TagColors.disabledText
-                    : Colors.white),
-            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-          ),
-          child: busy
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (icon != null) ...[
-                      Icon(icon, size: 18),
-                      const SizedBox(width: 6),
-                    ],
-                    Flexible(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tagTextStyle(context, height < 40 ? 13.5 : 15,
-                                FontWeight.w700, Colors.white)
-                            .copyWith(color: null),
-                      ),
-                    ),
-                  ],
-                ),
+      enabled: onPressed != null && !busy,
+      child: FilledButton(
+        onPressed: busy ? () {} : onPressed,
+        style: _tagButtonStyle(
+          height: height,
+          background: TagColors.blue,
+          pressed: TagColors.bluePressed,
+          foreground: Colors.white,
+          enabled: enabled,
         ),
+        child: busy
+            ? SizedBox.square(
+                dimension: height < 40 ? 14 : 18,
+                child: const CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white))
+            : _buttonLabel(context, label, icon, height,
+                enabled ? Colors.white : TagColors.disabledText),
       ),
     );
   }
 }
 
-/// 보조 버튼(#F2F2F2, 높이 48, 모서리 12, 15/700).
+/// 보조 버튼(기본 #F2F2F2). 큰 버튼 44, 작은 버튼 32.
 class TagSecondaryButton extends StatelessWidget {
   const TagSecondaryButton({
     super.key,
     required this.label,
     required this.onPressed,
-    this.height = 48,
+    this.height = 44,
     this.background = TagColors.secondary,
     this.foreground = TagColors.ink,
     this.icon,
@@ -519,37 +543,52 @@ class TagSecondaryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return MotionPress(
       enabled: onPressed != null,
-      child: SizedBox(
-        height: height,
-        child: TextButton(
-          onPressed: onPressed,
-          style: TextButton.styleFrom(
-            backgroundColor: background,
-            foregroundColor: foreground,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 18),
-                const SizedBox(width: 6),
-              ],
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tagTextStyle(context, height < 40 ? 13.5 : 15,
-                      FontWeight.w700, foreground),
-                ),
-              ),
-            ],
-          ),
-        ),
+      child: TextButton(
+        onPressed: onPressed,
+        style: _tagButtonStyle(
+            height: height, background: background, foreground: foreground),
+        child: _buttonLabel(context, label, icon, height, foreground),
       ),
+    );
+  }
+}
+
+/// 태그 줄 오른쪽 버튼: [+ 추가] / [✓ 추가됨]. 높이 32, 두 상태 같은 폭.
+class TagRowActionButton extends StatelessWidget {
+  const TagRowActionButton({
+    super.key,
+    required this.added,
+    required this.onPressed,
+    this.busy = false,
+  });
+
+  final bool added;
+  final VoidCallback onPressed;
+  final bool busy;
+
+  static const double width = 78;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return SizedBox(
+      width: width,
+      child: added
+          ? TagSecondaryButton(
+              label: l10n.tagAddedShort,
+              icon: Icons.check_rounded,
+              height: 32,
+              background: TagColors.blueSoft,
+              foreground: TagColors.blue,
+              onPressed: onPressed,
+            )
+          : TagPrimaryButton(
+              label: l10n.tagAdd,
+              icon: Icons.add_rounded,
+              height: 32,
+              busy: busy,
+              onPressed: onPressed,
+            ),
     );
   }
 }

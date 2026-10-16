@@ -7155,6 +7155,12 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'태그 페이지'**
   String get tagPageLink;
+
+  /// No description provided for @tagAddedShort.
+  ///
+  /// In ko, this message translates to:
+  /// **'추가됨'**
+  String get tagAddedShort;
 }
 
 class _AppLocalizationsDelegate

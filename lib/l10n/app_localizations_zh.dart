@@ -3824,4 +3824,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get tagPageLink => '标签页';
+
+  @override
+  String get tagAddedShort => '已添加';
 }

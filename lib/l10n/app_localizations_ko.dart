@@ -3877,4 +3877,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get tagPageLink => '태그 페이지';
+
+  @override
+  String get tagAddedShort => '추가됨';
 }

@@ -209,7 +209,7 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
           children: [
             if (!searching) ...[
               SizedBox(
-                height: 48,
+                height: 46,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding:
@@ -336,11 +336,11 @@ class _FilterPill extends StatelessWidget {
             customBorder: const StadiumBorder(),
             onTap: onTap,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Center(
                 widthFactor: 1,
                 child: Text(label,
-                    style: tagTextStyle(context, 14, FontWeight.w700,
+                    style: tagTextStyle(context, 13.5, FontWeight.w700,
                         selected ? Colors.white : TagColors.ink)),
               ),
             ),

@@ -345,22 +345,11 @@ class _TagPageScreenState extends State<TagPageScreen> {
         ),
         floatingActionButton: summary == null
             ? null
-            : FloatingActionButton.extended(
+            : _SharePill(
                 key: const ValueKey('tag_page_share'),
-                backgroundColor: TagColors.blue,
-                foregroundColor: Colors.white,
-                elevation: 2,
-                onPressed: _openShareSheet,
-                label: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: media.size.width - 120),
-                  child: Text(
-                    l10n.tagShareTo(_label),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: tagTextStyle(
-                        context, 15, FontWeight.w700, Colors.white),
-                  ),
-                ),
+                label: l10n.tagShareTo(_label),
+                maxWidth: media.size.width - 40,
+                onTap: _openShareSheet,
               ),
         body: _error != null
             ? _ErrorState(onRetry: _load)
@@ -574,7 +563,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
                 toggled: summary.notify,
                 label: l10n.tagNotifyLabel,
                 child: SizedBox.square(
-                  dimension: 48,
+                  dimension: 44,
                   child: IconButton(
                     key: const ValueKey('tag_page_bell'),
                     onPressed: _toggleNotify,
@@ -696,6 +685,46 @@ class _ErrorState extends StatelessWidget {
           const SizedBox(height: 12),
           TextButton(onPressed: onRetry, child: Text(l10n.retry)),
         ],
+      ),
+    );
+  }
+}
+
+/// '＋ #러닝에 공유' 떠 있는 알약(높이 44, 글자 14). 길면 말줄임.
+class _SharePill extends StatelessWidget {
+  const _SharePill({
+    super.key,
+    required this.label,
+    required this.maxWidth,
+    required this.onTap,
+  });
+
+  final String label;
+  final double maxWidth;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth, minHeight: 44),
+      child: Material(
+        color: TagColors.blue,
+        shape: const StadiumBorder(),
+        elevation: 3,
+        shadowColor: const Color(0x332E6CC2),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tagTextStyle(context, 14, FontWeight.w700, Colors.white),
+            ),
+          ),
+        ),
       ),
     );
   }

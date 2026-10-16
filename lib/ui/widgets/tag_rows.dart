@@ -141,14 +141,13 @@ class TagListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
     return InkWell(
       onTap: onTap ?? onAction,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 9),
         child: Row(
           children: [
-            const TagRowIcon(),
+            const TagRowIcon(size: 40),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -170,22 +169,12 @@ class TagListRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            added
-                ? TagSecondaryButton(
-                    label: l10n.tagAdded,
-                    height: 34,
-                    background: TagColors.blueSoft,
-                    foreground: TagColors.blue,
-                    onPressed: onAction,
-                  )
-                : TagPrimaryButton(
-                    key: ValueKey('tag_row_add_${tag.id}'),
-                    label: l10n.tagAdd,
-                    height: 34,
-                    busy: busy,
-                    icon: Icons.add_rounded,
-                    onPressed: onAction,
-                  ),
+            TagRowActionButton(
+              key: ValueKey('tag_row_add_${tag.id}'),
+              added: added,
+              busy: busy,
+              onPressed: onAction,
+            ),
           ],
         ),
       ),
@@ -280,7 +269,7 @@ class TagPersonRow extends StatelessWidget {
                   photoUrl: person.photoURL,
                   photoVersion: 0,
                   isAnonymous: false,
-                  size: 44,
+                  size: 40,
                   placeholderColor: const Color(0xFFF2F4F7),
                   placeholderIcon: Icons.person_outline_rounded,
                 ),
@@ -309,7 +298,7 @@ class TagPersonRow extends StatelessWidget {
                 const SizedBox(width: 8),
                 TagSecondaryButton(
                   label: l10n.tagProfileButton,
-                  height: 34,
+                  height: 32,
                   onPressed: onOpen,
                 ),
               ],

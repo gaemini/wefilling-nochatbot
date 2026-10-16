@@ -68,7 +68,7 @@ class _TagPreviewSheetState extends State<TagPreviewSheet> {
             children: [
               Row(
                 children: [
-                  const TagHashTile(size: 56, radius: 18),
+                  const TagHashTile(size: 48, radius: 16),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -79,7 +79,7 @@ class _TagPreviewSheetState extends State<TagPreviewSheet> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: tagTextStyle(
-                                context, 21, FontWeight.w800, TagColors.ink)),
+                                context, 18, FontWeight.w800, TagColors.ink)),
                         const SizedBox(height: 4),
                         Text(
                           _failed
@@ -102,7 +102,7 @@ class _TagPreviewSheetState extends State<TagPreviewSheet> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    TagFaces(people: summary.friends, size: 28),
+                    TagFaces(people: summary.friends, size: 24),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(l10n.tagFriendsAlso(summary.friendCount),

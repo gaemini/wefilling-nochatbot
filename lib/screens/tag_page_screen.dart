@@ -332,11 +332,13 @@ class _TagPageScreenState extends State<TagPageScreen> {
             IconButton(
               key: const ValueKey('tag_page_share_link'),
               tooltip: l10n.share,
+              iconSize: 22,
               icon: const Icon(Icons.ios_share_rounded, color: TagColors.ink),
               onPressed: _shareTag,
             ),
             IconButton(
               key: const ValueKey('tag_page_more'),
+              iconSize: 22,
               icon: const Icon(Icons.more_horiz_rounded, color: TagColors.ink),
               onPressed: _openMoreMenu,
             ),
@@ -374,8 +376,8 @@ class _TagPageScreenState extends State<TagPageScreen> {
                             indicatorSize: TabBarIndicatorSize.tab,
                             dividerColor: const Color(0xFFF0F1F3),
                             labelStyle: tagTextStyle(
-                                context, 15, FontWeight.w700, TagColors.ink),
-                            unselectedLabelStyle: tagTextStyle(context, 15,
+                                context, 14, FontWeight.w700, TagColors.ink),
+                            unselectedLabelStyle: tagTextStyle(context, 14,
                                 FontWeight.w600, TagColors.disabledText),
                             tabs: [
                               Tab(
@@ -494,8 +496,8 @@ class _TagPageScreenState extends State<TagPageScreen> {
         children: [
           Row(
             children: [
-              const TagHashTile(size: 72, radius: 24),
-              const SizedBox(width: 16),
+              const TagHashTile(size: 56, radius: 18),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -505,9 +507,9 @@ class _TagPageScreenState extends State<TagPageScreen> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: tagTextStyle(
-                            context, 24, FontWeight.w800, TagColors.ink)),
+                            context, 20, FontWeight.w800, TagColors.ink)),
                     if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -519,11 +521,11 @@ class _TagPageScreenState extends State<TagPageScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Row(
             children: [
               if (summary.friends.isNotEmpty) ...[
-                TagFaces(people: summary.friends, size: 26, max: 3),
+                TagFaces(people: summary.friends, size: 22, max: 3),
                 const SizedBox(width: 8),
               ],
               Expanded(
@@ -538,7 +540,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
@@ -546,6 +548,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
                     ? TagSecondaryButton(
                         key: const ValueKey('tag_page_mine'),
                         label: l10n.tagInMine,
+                        height: 40,
                         background: TagColors.blueSoft,
                         foreground: TagColors.blue,
                         onPressed: _busyMine ? null : _toggleMine,
@@ -553,6 +556,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
                     : TagPrimaryButton(
                         key: const ValueKey('tag_page_add'),
                         label: l10n.tagAddToMine,
+                        height: 40,
                         busy: _busyMine,
                         onPressed: _toggleMine,
                       ),
@@ -563,17 +567,21 @@ class _TagPageScreenState extends State<TagPageScreen> {
                 toggled: summary.notify,
                 label: l10n.tagNotifyLabel,
                 child: SizedBox.square(
-                  dimension: 44,
+                  dimension: 40,
                   child: IconButton(
                     key: const ValueKey('tag_page_bell'),
                     onPressed: _toggleNotify,
                     style: IconButton.styleFrom(
+                      minimumSize: const Size(40, 40),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       backgroundColor: summary.notify
                           ? TagColors.blueSoft
                           : TagColors.secondary,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(10)),
                     ),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
                     icon: Icon(
                       summary.notify
                           ? Icons.notifications_active_rounded

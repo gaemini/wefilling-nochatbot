@@ -8,6 +8,7 @@ import '../models/interest_tag.dart';
 import '../models/social_profile_data.dart';
 import '../providers/auth_provider.dart';
 import '../services/interest_tag_service.dart';
+import '../ui/sheets/tag_create_sheet.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/content_tag_row.dart' show openTagPage;
 import '../ui/widgets/motion_press.dart';
@@ -18,7 +19,8 @@ import 'tag_page_screen.dart' show TagLimitException, updateMyTags;
 
 enum TagExploreFilter { recommended, friends, trending, newest }
 
-/// 태그 둘러보기: 검색 + 필터 알약(추천·친구·뜨는 태그·새 태그) + 필터 설명 + 태그 줄.
+/// 태그 둘러보기: 검색 + [만들기] + 필터 알약(추천·친구·뜨는 태그·새 태그) + 태그 줄.
+/// 줄은 '#이름 · 사람 수 / 한 줄 설명'만, 친구·뜨는·새 태그 필터에서만 이유 한 줄을 더한다.
 class TagExploreScreen extends StatefulWidget {
   const TagExploreScreen({super.key});
 
@@ -38,6 +40,7 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
   bool _loading = false;
   String _query = '';
   List<InterestTag>? _results;
+  bool _exact = false;
   final _busy = <String>{};
 
   @override
@@ -80,14 +83,40 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
       try {
         final result = await _service.search(_query);
         if (mounted && generation == _generation) {
-          setState(() => _results = result.items);
+          setState(() {
+            _results = result.items;
+            _exact = result.exact || result.normalized == null;
+          });
         }
       } catch (_) {
         if (mounted && generation == _generation) {
-          setState(() => _results = const []);
+          setState(() {
+            _results = const [];
+            _exact = true;
+          });
         }
       }
     });
+  }
+
+  /// 새 태그: 이름 + 한 줄 설명 시트 → 내 태그에 추가 → 태그 페이지.
+  Future<void> _create([String name = '']) async {
+    final l10n = AppLocalizations.of(context)!;
+    final id = await showTagCreateSheet(context, initialName: name);
+    if (id == null || !mounted) return;
+    _controller.clear();
+    _onQuery('');
+    _lists.remove(TagExploreFilter.newest);
+    AppSnackBar.show(context,
+        message: l10n.tagCreated(_service.labelFor(
+            id, Localizations.localeOf(context).languageCode)),
+        type: AppSnackBarType.success);
+    try {
+      await updateMyTags(context, add: id);
+    } catch (_) {
+      // 8개가 찼어도 태그 페이지에서 직접 추가할 수 있다.
+    }
+    if (mounted) openTagPage(context, id);
   }
 
   Future<void> _add(String tagId) async {
@@ -122,50 +151,23 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
         TagExploreFilter.newest => l10n.tagExploreNew,
       };
 
-  String _caption(AppLocalizations l10n, List<String> mine) =>
-      switch (_filter) {
-        TagExploreFilter.recommended => mine.isEmpty
-            ? l10n.tagExploreCaptionPopular
-            : l10n.tagExploreCaptionRecommended,
-        TagExploreFilter.friends => l10n.tagExploreCaptionFriends,
-        TagExploreFilter.trending => l10n.tagExploreCaptionTrending,
-        TagExploreFilter.newest => l10n.tagExploreCaptionNew,
-      };
-
-  /// 줄 보조 문구: '125명 · 친구 jaemini, sora_k' / '19명 · 이번 주 +9' / '3명 · #사진과 함께'.
-  String _subtitle(AppLocalizations l10n, ExploreTagItem item) {
-    final people = l10n.tagHolders(item.tag.holderCount);
-    final count = l10n.tagCountPeople(item.tag.holderCount);
-    final language = Localizations.localeOf(context).languageCode;
+  /// 필터가 고른 이유. 추천은 이유 없이 설명만 보인다.
+  String? _reason(AppLocalizations l10n, ExploreTagItem item) {
     switch (item.reasonType) {
       case 'friends':
         return item.friendNames.isEmpty
-            ? people
-            : '$count · ${l10n.tagReasonFriends(item.friendNames.join(', '))}';
+            ? null
+            : l10n.tagReasonFriends(item.friendNames.join(', '));
       case 'trending':
-        return '$count · ${l10n.tagReasonWeek(item.delta)}';
-      case 'with':
-        final withTag = item.withTag;
-        if (withTag == null) return people;
-        final label = '#${_service.labelFor(withTag, language)}';
-        return '$count · ${_withParticle(l10n.tagReasonWith(label), label, language)}';
+        return item.delta > 0 ? l10n.tagReasonWeek(item.delta) : null;
       case 'new':
         final created =
             DateTime.fromMillisecondsSinceEpoch(item.createdAtMillis);
         final days = DateTime.now().difference(created).inDays;
-        return '$count · ${days <= 0 ? l10n.tagReasonToday : l10n.tagReasonDaysAgo(days)}';
+        return days <= 0 ? l10n.tagReasonToday : l10n.tagReasonDaysAgo(days);
       default:
-        return [people, if (item.tag.official) l10n.tagOfficial].join(' · ');
+        return null;
     }
-  }
-
-  /// 한국어 '와/과': 받침이 있으면 '과'.
-  static String _withParticle(String text, String label, String language) {
-    if (language != 'ko' || label.isEmpty) return text;
-    final last = label.codeUnitAt(label.length - 1);
-    final hasBatchim =
-        last >= 0xAC00 && last <= 0xD7A3 && (last - 0xAC00) % 28 != 0;
-    return hasBatchim ? text.replaceFirst('와 함께', '과 함께') : text;
   }
 
   @override
@@ -191,7 +193,7 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
           leading: const BackButton(color: TagColors.ink),
           titleSpacing: 0,
           title: Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.only(right: 4),
             child: TagSearchField(
               key: const ValueKey('tag_explore_search'),
               controller: _controller,
@@ -204,6 +206,22 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
               },
             ),
           ),
+          actions: [
+            TextButton(
+              key: const ValueKey('tag_explore_create'),
+              onPressed: () => _create(),
+              style: TextButton.styleFrom(
+                foregroundColor: TagColors.blue,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 40),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(l10n.tagCreateAction,
+                  style: tagTextStyle(
+                      context, 15, FontWeight.w700, TagColors.blue)),
+            ),
+            const SizedBox(width: 6),
+          ],
         ),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,13 +254,7 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-                child: Text(_caption(l10n, mine),
-                    key: const ValueKey('tag_explore_caption'),
-                    style: tagTextStyle(
-                        context, 13, FontWeight.w500, TagColors.muted)),
-              ),
+              const SizedBox(height: 4),
             ],
             Expanded(
               child: loading
@@ -266,12 +278,23 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
               ExploreTagItem(tag: tag)
           ]
         : items;
+    final createName = _query.replaceFirst(RegExp(r'^#+'), '');
+    final createRow = searching && _results != null && !_exact
+        ? TagCreateRow(
+            key: const ValueKey('tag_explore_create_row'),
+            label: l10n.tagCreate(createName),
+            hint: l10n.tagCreateRowHint,
+            busy: false,
+            onTap: () => _create(createName),
+          )
+        : null;
     if (rows.isEmpty) {
       final failed = !searching && _failed.contains(_filter);
       return Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         child: Column(
           children: [
+            if (createRow != null) ...[createRow, const SizedBox(height: 24)],
             Text(
               failed
                   ? l10n.tagLoadFailed
@@ -295,13 +318,14 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
       key: ValueKey('tag_explore_list_${searching ? 'search' : _filter.name}'),
       padding: EdgeInsets.fromLTRB(
           20, 4, 20, 24 + MediaQuery.viewPaddingOf(context).bottom),
-      itemCount: rows.length,
+      itemCount: rows.length + (createRow == null ? 0 : 1),
       itemBuilder: (context, index) {
+        if (index == rows.length) return createRow!;
         final item = rows[index];
         return TagListRow(
           key: ValueKey('tag_explore_${item.tag.id}'),
           tag: item.tag,
-          subtitle: _subtitle(l10n, item),
+          reason: _reason(l10n, item),
           added: mine.contains(item.tag.id),
           busy: _busy.contains(item.tag.id),
           onTap: () => openTagPage(context, item.tag.id),

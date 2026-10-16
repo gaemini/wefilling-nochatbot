@@ -22,8 +22,11 @@ Map<String, Object?> _tag(String id, String name,
       'meetupCount': 1,
     };
 
-final _running = _tag('running', 'Running',
-    holders: 12, labels: {'ko': '러닝', 'en': 'Running', 'zh': '跑步'});
+final _running = {
+  ..._tag('running', 'Running',
+      holders: 12, labels: {'ko': '러닝', 'en': 'Running', 'zh': '跑步'}),
+  'descriptions': {'ko': '같이 뛰고 기록을 나눠요', 'en': 'Run together'},
+};
 final _kpop = _tag('kpop', 'K-POP', holders: 5);
 final _long =
     _tag('verylongtagname_abcd', '아주아주긴태그이름이라서줄을넘길수도', holders: 123456);
@@ -221,8 +224,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
     await tester.pump();
     expect(find.byKey(const ValueKey('tag_result_running')), findsOneWidget);
-    expect(find.text('${l10n.tagHolders(12)} · ${l10n.tagOfficial}'),
-        findsOneWidget);
+    // 줄: '#러닝 12명' + 한 줄 설명.
+    expect(find.text(l10n.tagCountPeople(12)), findsWidgets);
+    expect(find.text('같이 뛰고 기록을 나눠요'), findsOneWidget);
     await tester.tap(find.descendant(
         of: find.byKey(const ValueKey('tag_result_running')),
         matching: find.text(l10n.tagAdd)));
@@ -237,7 +241,15 @@ void main() {
     expect(find.text(l10n.tagCreate('boardgame')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('tag_picker_create')));
     await tester.pumpAndSettle();
+    // 이름 + 한 줄 설명 시트.
+    expect(find.text(l10n.tagCreateTitle), findsOneWidget);
+    await tester.enterText(
+        find.byKey(const ValueKey('tag_create_description')), '주말 보드게임');
+    await tester.tap(find.byKey(const ValueKey('tag_create_submit')));
+    await tester.pumpAndSettle();
     expect(server.created, ['boardgame']);
+    expect(server.calls.lastWhere((c) => c.$1 == 'createTag').$2,
+        {'name': 'boardgame', 'description': '주말 보드게임'});
     expect(find.text(l10n.tagSelectedCount(4, 8)), findsOneWidget);
 
     // 8개를 넘기지 않는다.
@@ -248,6 +260,11 @@ void main() {
       await tester.pump();
       await tester.tap(find.byKey(const ValueKey('tag_picker_create')));
       await tester.pumpAndSettle();
+      final submit = find.byKey(const ValueKey('tag_create_submit'));
+      if (submit.evaluate().isNotEmpty) {
+        await tester.tap(submit);
+        await tester.pumpAndSettle();
+      }
     }
     expect(find.text(l10n.tagSelectedCount(8, 8)), findsOneWidget);
     expect(server.created, ['boardgame', 'aa', 'bb', 'cc', 'dd']);
@@ -271,6 +288,7 @@ void main() {
         AppLocalizations.of(tester.element(find.byType(TagPageScreen)))!;
     expect(find.text('#러닝'), findsOneWidget);
     expect(find.text('Running · 跑步 · ${l10n.tagOfficial}'), findsOneWidget);
+    expect(find.text('같이 뛰고 기록을 나눠요'), findsOneWidget);
     expect(find.byKey(const ValueKey('tag_page_count')), findsOneWidget);
     expect(find.byKey(const ValueKey('tag_page_share_link')), findsOneWidget);
     expect(find.text(l10n.tagFriendsSection), findsOneWidget);
@@ -287,6 +305,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(l10n.tagMenuCopyLink), findsOneWidget);
     expect(find.text(l10n.tagMenuReport), findsOneWidget);
+    // 만든 사람이 아니면 설명 수정이 없다.
+    expect(find.byKey(const ValueKey('tag_menu_description')), findsNothing);
   });
 
   // 오버플로우 없음: 폭 320/375/430 × 배율 1.0/1.3/2.0 × ko·en·zh.

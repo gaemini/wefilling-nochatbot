@@ -3,10 +3,10 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getMyMutualFeels = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.onDMMessageDeletedStorageCleanup = exports.reconcileDMUnreadTotalSecure = exports.onDMReactionWritten = exports.onDMReceiptCleanupRequested = exports.leaveDMConversationSecure = exports.markDMConversationReadBoundedSecure = exports.markDMConversationReadSecure = exports.searchMeetupsSecure = exports.searchPostsSecure = exports.onMeetupSearchSourceWritten = exports.onPostSearchSourceWritten = exports.onPostUpdatedStorageCleanup = exports.onPostDeletedStorageCleanup = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyOrganizationProfile = exports.searchOrganizationsSecure = exports.previewOrganizationInvite = exports.prepareOrganizationPasswordInvite = exports.onOrganizationManagerAuthDeleted = exports.getMyOrganizationAccess = exports.acceptOrganizationInvite = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = exports.validateSnackChatMentions = exports.getSnackChatMentionCandidates = exports.getSnackChatMessageContext = exports.querySnackChatMessages = void 0;
-exports.ensureRegistrationProgress = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.reconcileNotificationUnreadTotalSecure = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.respondTogetherProposal = exports.proposeTogetherSnackChat = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.sendSnackChatTextMessagesSecure = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onSnackChatRoomDeletedCascade = exports.onMeetupParticipantDeletedSnackChatCleanup = exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.summarizeSnackChatUnread = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.leaveMeetupParticipationSecure = exports.kickMeetupParticipantSecure = exports.joinPostSnackChatSecure = exports.createPostSnackChatSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.searchSnackChatInviteUsers = exports.searchSnackChatInviteUserById = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.deleteSnapshotFeedComment = exports.createSnapshotFeedComment = exports.sendSnapshotComment = void 0;
-exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.onDeletedAuthUserFriendshipCleanup = exports.onFriendshipWrittenReconcileCounts = exports.getPublicProfileReviewPreview = exports.getProfileFriendNetwork = exports.searchSocialUsersByInterest = exports.searchSocialUsers = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.resetPasswordWithCode = exports.requestPasswordResetCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.resolveMyReadableJoinedMeetupIds = exports.onPrivatePostCreated = exports.onUserRegistrationCompleted = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.finalizePendingRegistration = void 0;
-exports.onSnackChatMemberReadSyncPush = exports.onConversationReadSyncPush = exports.onNotificationDeletedReadSyncPush = exports.onNotificationReadSyncPush = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupReviewProfilePostDeletedRestore = exports.onMeetupReviewCreatedEnsureProfile = exports.reconcileMyAcceptedReviewProfiles = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = void 0;
+exports.getMyTagNewCounts = exports.computeTagTrends = exports.estimateTagAudience = exports.getTagAudienceFeed = exports.getTagSuggestions = exports.setTagPrefs = exports.getTagSummary = exports.listTagHolders = exports.setProfileTags = exports.createTag = exports.searchTags = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.onDMMessageDeletedStorageCleanup = exports.reconcileDMUnreadTotalSecure = exports.onDMReactionWritten = exports.onDMReceiptCleanupRequested = exports.leaveDMConversationSecure = exports.markDMConversationReadBoundedSecure = exports.markDMConversationReadSecure = exports.searchMeetupsSecure = exports.searchPostsSecure = exports.onMeetupSearchSourceWritten = exports.onPostSearchSourceWritten = exports.onPostUpdatedStorageCleanup = exports.onPostDeletedStorageCleanup = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyOrganizationProfile = exports.searchOrganizationsSecure = exports.previewOrganizationInvite = exports.prepareOrganizationPasswordInvite = exports.onOrganizationManagerAuthDeleted = exports.getMyOrganizationAccess = exports.acceptOrganizationInvite = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = exports.validateSnackChatMentions = exports.getSnackChatMentionCandidates = exports.getSnackChatMessageContext = exports.querySnackChatMessages = void 0;
+exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.sendSnackChatTextMessagesSecure = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onSnackChatRoomDeletedCascade = exports.onMeetupParticipantDeletedSnackChatCleanup = exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.summarizeSnackChatUnread = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.leaveMeetupParticipationSecure = exports.kickMeetupParticipantSecure = exports.joinPostSnackChatSecure = exports.createPostSnackChatSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.searchSnackChatInviteUsers = exports.searchSnackChatInviteUserById = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.deleteSnapshotFeedComment = exports.createSnapshotFeedComment = exports.sendSnapshotComment = exports.getMyMutualFeels = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.updateTagDescription = exports.exploreTags = void 0;
+exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.onDeletedAuthUserFriendshipCleanup = exports.onFriendshipWrittenReconcileCounts = exports.getPublicProfileReviewPreview = exports.getProfileFriendNetwork = exports.searchSocialUsersByInterest = exports.searchSocialUsers = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.resetPasswordWithCode = exports.requestPasswordResetCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.resolveMyReadableJoinedMeetupIds = exports.onPrivatePostCreated = exports.onUserRegistrationCompleted = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.finalizePendingRegistration = exports.ensureRegistrationProgress = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.reconcileNotificationUnreadTotalSecure = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.respondTogetherProposal = exports.proposeTogetherSnackChat = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = void 0;
+exports.onSnackChatMemberReadSyncPush = exports.onConversationReadSyncPush = exports.onNotificationDeletedReadSyncPush = exports.onNotificationReadSyncPush = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupReviewProfilePostDeletedRestore = exports.onMeetupReviewCreatedEnsureProfile = exports.reconcileMyAcceptedReviewProfiles = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = void 0;
 exports.notificationThreadIdFor = notificationThreadIdFor;
 const functions = require("firebase-functions");
 const backend_1 = require("./backend");
@@ -76,6 +76,21 @@ Object.defineProperty(exports, "reconcileMyHanyangVerificationStatus", { enumera
 Object.defineProperty(exports, "backfillHanyangVerificationStates", { enumerable: true, get: function () { return hanyang_verification_2.backfillHanyangVerificationStates; } });
 var content_translation_1 = require("./content_translation");
 Object.defineProperty(exports, "translateContentBatch", { enumerable: true, get: function () { return content_translation_1.translateContentBatch; } });
+var interest_tags_1 = require("./interest_tags");
+Object.defineProperty(exports, "searchTags", { enumerable: true, get: function () { return interest_tags_1.searchTags; } });
+Object.defineProperty(exports, "createTag", { enumerable: true, get: function () { return interest_tags_1.createTag; } });
+Object.defineProperty(exports, "setProfileTags", { enumerable: true, get: function () { return interest_tags_1.setProfileTags; } });
+Object.defineProperty(exports, "listTagHolders", { enumerable: true, get: function () { return interest_tags_1.listTagHolders; } });
+Object.defineProperty(exports, "getTagSummary", { enumerable: true, get: function () { return interest_tags_1.getTagSummary; } });
+Object.defineProperty(exports, "setTagPrefs", { enumerable: true, get: function () { return interest_tags_1.setTagPrefs; } });
+Object.defineProperty(exports, "getTagSuggestions", { enumerable: true, get: function () { return interest_tags_1.getTagSuggestions; } });
+Object.defineProperty(exports, "getTagAudienceFeed", { enumerable: true, get: function () { return interest_tags_1.getTagAudienceFeed; } });
+Object.defineProperty(exports, "estimateTagAudience", { enumerable: true, get: function () { return interest_tags_1.estimateTagAudience; } });
+Object.defineProperty(exports, "computeTagTrends", { enumerable: true, get: function () { return interest_tags_1.computeTagTrends; } });
+Object.defineProperty(exports, "getMyTagNewCounts", { enumerable: true, get: function () { return interest_tags_1.getMyTagNewCounts; } });
+Object.defineProperty(exports, "exploreTags", { enumerable: true, get: function () { return interest_tags_1.exploreTags; } });
+Object.defineProperty(exports, "updateTagDescription", { enumerable: true, get: function () { return interest_tags_1.updateTagDescription; } });
+const interest_tags_2 = require("./interest_tags");
 const read_sync_policy_1 = require("./read_sync_policy");
 var snapshot_1 = require("./snapshot");
 Object.defineProperty(exports, "getSnapshotServerTime", { enumerable: true, get: function () { return snapshot_1.getSnapshotServerTime; } });
@@ -532,6 +547,12 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = (0, backend_1.triggers)()
             // Search-index repair must not prevent author/profile propagation.
             console.error(`onUserProfileUpdatedPropagateAuthorInfo: nicknameSearchTokens repair failed userId=${userId}:`, error);
         }
+    }
+    try {
+        await (0, interest_tags_2.syncLegacyInterestsToTags)(change.after.ref, before, after);
+    }
+    catch (error) {
+        console.error(`onUserProfileUpdatedPropagateAuthorInfo: interest tag sync failed userId=${userId}:`, error);
     }
     // 관심 필드 변화가 없으면 스킵
     if (!nicknameChanged && !photoChanged && !nationalityChanged) {
@@ -1410,7 +1431,7 @@ exports.finalizePendingRegistration = (0, backend_1.callables)()
             }, { merge: true });
         }
         const signupLanguage = String(existing.signupLanguage || profile.languageCode || 'en');
-        const defaults = Object.assign(Object.assign({ uid, email: String(existing.email || authUser.email || ''), photoURL: String(existing.photoURL || ''), photoPath: String(existing.photoPath || ''), photoAccessToken: String(existing.photoAccessToken || ''), postCount: Number(existing.postCount || 0), friendsCount: Number((_b = (_a = existing.friendsCount) !== null && _a !== void 0 ? _a : existing.friendCount) !== null && _b !== void 0 ? _b : 0), reviewCount: Number(existing.reviewCount || 0), preferredLanguage: String(existing.preferredLanguage || signupLanguage), signupLanguage, signupProvider: String(existing.signupProvider || signupProvider), termsAccepted: existing.termsAccepted !== false, termsAcceptedAt: existing.termsAcceptedAt || now, createdAt: existing.createdAt || now, updatedAt: now, lastLogin: now }, completedProfileFields(profile)), { pendingHanyangEmail: admin.firestore.FieldValue.delete(), pendingHanyangVerificationLinked: admin.firestore.FieldValue.delete(), pendingHanyangVerifiedAt: admin.firestore.FieldValue.delete() });
+        const defaults = Object.assign(Object.assign(Object.assign({ uid, email: String(existing.email || authUser.email || ''), photoURL: String(existing.photoURL || ''), photoPath: String(existing.photoPath || ''), photoAccessToken: String(existing.photoAccessToken || ''), postCount: Number(existing.postCount || 0), friendsCount: Number((_b = (_a = existing.friendsCount) !== null && _a !== void 0 ? _a : existing.friendCount) !== null && _b !== void 0 ? _b : 0), reviewCount: Number(existing.reviewCount || 0), preferredLanguage: String(existing.preferredLanguage || signupLanguage), signupLanguage, signupProvider: String(existing.signupProvider || signupProvider), termsAccepted: existing.termsAccepted !== false, termsAcceptedAt: existing.termsAcceptedAt || now, createdAt: existing.createdAt || now, updatedAt: now, lastLogin: now }, completedProfileFields(profile)), (0, interest_tags_2.signupProfileTagFields)(tx, uid, existing, profile.interests)), { pendingHanyangEmail: admin.firestore.FieldValue.delete(), pendingHanyangVerificationLinked: admin.firestore.FieldValue.delete(), pendingHanyangVerifiedAt: admin.firestore.FieldValue.delete() });
         if (pendingHanyangEmail) {
             defaults.hanyangEmail = pendingHanyangEmail;
             defaults.hanyangEmailVerified = true;
@@ -1608,7 +1629,7 @@ exports.finalizeHanyangEmailVerification = (0, backend_1.callables)()
                 schemaFill.updatedAt = admin.firestore.FieldValue.serverTimestamp();
             if (missing('lastLogin'))
                 schemaFill.lastLogin = admin.firestore.FieldValue.serverTimestamp();
-            tx.set(userRef, Object.assign(Object.assign(Object.assign({}, schemaFill), completedProfileFields(profile)), { hanyangEmail: email, hanyangEmailVerified: true, hanyangEmailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(), schoolVerificationMethod: 'hanyang_email_code', schoolVerificationSchemaVersion: hanyang_verification_1.HANYANG_VERIFICATION_SCHEMA_VERSION, schoolVerificationUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), signupLanguage: 'ko', verificationMethod: 'hanyang_email_code', updatedAt: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
+            tx.set(userRef, Object.assign(Object.assign(Object.assign(Object.assign({}, schemaFill), completedProfileFields(profile)), (0, interest_tags_2.signupProfileTagFields)(tx, uid, existing, profile.interests)), { hanyangEmail: email, hanyangEmailVerified: true, hanyangEmailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(), schoolVerificationMethod: 'hanyang_email_code', schoolVerificationSchemaVersion: hanyang_verification_1.HANYANG_VERIFICATION_SCHEMA_VERSION, schoolVerificationUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), signupLanguage: 'ko', verificationMethod: 'hanyang_email_code', updatedAt: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
             tx.delete(verificationRef);
             return { success: true };
         });
@@ -1826,7 +1847,7 @@ exports.finalizeEnglishSocialSignup = (0, backend_1.callables)()
                 }
             }
             nicknameReservation.apply();
-            tx.set(userRef, Object.assign(Object.assign(Object.assign({}, schemaFill), completedProfileFields(profile)), { uid, email: authEmail, signupLanguage, signupProvider: providerId, preferredLanguage: signupLanguage, preferredLanguageUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), lastLogin: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
+            tx.set(userRef, Object.assign(Object.assign(Object.assign(Object.assign({}, schemaFill), completedProfileFields(profile)), (0, interest_tags_2.signupProfileTagFields)(tx, uid, existing, profile.interests)), { uid, email: authEmail, signupLanguage, signupProvider: providerId, preferredLanguage: signupLanguage, preferredLanguageUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), lastLogin: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
             return { success: true, provider: providerId };
         });
         return result;
@@ -2249,6 +2270,72 @@ async function commitNotificationCreates(notifications) {
     }
     return created;
 }
+/**
+ * #태그 알림: 태그 알림(종)을 켜고 그 태그를 단 사람에게, 글·모임을 볼 수 있을 때만.
+ * 태그별 하루 3건까지, 문구는 '#러닝에 새 글 n개'(오늘 n번째).
+ */
+async function notifyTagFollowers(kind, contentId, data) {
+    var _a;
+    const tagIds = toUniqueStringArray(data.tagIds).slice(0, 3);
+    const authorId = normalizeUidLoose(data.userId);
+    if (tagIds.length === 0 || !authorId || data.isHidden === true)
+        return 0;
+    const candidates = await (0, interest_tags_2.tagNotifyCandidates)(tagIds);
+    candidates.delete(authorId);
+    if (candidates.size === 0)
+        return 0;
+    const userDocs = await db.getAll(...Array.from(candidates.keys()).map((uid) => db.collection(firestore_paths_1.COL.users).doc(uid)));
+    const eligible = new Map();
+    for (const doc of userDocs) {
+        if (!doc.exists || !isActiveSocialProfile(doc.data(), doc.id))
+            continue;
+        const held = toUniqueStringArray(doc.get('interestTagIds'));
+        const tags = ((_a = candidates.get(doc.id)) !== null && _a !== void 0 ? _a : []).filter((tagId) => held.includes(tagId));
+        if (tags.length === 0 || !(0, interest_tags_2.contentAudienceIncludes)(doc.id, data))
+            continue;
+        if (data.visibility === 'tag' &&
+            !toUniqueStringArray(data.audienceTagIds).some((tagId) => held.includes(tagId)))
+            continue;
+        eligible.set(doc.id, {
+            tags,
+            language: String(doc.get('languageCode') || doc.get('preferredLanguage') || 'en'),
+        });
+    }
+    let targets = await filterTargetUserIdsByBlockRelationship(authorId, Array.from(eligible.keys()));
+    targets = await filterAudienceByNotificationSettings(targets, kind === 'post' ? 'post_interactions' : 'meetup_alerts', kind === 'post' ? ['post_private'] : ['meetup_alert']);
+    if (targets.length === 0)
+        return 0;
+    const tagDocs = await db.getAll(...tagIds.map((tagId) => db.collection(firestore_paths_1.COL.tags).doc(tagId)));
+    const labelOf = (tagId, language) => {
+        var _a;
+        const doc = tagDocs.find((item) => item.id === tagId);
+        const labels = ((_a = doc === null || doc === void 0 ? void 0 : doc.get('labels')) !== null && _a !== void 0 ? _a : {});
+        const lang = language.startsWith('ko') ? 'ko' : language.startsWith('zh') ? 'zh' : 'en';
+        return labels[lang] || labels.en || String((doc === null || doc === void 0 ? void 0 : doc.get('displayName')) || tagId);
+    };
+    const day = new Date().toISOString().slice(0, 10);
+    const type = kind === 'post' ? 'tag_post' : 'tag_meetup';
+    const notifications = [];
+    for (const uid of targets) {
+        const target = eligible.get(uid);
+        if (!target)
+            continue;
+        // 한 글에 태그가 여러 개여도 알림은 한 번, 오늘 한도가 남은 첫 태그로.
+        for (const tagId of target.tags) {
+            const count = await (0, interest_tags_2.takeTagNotifySlot)(uid, tagId, day);
+            if (count == null)
+                continue;
+            const label = labelOf(tagId, target.language);
+            const copy = (0, interest_tags_2.tagNotificationCopy)(target.language, kind, label, count);
+            notifications.push({
+                reference: db.collection('notifications').doc(audienceNotificationId(type, contentId, uid)),
+                data: Object.assign(Object.assign({ userId: uid, title: copy.title, message: copy.message, type }, (kind === 'post' ? { postId: contentId } : { meetupId: contentId })), { actorId: authorId, data: Object.assign(Object.assign({}, (kind === 'post' ? { postId: contentId } : { meetupId: contentId })), { tagId, tagLabel: label, count }), createdAt: admin.firestore.FieldValue.serverTimestamp(), isRead: false }),
+            });
+            break;
+        }
+    }
+    return commitNotificationCreates(notifications);
+}
 // 포스트 생성 시 생성 당시 공개 범위 안에 있는 친구에게만 알림 생성.
 // public은 생성 시점 친구 snapshot, category는 선택 그룹의 frozen audience를 쓴다.
 exports.onPrivatePostCreated = (0, backend_1.triggers)().firestore
@@ -2258,12 +2345,18 @@ exports.onPrivatePostCreated = (0, backend_1.triggers)().firestore
     try {
         const post = snapshot.data();
         const postId = context.params.postId;
+        try {
+            await notifyTagFollowers('post', postId, post);
+        }
+        catch (error) {
+            console.error(`tag notification failed postId=${postId}:`, error);
+        }
         const visibility = post.visibility || 'public';
         const authorId = post.userId;
         const title = post.title || '';
         const content = post.content || '';
         const preview = (typeof content === 'string' ? content : '').slice(0, 80);
-        if (visibility !== 'public' && visibility !== 'category') {
+        if (visibility !== 'public' && visibility !== 'category' && visibility !== 'friends') {
             runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onPrivatePostCreated: 지원하지 않는 공개범위 스킵 (postId=${postId})`);
             return null;
         }
@@ -2275,7 +2368,7 @@ exports.onPrivatePostCreated = (0, backend_1.triggers)().firestore
         }
         let targetUserIds = toUniqueStringArray(post.notificationAudienceUserIdsFrozen).filter((uid) => uid !== authorId);
         if (targetUserIds.length === 0) {
-            targetUserIds = visibility === 'category'
+            targetUserIds = visibility !== 'public'
                 ? toUniqueStringArray(toInt(post.visibilitySchemaVersion) >= 2
                     ? post.audienceUserIdsFrozen
                     : post.allowedUserIds).filter((uid) => uid !== authorId)
@@ -2431,10 +2524,15 @@ exports.resolveMyReadableJoinedMeetupIds = (0, backend_1.callables)()
     }
     const readableIds = new Set();
     const orphanParticipantRefs = [];
+    const hasTagMeetup = Array.from(meetupsById.values())
+        .some((doc) => doc.exists && doc.get('visibility') === 'tag');
+    const myTags = hasTagMeetup ? await (0, interest_tags_2.viewerTagIds)(userId) : [];
     participants.docs.forEach((participant) => {
         const meetupId = normalizeUidLoose(participant.data().meetupId);
         const meetup = meetupsById.get(meetupId);
-        if ((meetup === null || meetup === void 0 ? void 0 : meetup.exists) && canReadStoredMeetup(userId, (meetup.data() || {}))) {
+        const meetupData = ((meetup === null || meetup === void 0 ? void 0 : meetup.data()) || {});
+        if ((meetup === null || meetup === void 0 ? void 0 : meetup.exists) && (canReadStoredMeetup(userId, meetupData) ||
+            (0, interest_tags_2.tagAudienceAllows)(myTags, meetupData))) {
             readableIds.add(meetupId);
         }
         else if (!(meetup === null || meetup === void 0 ? void 0 : meetup.exists)) {
@@ -2504,7 +2602,9 @@ exports.joinMeetupSecure = (0, backend_1.callables)().https.onCall(async (data, 
         throw new functions.https.HttpsError('permission-denied', '참여할 수 없는 밋업입니다.');
     }
     const resolvedAudience = resolveStoredMeetupAudience(userId, initialData);
-    if (!resolvedAudience.canAccess) {
+    // 태그 공개 모임: 그 태그를 단 사람만 참여할 수 있다.
+    if (!resolvedAudience.canAccess &&
+        !(0, interest_tags_2.tagAudienceAllows)(await (0, interest_tags_2.viewerTagIds)(userId), initialData)) {
         throw new functions.https.HttpsError('permission-denied', '이 밋업의 공개 대상에 포함되어 있지 않습니다.');
     }
     if (meetupHasEnded(initialData)) {
@@ -4357,7 +4457,7 @@ exports.createGeneralEmailSignup = (0, backend_1.callables)()
                 }
             }
             nicknameReservation.apply();
-            transaction.set(userRef, Object.assign(Object.assign(Object.assign({ uid, email: normalizedEmail }, missingSchoolDefaults), completedProfileFields(profile)), { photoURL: String(current.photoURL || ''), photoPath: String(current.photoPath || ''), photoAccessToken: String(current.photoAccessToken || ''), postCount: Number(current.postCount || 0), friendsCount: Number((_b = (_a = current.friendsCount) !== null && _a !== void 0 ? _a : current.friendCount) !== null && _b !== void 0 ? _b : 0), reviewCount: Number(current.reviewCount || 0), preferredLanguage: String(current.preferredLanguage || signupLanguage), signupLanguage, signupProvider: 'password', termsAccepted: true, termsAcceptedAt: current.termsAcceptedAt || now, createdAt: current.createdAt || now, updatedAt: now, lastLogin: now }), { merge: true });
+            transaction.set(userRef, Object.assign(Object.assign(Object.assign(Object.assign({ uid, email: normalizedEmail }, missingSchoolDefaults), completedProfileFields(profile)), (0, interest_tags_2.signupProfileTagFields)(transaction, uid, current, profile.interests)), { photoURL: String(current.photoURL || ''), photoPath: String(current.photoPath || ''), photoAccessToken: String(current.photoAccessToken || ''), postCount: Number(current.postCount || 0), friendsCount: Number((_b = (_a = current.friendsCount) !== null && _a !== void 0 ? _a : current.friendCount) !== null && _b !== void 0 ? _b : 0), reviewCount: Number(current.reviewCount || 0), preferredLanguage: String(current.preferredLanguage || signupLanguage), signupLanguage, signupProvider: 'password', termsAccepted: true, termsAcceptedAt: current.termsAcceptedAt || now, createdAt: current.createdAt || now, updatedAt: now, lastLogin: now }), { merge: true });
             // 응답 유실 시 같은 인증 토큰으로 안전하게 완료 결과를 다시 받을 수
             // 있도록 토큰 만료 시점까지만 작은 완료 영수증을 남긴다. 주기 정리 함수가
             // 기존 expiresAt 기준으로 삭제하므로 영구 데이터나 새 스캐너는 생기지 않는다.
@@ -6671,6 +6771,11 @@ exports.registerFcmToken = (0, backend_1.callables)().https.onCall(async (data, 
     const lang = (_e = normalizeSupportedLang(localeRaw)) !== null && _e !== void 0 ? _e : 'ko';
     const locale = (localeRaw !== null && localeRaw !== void 0 ? localeRaw : '').toString().trim();
     const platform = normalizePlatform(data === null || data === void 0 ? void 0 : data.platform);
+    // 앱 빌드 번호(있을 때만). read_sync 같은 새 푸시를 처리할 수 있는 빌드만
+    // 고르는 데 쓴다. 구버전 앱은 보내지 않으므로 필드가 없다.
+    const appBuildRaw = Number(data === null || data === void 0 ? void 0 : data.appBuild);
+    const appBuild = Number.isFinite(appBuildRaw) && appBuildRaw > 0 ?
+        Math.trunc(appBuildRaw) : 0;
     const tokenRef = db.collection('fcm_tokens').doc(token);
     const userRef = db.collection('users').doc(uid);
     const deviceId = crypto.createHash('sha256').update(token).digest('hex');
@@ -6692,12 +6797,8 @@ exports.registerFcmToken = (0, backend_1.callables)().https.onCall(async (data, 
         }
         const tokenData = tokenSnap.exists ? tokenSnap.data() : {};
         previousOwnerUid = typeof (tokenData === null || tokenData === void 0 ? void 0 : tokenData.userId) === 'string' ? tokenData.userId : '';
-        const updates = {
-            userId: uid,
-            lang,
-            locale,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
+        const updates = Object.assign({ userId: uid, lang,
+            locale, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, (appBuild > 0 ? { appBuild } : {}));
         if (platform) {
             updates.platform = platform;
         }
@@ -7747,6 +7848,12 @@ exports.onMeetupCreated = (0, backend_1.triggers)().firestore
     try {
         const meetupData = snapshot.data();
         const meetupId = context.params.meetupId;
+        try {
+            await notifyTagFollowers('meetup', meetupId, meetupData);
+        }
+        catch (error) {
+            console.error(`tag notification failed meetupId=${meetupId}:`, error);
+        }
         const hostId = meetupData.userId;
         const visibility = meetupData.visibility || 'public';
         const category = meetupData.category || '기타';
@@ -9136,6 +9243,7 @@ void (0, backend_1.triggers)().firestore
 // 출시된 뒤 켠다. 같은 사용자의 2.5초 안 변경은 한 번으로 묶는다.
 // ---------------------------------------------------------------------------
 async function queueReadSync(userId, target) {
+    var _a;
     if (!userId || !(0, read_sync_policy_1.readSyncEnabled)(process.env))
         return;
     const ref = db.collection('read_sync_state').doc(userId);
@@ -9167,7 +9275,11 @@ async function queueReadSync(userId, target) {
         return;
     const registered = await db.collection('fcm_tokens')
         .where('userId', '==', userId).limit(20).get();
-    const tokens = await filterPushTokensOwnedByUser(userId, registered.docs.map((doc) => doc.id));
+    // READ_SYNC_MIN_BUILD가 있으면 그 빌드 이상 토큰에만 보낸다(구버전 보호).
+    const minBuild = Number((_a = process.env.READ_SYNC_MIN_BUILD) !== null && _a !== void 0 ? _a : 0) || 0;
+    const tokens = await filterPushTokensOwnedByUser(userId, registered.docs
+        .filter((doc) => { var _a; return minBuild <= 0 || Number((_a = doc.get('appBuild')) !== null && _a !== void 0 ? _a : 0) >= minBuild; })
+        .map((doc) => doc.id));
     if (tokens.length === 0)
         return;
     let badge = null;

@@ -90,50 +90,23 @@ class TagSectionTitle extends StatelessWidget {
   }
 }
 
-/// 44 회색 원 + '#'(검정). 둘러보기·검색 결과 줄의 머리.
-class TagRowIcon extends StatelessWidget {
-  const TagRowIcon({super.key, this.size = 44});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF1F3F5),
-        shape: BoxShape.circle,
-      ),
-      child: Text(
-        '#',
-        style: TextStyle(
-          fontFamily: 'Inter',
-          fontSize: size * .42,
-          fontWeight: FontWeight.w800,
-          color: TagColors.ink,
-          height: 1,
-        ),
-      ),
-    );
-  }
-}
-
-/// 태그 한 줄: 원 # + '#이름'(15/700) + 보조(13) + 오른쪽 [+ 추가]/[✓ 추가됨].
+/// 태그 한 줄: '#이름 · 24명'(15/700 + 13) / 한 줄 설명 / 필터 이유(파랑, 있을 때만)
+/// + 오른쪽 [추가]/[추가됨]. 설명이 없으면 이름과 사람 수만.
 class TagListRow extends StatelessWidget {
   const TagListRow({
     super.key,
     required this.tag,
-    required this.subtitle,
     required this.added,
     required this.onAction,
+    this.reason,
     this.onTap,
     this.busy = false,
   });
 
   final InterestTag tag;
-  final String subtitle;
+
+  /// 왜 이 줄이 보이는지(친구 jaemini · 이번 주 +9 · 2일 전 생김).
+  final String? reason;
   final bool added;
   final VoidCallback onAction;
   final VoidCallback? onTap;
@@ -141,34 +114,59 @@ class TagListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final description = tag.descriptionOf(context);
     return InkWell(
       onTap: onTap ?? onAction,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 9),
+        padding: const EdgeInsets.symmetric(vertical: 11),
         child: Row(
           children: [
-            const TagRowIcon(size: 40),
-            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('#${tag.label(context)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tagTextStyle(
-                          context, 15, FontWeight.w700, TagColors.ink)),
-                  const SizedBox(height: 3),
-                  Text(subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tagTextStyle(
-                          context, 13, FontWeight.w500, TagColors.muted)),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Flexible(
+                        child: Text('#${tag.label(context)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tagTextStyle(
+                                context, 15, FontWeight.w700, TagColors.ink)),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(l10n.tagCountPeople(tag.holderCount),
+                          key: ValueKey('tag_row_count_${tag.id}'),
+                          maxLines: 1,
+                          style: tagTextStyle(
+                              context, 13, FontWeight.w500, TagColors.muted)),
+                    ],
+                  ),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(description,
+                        key: ValueKey('tag_row_description_${tag.id}'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: tagTextStyle(context, 13.5, FontWeight.w400,
+                            const Color(0xFF4B5563))),
+                  ],
+                  if (reason != null && reason!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(reason!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tagTextStyle(
+                            context, 12.5, FontWeight.w600, TagColors.blue)),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             TagRowActionButton(
               key: ValueKey('tag_row_add_${tag.id}'),
               added: added,
@@ -189,9 +187,13 @@ class TagCreateRow extends StatelessWidget {
     required this.label,
     required this.busy,
     required this.onTap,
+    this.hint,
   });
 
   final String label;
+
+  /// 아래 회색 한 줄(예: '한 줄 설명을 붙여 만들어요').
+  final String? hint;
   final bool busy;
   final VoidCallback onTap;
 
@@ -200,32 +202,47 @@ class TagCreateRow extends StatelessWidget {
     return InkWell(
       onTap: busy ? null : onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 9),
+        padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 36,
+              height: 36,
               decoration: const BoxDecoration(
                 color: TagColors.blue,
                 shape: BoxShape.circle,
               ),
               child: busy
                   ? const Padding(
-                      padding: EdgeInsets.all(13),
+                      padding: EdgeInsets.all(10),
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white),
                     )
-                  : const Icon(Icons.add_rounded, color: Colors.white),
+                  : const Icon(Icons.add_rounded,
+                      color: Colors.white, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    tagTextStyle(context, 15, FontWeight.w700, TagColors.blue),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: tagTextStyle(
+                        context, 15, FontWeight.w700, TagColors.blue),
+                  ),
+                  if (hint != null) ...[
+                    const SizedBox(height: 2),
+                    Text(hint!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: tagTextStyle(
+                            context, 12.5, FontWeight.w500, TagColors.muted)),
+                  ],
+                ],
               ),
             ),
           ],

@@ -10,6 +10,7 @@ import '../ui/sheets/tag_preview_sheet.dart' show TagFaces;
 import '../ui/snackbar/app_snackbar.dart';
 import '../services/profile_link.dart';
 import '../services/report_service.dart';
+import '../ui/sheets/tag_create_sheet.dart' show showTagDescriptionSheet;
 import '../ui/sheets/tag_settings_sheet.dart' show showTagHideSheet;
 import '../ui/widgets/tag_chips.dart';
 import '../ui/widgets/tag_rows.dart';
@@ -181,6 +182,18 @@ class _TagPageScreenState extends State<TagPageScreen> {
         _service.labelFor(widget.tagId, language);
   }
 
+  Future<void> _editDescription() async {
+    final l10n = AppLocalizations.of(context)!;
+    final summary = _summary;
+    if (summary == null) return;
+    final saved = await showTagDescriptionSheet(context, tag: summary.tag);
+    if (saved == null || !mounted) return;
+    setState(() => _summary =
+        summary.copyWith(tag: summary.tag.copyWith(description: saved)));
+    AppSnackBar.show(context,
+        message: l10n.tagDescSaved, type: AppSnackBarType.success);
+  }
+
   Future<void> _shareTag() async {
     final l10n = AppLocalizations.of(context)!;
     final link = ProfileLink.buildTag(widget.tagId);
@@ -226,6 +239,18 @@ class _TagPageScreenState extends State<TagPageScreen> {
                   }
                 },
               ),
+              if (_summary?.canEditDescription == true)
+                _SheetRow(
+                  key: const ValueKey('tag_menu_description'),
+                  icon: Icons.edit_outlined,
+                  label: _summary!.tag.description.isEmpty
+                      ? l10n.tagDescAdd
+                      : l10n.tagDescEdit,
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _editDescription();
+                  },
+                ),
               if (_summary?.mine == true)
                 _SheetRow(
                   key: const ValueKey('tag_menu_hide'),
@@ -448,8 +473,8 @@ class _TagPageScreenState extends State<TagPageScreen> {
           ),
           // 떠 있는 공유 버튼 + 안드로이드 하단 내비게이션 바만큼 비운다.
           SliverToBoxAdapter(
-            child: SizedBox(
-                height: 96 + MediaQuery.viewPaddingOf(context).bottom),
+            child:
+                SizedBox(height: 96 + MediaQuery.viewPaddingOf(context).bottom),
           ),
         ],
       ),
@@ -486,6 +511,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
   Widget _header(AppLocalizations l10n, TagSummary summary) {
     final tag = summary.tag;
     final subtitle = _subtitle(l10n, summary);
+    final description = tag.descriptionOf(context);
     final countText = summary.friendCount > 0
         ? l10n.tagHoldersWithFriends(tag.holderCount, summary.friendCount)
         : l10n.tagHolders(tag.holderCount);
@@ -521,6 +547,26 @@ class _TagPageScreenState extends State<TagPageScreen> {
               ),
             ],
           ),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(description,
+                key: const ValueKey('tag_page_description'),
+                style: tagTextStyle(
+                    context, 14.5, FontWeight.w500, const Color(0xFF374151))),
+          ] else if (summary.canEditDescription) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              key: const ValueKey('tag_page_add_description'),
+              onTap: _editDescription,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text('${l10n.tagDescAdd} ›',
+                    style: tagTextStyle(
+                        context, 13.5, FontWeight.w600, TagColors.blue)),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [

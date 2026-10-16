@@ -3889,4 +3889,45 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get myTagsButtonLabel => '내 #태그';
+
+  @override
+  String get tagCreateTitle => '새 태그 만들기';
+
+  @override
+  String get tagCreateAction => '만들기';
+
+  @override
+  String get tagCreateNameLabel => '태그 이름';
+
+  @override
+  String get tagCreateNameHint => '예: 한강러닝';
+
+  @override
+  String get tagDescLabel => '어떤 태그인가요?';
+
+  @override
+  String get tagDescHint => '예: 주말마다 한강에서 같이 뛰어요';
+
+  @override
+  String get tagCreateNote => '이름은 나중에 바꿀 수 없어요. 설명은 만든 사람이 언제든 고칠 수 있어요.';
+
+  @override
+  String get tagCreateRowHint => '한 줄 설명을 붙여 만들어요';
+
+  @override
+  String get tagDescEdit => '설명 수정';
+
+  @override
+  String get tagDescAdd => '설명 쓰기';
+
+  @override
+  String get tagDescSave => '저장';
+
+  @override
+  String get tagDescSaved => '설명을 저장했어요';
+
+  @override
+  String tagCreated(String tag) {
+    return '#$tag 태그를 만들었어요';
+  }
 }

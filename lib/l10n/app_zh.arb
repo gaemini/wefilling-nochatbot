@@ -1639,5 +1639,18 @@
   "tagAddedShort": "已添加",
   "myTagsEmptyHint": "添加 #标签 后，可在这里看到相关新帖",
   "myTagsAddAction": "添加标签",
-  "myTagsButtonLabel": "我的 #标签"
+  "myTagsButtonLabel": "我的 #标签",
+  "tagCreateTitle": "新建标签",
+  "tagCreateAction": "创建",
+  "tagCreateNameLabel": "标签名称",
+  "tagCreateNameHint": "例如：夜跑",
+  "tagDescLabel": "这个标签是做什么的？",
+  "tagDescHint": "例如：周末一起在汉江边跑步",
+  "tagCreateNote": "名称创建后无法修改，说明可以随时修改。",
+  "tagCreateRowHint": "加一句说明来创建",
+  "tagDescEdit": "编辑说明",
+  "tagDescAdd": "添加说明",
+  "tagDescSave": "保存",
+  "tagDescSaved": "说明已保存",
+  "tagCreated": "已创建 #{tag}"
 }

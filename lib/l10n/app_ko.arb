@@ -1685,5 +1685,19 @@
   "tagAddedShort": "추가됨",
   "myTagsEmptyHint": "#태그를 달면 같은 태그의 새 글을 여기서 볼 수 있어요",
   "myTagsAddAction": "태그 달기",
-  "myTagsButtonLabel": "내 #태그"
+  "myTagsButtonLabel": "내 #태그",
+  "tagCreateTitle": "새 태그 만들기",
+  "tagCreateAction": "만들기",
+  "tagCreateNameLabel": "태그 이름",
+  "tagCreateNameHint": "예: 한강러닝",
+  "tagDescLabel": "어떤 태그인가요?",
+  "tagDescHint": "예: 주말마다 한강에서 같이 뛰어요",
+  "tagCreateNote": "이름은 나중에 바꿀 수 없어요. 설명은 만든 사람이 언제든 고칠 수 있어요.",
+  "tagCreateRowHint": "한 줄 설명을 붙여 만들어요",
+  "tagDescEdit": "설명 수정",
+  "tagDescAdd": "설명 쓰기",
+  "tagDescSave": "저장",
+  "tagDescSaved": "설명을 저장했어요",
+  "tagCreated": "#{tag} 태그를 만들었어요",
+  "@tagCreated": {"placeholders": {"tag": {"type": "String"}}}
 }

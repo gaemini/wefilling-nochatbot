@@ -19,6 +19,7 @@ const {
   OFFICIAL_INTEREST_TAGS,
   OFFICIAL_TAG_IDS,
   MAX_PROFILE_TAGS,
+  normalizeTagDescription,
 } = require('../lib/interest_tags');
 const {SOCIAL_PROFILE_INTEREST_IDS} = require('../lib/user_search_index');
 
@@ -104,5 +105,15 @@ assert.equal(tagAudienceEnabled({TAG_AUDIENCE_ENABLED: 'true'}), true);
 assert.equal(tagAudienceAllows(['a'], {visibility: 'tag', audienceTagIds: ['a', 'b']}), true);
 assert.equal(tagAudienceAllows(['c'], {visibility: 'tag', audienceTagIds: ['a']}), false);
 assert.equal(tagAudienceAllows(['a'], {visibility: 'public', audienceTagIds: ['a']}), false);
+
+// 태그 설명: 공백 정리, 40자, 금칙어 거부, 공식 태그는 모두 3개 언어 설명.
+assert.equal(normalizeTagDescription('  주말마다\n한강에서   같이 뛰어요 '), '주말마다 한강에서 같이 뛰어요');
+assert.equal(normalizeTagDescription(undefined), '');
+assert.equal(Array.from(normalizeTagDescription('가'.repeat(60))).length, 40);
+assert.throws(() => normalizeTagDescription('위필링 운영자입니다'), /tag-blocked/);
+assert.throws(() => normalizeTagDescription(3), /tag-description-invalid/);
+for (const tag of OFFICIAL_INTEREST_TAGS) {
+  assert.ok(tag.description.ko && tag.description.en && tag.description.zh, tag.id);
+}
 
 console.log('interest tag helper tests passed');

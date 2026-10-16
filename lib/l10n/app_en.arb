@@ -1659,5 +1659,18 @@
   "tagAddedShort": "Added",
   "myTagsEmptyHint": "Add #tags to see new posts with them here",
   "myTagsAddAction": "Add tags",
-  "myTagsButtonLabel": "My #tags"
+  "myTagsButtonLabel": "My #tags",
+  "tagCreateTitle": "New tag",
+  "tagCreateAction": "Create",
+  "tagCreateNameLabel": "Tag name",
+  "tagCreateNameHint": "e.g. riverrun",
+  "tagDescLabel": "What's it about?",
+  "tagDescHint": "e.g. Weekend runs along the Han River",
+  "tagCreateNote": "The name can't be changed later. You can edit the description anytime.",
+  "tagCreateRowHint": "Add a one-line description",
+  "tagDescEdit": "Edit description",
+  "tagDescAdd": "Add a description",
+  "tagDescSave": "Save",
+  "tagDescSaved": "Description saved",
+  "tagCreated": "Created #{tag}"
 }

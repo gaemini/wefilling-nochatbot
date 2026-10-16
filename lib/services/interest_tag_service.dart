@@ -64,6 +64,7 @@ class TagSummary {
     this.friends = const [],
     this.hidden = false,
     this.notify = false,
+    this.canEditDescription = false,
   });
 
   final InterestTag tag;
@@ -73,6 +74,9 @@ class TagSummary {
   final List<TagPerson> friends;
   final bool hidden;
   final bool notify;
+
+  /// 만든 사람만(공식 태그 제외) 설명을 고칠 수 있다.
+  final bool canEditDescription;
 
   TagSummary copyWith(
           {InterestTag? tag, bool? mine, bool? hidden, bool? notify}) =>
@@ -84,6 +88,7 @@ class TagSummary {
         friends: friends,
         hidden: hidden ?? this.hidden,
         notify: notify ?? this.notify,
+        canEditDescription: canEditDescription,
       );
 }
 
@@ -181,12 +186,28 @@ class InterestTagService extends ChangeNotifier {
     );
   }
 
-  /// 새 태그(이미 있으면 그 태그)의 id.
-  Future<String> create(String name) async {
-    final data0 = await _call('createTag', {'name': name});
+  /// 새 태그(이미 있으면 그 태그)의 id. [description]은 새로 만들 때만 쓴다.
+  Future<String> create(String name, {String description = ''}) async {
+    final data0 = await _call('createTag', {
+      'name': name,
+      if (description.trim().isNotEmpty) 'description': description.trim(),
+    });
     final id = (data0 as Map)['id'] as String;
     if (!_cache.containsKey(id)) await get(id);
     return id;
+  }
+
+  /// 만든 사람이 한 줄 설명을 고친다. 정리된 설명을 돌려준다.
+  Future<String> updateDescription(String tagId, String description) async {
+    final data0 = await _call('updateTagDescription',
+        {'tagId': tagId, 'description': description.trim()});
+    final saved = ((data0 as Map)['description'] ?? '').toString();
+    final cached = _cache[tagId];
+    if (cached != null) {
+      _cache[tagId] = cached.copyWith(description: saved);
+      notifyListeners();
+    }
+    return saved;
   }
 
   Future<List<String>> setProfileTags(List<String> ids) async {
@@ -233,7 +254,8 @@ class InterestTagService extends ChangeNotifier {
           ExploreTagItem(
             tag: _cache[item['id'] as String] = InterestTag.fromMap(
                 item['id'] as String, Map<String, dynamic>.from(item)),
-            reason: Map<String, dynamic>.from(item['reason'] as Map? ?? const {}),
+            reason:
+                Map<String, dynamic>.from(item['reason'] as Map? ?? const {}),
           ),
     ];
   }
@@ -255,6 +277,7 @@ class InterestTagService extends ChangeNotifier {
       ],
       hidden: data['hidden'] == true,
       notify: data['notify'] == true,
+      canEditDescription: data['canEditDescription'] == true,
     );
   }
 
@@ -291,8 +314,8 @@ class InterestTagService extends ChangeNotifier {
   }
 
   /// 공개 범위 시트의 '약 n명'.
-  Future<({int count, bool approximate})> estimateAudience(
-      List<String> tagIds, {bool friendsOnly = false}) async {
+  Future<({int count, bool approximate})> estimateAudience(List<String> tagIds,
+      {bool friendsOnly = false}) async {
     final data = Map<String, dynamic>.from(await _call('estimateTagAudience',
         {'tagIds': tagIds, 'friendsOnly': friendsOnly}) as Map);
     return (

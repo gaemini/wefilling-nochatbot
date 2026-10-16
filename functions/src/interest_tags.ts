@@ -24,30 +24,57 @@ export const BANNED_TAG_WORDS: readonly string[] = [
   'fuck', 'shit', '씨발', '시발', '병신', '좆', '섹스', 'sex', 'porn',
 ];
 
-export type OfficialTag = {id: string; ko: string; en: string; zh: string};
+export type OfficialTag = {
+  id: string;
+  ko: string;
+  en: string;
+  zh: string;
+  /** 어떤 태그인지 한 줄 설명(ko/en/zh). */
+  description: {ko: string; en: string; zh: string};
+};
 
 /** lib/models/social_profile_data.dart SocialProfileCatalog.interests와 같은 표. */
 export const OFFICIAL_INTEREST_TAGS: readonly OfficialTag[] = [
-  {id: 'restaurants', ko: '맛집', en: 'Food spots', zh: '美食探店'},
-  {id: 'cafe', ko: '카페', en: 'Cafes', zh: '咖啡馆'},
-  {id: 'running', ko: '러닝', en: 'Running', zh: '跑步'},
-  {id: 'fitness', ko: '헬스', en: 'Fitness', zh: '健身'},
-  {id: 'soccer', ko: '축구', en: 'Soccer', zh: '足球'},
-  {id: 'basketball', ko: '농구', en: 'Basketball', zh: '篮球'},
-  {id: 'travel', ko: '여행', en: 'Travel', zh: '旅行'},
-  {id: 'photo', ko: '사진', en: 'Photography', zh: '摄影'},
-  {id: 'movie', ko: '영화', en: 'Movies', zh: '电影'},
-  {id: 'music', ko: '음악', en: 'Music', zh: '音乐'},
-  {id: 'game', ko: '게임', en: 'Gaming', zh: '游戏'},
-  {id: 'reading', ko: '독서', en: 'Reading', zh: '阅读'},
-  {id: 'language', ko: '외국어', en: 'Languages', zh: '外语'},
-  {id: 'study', ko: '스터디', en: 'Study', zh: '学习'},
-  {id: 'exhibition', ko: '전시', en: 'Exhibitions', zh: '展览'},
-  {id: 'performance', ko: '공연', en: 'Performances', zh: '演出'},
-  {id: 'volunteer', ko: '봉사', en: 'Volunteering', zh: '志愿服务'},
-  {id: 'startup', ko: '창업', en: 'Startups', zh: '创业'},
-  {id: 'development', ko: '개발', en: 'Development', zh: '开发'},
-  {id: 'ai', ko: 'AI', en: 'AI', zh: 'AI'},
+  {id: 'restaurants', ko: '맛집', en: 'Food spots', zh: '美食探店',
+    description: {ko: '맛있는 집을 함께 찾고 나눠요', en: 'Find and share great places to eat', zh: '一起寻找并分享美食店'}},
+  {id: 'cafe', ko: '카페', en: 'Cafes', zh: '咖啡馆',
+    description: {ko: '분위기 좋은 카페와 커피 이야기', en: 'Cozy cafes and coffee talk', zh: '好氛围的咖啡馆和咖啡话题'}},
+  {id: 'running', ko: '러닝', en: 'Running', zh: '跑步',
+    description: {ko: '같이 뛰고 기록을 나눠요', en: 'Run together and share your records', zh: '一起跑步，分享记录'}},
+  {id: 'fitness', ko: '헬스', en: 'Fitness', zh: '健身',
+    description: {ko: '운동 루틴과 헬스 이야기', en: 'Workout routines and gym talk', zh: '健身计划和健身话题'}},
+  {id: 'soccer', ko: '축구', en: 'Soccer', zh: '足球',
+    description: {ko: '축구 보고 같이 차요', en: 'Watch and play soccer together', zh: '一起看球、踢球'}},
+  {id: 'basketball', ko: '농구', en: 'Basketball', zh: '篮球',
+    description: {ko: '농구 경기와 같이 뛸 사람', en: 'Basketball games and pickup runs', zh: '篮球比赛和约球'}},
+  {id: 'travel', ko: '여행', en: 'Travel', zh: '旅行',
+    description: {ko: '여행 계획과 다녀온 곳 이야기', en: 'Trip plans and travel stories', zh: '旅行计划和游记'}},
+  {id: 'photo', ko: '사진', en: 'Photography', zh: '摄影',
+    description: {ko: '사진 찍기와 출사', en: 'Taking photos and photo walks', zh: '拍照与外拍'}},
+  {id: 'movie', ko: '영화', en: 'Movies', zh: '电影',
+    description: {ko: '영화 추천과 같이 보기', en: 'Movie picks and watching together', zh: '电影推荐和一起看电影'}},
+  {id: 'music', ko: '음악', en: 'Music', zh: '音乐',
+    description: {ko: '좋아하는 음악과 공연 이야기', en: 'Favorite music and live shows', zh: '喜欢的音乐和演出'}},
+  {id: 'game', ko: '게임', en: 'Gaming', zh: '游戏',
+    description: {ko: '게임 같이 하고 이야기해요', en: 'Play and talk about games', zh: '一起玩游戏、聊游戏'}},
+  {id: 'reading', ko: '독서', en: 'Reading', zh: '阅读',
+    description: {ko: '책 추천과 독서 모임', en: 'Book picks and reading groups', zh: '好书推荐和读书会'}},
+  {id: 'language', ko: '외국어', en: 'Languages', zh: '外语',
+    description: {ko: '외국어 공부와 언어 교환', en: 'Language study and exchange', zh: '外语学习和语言交换'}},
+  {id: 'study', ko: '스터디', en: 'Study', zh: '学习',
+    description: {ko: '같이 공부하고 시험 준비해요', en: 'Study together and prep for exams', zh: '一起学习、备考'}},
+  {id: 'exhibition', ko: '전시', en: 'Exhibitions', zh: '展览',
+    description: {ko: '전시와 미술관 나들이', en: 'Exhibitions and museum visits', zh: '展览和美术馆'}},
+  {id: 'performance', ko: '공연', en: 'Performances', zh: '演出',
+    description: {ko: '공연·뮤지컬·콘서트', en: 'Shows, musicals and concerts', zh: '演出、音乐剧和演唱会'}},
+  {id: 'volunteer', ko: '봉사', en: 'Volunteering', zh: '志愿服务',
+    description: {ko: '봉사 활동을 함께해요', en: 'Volunteer together', zh: '一起做志愿服务'}},
+  {id: 'startup', ko: '창업', en: 'Startups', zh: '创业',
+    description: {ko: '창업 아이디어와 프로젝트', en: 'Startup ideas and projects', zh: '创业想法和项目'}},
+  {id: 'development', ko: '개발', en: 'Development', zh: '开发',
+    description: {ko: '개발·코딩 이야기', en: 'Development and coding', zh: '开发与编程'}},
+  {id: 'ai', ko: 'AI', en: 'AI', zh: 'AI',
+    description: {ko: 'AI 도구와 기술 이야기', en: 'AI tools and tech talk', zh: 'AI 工具与技术'}},
 ];
 
 export const OFFICIAL_TAG_IDS = new Set(OFFICIAL_INTEREST_TAGS.map((t) => t.id));
@@ -82,6 +109,23 @@ export function normalizeTagQuery(raw: unknown): string | null {
   return Array.from(value).slice(0, TAG_NAME_MAX).join('');
 }
 
+export const TAG_DESCRIPTION_MAX = 40;
+
+/** 태그 설명 한 줄: NFKC, 줄바꿈·연속 공백 정리, 40자. 금칙어가 있으면 거부. */
+export function normalizeTagDescription(raw: unknown): string {
+  if (raw == null) return '';
+  if (typeof raw !== 'string') {
+    throw new functions.https.HttpsError('invalid-argument', 'tag-description-invalid');
+  }
+  const value = Array.from(raw.normalize('NFKC').replace(/\s+/g, ' ').trim())
+    .slice(0, TAG_DESCRIPTION_MAX).join('');
+  const lowered = value.toLowerCase().replace(/\s+/g, '');
+  if (BANNED_TAG_WORDS.some((word) => lowered.includes(word))) {
+    throw new functions.https.HttpsError('failed-precondition', 'tag-blocked');
+  }
+  return value;
+}
+
 export function isBannedTagId(id: string): boolean {
   return BANNED_TAG_WORDS.some((word) => id.includes(word));
 }
@@ -102,6 +146,7 @@ export function officialTagFields(tag: OfficialTag): Record<string, unknown> {
     displayName: tag.en,
     aliases: officialTagAliases(tag),
     labels: {ko: tag.ko, en: tag.en, zh: tag.zh},
+    descriptions: tag.description,
     official: true,
     createdBy: 'system',
   };
@@ -232,6 +277,9 @@ function pickPublic(data: admin.firestore.DocumentData) {
     name: String(data.name ?? ''),
     displayName: String(data.displayName ?? data.name ?? ''),
     labels: data.labels && typeof data.labels === 'object' ? data.labels : {},
+    // 어떤 태그인지: 공식 태그는 언어별(descriptions), 사용자 태그는 만든 사람이 쓴 한 줄.
+    description: String(data.description ?? ''),
+    descriptions: data.descriptions && typeof data.descriptions === 'object' ? data.descriptions : {},
     official: data.official === true,
     holderCount: Math.max(0, Number(data.holderCount ?? 0) || 0),
     postCount: Math.max(0, Number(data.postCount ?? 0) || 0),
@@ -296,6 +344,7 @@ export const createTag = callables()
       }
       return {id: doc.id, created: false};
     }
+    const description = normalizeTagDescription(data?.description);
     const display = Array.from(String(data?.name).normalize('NFKC').trim().replace(/^#+/, ''))
       .slice(0, TAG_NAME_MAX).join('');
     const day = new Date().toISOString().slice(0, 10);
@@ -315,6 +364,7 @@ export const createTag = callables()
       const now = FieldValue.serverTimestamp();
       tx.set(tagRef(id), {
         name: id, displayName: display, aliases: [], labels: {}, official: false,
+        description,
         holderCount: 0, postCount: 0, meetupCount: 0, status: 'active',
         createdBy: uid, createdAt: now, updatedAt: now,
       });
@@ -474,6 +524,7 @@ export const getTagSummary = callables()
       tag: {id: tag.id, ...pickPublic(tag.data() ?? {})},
       aliases: stringArray(tag.get('aliases')),
       mine: stringArray(me.get('interestTagIds')).includes(tagId),
+      canEditDescription: tag.get('official') !== true && tag.get('createdBy') === uid,
       friendCount: friends.length,
       friends: friends.slice(0, FRIEND_FACE_LIMIT),
       hidden: pref.hidden === true,
@@ -1023,4 +1074,26 @@ export const exploreTags = callables()
       const pairs = Array.from(withTag.get(doc.id)?.entries() ?? []).sort((a, b) => b[1] - a[1]);
       return toItem(doc, {type: 'with', withTag: pairs[0]?.[0] ?? null});
     })};
+  });
+
+
+/** 태그 설명 고치기: 그 태그를 만든 사람만(공식 태그는 운영자가 정한 설명을 쓴다). */
+export const updateTagDescription = callables()
+  .runWith({timeoutSeconds: 10, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const tagId = normalizeTagName(data?.tagId);
+    if (!tagId) throw new functions.https.HttpsError('invalid-argument', 'tag-invalid');
+    const description = normalizeTagDescription(data?.description);
+    return db().runTransaction(async (tx) => {
+      const tag = await tx.get(tagRef(tagId));
+      if (!tag.exists || tag.get('status') !== 'active') {
+        throw new functions.https.HttpsError('not-found', 'tag-unavailable');
+      }
+      if (tag.get('official') === true || tag.get('createdBy') !== uid) {
+        throw new functions.https.HttpsError('permission-denied', 'tag-not-owner');
+      }
+      tx.update(tagRef(tagId), {description, updatedAt: FieldValue.serverTimestamp()});
+      return {tagId, description};
+    });
   });

@@ -315,8 +315,13 @@ class SuggestTagChip extends StatelessWidget {
                       _text,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: tagTextStyle(context, 13.5, FontWeight.w600,
-                          enabled ? const Color(0xFF344054) : TagColors.disabledText),
+                      style: tagTextStyle(
+                          context,
+                          13.5,
+                          FontWeight.w600,
+                          enabled
+                              ? const Color(0xFF344054)
+                              : TagColors.disabledText),
                     ),
                   ),
                   if (meta != null && meta!.isNotEmpty) ...[
@@ -432,11 +437,13 @@ ButtonStyle _tagButtonStyle({
       if (!enabled || states.contains(WidgetState.disabled)) {
         return enabled ? background : TagColors.disabled;
       }
-      if (states.contains(WidgetState.pressed) && pressed != null) return pressed;
+      if (states.contains(WidgetState.pressed) && pressed != null) {
+        return pressed;
+      }
       return background;
     }),
-    foregroundColor: WidgetStatePropertyAll(
-        enabled ? foreground : TagColors.disabledText),
+    foregroundColor:
+        WidgetStatePropertyAll(enabled ? foreground : TagColors.disabledText),
     overlayColor: const WidgetStatePropertyAll(Colors.transparent),
   );
 }
@@ -457,8 +464,7 @@ Widget _buttonLabel(BuildContext context, String label, IconData? icon,
         Text(
           label,
           maxLines: 1,
-          style: tagTextStyle(
-              context, small ? 13 : 14, FontWeight.w700, color),
+          style: tagTextStyle(context, small ? 13 : 14, FontWeight.w700, color),
         ),
       ],
     ),
@@ -541,7 +547,7 @@ class TagSecondaryButton extends StatelessWidget {
   }
 }
 
-/// 태그 줄 오른쪽 버튼: [+ 추가] / [✓ 추가됨]. 높이 32, 두 상태 같은 폭.
+/// 태그 줄 오른쪽 버튼: [추가](연파랑) / [추가됨](연회색). 높이 30, 두 상태 같은 폭.
 class TagRowActionButton extends StatelessWidget {
   const TagRowActionButton({
     super.key,
@@ -554,27 +560,32 @@ class TagRowActionButton extends StatelessWidget {
   final VoidCallback onPressed;
   final bool busy;
 
-  static const double width = 78;
+  static const double width = 68;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     return SizedBox(
       width: width,
-      child: added
-          ? TagSecondaryButton(
-              label: l10n.tagAddedShort,
-              icon: Icons.check_rounded,
-              height: 32,
-              background: TagColors.blueSoft,
-              foreground: TagColors.blue,
-              onPressed: onPressed,
+      child: busy
+          ? Container(
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: TagColors.blueSoft,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const SizedBox.square(
+                dimension: 14,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: TagColors.blue),
+              ),
             )
-          : TagPrimaryButton(
-              label: l10n.tagAdd,
-              icon: Icons.add_rounded,
-              height: 32,
-              busy: busy,
+          : TagSecondaryButton(
+              label: added ? l10n.tagAddedShort : l10n.tagAdd,
+              height: 30,
+              background: added ? TagColors.secondary : TagColors.blueSoft,
+              foreground: added ? TagColors.muted : TagColors.blue,
               onPressed: onPressed,
             ),
     );

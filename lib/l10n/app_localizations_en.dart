@@ -4036,4 +4036,46 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get myTagsButtonLabel => 'My #tags';
+
+  @override
+  String get tagCreateTitle => 'New tag';
+
+  @override
+  String get tagCreateAction => 'Create';
+
+  @override
+  String get tagCreateNameLabel => 'Tag name';
+
+  @override
+  String get tagCreateNameHint => 'e.g. riverrun';
+
+  @override
+  String get tagDescLabel => 'What\'s it about?';
+
+  @override
+  String get tagDescHint => 'e.g. Weekend runs along the Han River';
+
+  @override
+  String get tagCreateNote =>
+      'The name can\'t be changed later. You can edit the description anytime.';
+
+  @override
+  String get tagCreateRowHint => 'Add a one-line description';
+
+  @override
+  String get tagDescEdit => 'Edit description';
+
+  @override
+  String get tagDescAdd => 'Add a description';
+
+  @override
+  String get tagDescSave => 'Save';
+
+  @override
+  String get tagDescSaved => 'Description saved';
+
+  @override
+  String tagCreated(String tag) {
+    return 'Created #$tag';
+  }
 }

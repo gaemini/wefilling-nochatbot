@@ -141,6 +141,20 @@ async function main() {
   const kpopDoc = await readAdmin('tags/kpop');
   assert.equal(kpopDoc.fields.displayName.stringValue, 'K-POP');
 
+  // 설명: 만들 때 같이, 만든 사람만 고친다. 공식 태그는 언어별 설명이 있다.
+  assert.deepEqual(await call('createTag', 'bob', {name: 'boardgame', description: '  주말 보드게임 모임 '}),
+    {id: 'boardgame', created: true});
+  assert.equal((await readAdmin('tags/boardgame')).fields.description.stringValue, '주말 보드게임 모임');
+  assert.deepEqual(await call('updateTagDescription', 'bob', {tagId: 'boardgame', description: '보드게임 같이 해요'}),
+    {tagId: 'boardgame', description: '보드게임 같이 해요'});
+  assert.equal((await call('updateTagDescription', 'alice', {tagId: 'boardgame', description: 'x'})).error, 'tag-not-owner');
+  assert.equal((await call('updateTagDescription', 'alice', {tagId: 'running', description: 'x'})).error, 'tag-not-owner');
+  const runningSearch = await call('searchTags', 'alice', {q: 'running'});
+  assert.equal(runningSearch.items.find((t) => t.id === 'running').descriptions.ko, '같이 뛰고 기록을 나눠요');
+  const bgSummary = await call('getTagSummary', 'bob', {tagId: 'boardgame'});
+  assert.equal(bgSummary.canEditDescription, true);
+  assert.equal(bgSummary.tag.description, '보드게임 같이 해요');
+
   assert.deepEqual(await call('setProfileTags', 'alice', {tagIds: ['kpop', 'running', 'movie']}),
     {tagIds: ['kpop', 'running', 'movie']});
   assert.equal(intField(await readAdmin('tags/kpop'), 'holderCount'), 1);

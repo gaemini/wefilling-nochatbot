@@ -3836,4 +3836,45 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get myTagsButtonLabel => '我的 #标签';
+
+  @override
+  String get tagCreateTitle => '新建标签';
+
+  @override
+  String get tagCreateAction => '创建';
+
+  @override
+  String get tagCreateNameLabel => '标签名称';
+
+  @override
+  String get tagCreateNameHint => '例如：夜跑';
+
+  @override
+  String get tagDescLabel => '这个标签是做什么的？';
+
+  @override
+  String get tagDescHint => '例如：周末一起在汉江边跑步';
+
+  @override
+  String get tagCreateNote => '名称创建后无法修改，说明可以随时修改。';
+
+  @override
+  String get tagCreateRowHint => '加一句说明来创建';
+
+  @override
+  String get tagDescEdit => '编辑说明';
+
+  @override
+  String get tagDescAdd => '添加说明';
+
+  @override
+  String get tagDescSave => '保存';
+
+  @override
+  String get tagDescSaved => '说明已保存';
+
+  @override
+  String tagCreated(String tag) {
+    return '已创建 #$tag';
+  }
 }

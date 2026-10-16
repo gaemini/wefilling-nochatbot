@@ -96,6 +96,7 @@ void main() {
                 _ => [
                     {
                       ..._tag('climbing', 'Climbing', 40),
+                      'description': '실내 암장 같이 가요',
                       'reason': {'type': 'with', 'withTag': 'photo'}
                     }
                   ],
@@ -109,7 +110,28 @@ void main() {
             return {
               'items': [_tag('kpop', 'K-POP', 5)],
               'exact': false,
-              'normalized': 'k'
+              'normalized': (data['q'] as String).toLowerCase()
+            };
+          case 'createTag':
+            return {
+              'id': (data['name'] as String).toLowerCase(),
+              'created': true
+            };
+          case 'setProfileTags':
+            return {'tagIds': data['tagIds']};
+          case 'getTagSummary':
+            return {
+              'tag': {
+                ..._tag(data['tagId'] as String, 'Hanriver', 1),
+                'description': '한강에서 같이 뛰어요',
+              },
+              'mine': true,
+              'canEditDescription': true,
+            };
+          case 'updateTagDescription':
+            return {
+              'tagId': data['tagId'],
+              'description': data['description']
             };
         }
         throw UnimplementedError(name);
@@ -131,43 +153,72 @@ void main() {
         child: app(child, locale: locale, scale: scale),
       );
 
-  testWidgets('둘러보기: 필터마다 설명과 줄 이유, 내 태그는 추가됨', (tester) async {
+  testWidgets('둘러보기: 줄은 #이름·사람 수·설명만, 이유는 친구·뜨는·새 필터에서만', (tester) async {
     await tester.pumpWidget(wrap(const TagExploreScreen(), tags: ['climbing']));
     await tester.pumpAndSettle();
     final l10n =
         AppLocalizations.of(tester.element(find.byType(TagExploreScreen)))!;
-    expect(find.text(l10n.tagExploreCaptionRecommended), findsOneWidget);
     // 맨 위에 내 #태그 새 글(상단 바 '#' 버튼이 이 화면을 연다).
     expect(find.text(l10n.myTagsNewPosts), findsOneWidget);
     expect(find.byKey(const ValueKey('board_my_tag_climbing')), findsOneWidget);
     expect(find.byKey(const ValueKey('tag_explore_climbing')), findsOneWidget);
-    // '#사진과 함께'(받침 있으면 '과').
-    expect(find.text('${l10n.tagCountPeople(40)} · #사진과 함께'), findsOneWidget);
+    expect(find.text(l10n.tagCountPeople(40)), findsOneWidget);
+    expect(find.text('실내 암장 같이 가요'), findsOneWidget);
+    // '#사진과 함께' 같은 연관 이유와 필터 설명 문구는 보이지 않는다.
+    expect(find.textContaining('함께'), findsNothing);
+    expect(find.text(l10n.tagExploreCaptionRecommended), findsNothing);
     expect(find.text(l10n.tagAddedShort), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_friends')));
     await tester.pumpAndSettle();
-    expect(find.text(l10n.tagExploreCaptionFriends), findsOneWidget);
-    expect(
-        find.text(
-            '${l10n.tagCountPeople(5)} · ${l10n.tagReasonFriends('jaemini, sora_k')}'),
-        findsOneWidget);
+    expect(find.text(l10n.tagReasonFriends('jaemini, sora_k')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_trending')));
     await tester.pumpAndSettle();
-    expect(find.text('${l10n.tagCountPeople(9)} · ${l10n.tagReasonWeek(9)}'),
-        findsOneWidget);
+    expect(find.text(l10n.tagReasonWeek(9)), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_newest')));
     await tester.pumpAndSettle();
-    expect(find.text('${l10n.tagCountPeople(1)} · ${l10n.tagReasonDaysAgo(2)}'),
-        findsOneWidget);
+    expect(find.text(l10n.tagReasonDaysAgo(2)), findsOneWidget);
     expect(calls.where((c) => c == 'exploreTags').length, 4);
 
     // 다시 고르면 다시 묻지 않는다.
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_friends')));
     await tester.pumpAndSettle();
     expect(calls.where((c) => c == 'exploreTags').length, 4);
+  });
+
+  testWidgets('둘러보기: 검색에 없으면 설명을 붙여 만들고 태그 페이지에서 설명을 고친다',
+      (tester) async {
+    await tester.pumpWidget(wrap(const TagExploreScreen()));
+    await tester.pumpAndSettle();
+    final l10n =
+        AppLocalizations.of(tester.element(find.byType(TagExploreScreen)))!;
+    await tester.enterText(
+        find.byKey(const ValueKey('tag_explore_search')), 'hanriver');
+    await tester.pump(const Duration(milliseconds: 310));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.tagCreate('hanriver')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tag_explore_create_row')));
+    await tester.pumpAndSettle();
+    expect(find.text('hanriver'), findsWidgets);
+    await tester.enterText(find.byKey(const ValueKey('tag_create_description')),
+        '한강에서 같이 뛰어요');
+    await tester.tap(find.byKey(const ValueKey('tag_create_submit')));
+    await tester.pumpAndSettle();
+    expect(calls, containsAllInOrder(['createTag', 'setProfileTags']));
+    // 태그 페이지: 설명 + 더보기 '설명 수정'.
+    expect(find.byKey(const ValueKey('tag_page_description')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tag_page_more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tag_menu_description')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('tag_create_description')), '저녁 러닝 모임');
+    await tester.tap(find.byKey(const ValueKey('tag_create_submit')));
+    await tester.pumpAndSettle();
+    expect(calls, contains('updateTagDescription'));
+    expect(find.text('저녁 러닝 모임'), findsOneWidget);
   });
 
   testWidgets('게시판 줄: 내 태그 새 글 개수, 둘러보기 링크, 다시 만들어도 2분 안엔 다시 묻지 않음',

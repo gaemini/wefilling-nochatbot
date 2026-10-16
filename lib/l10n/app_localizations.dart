@@ -7179,6 +7179,84 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'내 #태그'**
   String get myTagsButtonLabel;
+
+  /// No description provided for @tagCreateTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 태그 만들기'**
+  String get tagCreateTitle;
+
+  /// No description provided for @tagCreateAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'만들기'**
+  String get tagCreateAction;
+
+  /// No description provided for @tagCreateNameLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 이름'**
+  String get tagCreateNameLabel;
+
+  /// No description provided for @tagCreateNameHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'예: 한강러닝'**
+  String get tagCreateNameHint;
+
+  /// No description provided for @tagDescLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'어떤 태그인가요?'**
+  String get tagDescLabel;
+
+  /// No description provided for @tagDescHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'예: 주말마다 한강에서 같이 뛰어요'**
+  String get tagDescHint;
+
+  /// No description provided for @tagCreateNote.
+  ///
+  /// In ko, this message translates to:
+  /// **'이름은 나중에 바꿀 수 없어요. 설명은 만든 사람이 언제든 고칠 수 있어요.'**
+  String get tagCreateNote;
+
+  /// No description provided for @tagCreateRowHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'한 줄 설명을 붙여 만들어요'**
+  String get tagCreateRowHint;
+
+  /// No description provided for @tagDescEdit.
+  ///
+  /// In ko, this message translates to:
+  /// **'설명 수정'**
+  String get tagDescEdit;
+
+  /// No description provided for @tagDescAdd.
+  ///
+  /// In ko, this message translates to:
+  /// **'설명 쓰기'**
+  String get tagDescAdd;
+
+  /// No description provided for @tagDescSave.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장'**
+  String get tagDescSave;
+
+  /// No description provided for @tagDescSaved.
+  ///
+  /// In ko, this message translates to:
+  /// **'설명을 저장했어요'**
+  String get tagDescSaved;
+
+  /// No description provided for @tagCreated.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag} 태그를 만들었어요'**
+  String tagCreated(String tag);
 }
 
 class _AppLocalizationsDelegate

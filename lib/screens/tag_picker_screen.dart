@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/interest_tag.dart';
 import '../services/interest_tag_service.dart';
+import '../ui/sheets/tag_create_sheet.dart';
 import '../ui/sheets/tag_settings_sheet.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/tag_chips.dart';
@@ -159,8 +160,8 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
     }
     setState(() => _creating = true);
     try {
-      final id = await _service.create(_query);
-      if (!mounted) return;
+      final id = await showTagCreateSheet(context, initialName: _query);
+      if (id == null || !mounted) return;
       setState(() {
         if (!_selected.contains(id)) _selected = [..._selected, id];
         _controller.clear();
@@ -347,10 +348,6 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
         TagListRow(
           key: ValueKey('tag_result_${tag.id}'),
           tag: tag,
-          subtitle: [
-            l10n.tagHolders(tag.holderCount),
-            if (tag.official) l10n.tagOfficial,
-          ].join(' · '),
           added: _selected.contains(tag.id),
           onAction: () => _toggle(tag.id),
         ),
@@ -360,7 +357,9 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
       rows.add(TagCreateRow(
         key: const ValueKey('tag_picker_create'),
         label: l10n.tagCreate(_query.replaceFirst(RegExp(r'^#+'), '')),
-        busy: _creating,
+        hint: l10n.tagCreateRowHint,
+        // 진행 표시는 만들기 시트가 한다.
+        busy: false,
         onTap: _create,
       ));
     }

@@ -53,13 +53,19 @@ class TagChip extends StatelessWidget {
             child: Container(
               constraints: BoxConstraints(minHeight: small ? 26 : 30),
               padding: EdgeInsets.symmetric(horizontal: small ? 9 : 11),
-              alignment: Alignment.center,
-              child: Text(
-                '#$label',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tagTextStyle(context, small ? 12.5 : 13.5,
-                    FontWeight.w600, TagColors.blue),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      '#$label',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tagTextStyle(context, small ? 12.5 : 13.5,
+                          FontWeight.w600, TagColors.blue),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

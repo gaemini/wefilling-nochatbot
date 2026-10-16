@@ -147,6 +147,13 @@ void main() {
     expect(find.byIcon(Icons.check_rounded), findsOneWidget);
     await tester.tap(find.text('#영화'));
     expect(removed, isTrue);
+
+    // Wrap 안의 칩은 글자 폭만 쓴다(가로로 꽉 차지 않음).
+    final screenWidth = tester.getSize(find.byType(Scaffold)).width;
+    for (final text in ['#러닝', '#K-POP']) {
+      final chip = find.ancestor(of: find.text(text), matching: find.byType(Material)).first;
+      expect(tester.getSize(chip).width, lessThan(screenWidth / 3), reason: text);
+    }
   });
 
   testWidgets('태그 고르기: 추천 추가, 검색, 새로 만들기, 8개 제한, 완료 저장', (tester) async {

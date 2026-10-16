@@ -767,6 +767,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     theme,
                     colorScheme,
                     showTranslationToggle: hasTranslationSource,
+                    mediaFirst: !hasPrimaryContent && !post.isTagAudience,
                     threadContent: HanyangVerificationGate(
                       locked: isHanyangLocked,
                       compact: true,
@@ -1015,6 +1016,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     ColorScheme colorScheme, {
     required bool showTranslationToggle,
     required Widget threadContent,
+    bool mediaFirst = false,
   }) {
     // 익명 여부에 따라 작성자 정보 결정
     final bool isAnonymous = post.isAnonymous;
@@ -1237,6 +1239,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         usesLimitedAudienceIdentity:
                             usesLimitedAudienceIdentity,
                       ),
+                      // 글 없이 사진·영상·링크가 바로 오면 버튼 높이를 비워 둔다.
+                      reserveTrailingHeight:
+                          mediaFirst && !showTranslationToggle,
                     ),
                     if (showTranslationToggle) ...[
                       const SizedBox(height: 1),

@@ -287,7 +287,11 @@ class _MyPageScreenState extends State<MyPageScreen>
             final isKorean =
                 Localizations.localeOf(context).languageCode == 'ko';
             final postsLabel = AppLocalizations.of(context)!.posts;
-            final reviewsLabel = (isChineseUi(context) ? '聚会回顾' : isKorean ? '모임 후기' : 'Meetup Reviews');
+            final reviewsLabel = (isChineseUi(context)
+                ? '聚会回顾'
+                : isKorean
+                    ? '모임 후기'
+                    : 'Meetup Reviews');
             final myMeetupsLabel = AppLocalizations.of(context)!.myMeetups;
 
             return <Widget>[
@@ -359,31 +363,31 @@ class _MyPageScreenState extends State<MyPageScreen>
       child: MotionPress(
         pressedScale: MotionSelectable.segmentScale,
         child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              ExcludeSemantics(
-                child: Opacity(
-                  opacity: 0,
-                  child: Text(
-                    sizingLabel,
-                    maxLines: 1,
-                    softWrap: false,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                ExcludeSemantics(
+                  child: Opacity(
+                    opacity: 0,
+                    child: Text(
+                      sizingLabel,
+                      maxLines: 1,
+                      softWrap: false,
+                    ),
                   ),
                 ),
-              ),
-              Text(
-                label,
-                maxLines: 1,
-                softWrap: false,
-              ),
-            ],
+                Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                ),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -428,7 +432,9 @@ class _MyPageScreenState extends State<MyPageScreen>
 
     final schoolParts = <String>[
       if (university.isNotEmpty) university,
-      if (isSchoolVerified && social.showDepartment && social.department.isNotEmpty)
+      if (isSchoolVerified &&
+          social.showDepartment &&
+          social.department.isNotEmpty)
         social.department,
       if (isSchoolVerified && social.showGrade && social.grade.isNotEmpty)
         social.grade,
@@ -501,7 +507,8 @@ class _MyPageScreenState extends State<MyPageScreen>
       maxScaleFactor: 1.3,
       child: Container(
         color: Colors.white,
-        padding: EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 16),
+        padding:
+            EdgeInsets.fromLTRB(horizontalPadding, 12, horizontalPadding, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -560,14 +567,15 @@ class _MyPageScreenState extends State<MyPageScreen>
                               key: const ValueKey('mypage_name'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: style(18, FontWeight.w700,
-                                  const Color(0xFF111827),
+                              style: style(
+                                  18, FontWeight.w700, const Color(0xFF111827),
                                   line: 24),
                             ),
                           ),
                           if (nationality.isNotEmpty) ...[
                             const SizedBox(width: 6),
-                            CountryFlagCircle(nationality: nationality, size: 16),
+                            CountryFlagCircle(
+                                nationality: nationality, size: 16),
                             const SizedBox(width: 4),
                             Flexible(
                               child: Text(
@@ -672,8 +680,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             ListenableBuilder(
               listenable: InterestTagService.instance,
               builder: (context, _) {
-                InterestTagService.instance
-                    .ensureLoaded(social.interestTagIds);
+                InterestTagService.instance.ensureLoaded(social.interestTagIds);
                 return Wrap(
                   spacing: 6,
                   runSpacing: 6,
@@ -683,8 +690,7 @@ class _MyPageScreenState extends State<MyPageScreen>
                         key: ValueKey('mypage_tag_$id'),
                         label: InterestTagService.instance
                             .labelFor(id, languageCode),
-                        onTap: () =>
-                            showTagPreviewSheet(context, tagId: id),
+                        onTap: () => showTagPreviewSheet(context, tagId: id),
                       ),
                     _AddTagChip(
                       key: const ValueKey('mypage_add_tag'),
@@ -762,8 +768,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                               : (social.interestTagIds.isEmpty
                                   ? 'Add interests so similar people can find you.'
                                   : 'Add a question to make the first DM easier.'),
-                          style: style(13, FontWeight.w500,
-                              const Color(0xFF475569),
+                          style: style(
+                              13, FontWeight.w500, const Color(0xFF475569),
                               line: 18),
                         ),
                       ),
@@ -926,7 +932,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                     _buildCachedImage(
                       review.imageUrls.first,
                       fit: BoxFit.cover,
-                      placeholder: ColoredBox(color: AppTheme.backgroundSecondary),
+                      placeholder:
+                          ColoredBox(color: AppTheme.backgroundSecondary),
                       errorWidget: ColoredBox(
                         color: AppTheme.backgroundSecondary,
                         child: Center(
@@ -1000,7 +1007,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                       bottom: 4,
                       right: 4,
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: Colors.black54,
                           borderRadius: BorderRadius.circular(8),
@@ -1088,7 +1096,11 @@ class _MyPageScreenState extends State<MyPageScreen>
             ),
             SizedBox(height: 8),
             Text(
-              (isChineseUi(context) ? '请先登录再查看动态' : isKo ? '포스트를 보려면 로그인해주세요' : 'Please login to view posts'),
+              (isChineseUi(context)
+                  ? '请先登录再查看动态'
+                  : isKo
+                      ? '포스트를 보려면 로그인해주세요'
+                      : 'Please login to view posts'),
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -1223,7 +1235,11 @@ class _MyPageScreenState extends State<MyPageScreen>
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     child: Text(
-                      (isChineseUi(context) ? '收藏的动态' : isKo ? '저장한 글' : 'Saved Posts'),
+                      (isChineseUi(context)
+                          ? '收藏的动态'
+                          : isKo
+                              ? '저장한 글'
+                              : 'Saved Posts'),
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -1245,8 +1261,7 @@ class _MyPageScreenState extends State<MyPageScreen>
               onPressed: () => setState(() => _showPostsAsGrid = true),
               iconSize: 19,
               padding: const EdgeInsets.all(6),
-              constraints:
-                  const BoxConstraints.tightFor(width: 36, height: 36),
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
               icon: Icon(
                 Icons.grid_view_rounded,
                 color: _showPostsAsGrid
@@ -1264,8 +1279,7 @@ class _MyPageScreenState extends State<MyPageScreen>
               onPressed: () => setState(() => _showPostsAsGrid = false),
               iconSize: 19,
               padding: const EdgeInsets.all(6),
-              constraints:
-                  const BoxConstraints.tightFor(width: 36, height: 36),
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
               icon: Icon(
                 Icons.format_list_bulleted_rounded,
                 color: !_showPostsAsGrid
@@ -2048,9 +2062,12 @@ class MyPageSettingsSheet {
                 if (authProvider.userData?['isAdmin'] == true)
                   _menuItem(
                     sheetContext,
-                    (isChineseUi(context) ? '学期待办管理' : Localizations.localeOf(sheetContext).languageCode == 'ko'
-                        ? '학기 To-do 관리'
-                        : 'Semester To-do Admin'),
+                    (isChineseUi(context)
+                        ? '学期待办管理'
+                        : Localizations.localeOf(sheetContext).languageCode ==
+                                'ko'
+                            ? '학기 To-do 관리'
+                            : 'Semester To-do Admin'),
                     Icons.admin_panel_settings_outlined,
                     () {
                       Navigator.pop(sheetContext);
@@ -2097,37 +2114,37 @@ class MyPageSettingsSheet {
     return MotionPress(
       pressedScale: .99,
       child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: color ?? const Color(0xFF111827),
-              size: 24,
-            ),
-            const SizedBox(width: 16),
-            Text(
-              title,
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
+          child: Row(
+            children: [
+              Icon(
+                icon,
                 color: color ?? const Color(0xFF111827),
+                size: 24,
               ),
-            ),
-            const Spacer(),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: Color(0xFF9CA3AF),
-              size: 24,
-            ),
-          ],
+              const SizedBox(width: 16),
+              Text(
+                title,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: color ?? const Color(0xFF111827),
+                ),
+              ),
+              const Spacer(),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0xFF9CA3AF),
+                size: 24,
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -2298,11 +2315,17 @@ class _AddTagChip extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(minHeight: 30),
             padding: const EdgeInsets.symmetric(horizontal: 11),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              style: tagTextStyle(
-                  context, 13.5, FontWeight.w600, const Color(0xFF3D4651)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    label,
+                    style: tagTextStyle(context, 13.5, FontWeight.w600,
+                        const Color(0xFF3D4651)),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

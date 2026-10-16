@@ -2,7 +2,7 @@
 // tagId는 정규화한 이름이라 문서 id만으로 중복이 막힌다.
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import {FieldPath, FieldValue} from 'firebase-admin/firestore';
+import {DocumentReference, FieldPath, FieldValue, Timestamp} from 'firebase-admin/firestore';
 import {callables} from './backend';
 import {COL} from './firestore_paths';
 import {isSearchableUser} from './searchable_user_policy';
@@ -186,7 +186,7 @@ export function signupProfileTagFields(
  * interests가 바뀌고 interestTagIds는 그대로면 태그 쪽을 따라 맞춘다.
  */
 export async function syncLegacyInterestsToTags(
-  ref: admin.firestore.DocumentReference,
+  ref: DocumentReference,
   before: Record<string, unknown>,
   after: Record<string, unknown>,
 ): Promise<void> {
@@ -639,18 +639,18 @@ export const getTagAudienceFeed = callables()
     if (byDate) {
       const from = Number(data.fromMillis);
       const to = Number(data.toMillis);
-      if (!Number.isFinite(from) || !Number.isFinite(to) || to < from || to - from > 62 * 86400000) {
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to < from || to - from > 100 * 86400000) {
         throw new functions.https.HttpsError('invalid-argument', 'range-invalid');
       }
       query = query
-        .where('date', '>=', admin.firestore.Timestamp.fromMillis(from))
-        .where('date', '<', admin.firestore.Timestamp.fromMillis(to))
+        .where('date', '>=', Timestamp.fromMillis(from))
+        .where('date', '<', Timestamp.fromMillis(to))
         .orderBy('date').limit(100);
     } else {
       query = query.orderBy('createdAt', 'desc').limit(FEED_PAGE);
       const cursor = Number(data?.cursor);
       if (data?.cursor != null && Number.isFinite(cursor)) {
-        query = query.startAfter(admin.firestore.Timestamp.fromMillis(cursor));
+        query = query.startAfter(Timestamp.fromMillis(cursor));
       }
     }
     const snap = await query.get();
@@ -666,20 +666,20 @@ export const getTagAudienceFeed = callables()
       .map((doc) => ({id: doc.id, ...(serializeForClient(doc.data()) as Record<string, unknown>)}));
     const last = snap.docs[snap.docs.length - 1];
     const cursor = !byDate && snap.size === FEED_PAGE
-      ? (last.get('createdAt') as admin.firestore.Timestamp | undefined)?.toMillis() ?? null
+      ? (last.get('createdAt') as Timestamp | undefined)?.toMillis() ?? null
       : null;
     return {items, cursor, lockedCount: 0};
   });
 
 /** 콜러블 응답용: Timestamp → {_millis}. 앱은 _millis를 DateTime으로 바꾼다. */
 export function serializeForClient(value: unknown): unknown {
-  if (value instanceof admin.firestore.Timestamp) return {_millis: value.toMillis()};
+  if (value instanceof Timestamp) return {_millis: value.toMillis()};
   if (Array.isArray(value)) return value.map(serializeForClient);
-  if (value && typeof value === 'object' && !(value instanceof admin.firestore.DocumentReference)) {
+  if (value && typeof value === 'object' && !(value instanceof DocumentReference)) {
     return Object.fromEntries(Object.entries(value as Record<string, unknown>)
       .map(([key, item]) => [key, serializeForClient(item)]));
   }
-  if (value instanceof admin.firestore.DocumentReference) return value.path;
+  if (value instanceof DocumentReference) return value.path;
   return value;
 }
 
@@ -732,3 +732,21 @@ export async function resolveTagAudience(
     friendsOnly: false,
   };
 }
+
+/** 공개 범위 시트의 '약 n명': 태그별 holderCount 합(근사), 친구 중에서만이면 실제 친구 수. */
+export const estimateTagAudience = callables()
+  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const raw: unknown[] = Array.isArray(data?.tagIds) ? data.tagIds : [];
+    const tagIds = Array.from(new Set(raw.map((item) => normalizeTagName(item))
+      .filter((id): id is string => id != null))).slice(0, MAX_CONTENT_TAGS);
+    if (tagIds.length === 0) return {count: 0, approximate: false};
+    if (data?.friendsOnly === true) {
+      const friends = Array.from(await friendIdCandidatesAtCreation(uid)).filter((id) => id !== uid);
+      return {count: (await tagHoldersAmong(friends, tagIds)).length, approximate: false};
+    }
+    const docs = await db().getAll(...tagIds.map(tagRef));
+    const sum = docs.reduce((total, doc) => total + Math.max(0, Number(doc.get('holderCount') ?? 0) || 0), 0);
+    return {count: sum, approximate: true};
+  });

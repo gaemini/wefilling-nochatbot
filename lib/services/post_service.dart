@@ -4,6 +4,8 @@
 // 좋아요 기능 구현
 // 게시글 조회 및 필터링 기능
 
+import 'feature_flag_service.dart';
+import 'interest_tag_service.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -284,6 +286,7 @@ class PostService {
                 ownerId: p.userId,
                 visibilityMode: p.visibility,
                 audienceUserIdsFrozen: p.allowedUserIds,
+                audienceTagIds: p.audienceTagIds,
               ))
           .toList();
     }
@@ -363,6 +366,7 @@ class PostService {
       ownerId: post.userId,
       visibilityMode: post.visibility,
       audienceUserIdsFrozen: post.allowedUserIds,
+      audienceTagIds: post.audienceTagIds,
     );
   }
 
@@ -443,9 +447,49 @@ class PostService {
         watch(_firestore
             .collection('posts')
             .where('userId', isEqualTo: user.uid)),
+        // 태그 공개 글은 규칙상 목록 쿼리가 안 되어 서버에서 한 번 받아 합친다.
+        // 빈 목록을 먼저 내보내 다른 피드의 첫 화면을 기다리게 하지 않는다.
+        if (_tagFeedActive)
+          (() async* {
+            yield const <Post>[];
+            yield (await fetchTagAudiencePosts()).posts;
+          })(),
       ],
       limit: limit,
     );
+  }
+
+  bool get _tagFeedActive =>
+      FeatureFlagService.tagAudienceEnabled &&
+      FrozenAudiencePolicy.viewerTagIds().isNotEmpty;
+
+  /// 태그 공개 글(서버가 권한·차단을 거름). [beforeMillis]보다 오래된 글, 최신순.
+  /// 플래그가 꺼졌거나 내 태그가 없으면 서버를 부르지 않는다. 실패해도 피드는 그대로.
+  Future<({List<Post> posts, bool hasMore})> fetchTagAudiencePosts({
+    int? beforeMillis,
+    String? tagId,
+  }) async {
+    const empty = (posts: <Post>[], hasMore: false);
+    if (!FeatureFlagService.tagAudienceEnabled) return empty;
+    if (tagId == null && !_tagFeedActive) return empty;
+    try {
+      final page = await InterestTagService.instance.audienceFeed(
+        tagId: tagId,
+        cursorMillis: beforeMillis,
+      );
+      final parsed = page.items
+          .where((item) => item['id'] is String)
+          .map((item) => _buildPostFromFirestore(item['id'] as String, item))
+          .where((post) =>
+              !ContentHideService.isHiddenPost(post.id) &&
+              !ContentHideService.isHiddenUser(post.userId))
+          .toList(growable: false);
+      final nonBlocked = await ContentFilterService.filterPosts(parsed);
+      return (posts: nonBlocked, hasMore: page.cursor != null);
+    } catch (error) {
+      Logger.error('태그 공개 글 불러오기 실패: $error');
+      return empty;
+    }
   }
 
   List<PollOption> _parsePollOptions(dynamic raw) {
@@ -498,6 +542,10 @@ class PostService {
       cursor: snapshot.docs.length == limit ? snapshot.docs.last : null,
     );
   }
+
+  /// 서버(콜러블)가 준 글 문서를 Post로 바꾼다.
+  Post postFromData(String id, Map<String, dynamic> data) =>
+      _buildPostFromFirestore(id, data);
 
   Post _buildPostFromFirestore(String id, Map<String, dynamic> data) {
     DateTime createdAt = DateTime.now();
@@ -577,6 +625,7 @@ class PostService {
     String type = 'text', // 'text' | 'poll'
     List<String> pollOptions = const [], // type == 'poll'일 때만 사용
     List<String> tagIds = const [],
+    bool audienceFriendsOnly = false,
     SharedLinkPreview? linkPreview,
     File? linkPreviewImageFile,
     String linkPreviewImageSource = 'local_preview',
@@ -600,8 +649,11 @@ class PostService {
       if (user == null) {
         throw Exception('로그인이 필요합니다');
       }
-      if (!const {'public', 'category'}.contains(visibility)) {
+      if (!const {'public', 'category', 'tag'}.contains(visibility)) {
         throw ArgumentError.value(visibility, 'visibility');
+      }
+      if (visibility == 'tag' && (tagIds.isEmpty || isAnonymous)) {
+        throw ArgumentError('#태그 공개는 태그가 필요하고 익명으로 쓸 수 없습니다.');
       }
       final normalizedCategoryIds = visibleToCategoryIds
           .map((id) => id.trim())
@@ -767,6 +819,7 @@ class PostService {
         'type': type,
         'pollOptions': cleanedPollOptions,
         if (tagIds.isNotEmpty) 'tagIds': tagIds.take(3).toList(),
+        if (visibility == 'tag') 'audienceFriendsOnly': audienceFriendsOnly,
         if (persistedLinkPreview != null)
           'linkPreview': _createPostLinkPreviewPayload(persistedLinkPreview),
         if (videoUpload != null) 'video': videoUpload.toPayload(),
@@ -1917,6 +1970,21 @@ class PostService {
       }
     }
 
+    // 태그 공개 글: 같은 커서 이전 구간을 서버에서 받아 합친다. 세 쿼리가 아직
+    // 확인하지 않은 더 오래된 구간의 글은 다음 페이지에서 다시 받는다.
+    final tagPage = await fetchTagAudiencePosts(
+      beforeMillis: startAfter?.createdAt.millisecondsSinceEpoch,
+    );
+    for (final post in tagPage.posts) {
+      final boundary = scanCursor;
+      if (sourceHasMore &&
+          boundary != null &&
+          post.createdAt.isBefore(boundary.createdAt)) {
+        continue;
+      }
+      collected[post.id] = post;
+    }
+
     final visible = collected.values.toList()
       ..sort((a, b) {
         final dateOrder = b.createdAt.compareTo(a.createdAt);
@@ -1924,7 +1992,8 @@ class PostService {
       });
     final pagePosts = visible.take(normalizedPageSize).toList(growable: false);
     final hasBufferedPosts = visible.length > normalizedPageSize;
-    final nextCursor = hasBufferedPosts && pagePosts.isNotEmpty
+    final nextCursor = (hasBufferedPosts || !sourceHasMore) &&
+            pagePosts.isNotEmpty
         ? AllPostsCursor(
             createdAt: pagePosts.last.createdAt,
             postId: pagePosts.last.id,
@@ -1935,7 +2004,7 @@ class PostService {
     return AllPostsPage(
       posts: pagePosts,
       cursor: nextCursor,
-      hasMore: hasBufferedPosts || sourceHasMore,
+      hasMore: hasBufferedPosts || sourceHasMore || tagPage.hasMore,
     );
   }
 

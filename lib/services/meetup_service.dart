@@ -4,6 +4,8 @@
 // 날짜별 모임 조회 및 필터링
 // 날짜 관련 유틸리티 함수 제공
 
+import 'feature_flag_service.dart';
+import 'interest_tag_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -344,6 +346,7 @@ class MeetupService {
     int? publicDurationHours, // null: 제한 없음, 그 외 1~12시간
     bool requiresHanyangVerification = false,
     List<String> tagIds = const [],
+    bool audienceFriendsOnly = false,
   }) async {
     try {
       final user = _auth.currentUser;
@@ -356,8 +359,13 @@ class MeetupService {
         return false;
       }
 
-      if (!const {'public', 'friends', 'category'}.contains(visibility)) {
+      if (!const {'public', 'friends', 'category', 'tag'}
+          .contains(visibility)) {
         Logger.error('지원하지 않는 밋업 공개 범위: $visibility');
+        return false;
+      }
+      if (visibility == 'tag' && tagIds.isEmpty) {
+        Logger.error('#태그 공개 모임에 태그가 없습니다.');
         return false;
       }
       final normalizedCategoryIds = visibleToCategoryIds
@@ -430,6 +438,7 @@ class MeetupService {
           'publicDurationHours': publicDurationHours,
           'requiresHanyangVerification': requiresHanyangVerification,
           if (tagIds.isNotEmpty) 'tagIds': tagIds.take(3).toList(),
+          if (visibility == 'tag') 'audienceFriendsOnly': audienceFriendsOnly,
         }).timeout(const Duration(seconds: 30));
       } catch (error) {
         // 서버가 생성한 뒤 응답만 유실된 경우를 실패/중복으로 처리하지 않는다.
@@ -758,7 +767,41 @@ class MeetupService {
         .where('date', isLessThanOrEqualTo: rangeEnd)
         .orderBy('date', descending: false));
 
-    return _combineMeetupStreams(byDateKeyRange, byTimestampRange);
+    return _combineMeetupStreams(
+      _combineMeetupStreams(byDateKeyRange, byTimestampRange),
+      _tagAudienceMeetups(rangeStart, rangeEnd),
+    );
+  }
+
+  /// 태그 공개 모임은 규칙상 목록 쿼리가 안 되어 서버에서 한 번 받아 합친다.
+  /// 빈 목록을 먼저 내보내 다른 쿼리의 첫 화면을 기다리게 하지 않는다.
+  Stream<List<Meetup>> _tagAudienceMeetups(
+    DateTime from,
+    DateTime to, {
+    bool includePublicationExpired = false,
+  }) async* {
+    yield const <Meetup>[];
+    if (!FeatureFlagService.tagAudienceEnabled ||
+        FrozenAudiencePolicy.viewerTagIds().isEmpty) {
+      return;
+    }
+    try {
+      final page = await InterestTagService.instance.audienceFeed(
+        kind: 'meetups',
+        fromMillis: from.millisecondsSinceEpoch,
+        toMillis: to.millisecondsSinceEpoch,
+      );
+      final meetups = page.items
+          .where((item) => item['id'] is String)
+          .map((item) => Meetup.fromJson(item))
+          .toList(growable: false);
+      yield await _filterVisibleAndBlocked(
+        meetups,
+        includePublicationExpired: includePublicationExpired,
+      );
+    } catch (error) {
+      Logger.error('태그 공개 모임 불러오기 실패: $error');
+    }
   }
 
   /// 과거 달력 카드용 월 범위 스트림입니다.
@@ -793,7 +836,11 @@ class MeetupService {
       includePublicationExpired: true,
     );
 
-    return _combineMeetupStreams(byDateKeyRange, byTimestampRange);
+    return _combineMeetupStreams(
+      _combineMeetupStreams(byDateKeyRange, byTimestampRange),
+      _tagAudienceMeetups(rangeStart, rangeEnd,
+          includePublicationExpired: true),
+    );
   }
 
   /// 내 참여/참가신청(approved/pending) 모임 ID 스트림.
@@ -1021,10 +1068,13 @@ class MeetupService {
 
     // 모든 모임 가져오기인 경우
     if (category == '전체') {
-      return _watchAudienceScopedMeetupQuery(_firestore
-          .collection('meetups')
-          .where('date', isGreaterThanOrEqualTo: today)
-          .orderBy('date', descending: false));
+      return _combineMeetupStreams(
+        _watchAudienceScopedMeetupQuery(_firestore
+            .collection('meetups')
+            .where('date', isGreaterThanOrEqualTo: today)
+            .orderBy('date', descending: false)),
+        _tagAudienceMeetups(today, today.add(const Duration(days: 92))),
+      );
     }
 
     // 특정 카테고리 모임 가져오기
@@ -1273,6 +1323,7 @@ class MeetupService {
           ownerId: meetup.userId ?? '',
           visibilityMode: meetup.visibility,
           audienceUserIdsFrozen: meetup.allowedUserIds,
+          audienceTagIds: meetup.audienceTagIds,
         );
         if (!canRead) return false;
         // 화면의 그룹 필터는 sourceGroupIds 표시에만 사용한다. 실제 접근 권한은
@@ -2057,6 +2108,7 @@ class MeetupService {
           ownerId: meetup.userId ?? '',
           visibilityMode: meetup.visibility,
           audienceUserIdsFrozen: meetup.allowedUserIds,
+          audienceTagIds: meetup.audienceTagIds,
         );
         if (!canRead) continue;
 

@@ -3680,4 +3680,39 @@ class AppLocalizationsKo extends AppLocalizations {
   String meetupTagEmpty(String tag) {
     return '#$tag 모임이 아직 없어요. 처음으로 열어 보세요';
   }
+
+  @override
+  String tagLockedPosts(int n) {
+    return '내 태그에 추가하면 이 태그를 단 사람에게만 공유된 글 $n개도 보여요';
+  }
+
+  @override
+  String get audienceTag => '#태그 가진 사람';
+
+  @override
+  String audienceTagDescription(String tags) {
+    return '$tags을 단 사람만 봐요';
+  }
+
+  @override
+  String get audienceTagNeedsTags => '글에 #태그를 먼저 붙여 주세요';
+
+  @override
+  String get audienceTagNote => '누구나 태그를 달 수 있어요. 아는 사람끼리만 보려면 ‘그룹’을 써 주세요.';
+
+  @override
+  String audienceReach(int n) {
+    return '약 $n명에게 보여요 · 앞으로 태그를 다는 사람 포함';
+  }
+
+  @override
+  String audienceReachFriends(int n) {
+    return '친구 $n명에게 보여요';
+  }
+
+  @override
+  String get audienceFriendsOnly => '친구 중에서만';
+
+  @override
+  String get audienceFriendsOnlyDescription => '지금 친구 중 태그를 단 사람만 봐요';
 }

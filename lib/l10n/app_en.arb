@@ -1599,5 +1599,14 @@
   "tagMeetupsEmpty": "No upcoming meetups",
   "meetupFilterAll": "All meetups",
   "meetupTagCreate": "＋ Create a #{tag} meetup",
-  "meetupTagEmpty": "No #{tag} meetups yet. Start the first one"
+  "meetupTagEmpty": "No #{tag} meetups yet. Start the first one",
+  "tagLockedPosts": "Add this tag to also see {n} posts shared only with its holders",
+  "audienceTag": "People with the #tag",
+  "audienceTagDescription": "Only people with {tags} can see it",
+  "audienceTagNeedsTags": "Add a #tag to your post first",
+  "audienceTagNote": "Anyone can add a tag. Use ‘Groups’ for people you know.",
+  "audienceReach": "Visible to about {n} people, including future tag holders",
+  "audienceReachFriends": "Visible to {n} friends",
+  "audienceFriendsOnly": "Friends only",
+  "audienceFriendsOnlyDescription": "Only current friends with the tag can see it"
 }

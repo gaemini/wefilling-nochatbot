@@ -236,7 +236,7 @@ service cloud.firestore {
           'sourceGroupIds', 'visibilityLockedAt', 'visibilitySchemaVersion'
         ])
         && data.ownerId is string
-        && data.visibilityMode in ['public', 'friends', 'category']
+        && data.visibilityMode in ['public', 'friends', 'category', 'tag']
         && data.audienceUserIdsFrozen is list
         && data.sourceGroupIds is list
         && data.visibilityLockedAt is timestamp
@@ -311,6 +311,15 @@ service cloud.firestore {
             && request.time < meetupData.publicExpiresAt));
     }
 
+    // 공개 범위 '#태그 가진 사람': 글의 audienceTagIds 중 하나를 내 프로필에 달았으면 읽는다.
+    // 단건 get 전용. 목록은 getTagAudienceFeed(서버)로만 만든다(규칙은 필터가 아님).
+    function tagAudienceCanRead(data) {
+      return data.get('visibility', '') == 'tag'
+        && data.get('audienceTagIds', []).size() > 0
+        && data.get('audienceTagIds', []).hasAny(
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('interestTagIds', []));
+    }
+
     function canReadPostData(postData) {
       return currentUserAccountAllowed()
         && (
@@ -318,6 +327,7 @@ service cloud.firestore {
           || request.auth.uid == postData.get('userId', '')
           || postData.get('visibility', '') == 'public'
           || request.auth.uid in postData.get('allowedUserIds', [])
+          || tagAudienceCanRead(postData)
         );
     }
 
@@ -334,6 +344,7 @@ service cloud.firestore {
           || request.auth.uid == meetupData.get('userId', '')
           || meetupData.get('visibility', '') == 'public'
           || request.auth.uid in meetupData.get('allowedUserIds', [])
+          || tagAudienceCanRead(meetupData)
         );
     }
 
@@ -341,7 +352,7 @@ service cloud.firestore {
       return meetupData.keys().hasAll([
           'userId', 'visibility', 'visibleToCategoryIds'
         ])
-        && meetupData.visibility in ['public', 'friends', 'category']
+        && meetupData.visibility in ['public', 'friends', 'category', 'tag']
         && meetupData.visibleToCategoryIds is list
         && (
           (
@@ -361,6 +372,15 @@ service cloud.firestore {
             && meetupData.userId in meetupData.allowedUserIds
             && (meetupData.visibility != 'category'
               || meetupData.visibleToCategoryIds.size() > 0)
+          )
+          || (
+            meetupData.visibility == 'tag'
+            && meetupData.keys().hasAny(['allowedUserIds'])
+            && meetupData.allowedUserIds is list
+            && meetupData.userId in meetupData.allowedUserIds
+            && meetupData.get('audienceTagIds', []) is list
+            && meetupData.get('audienceTagIds', []).size() > 0
+            && meetupData.get('audienceTagIds', []).size() <= 3
           )
         );
     }

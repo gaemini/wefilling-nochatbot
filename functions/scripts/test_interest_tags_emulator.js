@@ -2,7 +2,7 @@
 
 /*
  * #태그 규칙·함수·이전 스크립트 확인(에뮬레이터 전용).
- * firebase emulators:exec --project demo-wefilling --only firestore,functions \
+ * firebase emulators:exec --config firebase.tag-emulators.json --project demo-wefilling \
  *   "node functions/scripts/test_interest_tags_emulator.js"
  */
 const assert = require('node:assert/strict');
@@ -64,8 +64,30 @@ async function call(name, uid, data) {
 }
 
 const activeUser = (extra = {}) => ({
-  registrationStatus: 'complete', nickname: 'tester', searchable: true, ...extra,
+  registrationStatus: 'complete', nickname: 'tester', searchable: true, emailVerified: true, ...extra,
 });
+
+// 에뮬레이터의 함수 런타임에서는 기존 createPostSecure가 admin.firestore.Timestamp를
+// 못 읽어 실패한다(배포 환경은 정상). 그래서 서버 판정 함수를 직접 불러 같은 필드로 저장한다.
+const admin = require('firebase-admin');
+if (!admin.apps.length) admin.initializeApp({projectId: PROJECT});
+const {resolveTagAudience} = require('../lib/interest_tags');
+
+async function createTagPost(postId, data) {
+  process.env.TAG_AUDIENCE_ENABLED = 'true';
+  const tagAudience = await resolveTagAudience('alice', data, data.tagIds);
+  const now = admin.firestore.Timestamp.now();
+  await admin.firestore().collection('posts').doc(postId).create({
+    userId: 'alice', ownerId: 'alice', content: 'tag post', categoryKey: 'other', categoryKeys: ['other'],
+    tagIds: data.tagIds, createdAt: now, updatedAt: now,
+    visibility: tagAudience.frozen.visibilityMode, visibilityMode: tagAudience.frozen.visibilityMode,
+    allowedUserIds: tagAudience.frozen.audienceUserIdsFrozen,
+    audienceUserIdsFrozen: tagAudience.frozen.audienceUserIdsFrozen,
+    sourceGroupIds: [], visibleToCategoryIds: [], visibilityLockedAt: now, visibilitySchemaVersion: 2,
+    audienceTagIds: tagAudience.audienceTagIds, audienceFriendsOnly: tagAudience.friendsOnly,
+    isAnonymous: false,
+  });
+}
 
 async function main() {
   await request('DELETE', `${DOCS}`, 'owner');
@@ -181,6 +203,84 @@ async function main() {
   await seed('posts/p2', {userId: 'alice', ownerId: 'alice', visibility: 'public', tagIds: ['kpop'], content: 'x'});
   assert.equal((await patchAs('alice', 'posts/p2', {tagIds: ['running']})).status, 403);
   console.log('callables ok');
+
+  // ===== 공개 범위 '#태그 가진 사람' =====
+  const listAs = async (uid, field, op, value) => {
+    const r = await request('POST', `${DOCS}:runQuery`, token(uid), {
+      structuredQuery: {
+        from: [{collectionId: 'posts'}],
+        where: {fieldFilter: {field: {fieldPath: field}, op, value: toValue(value)}},
+      },
+    });
+    return Array.isArray(r.json) ? r.json.filter((row) => row.document).map((row) => row.document.name.split('/').pop()) : r.json;
+  };
+  await call('setProfileTags', 'carol', {tagIds: ['kpop']});
+  const tagPostId = 'TagPost0000000000001';
+  await createTagPost(tagPostId, {visibility: 'tag', tagIds: ['kpop']});
+  const stored = await readAdmin(`posts/${tagPostId}`);
+  assert.equal(stored.fields.visibility.stringValue, 'tag');
+  assert.deepEqual(arrayField(stored, 'allowedUserIds'), ['alice']);
+  assert.deepEqual(arrayField(stored, 'audienceTagIds'), ['kpop']);
+
+  // 상세: 태그를 단 carol 허용, bob 거부, 작성자 허용.
+  assert.equal((await getAs('carol', `posts/${tagPostId}`)).status, 200);
+  assert.equal((await getAs('bob', `posts/${tagPostId}`)).status, 403);
+  assert.equal((await getAs('alice', `posts/${tagPostId}`)).status, 200);
+  // 구버전 쿼리(public / allowedUserIds)에는 나오지 않는다.
+  assert.ok(!(await listAs('carol', 'visibility', 'EQUAL', 'public')).includes(tagPostId));
+  assert.ok(!(await listAs('carol', 'allowedUserIds', 'ARRAY_CONTAINS', 'carol')).includes(tagPostId));
+
+  // 서버 피드: carol에게만, bob은 개수만, 차단하면 빠짐.
+  const carolFeed = await call('getTagAudienceFeed', 'carol', {kind: 'posts'});
+  assert.deepEqual(carolFeed.items.map((item) => item.id), [tagPostId]);
+  assert.equal(typeof carolFeed.items[0].createdAt._millis, 'number');
+  const bobLocked = await call('getTagAudienceFeed', 'bob', {kind: 'posts', tagId: 'kpop'});
+  assert.deepEqual(bobLocked.items, []);
+  assert.equal(bobLocked.lockedCount, 1);
+  assert.deepEqual((await call('getTagAudienceFeed', 'bob', {kind: 'posts'})).items, []);
+  await seed('blocks/carol_alice', {blockerId: 'carol', blockedId: 'alice'});
+  assert.deepEqual((await call('getTagAudienceFeed', 'carol', {kind: 'posts'})).items, []);
+  await request('DELETE', `${DOCS}/blocks/carol_alice`, 'owner');
+
+  // 친구 중에서만: 지금 친구 중 태그를 단 사람(carol)만 얼리고 visibility는 friends.
+  const friendsPostId = 'TagPost0000000000002';
+  await createTagPost(friendsPostId, {visibility: 'tag', tagIds: ['kpop'], audienceFriendsOnly: true});
+  const friendsStored = await readAdmin(`posts/${friendsPostId}`);
+  assert.equal(friendsStored.fields.visibility.stringValue, 'friends');
+  assert.deepEqual(arrayField(friendsStored, 'allowedUserIds'), ['alice', 'carol']);
+  assert.equal(friendsStored.fields.audienceFriendsOnly.booleanValue, true);
+
+  // 막는 경우: 태그 없음, 익명, 한양 전용, 플래그 꺼짐.
+  const rejects = async (data, code) => assert.equal(
+    await resolveTagAudience('alice', data, data.tagIds ?? []).then(() => 'ok', (e) => e.message), code);
+  await rejects({visibility: 'tag', tagIds: []}, 'tag-audience-needs-tags');
+  await rejects({visibility: 'tag', tagIds: ['kpop'], isAnonymous: true}, 'tag-audience-unsupported');
+  await rejects({visibility: 'tag', tagIds: ['kpop'], requiresHanyangVerification: true}, 'tag-audience-unsupported');
+  process.env.TAG_AUDIENCE_ENABLED = 'false';
+  await rejects({visibility: 'tag', tagIds: ['kpop']}, 'tag-audience-disabled');
+  process.env.TAG_AUDIENCE_ENABLED = 'true';
+  assert.equal(await resolveTagAudience('alice', {visibility: 'public'}, ['kpop']), null);
+
+  // 도달 인원 추정.
+  const kpopHolders = intField(await readAdmin('tags/kpop'), 'holderCount');
+  assert.deepEqual(await call('estimateTagAudience', 'alice', {tagIds: ['kpop']}), {count: kpopHolders, approximate: true});
+  assert.deepEqual(await call('estimateTagAudience', 'alice', {tagIds: ['kpop'], friendsOnly: true}), {count: 1, approximate: false});
+
+  // 태그 공개 모임: 상세 읽기 규칙, 날짜 범위 피드.
+  const day = Date.now() + 3 * 86400000;
+  const meetupNow = admin.firestore.Timestamp.now();
+  await admin.firestore().collection('meetups').doc('TagMeetup00000000001').create({
+    userId: 'alice', ownerId: 'alice', title: 'kpop night', date: admin.firestore.Timestamp.fromMillis(day),
+    createdAt: meetupNow, visibility: 'tag', visibilityMode: 'tag', allowedUserIds: ['alice'],
+    audienceUserIdsFrozen: ['alice'], sourceGroupIds: [], visibleToCategoryIds: [], visibilityLockedAt: meetupNow,
+    visibilitySchemaVersion: 2, audienceTagIds: ['kpop'], tagIds: ['kpop'], audienceFriendsOnly: false,
+  });
+  assert.equal((await getAs('carol', 'meetups/TagMeetup00000000001')).status, 200);
+  assert.equal((await getAs('bob', 'meetups/TagMeetup00000000001')).status, 403);
+  const range = await call('getTagAudienceFeed', 'carol', {kind: 'meetups', fromMillis: day - 86400000, toMillis: day + 86400000});
+  assert.deepEqual(range.items.map((item) => item.id), ['TagMeetup00000000001']);
+  assert.equal((await call('getTagAudienceFeed', 'carol', {kind: 'meetups', fromMillis: 0, toMillis: 200 * 86400000})).error, 'range-invalid');
+  console.log('tag audience ok');
 }
 
 main().catch((error) => {

@@ -233,6 +233,65 @@ class InterestTagService extends ChangeNotifier {
     });
   }
 
+  /// 공개 범위 시트의 '약 n명'.
+  Future<({int count, bool approximate})> estimateAudience(
+      List<String> tagIds, {bool friendsOnly = false}) async {
+    final data = Map<String, dynamic>.from(await _call('estimateTagAudience',
+        {'tagIds': tagIds, 'friendsOnly': friendsOnly}) as Map);
+    return (
+      count: (data['count'] as num?)?.toInt() ?? 0,
+      approximate: data['approximate'] == true,
+    );
+  }
+
+  /// 태그 공개 글·모임(서버가 권한·차단을 거른 목록). 내가 달지 않은 [tagId]면
+  /// 목록 없이 lockedCount만 온다. 문서의 시각은 Timestamp로 되돌려 준다.
+  Future<
+      ({
+        List<Map<String, dynamic>> items,
+        int? cursor,
+        int lockedCount,
+      })> audienceFeed({
+    String kind = 'posts',
+    String? tagId,
+    int? cursorMillis,
+    int? fromMillis,
+    int? toMillis,
+  }) async {
+    final data = Map<String, dynamic>.from(await _call('getTagAudienceFeed', {
+      'kind': kind,
+      if (tagId != null) 'tagId': tagId,
+      if (cursorMillis != null) 'cursor': cursorMillis,
+      if (fromMillis != null) 'fromMillis': fromMillis,
+      if (toMillis != null) 'toMillis': toMillis,
+    }) as Map);
+    return (
+      items: [
+        for (final item in data['items'] as List? ?? const [])
+          if (item is Map)
+            Map<String, dynamic>.from(restoreTimestamps(item) as Map),
+      ],
+      cursor: (data['cursor'] as num?)?.toInt(),
+      lockedCount: (data['lockedCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 서버가 {_millis: n}으로 보낸 시각을 Timestamp로 되돌린다.
+  static Object? restoreTimestamps(Object? value) {
+    if (value is Map) {
+      final millis = value['_millis'];
+      if (value.length == 1 && millis is num) {
+        return Timestamp.fromMillisecondsSinceEpoch(millis.toInt());
+      }
+      return {
+        for (final entry in value.entries)
+          entry.key.toString(): restoreTimestamps(entry.value),
+      };
+    }
+    if (value is List) return value.map(restoreTimestamps).toList();
+    return value;
+  }
+
   Future<InterestTag?> get(String id) async {
     final hit = _cache[id];
     if (hit != null) return hit;

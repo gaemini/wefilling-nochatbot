@@ -3,6 +3,8 @@
 // 로그인 상태, 사용자 정보 제공
 // 다른 화면에서 인증 정보 접근 가능하게 함
 
+import '../models/social_profile_data.dart';
+import '../security/frozen_audience_policy.dart';
 import 'dart:io' show Platform, SocketException;
 import 'dart:async';
 import 'dart:ui' show AppExitResponse, ViewFocusEvent;
@@ -195,6 +197,9 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   final List<VoidCallback> _streamCleanupCallbacks = [];
 
   AuthProvider() {
+    // 태그 공개 글의 읽기 판정(FrozenAudiencePolicy)에 내 #태그를 알려 준다.
+    FrozenAudiencePolicy.viewerTagIds =
+        () => SocialProfileData.fromMap(_userData).interestTagIds;
     if (Logger.isVerboseEnabled)
       Logger.log('[HanyangVerification][AuthProvider] created '
           'instance=${identityHashCode(this)}');

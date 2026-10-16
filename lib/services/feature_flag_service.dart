@@ -30,6 +30,18 @@ class FeatureFlagService {
   // ignore: constant_identifier_names
   static const String FEATURE_TRANSLATE_FIRST_HINT = 'translate_first_hint';
 
+  /// 공개 범위 '#태그 가진 사람'(기본 꺼짐). 최소 버전 강제 업데이트 뒤
+  /// 서버 TAG_AUDIENCE_ENABLED와 함께 켠다.
+  // ignore: constant_identifier_names
+  static const String FEATURE_TAG_AUDIENCE = 'tag_audience_enabled';
+
+  /// 테스트에서 쓰는 강제 값(null이면 Remote Config).
+  static bool? debugTagAudienceOverride;
+
+  static bool get tagAudienceEnabled =>
+      debugTagAudienceOverride ??
+      FeatureFlagService().isFeatureEnabled(FEATURE_TAG_AUDIENCE);
+
   /// 서비스 초기화
   Future<void> init() async {
     if (_isInitialized) return;
@@ -54,6 +66,7 @@ class FeatureFlagService {
         FEATURE_ORGANIZATION_PROFILES: false,
         FEATURE_TRANSLATE_SINGLE_MESSAGE_BUTTON: false,
         FEATURE_TRANSLATE_FIRST_HINT: false,
+        FEATURE_TAG_AUDIENCE: false,
       });
 
       // Placeholder/unavailable App Check 상태에서 Remote Config 요청을

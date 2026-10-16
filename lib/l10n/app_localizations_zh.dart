@@ -3628,4 +3628,39 @@ class AppLocalizationsZh extends AppLocalizations {
   String meetupTagEmpty(String tag) {
     return '还没有 #$tag 聚会，来创建第一个吧';
   }
+
+  @override
+  String tagLockedPosts(int n) {
+    return '添加此标签后，还能看到仅分享给标签成员的 $n 篇帖子';
+  }
+
+  @override
+  String get audienceTag => '拥有该 #标签 的人';
+
+  @override
+  String audienceTagDescription(String tags) {
+    return '只有添加了 $tags 的人可见';
+  }
+
+  @override
+  String get audienceTagNeedsTags => '请先给内容添加 #标签';
+
+  @override
+  String get audienceTagNote => '任何人都能添加标签。只想给熟人看，请用「分组」。';
+
+  @override
+  String audienceReach(int n) {
+    return '约 $n 人可见 · 包括之后添加标签的人';
+  }
+
+  @override
+  String audienceReachFriends(int n) {
+    return '$n 位好友可见';
+  }
+
+  @override
+  String get audienceFriendsOnly => '仅限好友';
+
+  @override
+  String get audienceFriendsOnlyDescription => '只有添加了该标签的现有好友可见';
 }

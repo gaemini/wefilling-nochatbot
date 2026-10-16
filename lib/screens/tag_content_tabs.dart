@@ -5,6 +5,8 @@ import '../l10n/app_localizations.dart';
 import '../models/meetup.dart';
 import '../models/post.dart';
 import '../services/meetup_service.dart';
+import '../services/feature_flag_service.dart';
+import '../services/interest_tag_service.dart';
 import '../services/post_service.dart';
 import 'post_detail_screen.dart';
 import '../ui/widgets/board_meetup_card.dart';
@@ -13,7 +15,19 @@ import '../ui/widgets/tag_chips.dart';
 import 'meetup_detail_screen.dart';
 
 /// 태그 페이지 포스트 한 페이지. cursor가 null이면 끝.
-typedef TagPostPage = ({List<Post> posts, Object? cursor});
+/// lockedCount: 이 태그를 달면 더 볼 수 있는 태그 공개 글 수(첫 페이지만).
+typedef TagPostPage = ({List<Post> posts, Object? cursor, int lockedCount});
+
+/// 공개 글(Firestore 커서)과 태그 공개 글(서버 millis 커서)을 함께 넘기는 커서.
+class _TagPostsCursor {
+  const _TagPostsCursor(this.publicAfter, this.tagBeforeMillis,
+      {required this.publicDone, required this.tagDone});
+
+  final DocumentSnapshot<Map<String, dynamic>>? publicAfter;
+  final int? tagBeforeMillis;
+  final bool publicDone;
+  final bool tagDone;
+}
 
 /// 태그 페이지의 글·모임을 불러오는 곳. 테스트에서 바꿔 끼운다.
 class TagContentSource {
@@ -22,11 +36,52 @@ class TagContentSource {
   static TagContentSource instance = const TagContentSource();
 
   Future<TagPostPage> posts(String tagId, {Object? cursor}) async {
-    final page = await PostService().fetchPublicTagPosts(
-      tagId,
-      after: cursor as DocumentSnapshot<Map<String, dynamic>>?,
+    final previous = cursor as _TagPostsCursor?;
+    final service = PostService();
+    final publicFuture = previous?.publicDone == true
+        ? Future.value((
+            posts: const <Post>[],
+            cursor: null as DocumentSnapshot<Map<String, dynamic>>?
+          ))
+        : service.fetchPublicTagPosts(tagId, after: previous?.publicAfter);
+    var lockedCount = 0;
+    var tagPosts = const <Post>[];
+    var tagHasMore = false;
+    if (previous?.tagDone != true && FeatureFlagService.tagAudienceEnabled) {
+      try {
+        final page = await InterestTagService.instance.audienceFeed(
+          tagId: tagId,
+          cursorMillis: previous?.tagBeforeMillis,
+        );
+        lockedCount = page.lockedCount;
+        tagPosts = page.items
+            .where((item) => item['id'] is String)
+            .map((item) => service.postFromData(item['id'] as String, item))
+            .toList(growable: false);
+        tagHasMore = page.cursor != null;
+      } catch (_) {
+        // 태그 공개 글을 못 받아도 공개 글은 보여 준다.
+      }
+    }
+    final publicPage = await publicFuture;
+    final merged = [...publicPage.posts, ...tagPosts]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final publicDone = publicPage.cursor == null;
+    final tagDone = !tagHasMore;
+    return (
+      posts: merged,
+      cursor: publicDone && tagDone
+          ? null
+          : _TagPostsCursor(
+              publicPage.cursor,
+              tagPosts.isEmpty
+                  ? previous?.tagBeforeMillis
+                  : tagPosts.last.createdAt.millisecondsSinceEpoch,
+              publicDone: publicDone,
+              tagDone: tagDone,
+            ),
+      lockedCount: lockedCount,
     );
-    return (posts: page.posts, cursor: page.cursor);
   }
 
   Future<List<Meetup>> meetups(String tagId) =>
@@ -49,6 +104,7 @@ class _TagPostsTabState extends State<TagPostsTab>
   bool _loading = false;
   bool _done = false;
   bool _failed = false;
+  int _lockedCount = 0;
 
   @override
   bool get wantKeepAlive => true;
@@ -75,6 +131,7 @@ class _TagPostsTabState extends State<TagPostsTab>
         _cursor = page.cursor;
         _done = page.cursor == null;
         _loading = false;
+        if (page.lockedCount > 0) _lockedCount = page.lockedCount;
       });
     } catch (_) {
       if (mounted) {
@@ -108,6 +165,30 @@ class _TagPostsTabState extends State<TagPostsTab>
       child: CustomScrollView(
         key: const PageStorageKey('tag_posts'),
         slivers: [
+          if (_lockedCount > 0)
+            SliverToBoxAdapter(
+              child: Container(
+                key: const ValueKey('tag_locked_notice'),
+                margin: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: TagColors.blueSoft,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lock_outline_rounded,
+                        size: 18, color: TagColors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(l10n.tagLockedPosts(_lockedCount),
+                          style: tagTextStyle(
+                              context, 13, FontWeight.w600, TagColors.blue)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           SliverList.builder(
             itemCount: _posts.length,
             itemBuilder: (_, index) => OptimizedPostCard(
@@ -123,7 +204,7 @@ class _TagPostsTabState extends State<TagPostsTab>
             child: _TabFooter(
               loading: _loading,
               failed: _failed,
-              empty: _done && _posts.isEmpty,
+              empty: _done && _posts.isEmpty && _lockedCount == 0,
               emptyText: l10n.tagPostsEmpty,
               onRetry: _loadMore,
             ),

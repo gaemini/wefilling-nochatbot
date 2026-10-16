@@ -6819,6 +6819,60 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'#{tag} 모임이 아직 없어요. 처음으로 열어 보세요'**
   String meetupTagEmpty(String tag);
+
+  /// No description provided for @tagLockedPosts.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그에 추가하면 이 태그를 단 사람에게만 공유된 글 {n}개도 보여요'**
+  String tagLockedPosts(int n);
+
+  /// No description provided for @audienceTag.
+  ///
+  /// In ko, this message translates to:
+  /// **'#태그 가진 사람'**
+  String get audienceTag;
+
+  /// No description provided for @audienceTagDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'{tags}을 단 사람만 봐요'**
+  String audienceTagDescription(String tags);
+
+  /// No description provided for @audienceTagNeedsTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'글에 #태그를 먼저 붙여 주세요'**
+  String get audienceTagNeedsTags;
+
+  /// No description provided for @audienceTagNote.
+  ///
+  /// In ko, this message translates to:
+  /// **'누구나 태그를 달 수 있어요. 아는 사람끼리만 보려면 ‘그룹’을 써 주세요.'**
+  String get audienceTagNote;
+
+  /// No description provided for @audienceReach.
+  ///
+  /// In ko, this message translates to:
+  /// **'약 {n}명에게 보여요 · 앞으로 태그를 다는 사람 포함'**
+  String audienceReach(int n);
+
+  /// No description provided for @audienceReachFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {n}명에게 보여요'**
+  String audienceReachFriends(int n);
+
+  /// No description provided for @audienceFriendsOnly.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 중에서만'**
+  String get audienceFriendsOnly;
+
+  /// No description provided for @audienceFriendsOnlyDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'지금 친구 중 태그를 단 사람만 봐요'**
+  String get audienceFriendsOnlyDescription;
 }
 
 class _AppLocalizationsDelegate

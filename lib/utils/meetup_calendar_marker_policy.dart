@@ -118,6 +118,7 @@ bool shouldShowVisibleMeetupBorder({
     ownerId: meetup.userId ?? '',
     visibilityMode: meetup.visibility,
     audienceUserIdsFrozen: meetup.allowedUserIds,
+    audienceTagIds: meetup.audienceTagIds,
   );
 }
 
@@ -176,5 +177,6 @@ bool shouldShowFriendMeetupGradientBorder({
     ownerId: owner,
     visibilityMode: meetup.visibility,
     audienceUserIdsFrozen: meetup.allowedUserIds,
+    audienceTagIds: meetup.audienceTagIds,
   );
 }

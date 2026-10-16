@@ -3824,4 +3824,41 @@ class AppLocalizationsEn extends AppLocalizations {
   String meetupTagEmpty(String tag) {
     return 'No #$tag meetups yet. Start the first one';
   }
+
+  @override
+  String tagLockedPosts(int n) {
+    return 'Add this tag to also see $n posts shared only with its holders';
+  }
+
+  @override
+  String get audienceTag => 'People with the #tag';
+
+  @override
+  String audienceTagDescription(String tags) {
+    return 'Only people with $tags can see it';
+  }
+
+  @override
+  String get audienceTagNeedsTags => 'Add a #tag to your post first';
+
+  @override
+  String get audienceTagNote =>
+      'Anyone can add a tag. Use ‘Groups’ for people you know.';
+
+  @override
+  String audienceReach(int n) {
+    return 'Visible to about $n people, including future tag holders';
+  }
+
+  @override
+  String audienceReachFriends(int n) {
+    return 'Visible to $n friends';
+  }
+
+  @override
+  String get audienceFriendsOnly => 'Friends only';
+
+  @override
+  String get audienceFriendsOnlyDescription =>
+      'Only current friends with the tag can see it';
 }

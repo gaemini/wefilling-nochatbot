@@ -1,3 +1,5 @@
+import '../ui/sheets/audience_sheet.dart';
+import '../services/feature_flag_service.dart';
 import '../ui/widgets/content_tag_editor.dart';
 import 'dart:async';
 import 'dart:io';
@@ -119,6 +121,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   bool _isSubmitting = false;
   String? _selectedCategory; // 초기에는 선택 안 됨
   late List<String> _tagIds = widget.initialTagIds.take(3).toList();
+  bool _tagAudienceFriendsOnly = false;
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
   // 카테고리는 build 메서드에서 동적으로 생성
 
@@ -997,8 +1000,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               key: const ValueKey('create_meetup_tags'),
                               tagIds: _tagIds,
                               enabled: !_isSubmitting,
-                              onChanged: (ids) =>
-                                  setState(() => _tagIds = ids),
+                              onChanged: (ids) => setState(() {
+                                _tagIds = ids;
+                                if (ids.isEmpty && _visibility == 'tag') {
+                                  _visibility = 'public';
+                                }
+                              }),
                             ),
                             SizedBox(
                                 height:
@@ -1536,6 +1543,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                               requiresHanyangVerification:
                                                   _requiresHanyangVerification,
                                               tagIds: _tagIds,
+                                              audienceFriendsOnly:
+                                                  _tagAudienceFriendsOnly,
                                             );
 
                                             if (success) {
@@ -1972,6 +1981,25 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
             });
           },
         ),
+        if (FeatureFlagService.tagAudienceEnabled)
+          TagAudienceOptionTile(
+            tagIds: _tagIds,
+            selected: _visibility == 'tag',
+            onTap: () async {
+              final choice = await showTagAudienceSheet(
+                context,
+                tagIds: _tagIds,
+                friendsOnly: _tagAudienceFriendsOnly,
+              );
+              if (choice == null || !mounted) return;
+              setState(() {
+                _visibility = 'tag';
+                _tagAudienceFriendsOnly = choice.friendsOnly;
+                _requiresHanyangVerification = false;
+                _selectedCategoryIds.clear();
+              });
+            },
+          ),
       ],
     );
   }

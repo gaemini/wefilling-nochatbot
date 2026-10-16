@@ -1579,5 +1579,14 @@
   "tagMeetupsEmpty": "没有即将举行的聚会",
   "meetupFilterAll": "全部聚会",
   "meetupTagCreate": "＋ 创建 #{tag} 聚会",
-  "meetupTagEmpty": "还没有 #{tag} 聚会，来创建第一个吧"
+  "meetupTagEmpty": "还没有 #{tag} 聚会，来创建第一个吧",
+  "tagLockedPosts": "添加此标签后，还能看到仅分享给标签成员的 {n} 篇帖子",
+  "audienceTag": "拥有该 #标签 的人",
+  "audienceTagDescription": "只有添加了 {tags} 的人可见",
+  "audienceTagNeedsTags": "请先给内容添加 #标签",
+  "audienceTagNote": "任何人都能添加标签。只想给熟人看，请用「分组」。",
+  "audienceReach": "约 {n} 人可见 · 包括之后添加标签的人",
+  "audienceReachFriends": "{n} 位好友可见",
+  "audienceFriendsOnly": "仅限好友",
+  "audienceFriendsOnlyDescription": "只有添加了该标签的现有好友可见"
 }

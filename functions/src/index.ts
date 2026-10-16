@@ -116,7 +116,7 @@ export {
 } from './hanyang_verification';
 
 export {translateContentBatch} from './content_translation';
-export {searchTags, createTag, setProfileTags, listTagHolders, getTagSummary, setTagPrefs, getTagSuggestions, getTagAudienceFeed} from './interest_tags';
+export {searchTags, createTag, setProfileTags, listTagHolders, getTagSummary, setTagPrefs, getTagSuggestions, getTagAudienceFeed, estimateTagAudience} from './interest_tags';
 import {signupProfileTagFields, syncLegacyInterestsToTags, tagAudienceAllows, viewerTagIds} from './interest_tags';
 import {
   READ_SYNC_DEBOUNCE_MS,

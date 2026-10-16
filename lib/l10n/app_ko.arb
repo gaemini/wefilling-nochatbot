@@ -1611,5 +1611,18 @@
   "meetupTagCreate": "＋ #{tag} 모임 만들기",
   "@meetupTagCreate": {"placeholders": {"tag": {"type": "String"}}},
   "meetupTagEmpty": "#{tag} 모임이 아직 없어요. 처음으로 열어 보세요",
-  "@meetupTagEmpty": {"placeholders": {"tag": {"type": "String"}}}
+  "@meetupTagEmpty": {"placeholders": {"tag": {"type": "String"}}},
+  "tagLockedPosts": "내 태그에 추가하면 이 태그를 단 사람에게만 공유된 글 {n}개도 보여요",
+  "@tagLockedPosts": {"placeholders": {"n": {"type": "int"}}},
+  "audienceTag": "#태그 가진 사람",
+  "audienceTagDescription": "{tags}을 단 사람만 봐요",
+  "@audienceTagDescription": {"placeholders": {"tags": {"type": "String"}}},
+  "audienceTagNeedsTags": "글에 #태그를 먼저 붙여 주세요",
+  "audienceTagNote": "누구나 태그를 달 수 있어요. 아는 사람끼리만 보려면 ‘그룹’을 써 주세요.",
+  "audienceReach": "약 {n}명에게 보여요 · 앞으로 태그를 다는 사람 포함",
+  "@audienceReach": {"placeholders": {"n": {"type": "int"}}},
+  "audienceReachFriends": "친구 {n}명에게 보여요",
+  "@audienceReachFriends": {"placeholders": {"n": {"type": "int"}}},
+  "audienceFriendsOnly": "친구 중에서만",
+  "audienceFriendsOnlyDescription": "지금 친구 중 태그를 단 사람만 봐요"
 }

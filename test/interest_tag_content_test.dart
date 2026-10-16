@@ -29,7 +29,7 @@ class _FakeSource extends TagContentSource {
   @override
   Future<TagPostPage> posts(String tagId, {Object? cursor}) async {
     postCalls.add(tagId);
-    return (posts: const <Never>[], cursor: null);
+    return (posts: const <Never>[], cursor: null, lockedCount: 0);
   }
 
   @override

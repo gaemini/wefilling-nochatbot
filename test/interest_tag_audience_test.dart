@@ -144,16 +144,16 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('audience_option_tag')));
     await tester.pumpAndSettle();
-    expect(find.text('# 러닝'), findsOneWidget);
-    expect(find.text('# 한강피크닉'), findsOneWidget);
+    expect(find.text('#러닝'), findsOneWidget);
+    expect(find.text('#한강피크닉'), findsOneWidget);
     expect(find.text(l10n.audienceReach(152)), findsOneWidget);
     expect(find.text(l10n.audienceTagNote), findsOneWidget);
 
     // 태그 하나를 빼면 다시 센다. 마지막 하나는 뺄 수 없다.
-    await tester.tap(find.text('# 한강피크닉'));
+    await tester.tap(find.text('#한강피크닉'));
     await tester.pumpAndSettle();
     expect(find.text(l10n.audienceReach(126)), findsOneWidget);
-    await tester.tap(find.text('# 러닝'));
+    await tester.tap(find.text('#러닝'));
     await tester.pumpAndSettle();
     expect(estimateCalls.last['tagIds'], ['running']);
 

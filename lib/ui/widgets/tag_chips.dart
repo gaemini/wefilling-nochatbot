@@ -28,8 +28,8 @@ TextStyle tagTextStyle(
       height: isChineseUi(context) ? 1.3 : 1.2,
     );
 
-/// 칩 안의 태그 글자: '# 러닝'(# 뒤 한 칸). 글·카드 안의 짧은 표기는 '#러닝'.
-String hashText(String label) => '# $label';
+/// 칩 안의 태그 글자: '#러닝'(검색·카드·고르기 칩 모두 같은 표기).
+String hashText(String label) => '#$label';
 
 /// 고를 수 있는 태그(공개 범위 시트): 고르면 연파랑 + 파란 ✓, 아니면 흰 바탕 + 빈 원.
 class ToggleTagChip extends StatelessWidget {
@@ -209,7 +209,7 @@ class TagChip extends StatelessWidget {
   }
 }
 
-/// 고른 태그: 파랑 채움 + ✕. 누르면 빠진다. 길게 누르면 [onLongPress].
+/// 고른 태그: 검색 칩과 같은 크기(32)·파랑 채움 + 작은 ✕. 누르면 빠지고, 길게 누르면 [onLongPress].
 class SelectedTagChip extends StatelessWidget {
   const SelectedTagChip({
     super.key,
@@ -237,8 +237,8 @@ class SelectedTagChip extends StatelessWidget {
             onTap: onRemove,
             onLongPress: onLongPress,
             child: Container(
-              constraints: const BoxConstraints(minHeight: 36),
-              padding: const EdgeInsets.only(left: 13, right: 9),
+              constraints: const BoxConstraints(minHeight: 32),
+              padding: const EdgeInsets.only(left: 12, right: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -248,20 +248,12 @@ class SelectedTagChip extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tagTextStyle(
-                          context, 14, FontWeight.w700, Colors.white),
+                          context, 13.5, FontWeight.w700, Colors.white),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Container(
-                    width: 18,
-                    height: 18,
-                    decoration: const BoxDecoration(
-                      color: Color(0x33FFFFFF),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.close_rounded,
-                        size: 12, color: Colors.white),
-                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.close_rounded,
+                      size: 14, color: Color(0xCCFFFFFF)),
                 ],
               ),
             ),
@@ -272,7 +264,7 @@ class SelectedTagChip extends StatelessWidget {
   }
 }
 
-/// 추천 태그: 흰 바탕 + 회색 테두리, 오른쪽 숫자. 누르면 추가.
+/// 추천 태그: 검색 칩과 같은 크기(32)·연회색 바탕, 오른쪽 회색 보조('8명', '+34'). 누르면 추가.
 class SuggestTagChip extends StatelessWidget {
   const SuggestTagChip({
     super.key,
@@ -299,21 +291,22 @@ class SuggestTagChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return Semantics(
       button: true,
       label: _text,
       excludeSemantics: true,
       child: MotionPress(
-        enabled: onTap != null,
+        enabled: enabled,
         child: Material(
-          color: Colors.white,
-          shape: const StadiumBorder(side: BorderSide(color: TagColors.line)),
+          color: const Color(0xFFF2F4F7),
+          shape: const StadiumBorder(),
           child: InkWell(
             customBorder: const StadiumBorder(),
             onTap: onTap,
             child: Container(
-              constraints: const BoxConstraints(minHeight: 36),
-              padding: const EdgeInsets.symmetric(horizontal: 13),
+              constraints: const BoxConstraints(minHeight: 32),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -322,21 +315,16 @@ class SuggestTagChip extends StatelessWidget {
                       _text,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: tagTextStyle(
-                          context,
-                          14,
-                          FontWeight.w600,
-                          onTap == null
-                              ? TagColors.disabledText
-                              : TagColors.ink),
+                      style: tagTextStyle(context, 13.5, FontWeight.w600,
+                          enabled ? const Color(0xFF344054) : TagColors.disabledText),
                     ),
                   ),
                   if (meta != null && meta!.isNotEmpty) ...[
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 5),
                     Text(
                       meta!,
-                      style: tagTextStyle(context, 12.5, FontWeight.w500,
-                          TagColors.disabledText),
+                      style: tagTextStyle(context, 12, FontWeight.w500,
+                          const Color(0xFF98A2B3)),
                     ),
                   ],
                 ],

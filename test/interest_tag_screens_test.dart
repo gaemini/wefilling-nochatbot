@@ -150,18 +150,18 @@ void main() {
       scale: 1,
     ));
     expect(find.text('#러닝'), findsOneWidget);
-    expect(find.text('# 영화'), findsOneWidget);
-    expect(find.text('# K-POP'), findsOneWidget);
+    expect(find.text('#영화'), findsOneWidget);
+    expect(find.text('#K-POP'), findsOneWidget);
     expect(find.text('5명'), findsOneWidget);
     expect(find.text('카페'), findsOneWidget);
     expect(find.text('#카페'), findsNothing);
     expect(find.byIcon(Icons.check_rounded), findsOneWidget);
-    await tester.tap(find.text('# 영화'));
+    await tester.tap(find.text('#영화'));
     expect(removed, isTrue);
 
     // Wrap 안의 칩은 글자 폭만 쓴다(가로로 꽉 차지 않음).
     final screenWidth = tester.getSize(find.byType(Scaffold)).width;
-    for (final text in ['#러닝', '# K-POP']) {
+    for (final text in ['#러닝', '#K-POP']) {
       final chip = find
           .ancestor(of: find.text(text), matching: find.byType(Material))
           .first;
@@ -197,7 +197,7 @@ void main() {
         AppLocalizations.of(tester.element(find.byType(TagPickerScreen)))!;
 
     expect(find.text(l10n.tagPickerTitle), findsOneWidget);
-    expect(find.text('# 영화'), findsOneWidget);
+    expect(find.text('#영화'), findsOneWidget);
     expect(find.text(l10n.tagPickerSubtitle), findsOneWidget);
     expect(find.text(l10n.tagPickerMineMeta(1, 8)), findsOneWidget);
     expect(find.text(l10n.tagSuggestFriends), findsOneWidget);

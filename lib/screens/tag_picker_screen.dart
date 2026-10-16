@@ -273,7 +273,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
                     ),
                     if (_selected.isNotEmpty)
                       Wrap(
-                        spacing: 8,
+                        spacing: 6,
                         runSpacing: 8,
                         children: [
                           for (final id in _selected)
@@ -328,7 +328,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
   }
 
   Widget _suggestWrap(List<(InterestTag, String)> items) => Wrap(
-        spacing: 8,
+        spacing: 6,
         runSpacing: 8,
         children: [
           for (final (tag, meta) in items)

@@ -1636,5 +1636,8 @@
   "postUploadAction": "发布",
   "tagMoreTags": "更多标签",
   "tagPageLink": "标签页",
-  "tagAddedShort": "已添加"
+  "tagAddedShort": "已添加",
+  "myTagsEmptyHint": "添加 #标签 后，可在这里看到相关新帖",
+  "myTagsAddAction": "添加标签",
+  "myTagsButtonLabel": "我的 #标签"
 }

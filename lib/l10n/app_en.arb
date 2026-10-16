@@ -1656,5 +1656,8 @@
   "postUploadAction": "Post",
   "tagMoreTags": "More tags",
   "tagPageLink": "Tag page",
-  "tagAddedShort": "Added"
+  "tagAddedShort": "Added",
+  "myTagsEmptyHint": "Add #tags to see new posts with them here",
+  "myTagsAddAction": "Add tags",
+  "myTagsButtonLabel": "My #tags"
 }

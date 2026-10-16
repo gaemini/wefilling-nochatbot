@@ -4027,4 +4027,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tagAddedShort => 'Added';
+
+  @override
+  String get myTagsEmptyHint => 'Add #tags to see new posts with them here';
+
+  @override
+  String get myTagsAddAction => 'Add tags';
+
+  @override
+  String get myTagsButtonLabel => 'My #tags';
 }

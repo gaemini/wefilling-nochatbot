@@ -3827,4 +3827,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get tagAddedShort => '已添加';
+
+  @override
+  String get myTagsEmptyHint => '添加 #标签 后，可在这里看到相关新帖';
+
+  @override
+  String get myTagsAddAction => '添加标签';
+
+  @override
+  String get myTagsButtonLabel => '我的 #标签';
 }

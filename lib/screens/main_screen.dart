@@ -3,6 +3,7 @@
 // 하단 탭 네비게이션 제공
 // 게시판, 모임, 마이페이지 화면 통합
 
+import '../ui/widgets/my_tags_new_row.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'dart:math' as math;
@@ -325,8 +326,8 @@ class _MainScreenState extends State<MainScreen>
   }) {
     final hidden = factor <= 0.01;
     return AppBar(
-      // 스낵챗 탭은 로고 줄을 48로 낮춘다(다른 탭은 기존 56).
-      toolbarHeight: (_selectedIndex == 2 ? 48.0 : kToolbarHeight) * factor,
+      // 모든 탭이 같은 로고 줄 높이(56)를 쓴다.
+      toolbarHeight: kToolbarHeight * factor,
       elevation: hidden ? 0 : null,
       scrolledUnderElevation: hidden ? 0 : null,
       automaticallyImplyLeading: false,
@@ -367,15 +368,15 @@ class _MainScreenState extends State<MainScreen>
                 // 앱 시작 로고가 이 자리로 옮겨 온다.
                 LogoHandoffTargetSlot(
                   target: LogoHandoffTarget.main,
-                  child: SizedBox(width: 24, height: 24, child: _buildLogo()),
+                  child: SizedBox(width: 28, height: 28, child: _buildLogo()),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 9),
                 Text(
                   AppLocalizations.of(context)!.appName,
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 17,
+                    fontSize: 20,
                     fontWeight: FontWeight.w700,
                     color: AppColors.pointColor,
                     letterSpacing: -0.5,
@@ -386,6 +387,8 @@ class _MainScreenState extends State<MainScreen>
           ),
         ),
         const Spacer(),
+        // 포스트 탭: 내 #태그 새 글(빨간 점) → 시트.
+        if (_selectedIndex == 0) const MyTagsHeaderButton(iconSize: 25),
         if (_selectedIndex <= 1) ...[
           AppIconButton(
             icon: Icons.search,
@@ -412,7 +415,7 @@ class _MainScreenState extends State<MainScreen>
               count: snapshot.data ?? 0,
               child: AppIconButton(
                 icon: Icons.notifications_outlined,
-                iconSize: _selectedIndex == 2 ? 22 : 23,
+                iconSize: 23,
                 onPressed: () {
                   Navigator.push(
                     context,

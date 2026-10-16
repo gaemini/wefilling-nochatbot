@@ -7161,6 +7161,24 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'추가됨'**
   String get tagAddedShort;
+
+  /// No description provided for @myTagsEmptyHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'#태그를 달면 같은 태그의 새 글을 여기서 볼 수 있어요'**
+  String get myTagsEmptyHint;
+
+  /// No description provided for @myTagsAddAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 달기'**
+  String get myTagsAddAction;
+
+  /// No description provided for @myTagsButtonLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 #태그'**
+  String get myTagsButtonLabel;
 }
 
 class _AppLocalizationsDelegate

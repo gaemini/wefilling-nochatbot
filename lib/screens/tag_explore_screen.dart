@@ -12,6 +12,7 @@ import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/content_tag_row.dart' show openTagPage;
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/tag_chips.dart';
+import '../ui/widgets/my_tags_new_row.dart';
 import '../ui/widgets/tag_rows.dart';
 import 'tag_page_screen.dart' show TagLimitException, updateMyTags;
 
@@ -208,6 +209,11 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (!searching) ...[
+              // 내 #태그 새 글(마지막으로 본 뒤). 태그가 없으면 보이지 않는다.
+              const Padding(
+                padding: EdgeInsets.only(top: 6, bottom: 6),
+                child: MyTagsNewRow(showExploreLink: false),
+              ),
               SizedBox(
                 height: 46,
                 child: ListView(

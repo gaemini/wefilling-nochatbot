@@ -2,7 +2,6 @@
 // 게시판 화면 - 게시글 목록 표시 및 관리
 // 검색, 필터링, 작성 기능 포함
 
-import '../ui/widgets/my_tags_new_row.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -1472,7 +1471,7 @@ class BoardScreenState extends State<BoardScreen> {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.25,
       child: SizedBox(
-        height: 56,
+        height: 48,
         child: ListView.separated(
           key: const PageStorageKey('board_post_category_rail'),
           scrollDirection: Axis.horizontal,
@@ -1604,10 +1603,6 @@ class BoardScreenState extends State<BoardScreen> {
           (l) => l.todayMeetupsSectionTitle,
           '오늘의 밋업',
         );
-        final todayPostsTitle = _safeL10n(
-          (l) => l.todayPostsSectionTitle,
-          '오늘의 게시글',
-        );
         final noTodayMeetupsText = _safeL10n(
           (l) => l.todayNoMeetups,
           '오늘 올라온 밋업이 없어요.',
@@ -1648,7 +1643,6 @@ class BoardScreenState extends State<BoardScreen> {
         final itemCount = 1 + // snapshots
             (_showTodayAdBanner ? 1 : 0) +
             (_showTodayMeetupsSection ? 1 + meetupsCount : 0) +
-            1 + // posts header
             1 + // horizontally scrollable post categories
             postsCount +
             (historicalPosts.isEmpty ? 0 : historicalPosts.length + 1) +
@@ -1679,6 +1673,7 @@ class BoardScreenState extends State<BoardScreen> {
                   return AdBannerWidget(
                     key: const ValueKey('board_banner_today'),
                     widgetId: 'board_banner_today',
+                    compact: true,
                   );
                 }
                 i -= 1;
@@ -1714,24 +1709,7 @@ class BoardScreenState extends State<BoardScreen> {
                 i -= meetupsCount;
               }
 
-              // Posts header and everything below retain their original order.
-              if (i == 0) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    MyTagsNewRow(
-                        horizontalPadding: _sectionHorizontalPadding),
-                    _buildTodaySectionHeader(
-                      icon: Icons.article_rounded,
-                      title: todayPostsTitle,
-                      centered: true,
-                    ),
-                  ],
-                );
-              }
-              i -= 1;
-
+              // '오늘의 포스트' 머리말은 두지 않는다. 내 #태그는 상단 바 '#' 버튼에서 본다.
               // 4) categories: page snapping 없이 연속적으로 움직이는 가로 목록
               if (i == 0) {
                 return _buildPostCategoryRail();

@@ -137,6 +137,9 @@ void main() {
     final l10n =
         AppLocalizations.of(tester.element(find.byType(TagExploreScreen)))!;
     expect(find.text(l10n.tagExploreCaptionRecommended), findsOneWidget);
+    // 맨 위에 내 #태그 새 글(상단 바 '#' 버튼이 이 화면을 연다).
+    expect(find.text(l10n.myTagsNewPosts), findsOneWidget);
+    expect(find.byKey(const ValueKey('board_my_tag_climbing')), findsOneWidget);
     expect(find.byKey(const ValueKey('tag_explore_climbing')), findsOneWidget);
     // '#사진과 함께'(받침 있으면 '과').
     expect(find.text('${l10n.tagCountPeople(40)} · #사진과 함께'), findsOneWidget);

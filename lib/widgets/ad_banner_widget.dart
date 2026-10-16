@@ -18,10 +18,14 @@ class AdBannerWidget extends StatefulWidget {
   final String? widgetId;
   final Stream<List<AdBanner>>? bannersStream;
 
+  /// 피드 사이에 끼울 때 위아래 여백을 줄인다(이미지 크기는 그대로).
+  final bool compact;
+
   const AdBannerWidget({
     super.key,
     this.widgetId,
     this.bannersStream,
+    this.compact = false,
   });
 
   @override
@@ -170,9 +174,11 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
             : MediaQuery.sizeOf(context).width;
         final isCompact = width < 360;
         final isExpanded = width >= 600;
-        final height = isCompact ? 100.0 : (isExpanded ? 116.0 : 108.0);
+        final height = (isCompact ? 100.0 : (isExpanded ? 116.0 : 108.0)) -
+            (widget.compact ? 12.0 : 0.0);
         final horizontalPadding = isCompact ? 12.0 : (isExpanded ? 20.0 : 16.0);
-        final verticalPadding = isCompact ? 8.0 : 10.0;
+        final verticalPadding =
+            (isCompact ? 8.0 : 10.0) - (widget.compact ? 2.0 : 0.0);
         final imageSize = isCompact ? 72.0 : (isExpanded ? 84.0 : 80.0);
         final titleSize = isCompact ? 13.0 : (isExpanded ? 15.0 : 14.0);
         final descriptionSize = isCompact ? 11.0 : (isExpanded ? 12.0 : 11.5);

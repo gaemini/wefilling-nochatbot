@@ -3880,4 +3880,13 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get tagAddedShort => '추가됨';
+
+  @override
+  String get myTagsEmptyHint => '#태그를 달면 같은 태그의 새 글을 여기서 볼 수 있어요';
+
+  @override
+  String get myTagsAddAction => '태그 달기';
+
+  @override
+  String get myTagsButtonLabel => '내 #태그';
 }

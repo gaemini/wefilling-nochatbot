@@ -1682,5 +1682,8 @@
   "postUploadAction": "올리기",
   "tagMoreTags": "더 많은 태그",
   "tagPageLink": "태그 페이지",
-  "tagAddedShort": "추가됨"
+  "tagAddedShort": "추가됨",
+  "myTagsEmptyHint": "#태그를 달면 같은 태그의 새 글을 여기서 볼 수 있어요",
+  "myTagsAddAction": "태그 달기",
+  "myTagsButtonLabel": "내 #태그"
 }

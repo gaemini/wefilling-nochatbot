@@ -6,7 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getMyMutualFeels = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.translateContentBatch = exports.backfillHanyangVerificationStates = exports.reconcileMyHanyangVerificationStatus = exports.backfillInstagramPreviewThumbnails = exports.persistInstagramPreviewThumbnail = exports.resolveSharedLink = exports.onDMMessageDeletedStorageCleanup = exports.reconcileDMUnreadTotalSecure = exports.onDMReactionWritten = exports.onDMReceiptCleanupRequested = exports.leaveDMConversationSecure = exports.markDMConversationReadBoundedSecure = exports.markDMConversationReadSecure = exports.searchMeetupsSecure = exports.searchPostsSecure = exports.onMeetupSearchSourceWritten = exports.onPostSearchSourceWritten = exports.onPostUpdatedStorageCleanup = exports.onPostDeletedStorageCleanup = exports.expireTimedMeetups = exports.confirmMeetupSecure = exports.createMeetupSecure = exports.getExternalShareComposerContext = exports.createExternalSharePost = exports.createPostSecure = exports.updateMyOrganizationProfile = exports.searchOrganizationsSecure = exports.previewOrganizationInvite = exports.prepareOrganizationPasswordInvite = exports.onOrganizationManagerAuthDeleted = exports.getMyOrganizationAccess = exports.acceptOrganizationInvite = exports.updateMyNicknameSecure = exports.onDeletedAuthUserNicknameCleanup = exports.checkNicknameAvailability = exports.validateSnackChatMentions = exports.getSnackChatMentionCandidates = exports.getSnackChatMessageContext = exports.querySnackChatMessages = void 0;
 exports.ensureRegistrationProgress = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.reconcileNotificationUnreadTotalSecure = exports.getUserProfileStats = exports.onSnackChatVoteWritten = exports.respondTogetherProposal = exports.proposeTogetherSnackChat = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.sendSnackChatTextMessagesSecure = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.onSnackChatRoomDeletedCascade = exports.onMeetupParticipantDeletedSnackChatCleanup = exports.onDeletedUserDocumentSnackChatCleanup = exports.onDeletedAuthUserSnackChatCleanup = exports.reconcileSnackChatParticipantsSecure = exports.leaveSnackChatSecure = exports.markSnackChatReadSecure = exports.summarizeSnackChatUnread = exports.getSnackChatEntryContext = exports.ensureSnackChatMembershipSecure = exports.leaveMeetupParticipationSecure = exports.kickMeetupParticipantSecure = exports.joinPostSnackChatSecure = exports.createPostSnackChatSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.searchSnackChatInviteUsers = exports.searchSnackChatInviteUserById = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.deleteSnapshotFeedComment = exports.createSnapshotFeedComment = exports.sendSnapshotComment = void 0;
 exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.onDeletedAuthUserFriendshipCleanup = exports.onFriendshipWrittenReconcileCounts = exports.getPublicProfileReviewPreview = exports.getProfileFriendNetwork = exports.searchSocialUsersByInterest = exports.searchSocialUsers = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.resetPasswordWithCode = exports.requestPasswordResetCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.resolveMyReadableJoinedMeetupIds = exports.onPrivatePostCreated = exports.onUserRegistrationCompleted = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.finalizePendingRegistration = void 0;
-exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupReviewProfilePostDeletedRestore = exports.onMeetupReviewCreatedEnsureProfile = exports.reconcileMyAcceptedReviewProfiles = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = void 0;
+exports.onSnackChatMemberReadSyncPush = exports.onConversationReadSyncPush = exports.onNotificationDeletedReadSyncPush = exports.onNotificationReadSyncPush = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupReviewProfilePostDeletedRestore = exports.onMeetupReviewCreatedEnsureProfile = exports.reconcileMyAcceptedReviewProfiles = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = void 0;
+exports.notificationThreadIdFor = notificationThreadIdFor;
 const functions = require("firebase-functions");
 const backend_1 = require("./backend");
 const admin = require("firebase-admin");
@@ -75,6 +76,7 @@ Object.defineProperty(exports, "reconcileMyHanyangVerificationStatus", { enumera
 Object.defineProperty(exports, "backfillHanyangVerificationStates", { enumerable: true, get: function () { return hanyang_verification_2.backfillHanyangVerificationStates; } });
 var content_translation_1 = require("./content_translation");
 Object.defineProperty(exports, "translateContentBatch", { enumerable: true, get: function () { return content_translation_1.translateContentBatch; } });
+const read_sync_policy_1 = require("./read_sync_policy");
 var snapshot_1 = require("./snapshot");
 Object.defineProperty(exports, "getSnapshotServerTime", { enumerable: true, get: function () { return snapshot_1.getSnapshotServerTime; } });
 Object.defineProperty(exports, "createSnapshot", { enumerable: true, get: function () { return snapshot_1.createSnapshot; } });
@@ -154,7 +156,7 @@ function toStr(v) {
 exports.getUserProfileStats = (0, backend_1.callables)()
     .runWith({ timeoutSeconds: 30, memory: '256MB' })
     .https.onCall(async (raw, context) => {
-    var _a, _b;
+    var _a, _b, _c, _d;
     if (!((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
         throw new functions.https.HttpsError('unauthenticated', 'Sign-in is required.');
     }
@@ -168,12 +170,22 @@ exports.getUserProfileStats = (0, backend_1.callables)()
     if (!user.exists) {
         throw new functions.https.HttpsError('not-found', 'User not found.');
     }
-    const [friendEntries, postAggregate, joinedMeetupAggregate] = await Promise.all([
+    // 다른 사람이 보는 글 수에는 익명 글을 넣지 않는다(익명 글을 올린 직후
+    // 숫자가 늘어 작성자가 드러나지 않게). 본인에게는 전체를 보인다.
+    const viewerIsOwner = ((_b = context.auth) === null || _b === void 0 ? void 0 : _b.uid) === targetUserId;
+    const [friendEntries, postAggregate, anonymousPostAggregate, joinedMeetupAggregate] = await Promise.all([
         getCanonicalFriendEntries(targetUserId),
         db.collection(firestore_paths_1.COL.posts)
             .where('userId', '==', targetUserId)
             .count()
             .get(),
+        viewerIsOwner
+            ? Promise.resolve(null)
+            : db.collection(firestore_paths_1.COL.posts)
+                .where('userId', '==', targetUserId)
+                .where('isAnonymous', '==', true)
+                .count()
+                .get(),
         db.collection(firestore_paths_1.COL.meetupParticipants)
             .where('userId', '==', targetUserId)
             .where('status', '==', 'approved')
@@ -181,7 +193,7 @@ exports.getUserProfileStats = (0, backend_1.callables)()
             .get(),
     ]);
     const friendCount = friendEntries.length;
-    if (toNonNegativeInt((_b = user.data()) === null || _b === void 0 ? void 0 : _b.friendsCount) !== friendCount) {
+    if (toNonNegativeInt((_c = user.data()) === null || _c === void 0 ? void 0 : _c.friendsCount) !== friendCount) {
         // 과거 앱/탈퇴 정리에서 남은 캐시 카운터도 프로필 조회 시 한 번만
         // 실제 친구 목록에 노출되는 활성 프로필 수로 보정한다.
         await user.ref.update({
@@ -195,7 +207,8 @@ exports.getUserProfileStats = (0, backend_1.callables)()
     }
     return {
         friendCount,
-        writtenPostCount: postAggregate.data().count,
+        writtenPostCount: Math.max(0, postAggregate.data().count -
+            ((_d = anonymousPostAggregate === null || anonymousPostAggregate === void 0 ? void 0 : anonymousPostAggregate.data().count) !== null && _d !== void 0 ? _d : 0)),
         joinedMeetupCount: joinedMeetupAggregate.data().count,
         fetchedAtMillis: Date.now(),
     };
@@ -685,7 +698,7 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = (0, backend_1.triggers)()
         runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onUserProfileUpdatedPropagateAuthorInfo: comments(root) updated=${updated}`);
     }
     async function updateConversations() {
-        var _a, _b, _c;
+        var _a, _b, _c, _d;
         // ✅ conversations는 array-contains 쿼리 + 페이지네이션(orderBy/startAfter) 조합이
         // 인덱스/런타임 에러를 유발할 수 있어, "단일 get + 배치 커밋"으로 처리한다.
         // (사용자 1명이 가진 1:1 DM 개수는 보통 제한적이라 실무적으로 안전)
@@ -698,8 +711,12 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = (0, backend_1.triggers)()
         let ops = 0;
         for (const doc of snap.docs) {
             const data = doc.data();
-            const currentName = toStr((_a = data === null || data === void 0 ? void 0 : data.participantNames) === null || _a === void 0 ? void 0 : _a[userId]).trim();
-            const currentPhoto = toStr((_b = data === null || data === void 0 ? void 0 : data.participantPhotos) === null || _b === void 0 ? void 0 : _b[userId]).trim();
+            // 익명 대화방에는 실제 이름·사진을 쓰지 않는다(익명 작성자 노출 방지).
+            if (doc.id.startsWith('anon_') || ((_a = data === null || data === void 0 ? void 0 : data.isAnonymous) === null || _a === void 0 ? void 0 : _a[userId]) === true) {
+                continue;
+            }
+            const currentName = toStr((_b = data === null || data === void 0 ? void 0 : data.participantNames) === null || _b === void 0 ? void 0 : _b[userId]).trim();
+            const currentPhoto = toStr((_c = data === null || data === void 0 ? void 0 : data.participantPhotos) === null || _c === void 0 ? void 0 : _c[userId]).trim();
             const updateData = {
                 [`participantNames.${userId}`]: newNickname,
                 [`participantPhotos.${userId}`]: newPhotoURL,
@@ -712,7 +729,7 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = (0, backend_1.triggers)()
             let expectedDisplayTitle = null;
             if (participants.length === 2) {
                 const otherId = participants[0] === userId ? participants[1] : participants[0];
-                const otherName = toStr((_c = data === null || data === void 0 ? void 0 : data.participantNames) === null || _c === void 0 ? void 0 : _c[otherId]).trim() || 'User';
+                const otherName = toStr((_d = data === null || data === void 0 ? void 0 : data.participantNames) === null || _d === void 0 ? void 0 : _d[otherId]).trim() || 'User';
                 expectedDisplayTitle = `${newNickname} ↔ ${otherName}`;
             }
             // ✅ 닉네임 변경 시 반드시 participantNames + displayTitle이 최신화되어야 한다.
@@ -2175,6 +2192,26 @@ exports.onUserCreated = (0, backend_1.triggers)().runWith((0, backend_1.withMail
 exports.onUserRegistrationCompleted = (0, backend_1.triggers)().runWith((0, backend_1.withMailSecrets)()).firestore
     .document('users/{userId}')
     .onUpdate((change, context) => sendCompletedRegistrationAdminNotification(change.before.data(), change.after.data(), String(context.params.userId), context.eventId));
+/** 일반 알림의 iOS 묶음 키(대상별). 대상이 없으면 종류별. */
+function notificationThreadIdFor(data) {
+    const type = data.type || 'notification';
+    if (type === 'friend_request' || type === 'friend_request_accepted') {
+        return 'friend_requests';
+    }
+    if (data.postId)
+        return `post_${data.postId}`;
+    if (data.snapshotId)
+        return `snack_${data.snapshotId}`;
+    if (data.meetupId)
+        return `meetup_${data.meetupId}`;
+    if (data.reviewId)
+        return `review_${data.reviewId}`;
+    if (data.snackChatId)
+        return `snackchat_${data.snackChatId}`;
+    if (data.pairKey)
+        return `mutual_${data.pairKey}`;
+    return `type_${type}`;
+}
 function notificationSettingAllows(document, unifiedKey, legacyKeys = []) {
     var _a;
     if (!document.exists)
@@ -2228,6 +2265,12 @@ exports.onPrivatePostCreated = (0, backend_1.triggers)().firestore
         const preview = (typeof content === 'string' ? content : '').slice(0, 80);
         if (visibility !== 'public' && visibility !== 'category') {
             runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onPrivatePostCreated: 지원하지 않는 공개범위 스킵 (postId=${postId})`);
+            return null;
+        }
+        // 익명 글: 친구에게 알리면 '익명 = 내 친구'가 드러난다. 구버전 앱이 직접
+        // 만든 문서(알림 대상 필드 없음)도 여기서 막는다.
+        if (post.isAnonymous === true) {
+            runtime_logging_1.runtimeLogsEnabled && (0, runtime_logging_1.runtimeInfo)(`onPrivatePostCreated: 익명 글 알림 생략 (postId=${postId})`);
             return null;
         }
         let targetUserIds = toUniqueStringArray(post.notificationAudienceUserIdsFrozen).filter((uid) => uid !== authorId);
@@ -6803,6 +6846,9 @@ async function isVerifiedCreatedContentNotificationRecipient(notification) {
     if (!document.exists)
         return false;
     const content = document.data() || {};
+    // 익명 글의 새 글 알림은 이미 만들어졌더라도 푸시하지 않는다.
+    if (type === 'post_created' && content.isAnonymous === true)
+        return false;
     const ownerId = normalizeUidLoose(content.ownerId || content.userId);
     const actorId = normalizeUidLoose(notification.actorId || nested.hostId);
     const visibility = safeStringLoose(content.visibilityMode || content.visibility);
@@ -6978,7 +7024,7 @@ exports.onNotificationCreated = (0, backend_1.triggers)()
     .firestore
     .document('notifications/{notificationId}')
     .onCreate(async (snapshot, context) => {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g;
     try {
         const notificationData = snapshot.data();
         const notificationId = context.params.notificationId;
@@ -7286,12 +7332,18 @@ exports.onNotificationCreated = (0, backend_1.triggers)()
         const commonData = Object.assign({ type: String(type || ''), recipientUserId: String(userId || ''), notificationId: String(notificationId || ''), notificationMetadataVersion: '2', notificationCommitMillis: String(Math.floor(snapshot.createTime.toMillis())), sentAtMillis: String(snapshot.createTime.toMillis()), postId: String(notificationData.postId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.postId) || ''), meetupId: String(notificationData.meetupId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupId) || ''), snapshotId: String(notificationData.snapshotId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snapshotId) || ''), commentId: String(notificationData.commentId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.commentId) || ''), conversationId: String(notificationData.conversationId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.conversationId) || ''), senderId: String(notificationData.senderId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.senderId) || notificationData.actorId || ''), snackChatId: String(notificationData.snackChatId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snackChatId) || ''), reviewId: String(notificationData.reviewId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reviewId) || ''), requestId: String(notificationData.requestId ||
                 (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.requestId) ||
                 (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.friendRequestId) ||
-                ''), userId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.userId) || ''), meetupTitle: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupTitle).slice(0, 200), imageUrl: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.imageUrl).slice(0, 1000), content: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.content).slice(0, 500), reaction: String(notificationData.reaction || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reaction) || ''), comment: String(notificationData.comment || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.comment) || ''), reply: String(notificationData.reply || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reply) || ''), originalNotificationId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.originalNotificationId) || ''), actorId: String(notificationData.actorId || actorId || ''), actorName: String(notificationData.actorName || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.actorName) || '') }, (hasBadge ? { badge: String(finalBadge) } : {}));
+                ''), userId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.userId) || ''), meetupTitle: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.meetupTitle).slice(0, 200), imageUrl: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.imageUrl).slice(0, 1000), content: safeStringLoose(dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.content).slice(0, 500), reaction: String(notificationData.reaction || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reaction) || ''), comment: String(notificationData.comment || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.comment) || ''), reply: String(notificationData.reply || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reply) || ''), originalNotificationId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.originalNotificationId) || ''), actorId: String(notificationData.actorId || actorId || ''), actorName: String(notificationData.actorName || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.actorName) || ''), 
+            // 서로 필링(pairKey)·친구 요청(friendRequestId/세대)은 앱이 '보고 있는
+            // 대상'을 맞추는 데 쓴다(없으면 포어그라운드 자동 읽음이 맞지 않았다).
+            pairKey: String(notificationData.pairKey || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.pairKey) || ''), friendRequestId: String((dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.friendRequestId) || notificationData.friendRequestId || ''), notificationGeneration: String((_g = (_f = notificationData.notificationGeneration) !== null && _f !== void 0 ? _f : dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.notificationGeneration) !== null && _g !== void 0 ? _g : '') }, (hasBadge ? { badge: String(finalBadge) } : {}));
         const androidNotificationTag = 'notification_' + crypto
             .createHash('sha256')
             .update(String(notificationId))
             .digest('hex')
             .slice(0, 40);
+        // iOS: 같은 대상(포스트·스낵·밋업·친구 요청 …)의 알림은 한 묶음으로 보이고,
+        // 같은 알림 문서가 다시 전달되면 기존 카드를 대체한다(쌓이지 않게).
+        const iosThreadId = notificationThreadIdFor(commonData);
         const sendForLang = async (lang, tokens) => {
             const current = await snapshot.ref.get();
             if (!current.exists || current.get('isRead') === true) {
@@ -7317,9 +7369,10 @@ exports.onNotificationCreated = (0, backend_1.triggers)()
                     headers: {
                         'apns-push-type': 'alert',
                         'apns-priority': '10',
+                        'apns-collapse-id': androidNotificationTag,
                     },
                     payload: {
-                        aps: Object.assign({ sound: 'default' }, (hasBadge && { badge: finalBadge })),
+                        aps: Object.assign({ sound: 'default', threadId: iosThreadId }, (hasBadge && { badge: finalBadge })),
                     },
                 },
                 android: {
@@ -9075,5 +9128,143 @@ void (0, backend_1.triggers)().firestore
         console.error('❌ onSnackChatMessageCreated 오류:', error);
         return null;
     }
+});
+// ---------------------------------------------------------------------------
+// 읽음 동기화 푸시(read_sync): 다른 기기·서버에서 읽음이 바뀌면 같은 사용자의
+// 모든 기기에 조용한 데이터 푸시를 보내 알림센터 항목을 지우고 배지를 맞춘다.
+// 런타임 환경 변수 READ_SYNC_PUSH=true 일 때만 보낸다(기본 꺼짐). 앱이 먼저
+// 출시된 뒤 켠다. 같은 사용자의 2.5초 안 변경은 한 번으로 묶는다.
+// ---------------------------------------------------------------------------
+async function queueReadSync(userId, target) {
+    if (!userId || !(0, read_sync_policy_1.readSyncEnabled)(process.env))
+        return;
+    const ref = db.collection('read_sync_state').doc(userId);
+    const ticket = crypto.randomUUID();
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const pending = (0, read_sync_policy_1.mergePending)((0, read_sync_policy_1.pendingFromDoc)(snap.get('pending')), target, Date.now());
+        tx.set(ref, {
+            pending,
+            ticket,
+            changedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    });
+    // 묶기: 마지막 변경을 만든 호출만 보낸다.
+    await new Promise((resolve) => setTimeout(resolve, read_sync_policy_1.READ_SYNC_DEBOUNCE_MS));
+    const pending = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (snap.get('ticket') !== ticket)
+            return null;
+        const current = (0, read_sync_policy_1.pendingFromDoc)(snap.get('pending'));
+        tx.set(ref, {
+            pending: (0, read_sync_policy_1.emptyPending)(),
+            ticket: '',
+            lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        return current;
+    });
+    if (!pending || (0, read_sync_policy_1.pendingIsEmpty)(pending))
+        return;
+    const registered = await db.collection('fcm_tokens')
+        .where('userId', '==', userId).limit(20).get();
+    const tokens = await filterPushTokensOwnedByUser(userId, registered.docs.map((doc) => doc.id));
+    if (tokens.length === 0)
+        return;
+    let badge = null;
+    try {
+        const userSnap = await db.collection('users').doc(userId).get();
+        const userData = (userSnap.data() || {});
+        badge = await (0, badge_policy_1.notificationUnreadForBadge)(userId, userData) +
+            toNonNegativeInt(userData.dmUnreadTotal) +
+            await getVisibleSnackChatUnreadTotal(userId);
+    }
+    catch (error) {
+        console.warn('read_sync badge 계산 실패: badge 생략', error);
+    }
+    const message = (0, read_sync_policy_1.readSyncMessage)({ tokens, userId, pending, badge });
+    const res = await admin.messaging().sendEachForMulticast(message);
+    console.log('read_sync sent', {
+        userIdHash: crypto.createHash('sha256').update(userId).digest('hex').slice(0, 12),
+        tokens: tokens.length,
+        success: res.successCount,
+        failure: res.failureCount,
+    });
+}
+/** 일반 알림을 읽음(false → true)으로 바꾸면. */
+exports.onNotificationReadSyncPush = (0, backend_1.triggers)()
+    .firestore.document('notifications/{notificationId}')
+    .onUpdate(async (change, context) => {
+    if (!(0, read_sync_policy_1.readSyncEnabled)(process.env))
+        return null;
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    if (before.isRead === true || after.isRead !== true)
+        return null;
+    if (after.type === 'dm_received')
+        return null;
+    await queueReadSync(String(after.userId || ''), {
+        k: 'app',
+        id: String(context.params.notificationId),
+    });
+    return null;
+});
+/** 안 읽은 일반 알림이 지워지면(친구 요청 수락·취소, 만료 등). */
+exports.onNotificationDeletedReadSyncPush = (0, backend_1.triggers)()
+    .firestore.document('notifications/{notificationId}')
+    .onDelete(async (snapshot, context) => {
+    if (!(0, read_sync_policy_1.readSyncEnabled)(process.env))
+        return null;
+    const before = snapshot.data() || {};
+    if (before.isRead === true || before.type === 'dm_received')
+        return null;
+    await queueReadSync(String(before.userId || ''), {
+        k: 'app',
+        id: String(context.params.notificationId),
+    });
+    return null;
+});
+/** DM 대화의 lastReadAtBy.{uid}가 앞으로 가면. */
+exports.onConversationReadSyncPush = (0, backend_1.triggers)()
+    .firestore.document('conversations/{conversationId}')
+    .onUpdate(async (change, context) => {
+    if (!(0, read_sync_policy_1.readSyncEnabled)(process.env))
+        return null;
+    const before = (change.before.get('lastReadAtBy') || {});
+    const after = (change.after.get('lastReadAtBy') || {});
+    const jobs = [];
+    for (const [uid, value] of Object.entries(after)) {
+        if (!(value instanceof admin.firestore.Timestamp))
+            continue;
+        const previous = before[uid];
+        if (previous instanceof admin.firestore.Timestamp &&
+            previous.toMillis() >= value.toMillis())
+            continue;
+        jobs.push(queueReadSync(uid, {
+            k: 'dm',
+            room: String(context.params.conversationId),
+            ms: value.toMillis(),
+            s: value.seconds,
+            n: value.nanoseconds,
+        }));
+    }
+    await Promise.all(jobs);
+    return null;
+});
+/** 스낵챗 members/{uid}.lastReadSequence가 커지면. */
+exports.onSnackChatMemberReadSyncPush = (0, backend_1.triggers)()
+    .firestore.document('snack_chats/{snackChatId}/members/{userId}')
+    .onUpdate(async (change, context) => {
+    if (!(0, read_sync_policy_1.readSyncEnabled)(process.env))
+        return null;
+    const before = toNonNegativeInt(change.before.get('lastReadSequence'));
+    const after = toNonNegativeInt(change.after.get('lastReadSequence'));
+    if (after <= before)
+        return null;
+    await queueReadSync(String(context.params.userId), {
+        k: 'snack_chat',
+        room: String(context.params.snackChatId),
+        seq: after,
+    });
+    return null;
 });
 //# sourceMappingURL=index.js.map

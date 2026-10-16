@@ -3817,7 +3817,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String meetupTagCreate(String tag) {
-    return '＋ Create a #$tag meetup';
+    return 'Create a #$tag meetup';
   }
 
   @override

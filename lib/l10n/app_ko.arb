@@ -1608,7 +1608,7 @@
   "tagPostsEmpty": "아직 이 태그가 붙은 글이 없어요",
   "tagMeetupsEmpty": "예정된 모임이 없어요",
   "meetupFilterAll": "모든 모임",
-  "meetupTagCreate": "＋ #{tag} 모임 만들기",
+  "meetupTagCreate": "#{tag} 모임 만들기",
   "@meetupTagCreate": {"placeholders": {"tag": {"type": "String"}}},
   "meetupTagEmpty": "#{tag} 모임이 아직 없어요. 처음으로 열어 보세요",
   "@meetupTagEmpty": {"placeholders": {"tag": {"type": "String"}}},

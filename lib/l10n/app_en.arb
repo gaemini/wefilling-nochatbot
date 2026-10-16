@@ -1598,7 +1598,7 @@
   "tagPostsEmpty": "No posts with this tag yet",
   "tagMeetupsEmpty": "No upcoming meetups",
   "meetupFilterAll": "All meetups",
-  "meetupTagCreate": "＋ Create a #{tag} meetup",
+  "meetupTagCreate": "Create a #{tag} meetup",
   "meetupTagEmpty": "No #{tag} meetups yet. Start the first one",
   "tagLockedPosts": "Add this tag to also see {n} posts shared only with its holders",
   "audienceTag": "People with the #tag",

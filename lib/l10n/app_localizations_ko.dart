@@ -3673,7 +3673,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String meetupTagCreate(String tag) {
-    return '＋ #$tag 모임 만들기';
+    return '#$tag 모임 만들기';
   }
 
   @override

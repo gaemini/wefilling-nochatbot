@@ -3621,7 +3621,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String meetupTagCreate(String tag) {
-    return '＋ 创建 #$tag 聚会';
+    return '创建 #$tag 聚会';
   }
 
   @override

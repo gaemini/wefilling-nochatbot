@@ -1578,7 +1578,7 @@
   "tagPostsEmpty": "还没有带这个标签的帖子",
   "tagMeetupsEmpty": "没有即将举行的聚会",
   "meetupFilterAll": "全部聚会",
-  "meetupTagCreate": "＋ 创建 #{tag} 聚会",
+  "meetupTagCreate": "创建 #{tag} 聚会",
   "meetupTagEmpty": "还没有 #{tag} 聚会，来创建第一个吧",
   "tagLockedPosts": "添加此标签后，还能看到仅分享给标签成员的 {n} 篇帖子",
   "audienceTag": "拥有该 #标签 的人",

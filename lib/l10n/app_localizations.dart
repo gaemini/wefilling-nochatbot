@@ -6811,7 +6811,7 @@ abstract class AppLocalizations {
   /// No description provided for @meetupTagCreate.
   ///
   /// In ko, this message translates to:
-  /// **'＋ #{tag} 모임 만들기'**
+  /// **'#{tag} 모임 만들기'**
   String meetupTagCreate(String tag);
 
   /// No description provided for @meetupTagEmpty.

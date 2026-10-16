@@ -209,6 +209,7 @@ class _TagPostsTabState extends State<TagPostsTab>
               onRetry: _loadMore,
             ),
           ),
+          const _BottomSpace(),
         ],
       ),
     );
@@ -290,6 +291,7 @@ class _TagMeetupsTabState extends State<TagMeetupsTab>
             onRetry: _load,
           ),
         ),
+        const _BottomSpace(),
       ],
     );
   }
@@ -337,12 +339,22 @@ class _TabFooter extends StatelessWidget {
     }
     if (empty) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(32, 32, 32, 96),
+        padding: const EdgeInsets.fromLTRB(32, 32, 32, 16),
         child: Text(emptyText,
             textAlign: TextAlign.center,
             style: tagTextStyle(context, 13, FontWeight.w500, TagColors.muted)),
       );
     }
-    return const SizedBox(height: 96);
+    return const SizedBox.shrink();
   }
+}
+
+/// 떠 있는 공유 버튼 + 안드로이드 하단 내비게이션 바만큼 비우는 마지막 칸.
+class _BottomSpace extends StatelessWidget {
+  const _BottomSpace();
+
+  @override
+  Widget build(BuildContext context) => SliverToBoxAdapter(
+        child: SizedBox(height: 96 + MediaQuery.viewPaddingOf(context).bottom),
+      );
 }

@@ -31,9 +31,13 @@ import '../utils/responsive_helper.dart';
 import '../utils/latest_request_guard.dart';
 import '../l10n/ui_locale.dart';
 import 'organization_profile_screen.dart';
-import '../ui/widgets/motion_selectable.dart';
 import '../ui/widgets/list_skeletons.dart';
 import '../ui/widgets/post_loading_transition.dart';
+import '../providers/auth_provider.dart' as app_auth;
+import '../services/interest_tag_service.dart';
+import '../ui/widgets/content_tag_row.dart' show openTagPage;
+import '../ui/widgets/tag_chips.dart';
+import 'tag_explore_screen.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
   /// 0: 이름(유저), 1: 게시글, 2: 모임
@@ -64,6 +68,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   final ScrollController _userResultsController = ScrollController();
   String? _selectedInterestId;
 
+  /// '태그로 친구 찾기' 추천 태그(친구들이 많이 단·요즘 많이 다는).
+  List<String> _suggestedTagIds = const <String>[];
+
   final PostService _postService = PostService();
   final MeetupService _meetupService = MeetupService();
 
@@ -92,6 +99,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     _tabController = TabController(
         length: _tabCount, vsync: this, initialIndex: initialIndex);
     _tabController.addListener(_onTabChanged);
+    _loadSuggestedTags();
 
     _searchController.addListener(() {
       // clear 아이콘·가운데 안내 노출용: 비었는지가 바뀔 때만 다시 그린다
@@ -1102,23 +1110,57 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     );
   }
 
-  List<SocialProfileOption> get _featuredInterests {
-    // Keep search discovery in sync with the profile interest catalogue.
-    // A separate hand-picked list caused valid profile tags to be omitted.
-    return SocialProfileCatalog.interests;
+  Future<void> _loadSuggestedTags() async {
+    try {
+      final result = await InterestTagService.instance.suggestions();
+      if (!mounted) return;
+      setState(() => _suggestedTagIds = [
+            ...result.friends.map((e) => e.$1.id),
+            ...result.popular.map((e) => e.$1.id),
+          ]);
+    } catch (_) {
+      // 추천이 없으면 내 태그와 공식 태그로 고른다.
+    }
   }
 
-  SocialProfileOption? _interestById(String? id) {
-    if (id == null) return null;
-    for (final option in SocialProfileCatalog.interests) {
-      if (option.id == id) return option;
+  /// 칩 목록: 내 태그 → 추천 태그 → 공식 태그(빈자리 채움), 최대 16.
+  List<String> _discoveryTagIds() {
+    final mine = SocialProfileData.fromMap(
+      context.read<app_auth.AuthProvider>().userData,
+    ).interestTagIds;
+    final ids = <String>[
+      ...mine,
+      ..._suggestedTagIds,
+      ...SocialProfileCatalog.interests.map((option) => option.id),
+    ];
+    final unique = <String>[];
+    for (final id in ids) {
+      if (!unique.contains(id)) unique.add(id);
+      if (unique.length == 16) break;
     }
-    return null;
+    if (_selectedInterestId case final selected?
+        when !unique.contains(selected)) {
+      unique.insert(0, selected);
+    }
+    return unique;
+  }
+
+  String _tagLabel(String id, String languageCode) =>
+      InterestTagService.instance.labelFor(id, languageCode);
+
+  /// 한국어 목적격 '을/를'(받침 없으면 '를').
+  static String _koObject(String text, String label, String languageCode) {
+    if (languageCode != 'ko' || label.isEmpty) return text;
+    final last = label.codeUnitAt(label.length - 1);
+    final hasBatchim =
+        last >= 0xAC00 && last <= 0xD7A3 && (last - 0xAC00) % 28 != 0;
+    final latinOrDigit = !(last >= 0xAC00 && last <= 0xD7A3);
+    return (hasBatchim || latinOrDigit) ? text : text.replaceFirst('$label을', '$label를');
   }
 
   Widget _buildInterestDiscovery(AppLocalizations l10n) {
     final languageCode = Localizations.localeOf(context).languageCode;
-    final selected = _interestById(_selectedInterestId);
+    final selected = _selectedInterestId;
 
     return Consumer<RelationshipProvider>(
       builder: (context, provider, _) {
@@ -1139,16 +1181,38 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               ),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  child: Text(
-                    l10n.interestPeopleTitle(selected.label(languageCode)),
-                    style: TextStyle(
-                      fontFamily: uiFontFamily(context, 'Inter'),
-                      fontFamilyFallback: ['NotoSansKR'],
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF111827),
-                    ),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _koObject(
+                            l10n.interestPeopleTitle(
+                                _tagLabel(selected, languageCode)),
+                            _tagLabel(selected, languageCode),
+                            languageCode,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF111827),
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        key: const ValueKey('search_tag_page_link'),
+                        onPressed: () => openTagPage(context, selected),
+                        style: TextButton.styleFrom(
+                          foregroundColor: TagColors.blue,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        child: Text('${l10n.tagPageLink} ›'),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1173,7 +1237,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   Widget _buildInterestHeader({
     required AppLocalizations l10n,
     required String languageCode,
-    required SocialProfileOption? selected,
+    required String? selected,
   }) {
     final compact = MediaQuery.sizeOf(context).width < 360;
     return Padding(
@@ -1234,38 +1298,40 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             ),
           ),
           const SizedBox(height: 14),
-          Wrap(
-            spacing: compact ? 6 : 8,
-            runSpacing: compact ? 6 : 8,
-            children: _featuredInterests.map((option) {
-              final isSelected = option.id == selected?.id;
-              return MotionSelectable(
-                selected: isSelected,
-                pressedScale: MotionSelectable.chipScale,
-                child: ChoiceChip(
-                selected: isSelected,
-                showCheckmark: false,
-                label: Text('#${option.label(languageCode)}'),
-                onSelected: (_) => _selectInterest(option.id),
-                backgroundColor: const Color(0xFFF4F5F7),
-                selectedColor: AppColors.pointColor,
-                side: BorderSide.none,
-                padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 6 : 8,
-                  vertical: compact ? 5 : 6,
-                ),
-                labelStyle: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: compact ? 12 : 13,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? Colors.white : const Color(0xFF344054),
-                ),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
+          ListenableBuilder(
+            listenable: InterestTagService.instance,
+            builder: (context, _) {
+              final ids = _discoveryTagIds();
+              InterestTagService.instance.ensureLoaded(ids);
+              return Wrap(
+                spacing: compact ? 6 : 8,
+                runSpacing: compact ? 6 : 8,
+                children: [
+                  for (final id in ids)
+                    ToggleTagChip(
+                      key: ValueKey('search_tag_$id'),
+                      label: _tagLabel(id, languageCode),
+                      selected: id == selected,
+                      onTap: () => _selectInterest(id),
+                    ),
+                ],
               );
-            }).toList(growable: false),
+            },
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: const ValueKey('search_more_tags'),
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const TagExploreScreen()),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: TagColors.muted,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+              ),
+              child: Text('${l10n.tagMoreTags} ›'),
+            ),
           ),
         ],
       ),
@@ -1274,7 +1340,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
   List<Widget> _buildInterestResultSlivers({
     required RelationshipProvider provider,
-    required SocialProfileOption selected,
+    required String selected,
     required String languageCode,
     required AppLocalizations l10n,
   }) {
@@ -1295,7 +1361,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             actionLabel: l10n.retryAction,
             onAction: () => context
                 .read<RelationshipProvider>()
-                .searchUsersByInterest(selected.id),
+                .searchUsersByInterest(selected),
           ),
         ),
       ];
@@ -1305,7 +1371,11 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         SliverToBoxAdapter(
           child: _buildInterestStatus(
             icon: Icons.people_outline_rounded,
-            title: l10n.interestNoUsersTitle(selected.label(languageCode)),
+            title: _koObject(
+              l10n.interestNoUsersTitle(_tagLabel(selected, languageCode)),
+              _tagLabel(selected, languageCode),
+              languageCode,
+            ),
             subtitle: l10n.interestNoUsersDescription,
           ),
         ),

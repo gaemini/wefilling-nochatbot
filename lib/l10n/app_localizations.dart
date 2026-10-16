@@ -2959,31 +2959,31 @@ abstract class AppLocalizations {
   /// No description provided for @interestFriendDiscoveryTitle.
   ///
   /// In ko, this message translates to:
-  /// **'관심사로 친구 찾기'**
+  /// **'태그로 친구 찾기'**
   String get interestFriendDiscoveryTitle;
 
   /// No description provided for @interestFriendDiscoveryDescription.
   ///
   /// In ko, this message translates to:
-  /// **'관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.'**
+  /// **'#태그를 고르면 같은 태그를 단 사람을 볼 수 있어요.'**
   String get interestFriendDiscoveryDescription;
 
   /// No description provided for @interestPeopleTitle.
   ///
   /// In ko, this message translates to:
-  /// **'#{interest}에 관심 있는 사람'**
+  /// **'#{interest}을 단 사람'**
   String interestPeopleTitle(String interest);
 
   /// No description provided for @interestNoUsersTitle.
   ///
   /// In ko, this message translates to:
-  /// **'아직 #{interest}에 관심사를 등록한 사용자가 없어요'**
+  /// **'아직 #{interest}을 단 사람이 없어요'**
   String interestNoUsersTitle(String interest);
 
   /// No description provided for @interestNoUsersDescription.
   ///
   /// In ko, this message translates to:
-  /// **'다른 관심사를 선택해 새로운 친구를 찾아보세요.'**
+  /// **'다른 태그를 골라 새로운 친구를 찾아보세요.'**
   String get interestNoUsersDescription;
 
   /// No description provided for @interestSearchErrorTitle.
@@ -7143,6 +7143,18 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'올리기'**
   String get postUploadAction;
+
+  /// No description provided for @tagMoreTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'더 많은 태그'**
+  String get tagMoreTags;
+
+  /// No description provided for @tagPageLink.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 페이지'**
+  String get tagPageLink;
 }
 
 class _AppLocalizationsDelegate

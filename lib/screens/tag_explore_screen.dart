@@ -287,7 +287,8 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
     }
     return ListView.builder(
       key: ValueKey('tag_explore_list_${searching ? 'search' : _filter.name}'),
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+      padding: EdgeInsets.fromLTRB(
+          20, 4, 20, 24 + MediaQuery.viewPaddingOf(context).bottom),
       itemCount: rows.length,
       itemBuilder: (context, index) {
         final item = rows[index];

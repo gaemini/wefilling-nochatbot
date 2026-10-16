@@ -581,21 +581,21 @@
   "viewRecommendedFriends": "View Recommended Friends",
   "userSearchIdleTitle": "Search for users",
   "userSearchIdleDescription": "Find new friends by nickname or name.",
-  "interestFriendDiscoveryTitle": "Find friends by interest",
-  "interestFriendDiscoveryDescription": "Choose an interest to meet people who share it.",
-  "interestPeopleTitle": "People interested in #{interest}",
+  "interestFriendDiscoveryTitle": "Find friends by tag",
+  "interestFriendDiscoveryDescription": "Pick a #tag to see people who have it.",
+  "interestPeopleTitle": "People with #{interest}",
   "@interestPeopleTitle": {
     "placeholders": {
       "interest": { "type": "String" }
     }
   },
-  "interestNoUsersTitle": "No one has added #{interest} yet",
+  "interestNoUsersTitle": "No one has #{interest} yet",
   "@interestNoUsersTitle": {
     "placeholders": {
       "interest": { "type": "String" }
     }
   },
-  "interestNoUsersDescription": "Choose another interest to discover new friends.",
+  "interestNoUsersDescription": "Pick another tag to discover new friends.",
   "interestSearchErrorTitle": "Couldn’t load interest results",
   "interestSearchErrorDescription": "Please try again in a moment.",
   "noSearchResults": "No search results",
@@ -1653,5 +1653,7 @@
   "audienceHanyang": "Hanyang students only",
   "audienceHanyangDescription": "Everyone sees the card; only verified users see the content",
   "audienceRowLabel": "Audience",
-  "postUploadAction": "Post"
+  "postUploadAction": "Post",
+  "tagMoreTags": "More tags",
+  "tagPageLink": "Tag page"
 }

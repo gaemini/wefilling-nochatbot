@@ -1473,23 +1473,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get userSearchIdleDescription => '通过昵称或姓名认识新朋友。';
 
   @override
-  String get interestFriendDiscoveryTitle => '按兴趣找好友';
+  String get interestFriendDiscoveryTitle => '按标签找好友';
 
   @override
-  String get interestFriendDiscoveryDescription => '选择兴趣，认识志趣相投的人。';
+  String get interestFriendDiscoveryDescription => '选择 #标签，看看添加了同一标签的人。';
 
   @override
   String interestPeopleTitle(String interest) {
-    return '对#$interest感兴趣的人';
+    return '添加了 #$interest 的人';
   }
 
   @override
   String interestNoUsersTitle(String interest) {
-    return '还没有人添加#$interest';
+    return '还没有人添加 #$interest';
   }
 
   @override
-  String get interestNoUsersDescription => '选择其他兴趣，发现新朋友。';
+  String get interestNoUsersDescription => '选择其他标签，发现新朋友。';
 
   @override
   String get interestSearchErrorTitle => '加载兴趣搜索结果失败';
@@ -3818,4 +3818,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get postUploadAction => '发布';
+
+  @override
+  String get tagMoreTags => '更多标签';
+
+  @override
+  String get tagPageLink => '标签页';
 }

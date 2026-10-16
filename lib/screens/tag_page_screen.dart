@@ -453,7 +453,12 @@ class _TagPageScreenState extends State<TagPageScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2))))
                 : (friends.isEmpty && _people.isEmpty && _peopleDone)
                     ? _EmptyText(l10n.tagPeopleEmpty)
-                    : const SizedBox(height: 96),
+                    : const SizedBox.shrink(),
+          ),
+          // 떠 있는 공유 버튼 + 안드로이드 하단 내비게이션 바만큼 비운다.
+          SliverToBoxAdapter(
+            child: SizedBox(
+                height: 96 + MediaQuery.viewPaddingOf(context).bottom),
           ),
         ],
       ),

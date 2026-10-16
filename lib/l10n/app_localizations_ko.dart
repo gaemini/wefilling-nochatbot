@@ -1498,24 +1498,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get userSearchIdleDescription => '닉네임이나 이름으로 새로운 친구를 찾아보세요.';
 
   @override
-  String get interestFriendDiscoveryTitle => '관심사로 친구 찾기';
+  String get interestFriendDiscoveryTitle => '태그로 친구 찾기';
 
   @override
   String get interestFriendDiscoveryDescription =>
-      '관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.';
+      '#태그를 고르면 같은 태그를 단 사람을 볼 수 있어요.';
 
   @override
   String interestPeopleTitle(String interest) {
-    return '#$interest에 관심 있는 사람';
+    return '#$interest을 단 사람';
   }
 
   @override
   String interestNoUsersTitle(String interest) {
-    return '아직 #$interest에 관심사를 등록한 사용자가 없어요';
+    return '아직 #$interest을 단 사람이 없어요';
   }
 
   @override
-  String get interestNoUsersDescription => '다른 관심사를 선택해 새로운 친구를 찾아보세요.';
+  String get interestNoUsersDescription => '다른 태그를 골라 새로운 친구를 찾아보세요.';
 
   @override
   String get interestSearchErrorTitle => '관심사 검색을 불러오지 못했어요';
@@ -3871,4 +3871,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get postUploadAction => '올리기';
+
+  @override
+  String get tagMoreTags => '더 많은 태그';
+
+  @override
+  String get tagPageLink => '태그 페이지';
 }

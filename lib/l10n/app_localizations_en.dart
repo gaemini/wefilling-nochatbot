@@ -1536,25 +1536,25 @@ class AppLocalizationsEn extends AppLocalizations {
       'Find new friends by nickname or name.';
 
   @override
-  String get interestFriendDiscoveryTitle => 'Find friends by interest';
+  String get interestFriendDiscoveryTitle => 'Find friends by tag';
 
   @override
   String get interestFriendDiscoveryDescription =>
-      'Choose an interest to meet people who share it.';
+      'Pick a #tag to see people who have it.';
 
   @override
   String interestPeopleTitle(String interest) {
-    return 'People interested in #$interest';
+    return 'People with #$interest';
   }
 
   @override
   String interestNoUsersTitle(String interest) {
-    return 'No one has added #$interest yet';
+    return 'No one has #$interest yet';
   }
 
   @override
   String get interestNoUsersDescription =>
-      'Choose another interest to discover new friends.';
+      'Pick another tag to discover new friends.';
 
   @override
   String get interestSearchErrorTitle => 'Couldn’t load interest results';
@@ -4018,4 +4018,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get postUploadAction => 'Post';
+
+  @override
+  String get tagMoreTags => 'More tags';
+
+  @override
+  String get tagPageLink => 'Tag page';
 }

@@ -2,6 +2,7 @@
 // 사용자 데이터 접근 Repository
 // Firestore에서 사용자 정보를 조회하고 관리
 
+import '../services/interest_tag_service.dart';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -638,7 +639,7 @@ class UsersRepository {
           DateTime.now().difference(entry.cachedAt) >=
           _interestSearchCacheExpiry,
     );
-    const searchPolicyVersion = 'v2';
+    const searchPolicyVersion = 'v3-tags';
     final cacheKey =
         '$searchPolicyVersion::$currentUid::$normalizedInterest::$normalizedCursor';
     final cached = _interestSearchCache[cacheKey];
@@ -650,27 +651,34 @@ class UsersRepository {
 
     late final InterestUserSearchPage page;
     try {
-      await FirebaseAppCheckService.instance.ensureReady();
-      final response = await _functions
-          .httpsCallable('searchSocialUsersByInterest')
-          .call(<String, dynamic>{
-        'interestId': normalizedInterest,
-        'limit': limit.clamp(1, 20),
-        if (normalizedCursor.isNotEmpty) 'cursor': normalizedCursor,
-      }).timeout(const Duration(seconds: 15));
-      page = _parseInterestSearchResponse(
-        response.data,
-        currentUid: currentUid,
-        interestId: normalizedInterest,
-      );
-    } on AppCheckUnavailableException {
-      page = await _searchUsersByInterestFromExistingTagSystem(
-        normalizedInterest,
-        currentUid: currentUid,
-        cursor: normalizedCursor,
-        limit: limit,
+      // #태그(사용자가 만든 태그 포함)를 단 사람, 최근에 단 순. 서버가 차단·숨김·
+      // 비활성 계정을 거른다.
+      final result = await InterestTagService.instance
+          .holders(normalizedInterest, cursor: normalizedCursor.isEmpty ? null : normalizedCursor)
+          .timeout(const Duration(seconds: 15));
+      final now = DateTime.now();
+      page = InterestUserSearchPage(
+        users: result.people
+            .where((person) => person.uid.isNotEmpty && person.uid != currentUid)
+            .map((person) => UserProfile(
+                  uid: person.uid,
+                  nickname: person.nickname.isEmpty ? null : person.nickname,
+                  photoURL: person.photoURL.isEmpty ? null : person.photoURL,
+                  nationality:
+                      person.nationality.isEmpty ? null : person.nationality,
+                  university:
+                      person.university.isEmpty ? null : person.university,
+                  interests: person.tags,
+                  interestTagIds: person.tags,
+                  createdAt: now,
+                  updatedAt: now,
+                ))
+            .toList(growable: false),
+        nextCursor: result.cursor,
+        hasMore: result.cursor != null,
       );
     } on FirebaseFunctionsException catch (error) {
+      // 태그 함수를 못 쓰면(배포 전 환경 등) 예전 공식 관심사 경로로 대신 찾는다.
       if (error.code != 'not-found' && error.code != 'unimplemented') rethrow;
       page = await _searchUsersByInterestFromExistingTagSystem(
         normalizedInterest,
@@ -684,51 +692,6 @@ class UsersRepository {
       cachedAt: DateTime.now(),
     );
     return page;
-  }
-
-  InterestUserSearchPage _parseInterestSearchResponse(
-    dynamic data, {
-    required String currentUid,
-    required String interestId,
-  }) {
-    if (data is! Map || data['users'] is! List) {
-      throw const FormatException('Invalid interest user search response');
-    }
-    final now = DateTime.now();
-    final users = (data['users'] as List)
-        .whereType<Map>()
-        .map((raw) {
-          String? optional(String key) {
-            final value = (raw[key] ?? '').toString().trim();
-            return value.isEmpty ? null : value;
-          }
-
-          final rawInterests = raw['interests'];
-          return UserProfile(
-            uid: (raw['uid'] ?? '').toString().trim(),
-            nickname: optional('nickname'),
-            photoURL: optional('photoURL'),
-            nationality: optional('nationality'),
-            university: optional('university'),
-            interests: rawInterests is List
-                ? rawInterests
-                    .whereType<String>()
-                    .map((value) => value.trim())
-                    .where((value) => value.isNotEmpty)
-                    .toList(growable: false)
-                : <String>[interestId],
-            createdAt: now,
-            updatedAt: now,
-          );
-        })
-        .where((profile) => profile.uid.isNotEmpty && profile.uid != currentUid)
-        .toList(growable: false);
-    final cursorValue = (data['nextCursor'] ?? '').toString().trim();
-    return InterestUserSearchPage(
-      users: users,
-      nextCursor: cursorValue.isEmpty ? null : cursorValue,
-      hasMore: data['hasMore'] == true && cursorValue.isNotEmpty,
-    );
   }
 
   /// 새 Callable을 배포하기 전에도 마이프로필 태그 목록과 같은

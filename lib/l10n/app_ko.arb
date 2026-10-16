@@ -580,21 +580,21 @@
   "viewRecommendedFriends": "추천 친구 보기",
   "userSearchIdleTitle": "사용자를 검색해보세요",
   "userSearchIdleDescription": "닉네임이나 이름으로 새로운 친구를 찾아보세요.",
-  "interestFriendDiscoveryTitle": "관심사로 친구 찾기",
-  "interestFriendDiscoveryDescription": "관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.",
-  "interestPeopleTitle": "#{interest}에 관심 있는 사람",
+  "interestFriendDiscoveryTitle": "태그로 친구 찾기",
+  "interestFriendDiscoveryDescription": "#태그를 고르면 같은 태그를 단 사람을 볼 수 있어요.",
+  "interestPeopleTitle": "#{interest}을 단 사람",
   "@interestPeopleTitle": {
     "placeholders": {
       "interest": { "type": "String" }
     }
   },
-  "interestNoUsersTitle": "아직 #{interest}에 관심사를 등록한 사용자가 없어요",
+  "interestNoUsersTitle": "아직 #{interest}을 단 사람이 없어요",
   "@interestNoUsersTitle": {
     "placeholders": {
       "interest": { "type": "String" }
     }
   },
-  "interestNoUsersDescription": "다른 관심사를 선택해 새로운 친구를 찾아보세요.",
+  "interestNoUsersDescription": "다른 태그를 골라 새로운 친구를 찾아보세요.",
   "interestSearchErrorTitle": "관심사 검색을 불러오지 못했어요",
   "interestSearchErrorDescription": "잠시 후 다시 시도해 주세요.",
   "noSearchResults": "검색 결과가 없어요",
@@ -1679,5 +1679,7 @@
   "audienceHanyang": "한양대학생만",
   "audienceHanyangDescription": "카드는 모두에게 보이고, 인증된 사용자만 내용을 봐요",
   "audienceRowLabel": "공개 범위",
-  "postUploadAction": "올리기"
+  "postUploadAction": "올리기",
+  "tagMoreTags": "더 많은 태그",
+  "tagPageLink": "태그 페이지"
 }

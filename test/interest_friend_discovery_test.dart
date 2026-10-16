@@ -38,11 +38,11 @@ void main() {
   test('interest result copy is localized', () {
     expect(
       AppLocalizationsKo().interestPeopleTitle('여행'),
-      '#여행에 관심 있는 사람',
+      '#여행을 단 사람',
     );
     expect(
       AppLocalizationsEn().interestPeopleTitle('Travel'),
-      'People interested in #Travel',
+      'People with #Travel',
     );
   });
 

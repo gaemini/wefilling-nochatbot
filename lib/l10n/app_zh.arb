@@ -598,9 +598,9 @@
   "viewRecommendedFriends": "查看推荐好友",
   "userSearchIdleTitle": "搜索用户",
   "userSearchIdleDescription": "通过昵称或姓名认识新朋友。",
-  "interestFriendDiscoveryTitle": "按兴趣找好友",
-  "interestFriendDiscoveryDescription": "选择兴趣，认识志趣相投的人。",
-  "interestPeopleTitle": "对#{interest}感兴趣的人",
+  "interestFriendDiscoveryTitle": "按标签找好友",
+  "interestFriendDiscoveryDescription": "选择 #标签，看看添加了同一标签的人。",
+  "interestPeopleTitle": "添加了 #{interest} 的人",
   "@interestPeopleTitle": {
     "placeholders": {
       "interest": {
@@ -608,7 +608,7 @@
       }
     }
   },
-  "interestNoUsersTitle": "还没有人添加#{interest}",
+  "interestNoUsersTitle": "还没有人添加 #{interest}",
   "@interestNoUsersTitle": {
     "placeholders": {
       "interest": {
@@ -616,7 +616,7 @@
       }
     }
   },
-  "interestNoUsersDescription": "选择其他兴趣，发现新朋友。",
+  "interestNoUsersDescription": "选择其他标签，发现新朋友。",
   "interestSearchErrorTitle": "加载兴趣搜索结果失败",
   "interestSearchErrorDescription": "请稍后重试。",
   "tryDifferentKeyword": "换个关键词试试",
@@ -1633,5 +1633,7 @@
   "audienceHanyang": "仅限汉阳学生",
   "audienceHanyangDescription": "所有人可见卡片，仅认证用户可查看内容",
   "audienceRowLabel": "公开范围",
-  "postUploadAction": "发布"
+  "postUploadAction": "发布",
+  "tagMoreTags": "更多标签",
+  "tagPageLink": "标签页"
 }

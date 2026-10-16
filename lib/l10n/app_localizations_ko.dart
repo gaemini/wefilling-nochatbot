@@ -3715,4 +3715,38 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get audienceFriendsOnlyDescription => '지금 친구 중 태그를 단 사람만 봐요';
+
+  @override
+  String tagNotifyPosts(String tag, int n) {
+    return '#$tag에 새 글 $n개';
+  }
+
+  @override
+  String tagNotifyMeetups(String tag, int n) {
+    return '#$tag에 새 모임 $n개';
+  }
+
+  @override
+  String get tagExploreTitle => '태그 둘러보기';
+
+  @override
+  String get tagExploreLink => '태그 둘러보기 ›';
+
+  @override
+  String get tagExploreRecommended => '추천';
+
+  @override
+  String get tagExploreFriends => '친구';
+
+  @override
+  String get tagExploreTrending => '뜨는 태그';
+
+  @override
+  String get tagExploreNew => '새 태그';
+
+  @override
+  String get tagExploreEmpty => '아직 보여 줄 태그가 없어요';
+
+  @override
+  String get myTagsNewPosts => '내 #태그 새 글';
 }

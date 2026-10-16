@@ -116,8 +116,17 @@ export {
 } from './hanyang_verification';
 
 export {translateContentBatch} from './content_translation';
-export {searchTags, createTag, setProfileTags, listTagHolders, getTagSummary, setTagPrefs, getTagSuggestions, getTagAudienceFeed, estimateTagAudience} from './interest_tags';
-import {signupProfileTagFields, syncLegacyInterestsToTags, tagAudienceAllows, viewerTagIds} from './interest_tags';
+export {searchTags, createTag, setProfileTags, listTagHolders, getTagSummary, setTagPrefs, getTagSuggestions, getTagAudienceFeed, estimateTagAudience, computeTagTrends, getMyTagNewCounts} from './interest_tags';
+import {
+  contentAudienceIncludes,
+  signupProfileTagFields,
+  syncLegacyInterestsToTags,
+  tagAudienceAllows,
+  tagNotificationCopy,
+  tagNotifyCandidates,
+  takeTagNotifySlot,
+  viewerTagIds,
+} from './interest_tags';
 import {
   READ_SYNC_DEBOUNCE_MS,
   ReadSyncTarget,
@@ -2583,6 +2592,93 @@ async function commitNotificationCreates(
   return created;
 }
 
+/**
+ * #태그 알림: 태그 알림(종)을 켜고 그 태그를 단 사람에게, 글·모임을 볼 수 있을 때만.
+ * 태그별 하루 3건까지, 문구는 '#러닝에 새 글 n개'(오늘 n번째).
+ */
+async function notifyTagFollowers(
+  kind: 'post' | 'meetup',
+  contentId: string,
+  data: FirebaseFirestore.DocumentData,
+): Promise<number> {
+  const tagIds = toUniqueStringArray(data.tagIds).slice(0, 3);
+  const authorId = normalizeUidLoose(data.userId);
+  if (tagIds.length === 0 || !authorId || data.isHidden === true) return 0;
+  const candidates = await tagNotifyCandidates(tagIds);
+  candidates.delete(authorId);
+  if (candidates.size === 0) return 0;
+
+  const userDocs = await db.getAll(
+    ...Array.from(candidates.keys()).map((uid) => db.collection(COL.users).doc(uid)),
+  );
+  const eligible = new Map<string, {tags: string[]; language: string}>();
+  for (const doc of userDocs) {
+    if (!doc.exists || !isActiveSocialProfile(doc.data(), doc.id)) continue;
+    const held = toUniqueStringArray(doc.get('interestTagIds'));
+    const tags = (candidates.get(doc.id) ?? []).filter((tagId) => held.includes(tagId));
+    if (tags.length === 0 || !contentAudienceIncludes(doc.id, data)) continue;
+    if (data.visibility === 'tag' &&
+        !toUniqueStringArray(data.audienceTagIds).some((tagId) => held.includes(tagId))) continue;
+    eligible.set(doc.id, {
+      tags,
+      language: String(doc.get('languageCode') || doc.get('preferredLanguage') || 'en'),
+    });
+  }
+  let targets = await filterTargetUserIdsByBlockRelationship(authorId, Array.from(eligible.keys()));
+  targets = await filterAudienceByNotificationSettings(
+    targets,
+    kind === 'post' ? 'post_interactions' : 'meetup_alerts',
+    kind === 'post' ? ['post_private'] : ['meetup_alert'],
+  );
+  if (targets.length === 0) return 0;
+
+  const tagDocs = await db.getAll(...tagIds.map((tagId) => db.collection(COL.tags).doc(tagId)));
+  const labelOf = (tagId: string, language: string) => {
+    const doc = tagDocs.find((item) => item.id === tagId);
+    const labels = (doc?.get('labels') ?? {}) as Record<string, string>;
+    const lang = language.startsWith('ko') ? 'ko' : language.startsWith('zh') ? 'zh' : 'en';
+    return labels[lang] || labels.en || String(doc?.get('displayName') || tagId);
+  };
+  const day = new Date().toISOString().slice(0, 10);
+  const type = kind === 'post' ? 'tag_post' : 'tag_meetup';
+  const notifications: Array<{
+    reference: FirebaseFirestore.DocumentReference;
+    data: FirebaseFirestore.DocumentData;
+  }> = [];
+  for (const uid of targets) {
+    const target = eligible.get(uid);
+    if (!target) continue;
+    // 한 글에 태그가 여러 개여도 알림은 한 번, 오늘 한도가 남은 첫 태그로.
+    for (const tagId of target.tags) {
+      const count = await takeTagNotifySlot(uid, tagId, day);
+      if (count == null) continue;
+      const label = labelOf(tagId, target.language);
+      const copy = tagNotificationCopy(target.language, kind, label, count);
+      notifications.push({
+        reference: db.collection('notifications').doc(audienceNotificationId(type, contentId, uid)),
+        data: {
+          userId: uid,
+          title: copy.title,
+          message: copy.message,
+          type,
+          ...(kind === 'post' ? {postId: contentId} : {meetupId: contentId}),
+          actorId: authorId,
+          data: {
+            ...(kind === 'post' ? {postId: contentId} : {meetupId: contentId}),
+            tagId,
+            tagLabel: label,
+            count,
+          },
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          isRead: false,
+        },
+      });
+      break;
+    }
+  }
+  return commitNotificationCreates(notifications);
+}
+
 // 포스트 생성 시 생성 당시 공개 범위 안에 있는 친구에게만 알림 생성.
 // public은 생성 시점 친구 snapshot, category는 선택 그룹의 frozen audience를 쓴다.
 export const onPrivatePostCreated = triggers().firestore
@@ -2591,6 +2687,11 @@ export const onPrivatePostCreated = triggers().firestore
     try {
       const post = snapshot.data();
       const postId = context.params.postId;
+      try {
+        await notifyTagFollowers('post', postId, post);
+      } catch (error) {
+        console.error(`tag notification failed postId=${postId}:`, error);
+      }
       const visibility = post.visibility || 'public';
       const authorId = post.userId;
       const title = post.title || '';
@@ -9176,6 +9277,11 @@ export const onMeetupCreated = triggers().firestore
     try {
       const meetupData = snapshot.data();
       const meetupId = context.params.meetupId;
+      try {
+        await notifyTagFollowers('meetup', meetupId, meetupData);
+      } catch (error) {
+        console.error(`tag notification failed meetupId=${meetupId}:`, error);
+      }
       const hostId = meetupData.userId;
       const visibility = meetupData.visibility || 'public';
       const category = meetupData.category || '기타';

@@ -2,6 +2,7 @@
 // 게시판 화면 - 게시글 목록 표시 및 관리
 // 검색, 필터링, 작성 기능 포함
 
+import '../ui/widgets/my_tags_new_row.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -1715,10 +1716,18 @@ class BoardScreenState extends State<BoardScreen> {
 
               // Posts header and everything below retain their original order.
               if (i == 0) {
-                return _buildTodaySectionHeader(
-                  icon: Icons.article_rounded,
-                  title: todayPostsTitle,
-                  centered: true,
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    MyTagsNewRow(
+                        horizontalPadding: _sectionHorizontalPadding),
+                    _buildTodaySectionHeader(
+                      icon: Icons.article_rounded,
+                      title: todayPostsTitle,
+                      centered: true,
+                    ),
+                  ],
                 );
               }
               i -= 1;

@@ -1588,5 +1588,15 @@
   "audienceReach": "约 {n} 人可见 · 包括之后添加标签的人",
   "audienceReachFriends": "{n} 位好友可见",
   "audienceFriendsOnly": "仅限好友",
-  "audienceFriendsOnlyDescription": "只有添加了该标签的现有好友可见"
+  "audienceFriendsOnlyDescription": "只有添加了该标签的现有好友可见",
+  "tagNotifyPosts": "#{tag} 有 {n} 篇新帖子",
+  "tagNotifyMeetups": "#{tag} 有 {n} 个新聚会",
+  "tagExploreTitle": "浏览标签",
+  "tagExploreLink": "浏览标签 ›",
+  "tagExploreRecommended": "推荐",
+  "tagExploreFriends": "好友",
+  "tagExploreTrending": "热门",
+  "tagExploreNew": "新标签",
+  "tagExploreEmpty": "暂时没有可显示的标签",
+  "myTagsNewPosts": "我的 #标签 新帖"
 }

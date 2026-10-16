@@ -1608,5 +1608,15 @@
   "audienceReach": "Visible to about {n} people, including future tag holders",
   "audienceReachFriends": "Visible to {n} friends",
   "audienceFriendsOnly": "Friends only",
-  "audienceFriendsOnlyDescription": "Only current friends with the tag can see it"
+  "audienceFriendsOnlyDescription": "Only current friends with the tag can see it",
+  "tagNotifyPosts": "{n} new posts in #{tag}",
+  "tagNotifyMeetups": "{n} new meetups in #{tag}",
+  "tagExploreTitle": "Explore tags",
+  "tagExploreLink": "Explore tags ›",
+  "tagExploreRecommended": "For you",
+  "tagExploreFriends": "Friends",
+  "tagExploreTrending": "Trending",
+  "tagExploreNew": "New",
+  "tagExploreEmpty": "No tags to show yet",
+  "myTagsNewPosts": "New in my #tags"
 }

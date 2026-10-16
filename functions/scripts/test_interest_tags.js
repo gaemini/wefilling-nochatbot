@@ -11,6 +11,11 @@ const {
   mergeLegacyInterests,
   tagIdDiff,
   contentTagCountDelta,
+  pickTrendingTags,
+  tagNotificationCopy,
+  contentAudienceIncludes,
+  tagAudienceEnabled,
+  tagAudienceAllows,
   OFFICIAL_INTEREST_TAGS,
   OFFICIAL_TAG_IDS,
   MAX_PROFILE_TAGS,
@@ -71,5 +76,32 @@ assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a']}, undefined)), {a: -1
 assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a']}, {tagIds: ['a'], isHidden: true})), {a: -1});
 assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a', 'b']}, {tagIds: ['b', 'c']})), {a: -1, c: 1});
 assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a'], likes: 1}, {tagIds: ['a'], likes: 2})), {});
+
+// 뜨는 태그: 7일 증가 순, 예전 기록이 없으면 7일 안에 생긴 태그만.
+const nowMs = Date.UTC(2026, 9, 16);
+const current = new Map([
+  ['a', {count: 10, createdAtMillis: 0}],
+  ['b', {count: 5, createdAtMillis: nowMs - 86400000}],
+  ['c', {count: 3, createdAtMillis: 0}],
+]);
+assert.deepEqual(pickTrendingTags(current, {a: 9, b: 0, c: 3}, nowMs), [{id: 'b', delta: 5}, {id: 'a', delta: 1}]);
+assert.deepEqual(pickTrendingTags(current, null, nowMs), [{id: 'b', delta: 5}]);
+
+// 알림 문구(ko/en/zh).
+assert.equal(tagNotificationCopy('ko', 'post', '러닝', 3).message, '#러닝에 새 글 3개');
+assert.equal(tagNotificationCopy('en', 'meetup', 'Running', 1).message, '1 new meetup in #Running');
+assert.equal(tagNotificationCopy('zh-Hans', 'post', '跑步', 2).message, '#跑步 有 2 篇新帖子');
+
+// 알림 대상의 공개 범위 확인.
+assert.equal(contentAudienceIncludes('u', {visibility: 'public'}), true);
+assert.equal(contentAudienceIncludes('u', {visibility: 'friends', visibilitySchemaVersion: 2, audienceUserIdsFrozen: ['o']}), false);
+assert.equal(contentAudienceIncludes('u', {visibility: 'category', visibilitySchemaVersion: 2, audienceUserIdsFrozen: ['o', 'u']}), true);
+
+// 플래그·태그 공개 판정.
+assert.equal(tagAudienceEnabled({}), false);
+assert.equal(tagAudienceEnabled({TAG_AUDIENCE_ENABLED: 'true'}), true);
+assert.equal(tagAudienceAllows(['a'], {visibility: 'tag', audienceTagIds: ['a', 'b']}), true);
+assert.equal(tagAudienceAllows(['c'], {visibility: 'tag', audienceTagIds: ['a']}), false);
+assert.equal(tagAudienceAllows(['a'], {visibility: 'public', audienceTagIds: ['a']}), false);
 
 console.log('interest tag helper tests passed');

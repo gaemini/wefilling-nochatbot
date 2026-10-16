@@ -406,6 +406,14 @@ service cloud.firestore {
         && resource.data.get('status', '') == 'active';
       allow write: if false;
     }
+    // 뜨는 태그(하루 한 번 서버가 계산). 일별 기록은 서버 전용.
+    match /tags_trending/{docId} {
+      allow read: if currentUserAccountAllowed();
+      allow write: if false;
+    }
+    match /tags_daily/{day} {
+      allow read, write: if false;
+    }
     // 태그 설정(숨김·알림)과 하루 만들기 횟수는 서버 전용.
     match /users_private/{userId}/{document=**} {
       allow read, write: if false;

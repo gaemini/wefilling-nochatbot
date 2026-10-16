@@ -5,6 +5,7 @@ import '../l10n/app_localizations.dart';
 import '../models/social_profile_data.dart';
 import '../providers/auth_provider.dart';
 import '../services/interest_tag_service.dart';
+import '../services/tag_seen_store.dart';
 import '../ui/sheets/tag_preview_sheet.dart' show TagFaces;
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/tag_chips.dart';
@@ -67,6 +68,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
   @override
   void initState() {
     super.initState();
+    TagSeenStore.markSeen(widget.tagId);
     _load();
   }
 

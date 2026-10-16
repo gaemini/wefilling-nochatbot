@@ -3861,4 +3861,38 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get audienceFriendsOnlyDescription =>
       'Only current friends with the tag can see it';
+
+  @override
+  String tagNotifyPosts(String tag, int n) {
+    return '$n new posts in #$tag';
+  }
+
+  @override
+  String tagNotifyMeetups(String tag, int n) {
+    return '$n new meetups in #$tag';
+  }
+
+  @override
+  String get tagExploreTitle => 'Explore tags';
+
+  @override
+  String get tagExploreLink => 'Explore tags ›';
+
+  @override
+  String get tagExploreRecommended => 'For you';
+
+  @override
+  String get tagExploreFriends => 'Friends';
+
+  @override
+  String get tagExploreTrending => 'Trending';
+
+  @override
+  String get tagExploreNew => 'New';
+
+  @override
+  String get tagExploreEmpty => 'No tags to show yet';
+
+  @override
+  String get myTagsNewPosts => 'New in my #tags';
 }

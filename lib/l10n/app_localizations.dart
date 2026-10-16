@@ -6873,6 +6873,66 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'지금 친구 중 태그를 단 사람만 봐요'**
   String get audienceFriendsOnlyDescription;
+
+  /// No description provided for @tagNotifyPosts.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag}에 새 글 {n}개'**
+  String tagNotifyPosts(String tag, int n);
+
+  /// No description provided for @tagNotifyMeetups.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag}에 새 모임 {n}개'**
+  String tagNotifyMeetups(String tag, int n);
+
+  /// No description provided for @tagExploreTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 둘러보기'**
+  String get tagExploreTitle;
+
+  /// No description provided for @tagExploreLink.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 둘러보기 ›'**
+  String get tagExploreLink;
+
+  /// No description provided for @tagExploreRecommended.
+  ///
+  /// In ko, this message translates to:
+  /// **'추천'**
+  String get tagExploreRecommended;
+
+  /// No description provided for @tagExploreFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구'**
+  String get tagExploreFriends;
+
+  /// No description provided for @tagExploreTrending.
+  ///
+  /// In ko, this message translates to:
+  /// **'뜨는 태그'**
+  String get tagExploreTrending;
+
+  /// No description provided for @tagExploreNew.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 태그'**
+  String get tagExploreNew;
+
+  /// No description provided for @tagExploreEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 보여 줄 태그가 없어요'**
+  String get tagExploreEmpty;
+
+  /// No description provided for @myTagsNewPosts.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 #태그 새 글'**
+  String get myTagsNewPosts;
 }
 
 class _AppLocalizationsDelegate

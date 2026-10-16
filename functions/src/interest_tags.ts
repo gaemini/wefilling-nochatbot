@@ -3,7 +3,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import {DocumentReference, FieldPath, FieldValue, Timestamp} from 'firebase-admin/firestore';
-import {callables} from './backend';
+import {callables, triggers} from './backend';
 import {COL} from './firestore_paths';
 import {isSearchableUser} from './searchable_user_policy';
 import {FrozenAudience, friendIdCandidatesAtCreation, resolveFrozenAudience} from './frozen_audience';
@@ -749,4 +749,147 @@ export const estimateTagAudience = callables()
     const docs = await db().getAll(...tagIds.map(tagRef));
     const sum = docs.reduce((total, doc) => total + Math.max(0, Number(doc.get('holderCount') ?? 0) || 0), 0);
     return {count: sum, approximate: true};
+  });
+
+// ===== 태그 알림 =====
+
+export const TAG_NOTIFY_DAILY_LIMIT = 3;
+const TAG_NOTIFY_CANDIDATE_LIMIT = 500;
+
+/** 이 태그들에 알림을 켠 사람(users_private.tagPrefs.<tag>.notify == true) → 켠 태그. */
+export async function tagNotifyCandidates(tagIds: readonly string[]): Promise<Map<string, string[]>> {
+  const byUser = new Map<string, string[]>();
+  const snaps = await Promise.all(tagIds.map((tagId) => db().collection(COL.usersPrivate)
+    .where(new FieldPath('tagPrefs', tagId, 'notify'), '==', true)
+    .limit(TAG_NOTIFY_CANDIDATE_LIMIT).get()));
+  snaps.forEach((snap, index) => snap.docs.forEach((doc) => {
+    byUser.set(doc.id, [...(byUser.get(doc.id) ?? []), tagIds[index]]);
+  }));
+  return byUser;
+}
+
+/** 글·모임의 공개 범위로 이 사람이 볼 수 있는지(태그 보유는 따로 확인). */
+export function contentAudienceIncludes(uid: string, data: admin.firestore.DocumentData): boolean {
+  const visibility = String(data.visibility ?? 'public');
+  if (visibility === 'public' || visibility === 'tag') return true;
+  const audience = stringArray(Number(data.visibilitySchemaVersion ?? 0) >= 2 ?
+    data.audienceUserIdsFrozen : data.allowedUserIds);
+  return audience.includes(uid);
+}
+
+export function tagNotificationCopy(
+  language: string,
+  kind: 'post' | 'meetup',
+  tagLabel: string,
+  count: number,
+): {title: string; message: string} {
+  const lang = language.startsWith('ko') ? 'ko' : language.startsWith('zh') ? 'zh' : 'en';
+  const title = `#${tagLabel}`;
+  if (lang === 'ko') {
+    return {title, message: kind === 'post' ? `#${tagLabel}에 새 글 ${count}개` : `#${tagLabel}에 새 모임 ${count}개`};
+  }
+  if (lang === 'zh') {
+    return {title, message: kind === 'post' ? `#${tagLabel} 有 ${count} 篇新帖子` : `#${tagLabel} 有 ${count} 个新聚会`};
+  }
+  return {
+    title,
+    message: kind === 'post'
+      ? `${count} new ${count === 1 ? 'post' : 'posts'} in #${tagLabel}`
+      : `${count} new ${count === 1 ? 'meetup' : 'meetups'} in #${tagLabel}`,
+  };
+}
+
+/** 하루 태그별 알림 횟수를 1 올린다. 한도를 넘으면 null, 아니면 오늘 몇 번째인지. */
+export async function takeTagNotifySlot(uid: string, tagId: string, day: string): Promise<number | null> {
+  const ref = db().collection(COL.usersPrivate).doc(uid).collection('tag_notify').doc(`${tagId}_${day}`);
+  return db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const used = Number(snap.get('count') ?? 0) || 0;
+    if (used >= TAG_NOTIFY_DAILY_LIMIT) return null;
+    tx.set(ref, {count: used + 1, updatedAt: FieldValue.serverTimestamp()}, {merge: true});
+    return used + 1;
+  });
+}
+
+// ===== 뜨는 태그 · 새 글 개수 =====
+
+const TREND_WINDOW_DAYS = 7;
+const TREND_LIMIT = 20;
+
+export function dayKey(millis: number): string {
+  return new Date(millis).toISOString().slice(0, 10);
+}
+
+/** 7일 holderCount 증가로 뜨는 태그를 고른다. 예전 기록이 없으면 7일 안에 생긴 태그만 센다. */
+export function pickTrendingTags(
+  now: Map<string, {count: number; createdAtMillis: number}>,
+  before: Record<string, number> | null,
+  nowMillis: number,
+): Array<{id: string; delta: number}> {
+  const windowStart = nowMillis - TREND_WINDOW_DAYS * 86400000;
+  return Array.from(now.entries())
+    .map(([id, tag]) => ({
+      id,
+      delta: before
+        ? tag.count - (before[id] ?? 0)
+        : tag.createdAtMillis >= windowStart ? tag.count : 0,
+    }))
+    .filter((item) => item.delta > 0)
+    .sort((a, b) => b.delta - a.delta || a.id.localeCompare(b.id))
+    .slice(0, TREND_LIMIT);
+}
+
+/** 하루 한 번: 태그별 holderCount를 tags_daily/{day}에 남기고 tags_trending/current를 갱신한다. */
+export const computeTagTrends = triggers()
+  .runWith({timeoutSeconds: 120, memory: '256MB'})
+  .pubsub.schedule('every 24 hours')
+  .onRun(async () => {
+    const nowMillis = Date.now();
+    const snap = await db().collection(COL.tags).where('status', '==', 'active')
+      .select('holderCount', 'createdAt').get();
+    const now = new Map<string, {count: number; createdAtMillis: number}>();
+    snap.docs.forEach((doc) => now.set(doc.id, {
+      count: Math.max(0, Number(doc.get('holderCount') ?? 0) || 0),
+      createdAtMillis: (doc.get('createdAt') as Timestamp | undefined)?.toMillis() ?? 0,
+    }));
+    const daily = db().collection('tags_daily');
+    const before = await daily.doc(dayKey(nowMillis - TREND_WINDOW_DAYS * 86400000)).get();
+    const items = pickTrendingTags(now, before.exists ? (before.get('counts') ?? {}) : null, nowMillis);
+    const batch = db().batch();
+    batch.set(daily.doc(dayKey(nowMillis)), {
+      counts: Object.fromEntries(Array.from(now.entries()).map(([id, tag]) => [id, tag.count])),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    batch.set(db().collection('tags_trending').doc('current'), {
+      items, updatedAt: FieldValue.serverTimestamp(),
+    });
+    batch.delete(daily.doc(dayKey(nowMillis - 15 * 86400000)));
+    await batch.commit();
+    return null;
+  });
+
+/**
+ * 게시판 '내 #태그 새 글': 내 태그별로 since 이후 새 글 수(공개 글 + 내가 볼 수 있는 태그 공개 글).
+ * since가 없으면 7일 전부터. 개수 쿼리라 글 1000개당 읽기 1회.
+ */
+export const getMyTagNewCounts = callables()
+  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const myTags = (await viewerTagIds(uid)).slice(0, MAX_PROFILE_TAGS);
+    const since = data?.since && typeof data.since === 'object' ? data.since as Record<string, unknown> : {};
+    const fallback = Date.now() - TREND_WINDOW_DAYS * 86400000;
+    const posts = db().collection(COL.posts);
+    const entries = await Promise.all(myTags.map(async (tagId) => {
+      const raw = Number(since[tagId]);
+      const after = Timestamp.fromMillis(Number.isFinite(raw) && raw > 0 ? raw : fallback);
+      const [publicCount, tagCount] = await Promise.all([
+        posts.where('visibility', '==', 'public').where('tagIds', 'array-contains', tagId)
+          .where('createdAt', '>', after).count().get(),
+        posts.where('visibility', '==', 'tag').where('audienceTagIds', 'array-contains', tagId)
+          .where('createdAt', '>', after).count().get(),
+      ]);
+      return [tagId, publicCount.data().count + tagCount.data().count] as const;
+    }));
+    return {counts: Object.fromEntries(entries)};
   });

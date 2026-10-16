@@ -80,12 +80,12 @@ class NavigationService {
     final postId = _stringValue(data, 'postId');
     if (postId.isNotEmpty && const {
       'post_private', 'post_created', 'new_comment', 'comment_reply',
-      'new_like', 'comment_like',
+      'new_like', 'comment_like', 'tag_post',
     }.contains(type)) return 'post:$postId';
     final meetupId = _stringValue(data, 'meetupId');
     if (meetupId.isNotEmpty && const {
       'meetup_full', 'meetup_cancelled', 'meetup_created', 'NEW_MEETUP',
-      'meetup_participant_joined', 'meetup_participant_left',
+      'meetup_participant_joined', 'meetup_participant_left', 'tag_meetup',
     }.contains(type)) return 'meetup:$meetupId';
     if (type == 'friend_request') return 'friend-requests';
     if (type == 'friend_request_accepted') {
@@ -241,6 +241,7 @@ class NavigationService {
           }
         case 'post_private':
         case 'post_created':
+        case 'tag_post':
         case 'new_comment':
         case 'comment_reply':
         case 'new_like':
@@ -366,6 +367,7 @@ class NavigationService {
         case 'meetup_full':
         case 'meetup_cancelled':
         case 'meetup_created':
+        case 'tag_meetup':
         case 'NEW_MEETUP':
         case 'meetup_participant_joined':
         case 'meetup_participant_left':

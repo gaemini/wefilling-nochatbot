@@ -85,6 +85,8 @@ class InterestTagService extends ChangeNotifier {
   void debugReset() {
     debugCall = null;
     debugGetTag = null;
+    debugTrending = null;
+    debugNewest = null;
     _cache.clear();
     _loading.clear();
   }
@@ -231,6 +233,54 @@ class InterestTagService extends ChangeNotifier {
       if (hidden != null) 'hidden': hidden,
       if (notify != null) 'notify': notify,
     });
+  }
+
+  /// 뜨는 태그(tags_trending/current, 하루 한 번 서버 계산).
+  Future<List<InterestTag>> trending() async {
+    final override = debugTrending;
+    final ids = override != null
+        ? await override()
+        : [
+            for (final item in ((await FirebaseFirestore.instance
+                            .doc('tags_trending/current')
+                            .get())
+                        .data()?['items'] as List? ??
+                    const []))
+              if (item is Map && item['id'] is String) item['id'] as String,
+          ];
+    return getMany(ids);
+  }
+
+  /// 새로 생긴 태그(최신순).
+  Future<List<InterestTag>> newest({int limit = 20}) async {
+    final override = debugNewest;
+    if (override != null) return override();
+    final snapshot = await FirebaseFirestore.instance
+        .collection('tags')
+        .where('status', isEqualTo: 'active')
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .get();
+    return [
+      for (final doc in snapshot.docs)
+        _cache[doc.id] = InterestTag.fromMap(doc.id, doc.data()),
+    ];
+  }
+
+  @visibleForTesting
+  Future<List<String>> Function()? debugTrending;
+
+  @visibleForTesting
+  Future<List<InterestTag>> Function()? debugNewest;
+
+  /// 게시판 '내 #태그 새 글': 태그별로 [since] 이후 새 글 수.
+  Future<Map<String, int>> myNewCounts(Map<String, int> since) async {
+    final data = Map<String, dynamic>.from(
+        await _call('getMyTagNewCounts', {'since': since}) as Map);
+    return {
+      for (final entry in (data['counts'] as Map? ?? const {}).entries)
+        entry.key.toString(): (entry.value as num?)?.toInt() ?? 0,
+    };
   }
 
   /// 공개 범위 시트의 '약 n명'.

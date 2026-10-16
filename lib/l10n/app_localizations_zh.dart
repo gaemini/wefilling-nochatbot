@@ -3663,4 +3663,38 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get audienceFriendsOnlyDescription => '只有添加了该标签的现有好友可见';
+
+  @override
+  String tagNotifyPosts(String tag, int n) {
+    return '#$tag 有 $n 篇新帖子';
+  }
+
+  @override
+  String tagNotifyMeetups(String tag, int n) {
+    return '#$tag 有 $n 个新聚会';
+  }
+
+  @override
+  String get tagExploreTitle => '浏览标签';
+
+  @override
+  String get tagExploreLink => '浏览标签 ›';
+
+  @override
+  String get tagExploreRecommended => '推荐';
+
+  @override
+  String get tagExploreFriends => '好友';
+
+  @override
+  String get tagExploreTrending => '热门';
+
+  @override
+  String get tagExploreNew => '新标签';
+
+  @override
+  String get tagExploreEmpty => '暂时没有可显示的标签';
+
+  @override
+  String get myTagsNewPosts => '我的 #标签 新帖';
 }

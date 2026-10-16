@@ -29,7 +29,7 @@ import '../utils/nickname_policy.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/widgets/shape_icon.dart';
 import 'requests_page.dart';
-import 'social_tag_explorer_screen.dart';
+import 'tag_explore_screen.dart';
 import '../widgets/user_tile.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
@@ -1272,7 +1272,7 @@ class _FriendsPageState extends State<FriendsPage> {
   void _openTagFriendFinder() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => const SocialTagExplorerScreen(),
+        builder: (_) => const TagExploreScreen(),
       ),
     );
   }

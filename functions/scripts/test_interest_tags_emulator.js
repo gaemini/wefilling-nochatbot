@@ -71,7 +71,7 @@ const activeUser = (extra = {}) => ({
 // 못 읽어 실패한다(배포 환경은 정상). 그래서 서버 판정 함수를 직접 불러 같은 필드로 저장한다.
 const admin = require('firebase-admin');
 if (!admin.apps.length) admin.initializeApp({projectId: PROJECT});
-const {resolveTagAudience} = require('../lib/interest_tags');
+const {resolveTagAudience, tagNotifyCandidates, takeTagNotifySlot} = require('../lib/interest_tags');
 
 async function createTagPost(postId, data) {
   process.env.TAG_AUDIENCE_ENABLED = 'true';
@@ -281,6 +281,28 @@ async function main() {
   assert.deepEqual(range.items.map((item) => item.id), ['TagMeetup00000000001']);
   assert.equal((await call('getTagAudienceFeed', 'carol', {kind: 'meetups', fromMillis: 0, toMillis: 200 * 86400000})).error, 'range-invalid');
   console.log('tag audience ok');
+
+  // ===== 태그 알림 =====
+  // 알림을 켠 사람만 후보(bob의 running은 위에서 숨김만 켬 → 알림 꺼짐).
+  await call('setTagPrefs', 'carol', {tagId: 'kpop', notify: true});
+  await call('setTagPrefs', 'alice', {tagId: 'kpop', notify: true});
+  const candidates = await tagNotifyCandidates(['kpop', 'running']);
+  assert.deepEqual([...candidates.keys()].sort(), ['alice', 'carol']);
+  assert.deepEqual(candidates.get('carol'), ['kpop']);
+  // 태그별 하루 3건.
+  const slots = [];
+  for (let i = 0; i < 4; i++) slots.push(await takeTagNotifySlot('carol', 'kpop', '2026-10-16'));
+  assert.deepEqual(slots, [1, 2, 3, null]);
+  assert.equal(await takeTagNotifySlot('carol', 'kpop', '2026-10-17'), 1);
+  // 뜨는 태그 문서는 로그인한 사용자가 읽을 수 있고 일별 기록은 못 읽는다.
+  await seed('tags_trending/current', {items: [{id: 'kpop', delta: 2}]});
+  await seed('tags_daily/2026-10-16', {counts: {kpop: 2}});
+  assert.equal((await getAs('carol', 'tags_trending/current')).status, 200);
+  assert.equal((await getAs('carol', 'tags_daily/2026-10-16')).status, 403);
+  // 새 글 개수: carol(kpop) → 태그 공개 글 1개(공개 글 p2는 createdAt 없음).
+  assert.deepEqual(await call('getMyTagNewCounts', 'carol', {}), {counts: {kpop: 1}});
+  assert.deepEqual(await call('getMyTagNewCounts', 'carol', {since: {kpop: Date.now() + 60000}}), {counts: {kpop: 0}});
+  console.log('tag notifications ok');
 }
 
 main().catch((error) => {

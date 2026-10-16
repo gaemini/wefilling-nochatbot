@@ -64,7 +64,7 @@ async function existingUserIds(ids: Iterable<string>): Promise<string[]> {
   return valid;
 }
 
-async function friendIdCandidatesAtCreation(ownerId: string): Promise<Set<string>> {
+export async function friendIdCandidatesAtCreation(ownerId: string): Promise<Set<string>> {
   const store = admin.firestore();
   const audience = new Set<string>([ownerId]);
   const [friendships, outgoing, incoming] = await Promise.all([

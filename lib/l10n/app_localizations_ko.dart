@@ -3475,4 +3475,159 @@ class AppLocalizationsKo extends AppLocalizations {
   String translationOriginalLanguage(String lang) {
     return '원문 언어 $lang';
   }
+
+  @override
+  String get myTags => '내 #태그';
+
+  @override
+  String get myTagsDescription => '같은 태그를 단 사람과 이어져요. 최대 8개';
+
+  @override
+  String get tagPickerTitle => '요즘 어떤 걸 좋아하세요?';
+
+  @override
+  String get tagSearchHint => '태그 찾기 또는 직접 만들기';
+
+  @override
+  String tagCreate(String name) {
+    return '‘#$name’ 새로 만들기';
+  }
+
+  @override
+  String get tagAddToMine => '＋ 내 태그에 추가';
+
+  @override
+  String get tagInMine => '✓ 내 태그';
+
+  @override
+  String tagHolders(int n) {
+    return '$n명이 달았어요';
+  }
+
+  @override
+  String tagHoldersWithFriends(int n, int friends) {
+    return '$n명이 달았어요 · 친구 $friends명';
+  }
+
+  @override
+  String tagFriendsAlso(int n) {
+    return '친구 $n명도 달았어요';
+  }
+
+  @override
+  String tagStats(int people, int posts, int meetups) {
+    return '$people명 · 포스트 $posts · 모임 $meetups';
+  }
+
+  @override
+  String get tagOpenPage => '태그 페이지 보기';
+
+  @override
+  String tagSelectedCount(int n) {
+    return '$n/8 선택';
+  }
+
+  @override
+  String get tagAdd => '추가';
+
+  @override
+  String get tagAdded => '✓ 추가됨';
+
+  @override
+  String get tagFindOrCreate => '＋ 태그 찾기·만들기';
+
+  @override
+  String get tagAddShort => '＋ 태그';
+
+  @override
+  String get tagSuggestFriends => '친구들이 많이 단';
+
+  @override
+  String get tagSuggestPopular => '요즘 많이 다는';
+
+  @override
+  String get tagDailyLimit => '오늘은 새 태그를 더 만들 수 없어요';
+
+  @override
+  String get tagBlocked => '이 이름으로는 만들 수 없어요';
+
+  @override
+  String get tagInvalid => '2–20자, 글자·숫자·_만 쓸 수 있어요';
+
+  @override
+  String get tagUnavailable => '지금은 쓸 수 없는 태그예요';
+
+  @override
+  String get tagLimitReached => '태그는 8개까지 달 수 있어요';
+
+  @override
+  String get tagSaveFailed => '태그를 저장하지 못했어요. 다시 시도해 주세요';
+
+  @override
+  String get tagLoadFailed => '태그를 불러오지 못했어요';
+
+  @override
+  String get tagNoResults => '찾는 태그가 없어요';
+
+  @override
+  String get tagHideFromList => '태그 사람 목록에서 나를 숨기기';
+
+  @override
+  String get tagHideFromListDescription => '태그는 내 프로필에 그대로 보여요';
+
+  @override
+  String get tagRemoveFromMine => '내 태그에서 빼기';
+
+  @override
+  String get tagAddedToMine => '내 태그에 추가했어요';
+
+  @override
+  String get tagRemovedFromMine => '내 태그에서 뺐어요';
+
+  @override
+  String get tagNotifyOn => '새 글·모임을 알려 드릴게요';
+
+  @override
+  String get tagNotifyOff => '알림을 껐어요';
+
+  @override
+  String get tagNotifyLabel => '태그 알림';
+
+  @override
+  String get tagOfficial => '공식 태그';
+
+  @override
+  String tagPeopleTab(int n) {
+    return '사람 $n';
+  }
+
+  @override
+  String tagPostsTab(int n) {
+    return '포스트 $n';
+  }
+
+  @override
+  String tagMeetupsTab(int n) {
+    return '밋업 $n';
+  }
+
+  @override
+  String get tagFriendsSection => '친구';
+
+  @override
+  String get tagOthersSection => '다른 사람';
+
+  @override
+  String get tagPeopleEmpty => '아직 이 태그를 단 사람이 없어요';
+
+  @override
+  String get tagYou => '나';
+
+  @override
+  String tagActivitiesLine(String items) {
+    return '같이 하고 싶은 것 · $items';
+  }
+
+  @override
+  String get profileTagsTitle => '#태그';
 }

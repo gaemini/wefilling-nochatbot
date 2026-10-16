@@ -3618,4 +3618,160 @@ class AppLocalizationsEn extends AppLocalizations {
   String translationOriginalLanguage(String lang) {
     return 'Original: $lang';
   }
+
+  @override
+  String get myTags => 'My #tags';
+
+  @override
+  String get myTagsDescription => 'Meet people with the same tags. Up to 8';
+
+  @override
+  String get tagPickerTitle => 'What are you into lately?';
+
+  @override
+  String get tagSearchHint => 'Find or create a tag';
+
+  @override
+  String tagCreate(String name) {
+    return 'Create ‘#$name’';
+  }
+
+  @override
+  String get tagAddToMine => '＋ Add to my tags';
+
+  @override
+  String get tagInMine => '✓ My tag';
+
+  @override
+  String tagHolders(int n) {
+    return '$n people have this';
+  }
+
+  @override
+  String tagHoldersWithFriends(int n, int friends) {
+    return '$n people · $friends friends';
+  }
+
+  @override
+  String tagFriendsAlso(int n) {
+    return '$n friends have it too';
+  }
+
+  @override
+  String tagStats(int people, int posts, int meetups) {
+    return '$people people · $posts posts · $meetups meetups';
+  }
+
+  @override
+  String get tagOpenPage => 'Open tag page';
+
+  @override
+  String tagSelectedCount(int n) {
+    return '$n/8 selected';
+  }
+
+  @override
+  String get tagAdd => 'Add';
+
+  @override
+  String get tagAdded => '✓ Added';
+
+  @override
+  String get tagFindOrCreate => '＋ Find or create tags';
+
+  @override
+  String get tagAddShort => '＋ Tag';
+
+  @override
+  String get tagSuggestFriends => 'Popular with friends';
+
+  @override
+  String get tagSuggestPopular => 'Popular now';
+
+  @override
+  String get tagDailyLimit => 'You can\'t create more tags today';
+
+  @override
+  String get tagBlocked => 'This name can\'t be used';
+
+  @override
+  String get tagInvalid => 'Use 2–20 letters, numbers or _';
+
+  @override
+  String get tagUnavailable => 'This tag isn\'t available';
+
+  @override
+  String get tagLimitReached => 'You can add up to 8 tags';
+
+  @override
+  String get tagSaveFailed => 'Couldn\'t save tags. Please try again';
+
+  @override
+  String get tagLoadFailed => 'Couldn\'t load this tag';
+
+  @override
+  String get tagNoResults => 'No matching tags';
+
+  @override
+  String get tagHideFromList => 'Hide me from this tag\'s people';
+
+  @override
+  String get tagHideFromListDescription =>
+      'The tag still shows on your profile';
+
+  @override
+  String get tagRemoveFromMine => 'Remove from my tags';
+
+  @override
+  String get tagAddedToMine => 'Added to your tags';
+
+  @override
+  String get tagRemovedFromMine => 'Removed from your tags';
+
+  @override
+  String get tagNotifyOn => 'We\'ll let you know about new posts and meetups';
+
+  @override
+  String get tagNotifyOff => 'Notifications off';
+
+  @override
+  String get tagNotifyLabel => 'Tag notifications';
+
+  @override
+  String get tagOfficial => 'Official tag';
+
+  @override
+  String tagPeopleTab(int n) {
+    return 'People $n';
+  }
+
+  @override
+  String tagPostsTab(int n) {
+    return 'Posts $n';
+  }
+
+  @override
+  String tagMeetupsTab(int n) {
+    return 'Meetups $n';
+  }
+
+  @override
+  String get tagFriendsSection => 'Friends';
+
+  @override
+  String get tagOthersSection => 'Others';
+
+  @override
+  String get tagPeopleEmpty => 'No one has this tag yet';
+
+  @override
+  String get tagYou => 'You';
+
+  @override
+  String tagActivitiesLine(String items) {
+    return 'Let\'s do · $items';
+  }
+
+  @override
+  String get profileTagsTitle => '#Tags';
 }

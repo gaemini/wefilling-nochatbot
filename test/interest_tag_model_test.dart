@@ -14,7 +14,8 @@ void main() {
     expect(running.labelFor('ja'), 'Running');
     expect(running.holderCount, 12);
 
-    final kpop = InterestTag.fromMap('kpop', {'displayName': 'K-POP', 'labels': {}});
+    final kpop =
+        InterestTag.fromMap('kpop', {'displayName': 'K-POP', 'labels': {}});
     expect(kpop.labelFor('ko'), 'K-POP');
     expect(kpop.official, isFalse);
     expect(kpop.postCount, 0);

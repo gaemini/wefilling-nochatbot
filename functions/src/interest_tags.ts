@@ -6,6 +6,7 @@ import {FieldPath, FieldValue} from 'firebase-admin/firestore';
 import {callables} from './backend';
 import {COL} from './firestore_paths';
 import {isSearchableUser} from './searchable_user_policy';
+import {friendIdCandidatesAtCreation} from './frozen_audience';
 
 const db = () => admin.firestore();
 
@@ -386,4 +387,129 @@ export const listTagHolders = callables()
     });
     const cursor = snapshot.size === limit ? snapshot.docs[snapshot.size - 1].id : null;
     return {users, cursor};
+  });
+
+const FRIEND_SCAN_LIMIT = 300;
+const FRIEND_FACE_LIMIT = 30;
+
+function chunks<T>(items: readonly T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let start = 0; start < items.length; start += size) result.push(items.slice(start, start + size));
+  return result;
+}
+
+function personSummary(doc: admin.firestore.DocumentSnapshot) {
+  const profile = doc.data() ?? {};
+  return {
+    uid: doc.id,
+    nickname: String(profile.nickname || '').trim(),
+    photoURL: String(profile.photoURL || '').trim(),
+    nationality: String(profile.nationality || '').trim(),
+    university: String(profile.university || '').trim(),
+  };
+}
+
+/** 이 태그를 단 친구(차단·비활성·숨김 제외). 태그 페이지 '친구 먼저'와 미리보기 얼굴에 쓴다. */
+export async function friendTagHolders(uid: string, tagId: string) {
+  const friendIds = Array.from(await friendIdCandidatesAtCreation(uid))
+    .filter((id) => id && id !== uid && !id.includes('/'))
+    .slice(0, FRIEND_SCAN_LIMIT);
+  const snaps = await Promise.all(chunks(friendIds, 30).map((ids) => db().collection(COL.users)
+    .where('interestTagIds', 'array-contains', tagId)
+    .where(FieldPath.documentId(), 'in', ids)
+    .get()));
+  const docs = snaps.flatMap((snap) => snap.docs)
+    .filter((doc) => isSearchableUser(doc.id, doc.data()));
+  if (docs.length === 0) return [];
+  const related = await db().getAll(...docs.flatMap((doc) => [
+    db().collection(COL.blocks).doc(`${uid}_${doc.id}`),
+    db().collection(COL.blocks).doc(`${doc.id}_${uid}`),
+    db().collection(COL.usersPrivate).doc(doc.id),
+  ]));
+  return docs.filter((_, index) => !related[index * 3]?.exists &&
+    !related[index * 3 + 1]?.exists &&
+    related[index * 3 + 2]?.get(`tagPrefs.${tagId}.hidden`) !== true)
+    .map(personSummary);
+}
+
+/** 태그 미리보기·태그 페이지 머리: 태그 정보, 내가 달았는지, 태그를 단 친구, 내 태그 설정. */
+export const getTagSummary = callables()
+  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const tagId = normalizeTagName(data?.tagId);
+    if (!tagId) throw new functions.https.HttpsError('invalid-argument', 'tag-invalid');
+    const [tag, me, prefs] = await db().getAll(
+      tagRef(tagId),
+      db().collection(COL.users).doc(uid),
+      db().collection(COL.usersPrivate).doc(uid),
+    );
+    if (!tag.exists || tag.get('status') !== 'active') {
+      throw new functions.https.HttpsError('not-found', 'tag-unavailable');
+    }
+    const friends = await friendTagHolders(uid, tagId);
+    const pref = prefs.get(`tagPrefs.${tagId}`) ?? {};
+    return {
+      tag: {id: tag.id, ...pickPublic(tag.data() ?? {})},
+      aliases: stringArray(tag.get('aliases')),
+      mine: stringArray(me.get('interestTagIds')).includes(tagId),
+      friendCount: friends.length,
+      friends: friends.slice(0, FRIEND_FACE_LIMIT),
+      hidden: pref.hidden === true,
+      notify: pref.notify === true,
+    };
+  });
+
+/** 내 태그 설정: hidden(태그 사람 목록에서 나를 숨김), notify(새 글 알림). */
+export const setTagPrefs = callables()
+  .runWith({timeoutSeconds: 10, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const tagId = normalizeTagName(data?.tagId);
+    if (!tagId) throw new functions.https.HttpsError('invalid-argument', 'tag-invalid');
+    const update: Record<string, boolean> = {};
+    if (typeof data?.hidden === 'boolean') update.hidden = data.hidden;
+    if (typeof data?.notify === 'boolean') update.notify = data.notify;
+    if (Object.keys(update).length === 0) {
+      throw new functions.https.HttpsError('invalid-argument', 'nothing-to-update');
+    }
+    await db().collection(COL.usersPrivate).doc(uid)
+      .set({tagPrefs: {[tagId]: update}, updatedAt: FieldValue.serverTimestamp()}, {merge: true});
+    return {tagId, ...update};
+  });
+
+const SUGGEST_LIMIT = 12;
+
+/** 태그 추천: 친구들이 많이 단 태그(내가 단 것 제외)와 많이 다는 태그. */
+export const getTagSuggestions = callables()
+  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .https.onCall(async (_data, context) => {
+    const uid = requireUid(context);
+    const [me, friendIds] = await Promise.all([
+      db().collection(COL.users).doc(uid).get(),
+      friendIdCandidatesAtCreation(uid),
+    ]);
+    const mine = new Set(stringArray(me.get('interestTagIds')));
+    const ids = Array.from(friendIds).filter((id) => id && id !== uid && !id.includes('/'))
+      .slice(0, FRIEND_SCAN_LIMIT);
+    const friendDocs = ids.length ? await db().getAll(...ids.map((id) => db().collection(COL.users).doc(id))) : [];
+    const counts = new Map<string, number>();
+    friendDocs.filter((doc) => doc.exists && isSearchableUser(doc.id, doc.data()))
+      .forEach((doc) => stringArray(doc.get('interestTagIds')).forEach((id) => {
+        if (!mine.has(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
+      }));
+    const friendTop = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])
+      .slice(0, SUGGEST_LIMIT).map(([id]) => id);
+    const [friendTagDocs, popular] = await Promise.all([
+      friendTop.length ? db().getAll(...friendTop.map(tagRef)) : Promise.resolve([]),
+      db().collection(COL.tags).where('status', '==', 'active')
+        .orderBy('holderCount', 'desc').limit(SUGGEST_LIMIT + mine.size).get(),
+    ]);
+    const toItem = (doc: admin.firestore.DocumentSnapshot) =>
+      ({id: doc.id, ...pickPublic(doc.data() ?? {})});
+    return {
+      friends: friendTagDocs.filter((doc) => doc.exists && doc.get('status') === 'active')
+        .map((doc) => ({...toItem(doc), friendCount: counts.get(doc.id) ?? 0})),
+      popular: popular.docs.filter((doc) => !mine.has(doc.id)).slice(0, SUGGEST_LIMIT).map(toItem),
+    };
   });

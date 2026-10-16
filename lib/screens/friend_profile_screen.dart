@@ -29,6 +29,9 @@ import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/group_list_row.dart';
 import '../l10n/together_strings.dart';
+import '../services/interest_tag_service.dart';
+import '../ui/sheets/tag_preview_sheet.dart';
+import '../ui/widgets/tag_chips.dart';
 import '../services/together_service.dart';
 import 'snack_chat_screen.dart';
 
@@ -1098,45 +1101,33 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         SocialProfileCatalog.labelFor(id, catalog, languageCode);
 
     final sections = <Widget>[];
-    if (profile.interests.isNotEmpty) {
+    if (profile.interestTagIds.isNotEmpty) {
+      InterestTagService.instance.ensureLoaded(profile.interestTagIds);
       sections.add(Padding(
         padding: const EdgeInsets.only(top: 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              zh
-                  ? '最近感兴趣'
-                  : languageCode == 'ko'
-                      ? '요즘 관심 있는 것'
-                      : 'Into these days',
+              AppLocalizations.of(context)!.profileTagsTitle,
               style: style(12, FontWeight.w600, const Color(0xFF707070)),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final id in profile.interests)
-                  // Wrap 안에서 가로로 늘어나지 않도록 alignment 없이 내용 크기로 둔다.
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF2F2F2),
-                      borderRadius: BorderRadius.circular(16),
+            ListenableBuilder(
+              listenable: InterestTagService.instance,
+              builder: (context, _) => Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final id in profile.interestTagIds)
+                    TagChip(
+                      key: ValueKey('friend_tag_$id'),
+                      label: InterestTagService.instance
+                          .labelFor(id, languageCode),
+                      onTap: () => showTagPreviewSheet(context, tagId: id),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 7),
-                      child: Text(
-                        '#${label(id, SocialProfileCatalog.interests)}',
-                        maxLines: 1,
-                        style: style(
-                            13, FontWeight.w500, const Color(0xFF333333),
-                            line: 18),
-                      ),
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ],
         ),

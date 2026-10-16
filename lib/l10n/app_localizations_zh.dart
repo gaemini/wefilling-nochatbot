@@ -3423,4 +3423,159 @@ class AppLocalizationsZh extends AppLocalizations {
   String translationOriginalLanguage(String lang) {
     return '原文语言 $lang';
   }
+
+  @override
+  String get myTags => '我的 #标签';
+
+  @override
+  String get myTagsDescription => '和添加相同标签的人建立联系，最多8个';
+
+  @override
+  String get tagPickerTitle => '最近喜欢什么？';
+
+  @override
+  String get tagSearchHint => '搜索或创建标签';
+
+  @override
+  String tagCreate(String name) {
+    return '新建「#$name」';
+  }
+
+  @override
+  String get tagAddToMine => '＋ 添加到我的标签';
+
+  @override
+  String get tagInMine => '✓ 我的标签';
+
+  @override
+  String tagHolders(int n) {
+    return '$n人添加了';
+  }
+
+  @override
+  String tagHoldersWithFriends(int n, int friends) {
+    return '$n人添加了 · 好友$friends人';
+  }
+
+  @override
+  String tagFriendsAlso(int n) {
+    return '$n位好友也添加了';
+  }
+
+  @override
+  String tagStats(int people, int posts, int meetups) {
+    return '$people人 · 帖子$posts · 聚会$meetups';
+  }
+
+  @override
+  String get tagOpenPage => '查看标签页';
+
+  @override
+  String tagSelectedCount(int n) {
+    return '已选 $n/8';
+  }
+
+  @override
+  String get tagAdd => '添加';
+
+  @override
+  String get tagAdded => '✓ 已添加';
+
+  @override
+  String get tagFindOrCreate => '＋ 搜索·创建标签';
+
+  @override
+  String get tagAddShort => '＋ 标签';
+
+  @override
+  String get tagSuggestFriends => '好友常用';
+
+  @override
+  String get tagSuggestPopular => '最近热门';
+
+  @override
+  String get tagDailyLimit => '今天不能再创建新标签了';
+
+  @override
+  String get tagBlocked => '不能使用这个名称';
+
+  @override
+  String get tagInvalid => '请使用2–20个字母、数字或_';
+
+  @override
+  String get tagUnavailable => '该标签暂不可用';
+
+  @override
+  String get tagLimitReached => '最多可添加8个标签';
+
+  @override
+  String get tagSaveFailed => '无法保存标签，请重试';
+
+  @override
+  String get tagLoadFailed => '无法加载标签';
+
+  @override
+  String get tagNoResults => '没有找到标签';
+
+  @override
+  String get tagHideFromList => '在标签成员列表中隐藏我';
+
+  @override
+  String get tagHideFromListDescription => '标签仍会显示在你的资料中';
+
+  @override
+  String get tagRemoveFromMine => '从我的标签中移除';
+
+  @override
+  String get tagAddedToMine => '已添加到我的标签';
+
+  @override
+  String get tagRemovedFromMine => '已从我的标签中移除';
+
+  @override
+  String get tagNotifyOn => '有新帖子或聚会时会通知你';
+
+  @override
+  String get tagNotifyOff => '已关闭通知';
+
+  @override
+  String get tagNotifyLabel => '标签通知';
+
+  @override
+  String get tagOfficial => '官方标签';
+
+  @override
+  String tagPeopleTab(int n) {
+    return '成员 $n';
+  }
+
+  @override
+  String tagPostsTab(int n) {
+    return '帖子 $n';
+  }
+
+  @override
+  String tagMeetupsTab(int n) {
+    return '聚会 $n';
+  }
+
+  @override
+  String get tagFriendsSection => '好友';
+
+  @override
+  String get tagOthersSection => '其他人';
+
+  @override
+  String get tagPeopleEmpty => '还没有人添加这个标签';
+
+  @override
+  String get tagYou => '我';
+
+  @override
+  String tagActivitiesLine(String items) {
+    return '想一起做 · $items';
+  }
+
+  @override
+  String get profileTagsTitle => '#标签';
 }

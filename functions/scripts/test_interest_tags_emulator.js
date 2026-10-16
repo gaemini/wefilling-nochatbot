@@ -139,6 +139,28 @@ async function main() {
   assert.deepEqual(holders.users.map((u) => u.uid), []);
   const holdersCarol = await call('listTagHolders', 'carol', {tagId: 'running'});
   assert.deepEqual(holdersCarol.users.map((u) => u.uid).sort(), ['alice', 'bob']);
+
+  await seed('friendships/alice_carol', {uids: ['alice', 'carol']});
+  const summary = await call('getTagSummary', 'carol', {tagId: 'running'});
+  assert.equal(summary.tag.id, 'running');
+  assert.equal(summary.mine, false);
+  assert.deepEqual(summary.friends.map((u) => u.uid), ['alice']);
+  assert.equal(summary.friendCount, 1);
+  assert.equal((await call('getTagSummary', 'carol', {tagId: 'hiddentag'})).error, 'tag-unavailable');
+
+  assert.deepEqual(await call('setTagPrefs', 'bob', {tagId: 'running', hidden: true}),
+    {tagId: 'running', hidden: true});
+  const afterHide = await call('listTagHolders', 'carol', {tagId: 'running'});
+  assert.deepEqual(afterHide.users.map((u) => u.uid), ['alice']);
+  const bobSummary = await call('getTagSummary', 'bob', {tagId: 'running'});
+  assert.equal(bobSummary.hidden, true);
+  assert.equal(bobSummary.mine, true);
+  // 추천: carol의 친구 alice가 단 태그(kpop, running, movie) 중 carol이 안 단 것.
+  const suggestions = await call('getTagSuggestions', 'carol', {});
+  assert.deepEqual(suggestions.friends.map((t) => t.id).sort(), ['kpop', 'movie', 'running']);
+  assert.equal(suggestions.friends[0].friendCount, 1);
+  assert.ok(suggestions.popular.length > 0);
+  assert.ok(suggestions.popular.every((t) => t.id !== undefined && t.holderCount >= 0));
   console.log('callables ok');
 }
 

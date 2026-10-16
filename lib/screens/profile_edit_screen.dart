@@ -25,6 +25,13 @@ import '../models/student_type.dart';
 import '../widgets/social_profile_fields.dart';
 import 'hanyang_email_verification_screen.dart';
 import '../l10n/ui_locale.dart';
+import 'package:flutter/foundation.dart' show listEquals;
+import '../models/interest_tag.dart';
+import '../services/interest_tag_service.dart';
+import '../ui/sheets/tag_settings_sheet.dart';
+import '../ui/widgets/tag_chips.dart';
+import 'tag_picker_screen.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({Key? key}) : super(key: key);
@@ -42,7 +49,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _departmentController = TextEditingController();
   final _gradeController = TextEditingController();
   String? _bio; // 한 줄 소개
-  List<String> _interests = <String>[];
+  List<String> _tagIds = <String>[];
+  List<String> _initialTagIds = const <String>[];
+  List<InterestTag> _tagSuggestions = const <InterestTag>[];
   List<String> _preferredActivities = <String>[];
   bool _showDepartment = false;
   bool _showGrade = false;
@@ -93,7 +102,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         'nickname': _nicknameController.text.trim(),
         'bio': _bioController.text.trim(),
         'nationality': _nationalityDropdownValue ?? '',
-        'interests': _interests,
+        'interests': _tagIds,
         'preferredActivities': _preferredActivities,
         'conversationStarter': _conversationController.text.trim(),
         'friendshipPrompt': _friendshipController.text.trim(),
@@ -173,6 +182,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   void initState() {
     super.initState();
     _nicknameController.addListener(_onNicknameEditingChanged);
+    _loadTagSuggestions();
     // 초기 데이터 설정
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -193,7 +203,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         }
 
         final social = SocialProfileData.fromMap(authProvider.userData);
-        _interests = List<String>.of(social.interests);
+        _tagIds = List<String>.of(social.interestTagIds);
+        _initialTagIds = List<String>.of(_tagIds);
+        InterestTagService.instance.ensureLoaded(_tagIds);
         _preferredActivities = List<String>.of(social.preferredActivities);
         _conversationController.text = social.conversationStarter;
         _friendshipController.text = social.friendshipPrompt;
@@ -524,9 +536,15 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           ++_nicknameCheckGeneration;
           _isCheckingNickname = false;
         }
+        if (!listEquals(_tagIds, _initialTagIds)) {
+          // #태그는 서버가 검증·저장한다(구버전용 interests도 서버가 맞춤).
+          _tagIds = await InterestTagService.instance.setProfileTags(_tagIds);
+          _initialTagIds = List<String>.of(_tagIds);
+          if (!mounted) return;
+        }
         final social = SocialProfileData(
           bio: _bioController.text.trim(),
-          interests: _interests,
+          interests: _tagIds,
           preferredActivities: _preferredActivities,
           conversationStarter: _conversationController.text.trim(),
           friendshipPrompt: _friendshipController.text.trim(),
@@ -561,7 +579,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               nationality: selectedNationality,
               photoURL: '', // 빈 문자열로 유지
               bio: social.bio,
-              interests: social.interests,
               preferredActivities: social.preferredActivities,
               conversationStarter: social.conversationStarter,
               friendshipPrompt: social.friendshipPrompt,
@@ -610,7 +627,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             photoURL: upload.downloadUrl, // ✅ 새 토큰 포함 URL
             photoPath: upload.path, // ✅ 유저 폴더 내 실제 저장 경로
             bio: social.bio,
-            interests: social.interests,
             preferredActivities: social.preferredActivities,
             conversationStarter: social.conversationStarter,
             friendshipPrompt: social.friendshipPrompt,
@@ -631,7 +647,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             nickname: requestedNickname,
             nationality: selectedNationality,
             bio: social.bio,
-            interests: social.interests,
             preferredActivities: social.preferredActivities,
             conversationStarter: social.conversationStarter,
             friendshipPrompt: social.friendshipPrompt,
@@ -843,6 +858,103 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         });
       }
     }
+  }
+
+  Future<void> _loadTagSuggestions() async {
+    try {
+      final result = await InterestTagService.instance.suggestions();
+      if (!mounted) return;
+      setState(() => _tagSuggestions = [
+            ...result.friends.map((e) => e.$1),
+            ...result.popular,
+          ]);
+    } catch (_) {
+      // 추천 없이도 '태그 찾기·만들기'로 고를 수 있다.
+    }
+  }
+
+  void _addTag(String id) {
+    if (_tagIds.contains(id)) return;
+    if (_tagIds.length >= InterestTagService.maxProfileTags) {
+      AppSnackBar.show(context,
+          message: AppLocalizations.of(context)!.tagLimitReached,
+          type: AppSnackBarType.warning);
+      return;
+    }
+    setState(() => _tagIds = [..._tagIds, id]);
+  }
+
+  void _removeTag(String id) =>
+      setState(() => _tagIds = [..._tagIds]..remove(id));
+
+  Future<void> _openTagPicker() async {
+    final picked = await Navigator.of(context).push<List<String>>(
+      MaterialPageRoute(
+        builder: (_) =>
+            TagPickerScreen(initialTagIds: _tagIds, saveOnDone: false),
+      ),
+    );
+    if (picked != null && mounted) setState(() => _tagIds = picked);
+  }
+
+  Widget _buildMyTagsEditor() {
+    final language = Localizations.localeOf(context).languageCode;
+    final l10n = AppLocalizations.of(context)!;
+    final suggestions = <InterestTag>[];
+    for (final tag in _tagSuggestions) {
+      if (!_tagIds.contains(tag.id) &&
+          !suggestions.any((existing) => existing.id == tag.id)) {
+        suggestions.add(tag);
+      }
+      if (suggestions.length == 6) break;
+    }
+    return ListenableBuilder(
+      listenable: InterestTagService.instance,
+      builder: (context, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final id in _tagIds)
+                SelectedTagChip(
+                  key: ValueKey('profile_tag_$id'),
+                  label: InterestTagService.instance.labelFor(id, language),
+                  onRemove: () => _removeTag(id),
+                  onLongPress: () => showTagSettingsSheet(
+                    context,
+                    tagId: id,
+                    label: InterestTagService.instance.labelFor(id, language),
+                    onRemove: () => _removeTag(id),
+                  ),
+                ),
+              _DashedAddButton(
+                key: const ValueKey('profile_tag_find'),
+                label: l10n.tagFindOrCreate,
+                onTap: _openTagPicker,
+              ),
+            ],
+          ),
+          if (suggestions.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final tag in suggestions)
+                  SuggestTagChip(
+                    key: ValueKey('profile_tag_suggest_${tag.id}'),
+                    label: tag.labelFor(language),
+                    count: tag.holderCount,
+                    onTap: () => _addTag(tag.id),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -1250,20 +1362,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const Divider(height: 1, color: Color(0xFFE5E7EB)),
                   const SizedBox(height: 30),
                   ProfileSectionHeading(
-                    title: (isChineseUi(context) ? '最近感兴趣' : Localizations.localeOf(context).languageCode == 'ko'
-                        ? '요즘 관심 있는 것'
-                        : 'Into these days'),
-                    description: (isChineseUi(context) ? '让同好更容易找到你，最多选5项' : Localizations.localeOf(context).languageCode ==
-                            'ko'
-                        ? '비슷한 관심사를 가진 친구들이 더 쉽게 다가올 수 있어요. 최대 5개'
-                        : 'Help people with similar interests find you. Up to 5'),
+                    title: AppLocalizations.of(context)!.myTags,
+                    description:
+                        AppLocalizations.of(context)!.myTagsDescription,
                   ),
                   const SizedBox(height: 16),
-                  SocialProfileTagSelector(
-                    options: SocialProfileCatalog.interests,
-                    selectedIds: _interests,
-                    onChanged: (value) => setState(() => _interests = value),
-                  ),
+                  _buildMyTagsEditor(),
                   const SizedBox(height: 32),
                   ProfileSectionHeading(
                     title: (isChineseUi(context) ? '想一起做' : Localizations.localeOf(context).languageCode == 'ko'
@@ -1537,6 +1641,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   const SizedBox(height: 18),
                   AnimatedBuilder(
                     animation: Listenable.merge([
+                      InterestTagService.instance,
                       _nicknameController,
                       _bioController,
                       _conversationController,
@@ -1545,7 +1650,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     builder: (context, _) => SocialProfilePreview(
                       nickname: _nicknameController.text,
                       bio: _bioController.text,
-                      interests: _interests,
+                      interests: _tagIds,
                       activities: _preferredActivities,
                       conversationStarter: _conversationController.text,
                       friendshipPrompt: _friendshipController.text,
@@ -1561,4 +1666,58 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           ),
         ));
   }
+}
+
+/// 점선 테두리 '＋ 태그 찾기·만들기'.
+class _DashedAddButton extends StatelessWidget {
+  const _DashedAddButton({super.key, required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MotionPress(
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const StadiumBorder(),
+        child: CustomPaint(
+          painter: _DashedStadiumPainter(),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 36),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tagTextStyle(context, 14, FontWeight.w600, TagColors.blue),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashedStadiumPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final path = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+          rect.deflate(.5), Radius.circular(size.height / 2)));
+    final paint = Paint()
+      ..color = const Color(0xFF9CB9E3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    for (final metric in path.computeMetrics()) {
+      for (double d = 0; d < metric.length; d += 7) {
+        canvas.drawPath(metric.extractPath(d, d + 4), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

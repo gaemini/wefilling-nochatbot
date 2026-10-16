@@ -22,6 +22,17 @@ class InterestTag {
   final int postCount;
   final int meetupCount;
 
+  InterestTag copyWith({int? holderCount, int? postCount, int? meetupCount}) =>
+      InterestTag(
+        id: id,
+        displayName: displayName,
+        labels: labels,
+        official: official,
+        holderCount: holderCount ?? this.holderCount,
+        postCount: postCount ?? this.postCount,
+        meetupCount: meetupCount ?? this.meetupCount,
+      );
+
   String labelFor(String languageCode) =>
       labels[languageCode] ?? labels['en'] ?? displayName;
 

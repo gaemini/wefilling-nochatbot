@@ -38,7 +38,10 @@ import 'post_detail_screen.dart';
 import 'saved_posts_screen.dart';
 import 'review_detail_screen.dart';
 import 'friends_page.dart';
-import 'social_tag_people_screen.dart';
+import 'tag_picker_screen.dart';
+import '../services/interest_tag_service.dart';
+import '../ui/sheets/tag_preview_sheet.dart';
+import '../ui/widgets/tag_chips.dart';
 import 'semester_todo_admin_screen.dart';
 import '../ui/widgets/profile_image_viewer.dart';
 import '../utils/profile_photo_policy.dart';
@@ -665,36 +668,50 @@ class _MyPageScreenState extends State<MyPageScreen>
                 ),
               ],
             ),
-            if (social.interests.isNotEmpty ||
-                social.preferredActivities.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  ...social.interests.map(
-                    (id) => _socialTagLabel(
-                      tagId: id,
-                      kind: SocialProfileTagKind.interest,
-                      label: SocialProfileCatalog.labelFor(
-                        id,
-                        SocialProfileCatalog.interests,
-                        languageCode,
+            const SizedBox(height: 14),
+            ListenableBuilder(
+              listenable: InterestTagService.instance,
+              builder: (context, _) {
+                InterestTagService.instance
+                    .ensureLoaded(social.interestTagIds);
+                return Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final id in social.interestTagIds)
+                      TagChip(
+                        key: ValueKey('mypage_tag_$id'),
+                        label: InterestTagService.instance
+                            .labelFor(id, languageCode),
+                        onTap: () =>
+                            showTagPreviewSheet(context, tagId: id),
                       ),
+                    _AddTagChip(
+                      key: const ValueKey('mypage_add_tag'),
+                      label: AppLocalizations.of(context)!.tagAddShort,
+                      onTap: () => _openTagPicker(social.interestTagIds),
                     ),
-                  ),
-                  ...social.preferredActivities.map(
-                    (id) => _socialTagLabel(
-                      tagId: id,
-                      kind: SocialProfileTagKind.activity,
-                      label: SocialProfileCatalog.labelFor(
-                        id,
-                        SocialProfileCatalog.activities,
-                        languageCode,
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                );
+              },
+            ),
+            if (social.preferredActivities.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                AppLocalizations.of(context)!.tagActivitiesLine(
+                  social.preferredActivities
+                      .map((id) => SocialProfileCatalog.labelFor(
+                            id,
+                            SocialProfileCatalog.activities,
+                            languageCode,
+                          ))
+                      .join(', '),
+                ),
+                key: const ValueKey('mypage_activities_line'),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: style(13, FontWeight.w500, const Color(0xFF6B7280),
+                    line: 18),
               ),
             ],
             if (profileCompletion < 100) ...[
@@ -739,10 +756,10 @@ class _MyPageScreenState extends State<MyPageScreen>
                       Expanded(
                         child: Text(
                           languageCode == 'ko'
-                              ? (social.interests.isEmpty
+                              ? (social.interestTagIds.isEmpty
                                   ? '관심사를 추가하면 비슷한 친구들이 더 쉽게 다가올 수 있어요.'
                                   : '대화 질문을 설정하면 첫 DM이 더 자연스러워져요.')
-                              : (social.interests.isEmpty
+                              : (social.interestTagIds.isEmpty
                                   ? 'Add interests so similar people can find you.'
                                   : 'Add a question to make the first DM easier.'),
                           style: style(13, FontWeight.w500,
@@ -763,46 +780,15 @@ class _MyPageScreenState extends State<MyPageScreen>
     );
   }
 
-  Widget _socialTagLabel({
-    required String tagId,
-    required SocialProfileTagKind kind,
-    required String label,
-  }) {
-    return Semantics(
-      button: true,
-      label: '#$label',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _openSocialTagPeople(tagId, kind),
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
-            child: Text(
-              '#$label',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.pointColor,
-                height: isChineseUi(context) ? 1.3 : 1.2,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _openSocialTagPeople(String tagId, SocialProfileTagKind kind) {
-    Navigator.of(context).push<void>(
+  Future<void> _openTagPicker(List<String> current) async {
+    final saved = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
-        builder: (_) => SocialTagPeopleScreen(tagId: tagId, kind: kind),
+        builder: (_) => TagPickerScreen(initialTagIds: current),
       ),
     );
+    if (saved == null || !mounted) return;
+    await Provider.of<AuthProvider>(context, listen: false).refreshUser();
+    if (mounted) setState(() {});
   }
 
   Widget _buildReviewGrid() {
@@ -2290,5 +2276,37 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
     // 탭 높이, 문구(언어), 컨트롤러가 바뀌면 고정 헤더의 child와
     // min/max extent를 함께 갱신해야 SliverGeometry 불일치가 발생하지 않는다.
     return true;
+  }
+}
+
+/// 내 정보 태그 줄 끝의 '＋ 태그'.
+class _AddTagChip extends StatelessWidget {
+  const _AddTagChip({super.key, required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MotionPress(
+      child: Material(
+        color: const Color(0xFFF1F3F5),
+        shape: const StadiumBorder(),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 30),
+            padding: const EdgeInsets.symmetric(horizontal: 11),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: tagTextStyle(
+                  context, 13.5, FontWeight.w600, const Color(0xFF3D4651)),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

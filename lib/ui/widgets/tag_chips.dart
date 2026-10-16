@@ -103,6 +103,63 @@ class ToggleTagChip extends StatelessWidget {
   }
 }
 
+/// 고르는 태그 필터(검색 '태그로 친구 찾기'): 높이 32 알약, '#러닝'.
+/// 기본 연회색 바탕 + 진회색 글자, 고르면 파랑 채움 + 흰 글자.
+class TagFilterChip extends StatelessWidget {
+  const TagFilterChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '#$label',
+      excludeSemantics: true,
+      child: MotionPress(
+        child: Material(
+          color: selected ? TagColors.blue : const Color(0xFFF2F4F7),
+          shape: const StadiumBorder(),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: onTap,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 32),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      '#$label',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tagTextStyle(
+                        context,
+                        13.5,
+                        selected ? FontWeight.w700 : FontWeight.w600,
+                        selected ? Colors.white : const Color(0xFF344054),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 글·카드·프로필에 붙은 태그(누르면 태그 페이지). 연파랑 바탕 + 파란 글자.
 class TagChip extends StatelessWidget {
   const TagChip(

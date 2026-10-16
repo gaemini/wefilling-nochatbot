@@ -1304,11 +1304,11 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               final ids = _discoveryTagIds();
               InterestTagService.instance.ensureLoaded(ids);
               return Wrap(
-                spacing: compact ? 6 : 8,
-                runSpacing: compact ? 6 : 8,
+                spacing: 6,
+                runSpacing: 8,
                 children: [
                   for (final id in ids)
-                    ToggleTagChip(
+                    TagFilterChip(
                       key: ValueKey('search_tag_$id'),
                       label: _tagLabel(id, languageCode),
                       selected: id == selected,

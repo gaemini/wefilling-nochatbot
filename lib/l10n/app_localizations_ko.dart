@@ -3523,8 +3523,8 @@ class AppLocalizationsKo extends AppLocalizations {
   String get tagOpenPage => '태그 페이지 보기';
 
   @override
-  String tagSelectedCount(int n) {
-    return '$n/8 선택';
+  String tagSelectedCount(int n, int max) {
+    return '$n/$max 선택';
   }
 
   @override
@@ -3630,4 +3630,54 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get profileTagsTitle => '#태그';
+
+  @override
+  String get postTopic => '주제';
+
+  @override
+  String get contentTagsTitle => '#태그';
+
+  @override
+  String get contentTagsHint => '붙인 태그를 단 사람이 이 글을 찾을 수 있어요';
+
+  @override
+  String get contentTagPickerTitle => '어떤 #태그를 붙일까요?';
+
+  @override
+  String get contentTagLimit => '태그는 3개까지 붙일 수 있어요';
+
+  @override
+  String tagAudienceBadge(String tag) {
+    return '#$tag 가진 사람';
+  }
+
+  @override
+  String tagShareTo(String tag) {
+    return '＋ #$tag에 공유';
+  }
+
+  @override
+  String get tagShareWritePost => '포스트 쓰기';
+
+  @override
+  String get tagShareCreateMeetup => '모임 만들기';
+
+  @override
+  String get tagPostsEmpty => '아직 이 태그가 붙은 글이 없어요';
+
+  @override
+  String get tagMeetupsEmpty => '예정된 모임이 없어요';
+
+  @override
+  String get meetupFilterAll => '모든 모임';
+
+  @override
+  String meetupTagCreate(String tag) {
+    return '＋ #$tag 모임 만들기';
+  }
+
+  @override
+  String meetupTagEmpty(String tag) {
+    return '#$tag 모임이 아직 없어요. 처음으로 열어 보세요';
+  }
 }

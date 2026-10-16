@@ -5,7 +5,11 @@ import {COL} from './firestore_paths';
 export const VISIBILITY_SCHEMA_VERSION = 2;
 export const MAX_FROZEN_AUDIENCE_SIZE = 500;
 
-export type FrozenVisibility = 'public' | 'friends' | 'category';
+/**
+ * 'tag'는 parseVisibility가 받지 않는다(다른 기능에 새 값이 새지 않게).
+ * 글·모임 생성 함수만 interest_tags.resolveTagAudience로 만든다.
+ */
+export type FrozenVisibility = 'public' | 'friends' | 'category' | 'tag';
 
 export function isActiveUserData(data: FirebaseFirestore.DocumentData): boolean {
   return data.isDeleted !== true && data.deleted !== true && data.disabled !== true &&

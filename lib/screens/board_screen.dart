@@ -1487,7 +1487,6 @@ class BoardScreenState extends State<BoardScreen> {
                 label: category.label(l10n),
                 selected: false,
                 enabled: true,
-                showHash: true,
                 navigates: true,
                 maxWidth: MediaQuery.sizeOf(context).width -
                     2 * _sectionHorizontalPadding,

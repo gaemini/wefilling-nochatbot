@@ -13,6 +13,9 @@ import '../utils/country_flag_helper.dart';
 import '../utils/motion_haptics.dart';
 import '../widgets/country_flag_circle.dart';
 import 'friend_profile_screen.dart';
+import 'create_meetup_screen.dart';
+import 'create_post_screen.dart';
+import 'tag_content_tabs.dart';
 
 /// 내 프로필 태그를 하나 더하거나 뺀다. 저장 뒤 프로필을 다시 읽는다.
 Future<List<String>> updateMyTags(
@@ -51,7 +54,6 @@ class TagPageScreen extends StatefulWidget {
 
 class _TagPageScreenState extends State<TagPageScreen> {
   final _service = InterestTagService.instance;
-  final _scroll = ScrollController();
 
   TagSummary? _summary;
   Object? _error;
@@ -65,16 +67,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(() {
-      if (_scroll.position.extentAfter < 400) _loadPeople();
-    });
     _load();
-  }
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -176,10 +169,62 @@ class _TagPageScreenState extends State<TagPageScreen> {
     ));
   }
 
+  void _openShareSheet(String label) {
+    final l10n = AppLocalizations.of(context)!;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ShareRow(
+                key: const ValueKey('tag_share_post'),
+                icon: Icons.edit_rounded,
+                label: l10n.tagShareWritePost,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  Navigator.of(context).push<void>(MaterialPageRoute(
+                    builder: (_) => CreatePostScreen(
+                      onPostCreated: () {},
+                      initialTagIds: [widget.tagId],
+                    ),
+                  ));
+                },
+              ),
+              _ShareRow(
+                key: const ValueKey('tag_share_meetup'),
+                icon: Icons.groups_rounded,
+                label: l10n.tagShareCreateMeetup,
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  Navigator.of(context).push<void>(MaterialPageRoute(
+                    builder: (_) => CreateMeetupScreen(
+                      initialDayIndex: 0,
+                      onCreateMeetup: (_, __) {},
+                      initialTagIds: [widget.tagId],
+                    ),
+                  ));
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final media = MediaQuery.of(context);
+    final summary = _summary;
     return MediaQuery(
       data: media.copyWith(
           textScaler: media.textScaler.clamp(maxScaleFactor: 1.3)),
@@ -191,65 +236,117 @@ class _TagPageScreenState extends State<TagPageScreen> {
           elevation: 0,
           leading: const BackButton(color: TagColors.ink),
         ),
+        floatingActionButton: summary == null
+            ? null
+            : FloatingActionButton.extended(
+                key: const ValueKey('tag_page_share'),
+                backgroundColor: TagColors.blue,
+                foregroundColor: Colors.white,
+                onPressed: () => _openShareSheet(summary.tag
+                    .labelFor(Localizations.localeOf(context).languageCode)),
+                label: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: media.size.width - 120),
+                  child: Text(
+                    l10n.tagShareTo(summary.tag.labelFor(
+                        Localizations.localeOf(context).languageCode)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: tagTextStyle(
+                        context, 15, FontWeight.w700, Colors.white),
+                  ),
+                ),
+              ),
         body: _error != null
             ? _ErrorState(onRetry: _load)
-            : _summary == null
+            : summary == null
                 ? const Center(
                     child: SizedBox.square(
                         dimension: 24,
                         child: CircularProgressIndicator(strokeWidth: 2)))
-                : _body(l10n, _summary!),
+                : DefaultTabController(
+                    length: 3,
+                    child: NestedScrollView(
+                      headerSliverBuilder: (context, _) => [
+                        SliverToBoxAdapter(child: _header(l10n, summary)),
+                        SliverPersistentHeader(
+                          pinned: true,
+                          delegate: _TabBarDelegate(TabBar(
+                            key: const ValueKey('tag_page_tabs'),
+                            labelColor: TagColors.ink,
+                            unselectedLabelColor: TagColors.muted,
+                            indicatorColor: TagColors.ink,
+                            indicatorWeight: 2,
+                            indicatorSize: TabBarIndicatorSize.label,
+                            dividerColor: const Color(0xFFF0F1F3),
+                            labelStyle: tagTextStyle(
+                                context, 15, FontWeight.w700, TagColors.ink),
+                            unselectedLabelStyle: tagTextStyle(
+                                context, 15, FontWeight.w600, TagColors.muted),
+                            tabs: [
+                              Tab(
+                                  text: l10n
+                                      .tagPeopleTab(summary.tag.holderCount)),
+                              Tab(
+                                  text:
+                                      l10n.tagPostsTab(summary.tag.postCount)),
+                              Tab(
+                                  text: l10n
+                                      .tagMeetupsTab(summary.tag.meetupCount)),
+                            ],
+                          )),
+                        ),
+                      ],
+                      body: TabBarView(
+                        children: [
+                          _peopleTab(l10n, summary),
+                          TagPostsTab(tagId: widget.tagId),
+                          TagMeetupsTab(tagId: widget.tagId),
+                        ],
+                      ),
+                    ),
+                  ),
       ),
     );
   }
 
-  Widget _body(AppLocalizations l10n, TagSummary summary) {
+  Widget _peopleTab(AppLocalizations l10n, TagSummary summary) {
     final friends = summary.friends;
-    return CustomScrollView(
-      controller: _scroll,
-      slivers: [
-        SliverToBoxAdapter(child: _header(l10n, summary)),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-            child: Text(l10n.tagPeopleTab(summary.tag.holderCount),
-                style:
-                    tagTextStyle(context, 15, FontWeight.w700, TagColors.ink)),
-          ),
-        ),
-        if (friends.isNotEmpty) ...[
-          _sectionLabel(l10n.tagFriendsSection),
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification.metrics.extentAfter < 400) _loadPeople();
+        return false;
+      },
+      child: CustomScrollView(
+        key: const PageStorageKey('tag_people'),
+        slivers: [
+          if (friends.isNotEmpty) ...[
+            _sectionLabel(l10n.tagFriendsSection),
+            SliverList.builder(
+              itemCount: friends.length,
+              itemBuilder: (_, i) => _PersonRow(
+                  person: friends[i], onTap: () => _openPerson(friends[i])),
+            ),
+            if (_people.isNotEmpty) _sectionLabel(l10n.tagOthersSection),
+          ],
           SliverList.builder(
-            itemCount: friends.length,
+            itemCount: _people.length,
             itemBuilder: (_, i) => _PersonRow(
-                person: friends[i], onTap: () => _openPerson(friends[i])),
+                person: _people[i], onTap: () => _openPerson(_people[i])),
           ),
-          if (_people.isNotEmpty) _sectionLabel(l10n.tagOthersSection),
+          SliverToBoxAdapter(
+            child: _loadingPeople
+                ? const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                        child: SizedBox.square(
+                            dimension: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2))))
+                : (friends.isEmpty && _people.isEmpty && _peopleDone)
+                    ? _EmptyText(l10n.tagPeopleEmpty)
+                    : const SizedBox(height: 96),
+          ),
         ],
-        SliverList.builder(
-          itemCount: _people.length,
-          itemBuilder: (_, i) => _PersonRow(
-              person: _people[i], onTap: () => _openPerson(_people[i])),
-        ),
-        SliverToBoxAdapter(
-          child: _loadingPeople
-              ? const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(
-                      child: SizedBox.square(
-                          dimension: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2))))
-              : (friends.isEmpty && _people.isEmpty && _peopleDone)
-                  ? Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Text(l10n.tagPeopleEmpty,
-                          textAlign: TextAlign.center,
-                          style: tagTextStyle(
-                              context, 13, FontWeight.w500, TagColors.muted)),
-                    )
-                  : const SizedBox(height: 24),
-        ),
-      ],
+      ),
     );
   }
 
@@ -459,4 +556,78 @@ class _ErrorState extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  _TabBarDelegate(this.tabBar);
+
+  final TabBar tabBar;
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
+      ColoredBox(color: Colors.white, child: tabBar);
+
+  @override
+  bool shouldRebuild(covariant _TabBarDelegate oldDelegate) =>
+      oldDelegate.tabBar != tabBar;
+}
+
+class _ShareRow extends StatelessWidget {
+  const _ShareRow(
+      {super.key,
+      required this.icon,
+      required this.label,
+      required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFF1F3F5), shape: BoxShape.circle),
+              child: Icon(icon, size: 20, color: TagColors.ink),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(label,
+                  style: tagTextStyle(
+                      context, 15, FontWeight.w700, TagColors.ink)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyText extends StatelessWidget {
+  const _EmptyText(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.all(32),
+        child: Text(text,
+            textAlign: TextAlign.center,
+            style: tagTextStyle(context, 13, FontWeight.w500, TagColors.muted)),
+      );
 }

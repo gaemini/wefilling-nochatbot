@@ -1,3 +1,4 @@
+import '../ui/widgets/content_tag_editor.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
@@ -47,7 +48,11 @@ class CreateMeetupScreen extends StatefulWidget {
     this.initialAudienceCategory,
     this.initialTitle,
     this.initialDescription,
+    this.initialTagIds = const [],
   });
+
+  /// 태그 페이지·밋업 필터에서 열면 그 태그를 미리 붙인다.
+  final List<String> initialTagIds;
 
   @override
   State<CreateMeetupScreen> createState() => _CreateMeetupScreenState();
@@ -113,6 +118,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   final _friendCategoryService = FriendCategoryService();
   bool _isSubmitting = false;
   String? _selectedCategory; // 초기에는 선택 안 됨
+  late List<String> _tagIds = widget.initialTagIds.take(3).toList();
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
   // 카테고리는 build 메서드에서 동적으로 생성
 
@@ -987,6 +993,16 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                             SizedBox(
                                 height:
                                     context.rs(18).clamp(15, 22).toDouble()),
+                            ContentTagEditor(
+                              key: const ValueKey('create_meetup_tags'),
+                              tagIds: _tagIds,
+                              enabled: !_isSubmitting,
+                              onChanged: (ids) =>
+                                  setState(() => _tagIds = ids),
+                            ),
+                            SizedBox(
+                                height:
+                                    context.rs(18).clamp(15, 22).toDouble()),
 
                             // 장소 필드
                             Column(
@@ -1519,6 +1535,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                   _publicDurationHours,
                                               requiresHanyangVerification:
                                                   _requiresHanyangVerification,
+                                              tagIds: _tagIds,
                                             );
 
                                             if (success) {

@@ -6,7 +6,7 @@ import {FieldPath, FieldValue} from 'firebase-admin/firestore';
 import {callables} from './backend';
 import {COL} from './firestore_paths';
 import {isSearchableUser} from './searchable_user_policy';
-import {friendIdCandidatesAtCreation} from './frozen_audience';
+import {FrozenAudience, friendIdCandidatesAtCreation, resolveFrozenAudience} from './frozen_audience';
 
 const db = () => admin.firestore();
 
@@ -513,3 +513,222 @@ export const getTagSuggestions = callables()
       popular: popular.docs.filter((doc) => !mine.has(doc.id)).slice(0, SUGGEST_LIMIT).map(toItem),
     };
   });
+
+/**
+ * 글·모임에 붙일 태그(최대 3). 정규화·중복 제거 후 모두 active여야 한다.
+ */
+export async function resolveContentTagIds(raw: unknown): Promise<string[]> {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) throw new functions.https.HttpsError('invalid-argument', 'tag-invalid');
+  const normalized = raw.map((item) => normalizeTagName(item));
+  if (normalized.some((id) => id == null)) {
+    throw new functions.https.HttpsError('invalid-argument', 'tag-invalid');
+  }
+  const ids = Array.from(new Set(normalized as string[]));
+  if (ids.length > MAX_CONTENT_TAGS) {
+    throw new functions.https.HttpsError('invalid-argument', 'tag-too-many');
+  }
+  if (ids.length === 0) return [];
+  const snaps = await db().getAll(...ids.map(tagRef));
+  const unavailable = snaps.find((snap) => !snap.exists || snap.get('status') !== 'active');
+  if (unavailable) {
+    throw new functions.https.HttpsError('failed-precondition', `tag-unavailable:${unavailable.id}`);
+  }
+  return ids;
+}
+
+function countedTagIds(data: admin.firestore.DocumentData | undefined): string[] {
+  if (!data || data.isHidden === true || data.status === 'deleted' || data.isDeleted === true) return [];
+  return stringArray(data.tagIds).slice(0, MAX_CONTENT_TAGS);
+}
+
+/** 글·모임 문서 변경 → 태그별 개수 변화. */
+export function contentTagCountDelta(
+  before: admin.firestore.DocumentData | undefined,
+  after: admin.firestore.DocumentData | undefined,
+): Map<string, number> {
+  const delta = new Map<string, number>();
+  const prev = countedTagIds(before);
+  const next = countedTagIds(after);
+  prev.filter((id) => !next.includes(id)).forEach((id) => delta.set(id, -1));
+  next.filter((id) => !prev.includes(id)).forEach((id) => delta.set(id, 1));
+  return delta;
+}
+
+/** 기존 posts/meetups onWrite 트리거에서 호출한다(바뀐 게 없으면 읽기·쓰기 없음). */
+export async function syncContentTagCounts(
+  field: 'postCount' | 'meetupCount',
+  before: admin.firestore.DocumentData | undefined,
+  after: admin.firestore.DocumentData | undefined,
+): Promise<void> {
+  const delta = contentTagCountDelta(before, after);
+  if (delta.size === 0) return;
+  const batch = db().batch();
+  delta.forEach((change, id) => batch.set(tagRef(id), {[field]: FieldValue.increment(change)}, {merge: true}));
+  await batch.commit();
+}
+
+// ===== 공개 범위 '#태그 가진 사람' =====
+
+/** functions/.env TAG_AUDIENCE_ENABLED=true일 때만 새 공개 범위를 받는다(기본 꺼짐). */
+export function tagAudienceEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return (env.TAG_AUDIENCE_ENABLED ?? '').trim().toLowerCase() === 'true';
+}
+
+export async function viewerTagIds(uid: string): Promise<string[]> {
+  if (!uid) return [];
+  const snap = await db().collection(COL.users).doc(uid).get();
+  return stringArray(snap.get('interestTagIds'));
+}
+
+/** 태그 공개 글을 이 사용자 태그로 볼 수 있는지(규칙 tagAudienceCanRead와 같은 판정). */
+export function tagAudienceAllows(viewerTags: readonly string[], data: admin.firestore.DocumentData | undefined): boolean {
+  if (!data || String(data.visibility ?? '') !== 'tag') return false;
+  const audience = stringArray(data.audienceTagIds);
+  return audience.length > 0 && audience.some((id) => viewerTags.includes(id));
+}
+
+/** uids 중 tagIds를 하나라도 단 활성 사용자. */
+export async function tagHoldersAmong(uids: readonly string[], tagIds: readonly string[]): Promise<string[]> {
+  const ids = Array.from(new Set(uids)).filter((id) => id && !id.includes('/'));
+  const holders: string[] = [];
+  for (const chunk of chunks(ids, 100)) {
+    const docs = await db().getAll(...chunk.map((id) => db().collection(COL.users).doc(id)));
+    docs.forEach((doc) => {
+      if (doc.exists && isSearchableUser(doc.id, doc.data()) &&
+          stringArray(doc.get('interestTagIds')).some((id) => tagIds.includes(id))) {
+        holders.push(doc.id);
+      }
+    });
+  }
+  return holders;
+}
+
+const FEED_PAGE = 20;
+
+/**
+ * 태그 공개 글·모임 목록. 규칙은 필터가 아니므로 목록은 이 함수로만 만든다.
+ * - kind: posts | meetups, tagId(태그 페이지) 없으면 내 태그 전체(최대 10)
+ * - 모임은 fromMillis~toMillis 날짜 범위(밋업 탭 달력)로도 부를 수 있다.
+ * - 내가 달지 않은 태그를 물으면 목록 없이 lockedCount(볼 수 있게 될 개수)만 준다.
+ */
+export const getTagAudienceFeed = callables()
+  .runWith({timeoutSeconds: 20, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const kind = data?.kind === 'meetups' ? COL.meetups : COL.posts;
+    const myTags = await viewerTagIds(uid);
+    const only = data?.tagId == null ? null : normalizeTagName(data.tagId);
+    if (data?.tagId != null && !only) {
+      throw new functions.https.HttpsError('invalid-argument', 'tag-invalid');
+    }
+    if (only && !myTags.includes(only)) {
+      const counted = await db().collection(kind)
+        .where('visibility', '==', 'tag')
+        .where('audienceTagIds', 'array-contains', only)
+        .count().get();
+      return {items: [], cursor: null, lockedCount: counted.data().count};
+    }
+    const tags = only ? [only] : myTags.slice(0, 10);
+    if (tags.length === 0) return {items: [], cursor: null, lockedCount: 0};
+
+    let query: admin.firestore.Query = db().collection(kind)
+      .where('visibility', '==', 'tag')
+      .where('audienceTagIds', 'array-contains-any', tags);
+    const byDate = kind === COL.meetups && data?.fromMillis != null;
+    if (byDate) {
+      const from = Number(data.fromMillis);
+      const to = Number(data.toMillis);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to < from || to - from > 62 * 86400000) {
+        throw new functions.https.HttpsError('invalid-argument', 'range-invalid');
+      }
+      query = query
+        .where('date', '>=', admin.firestore.Timestamp.fromMillis(from))
+        .where('date', '<', admin.firestore.Timestamp.fromMillis(to))
+        .orderBy('date').limit(100);
+    } else {
+      query = query.orderBy('createdAt', 'desc').limit(FEED_PAGE);
+      const cursor = Number(data?.cursor);
+      if (data?.cursor != null && Number.isFinite(cursor)) {
+        query = query.startAfter(admin.firestore.Timestamp.fromMillis(cursor));
+      }
+    }
+    const snap = await query.get();
+    const owners = Array.from(new Set(snap.docs.map((doc) => String(doc.get('userId') ?? ''))))
+      .filter((owner) => owner && owner !== uid && !owner.includes('/'));
+    const blocks = owners.length === 0 ? [] : await db().getAll(...owners.flatMap((owner) => [
+      db().collection(COL.blocks).doc(`${uid}_${owner}`),
+      db().collection(COL.blocks).doc(`${owner}_${uid}`),
+    ]));
+    const blocked = new Set(owners.filter((_, i) => blocks[i * 2]?.exists || blocks[i * 2 + 1]?.exists));
+    const items = snap.docs
+      .filter((doc) => doc.get('isHidden') !== true && !blocked.has(String(doc.get('userId') ?? '')))
+      .map((doc) => ({id: doc.id, ...(serializeForClient(doc.data()) as Record<string, unknown>)}));
+    const last = snap.docs[snap.docs.length - 1];
+    const cursor = !byDate && snap.size === FEED_PAGE
+      ? (last.get('createdAt') as admin.firestore.Timestamp | undefined)?.toMillis() ?? null
+      : null;
+    return {items, cursor, lockedCount: 0};
+  });
+
+/** 콜러블 응답용: Timestamp → {_millis}. 앱은 _millis를 DateTime으로 바꾼다. */
+export function serializeForClient(value: unknown): unknown {
+  if (value instanceof admin.firestore.Timestamp) return {_millis: value.toMillis()};
+  if (Array.isArray(value)) return value.map(serializeForClient);
+  if (value && typeof value === 'object' && !(value instanceof admin.firestore.DocumentReference)) {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => [key, serializeForClient(item)]));
+  }
+  if (value instanceof admin.firestore.DocumentReference) return value.path;
+  return value;
+}
+
+export type TagAudience = {
+  frozen: FrozenAudience;
+  audienceTagIds: string[];
+  friendsOnly: boolean;
+};
+
+/**
+ * 생성 요청의 visibility가 'tag'일 때 공개 대상을 정한다. 아니면 null.
+ * - friendsOnly: 지금 친구 중 태그를 단 사람만 얼린다(저장 visibility='friends',
+ *   구버전 앱·기존 규칙이 그대로 읽는다).
+ * - 아니면 visibility='tag', allowedUserIds=[작성자]: 구버전 쿼리에 걸리지 않고,
+ *   목록은 getTagAudienceFeed, 상세는 규칙 tagAudienceCanRead로만 본다.
+ */
+export async function resolveTagAudience(
+  ownerId: string,
+  data: Record<string, unknown>,
+  tagIds: readonly string[],
+): Promise<TagAudience | null> {
+  if (data.visibility !== 'tag') return null;
+  if (!tagAudienceEnabled()) {
+    throw new functions.https.HttpsError('failed-precondition', 'tag-audience-disabled');
+  }
+  if (tagIds.length === 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'tag-audience-needs-tags');
+  }
+  if (data.isAnonymous === true || data.requiresHanyangVerification === true) {
+    throw new functions.https.HttpsError('invalid-argument', 'tag-audience-unsupported');
+  }
+  const friendsOnly = data.audienceFriendsOnly === true;
+  if (friendsOnly) {
+    const friends = await resolveFrozenAudience(ownerId, 'friends', []);
+    const holders = await tagHoldersAmong(
+      friends.audienceUserIdsFrozen.filter((id) => id !== ownerId), tagIds);
+    return {
+      frozen: {
+        visibilityMode: 'friends',
+        audienceUserIdsFrozen: Array.from(new Set([ownerId, ...holders])).sort(),
+        sourceGroupIds: [],
+      },
+      audienceTagIds: [...tagIds],
+      friendsOnly: true,
+    };
+  }
+  return {
+    frozen: {visibilityMode: 'tag', audienceUserIdsFrozen: [ownerId], sourceGroupIds: []},
+    audienceTagIds: [...tagIds],
+    friendsOnly: false,
+  };
+}

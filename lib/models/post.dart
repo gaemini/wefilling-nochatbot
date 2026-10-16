@@ -114,6 +114,14 @@ class Post {
   final DateTime? visibilityLockedAt;
   final bool requiresHanyangVerification;
 
+  /// 글에 붙은 #태그(최대 3).
+  final List<String> tagIds;
+
+  /// visibility == 'tag'일 때 볼 수 있는 태그(= tagIds).
+  final List<String> audienceTagIds;
+
+  bool get isTagAudience => visibility == 'tag';
+
   String get ownerId => userId;
   String get visibilityMode => visibility;
   List<String> get audienceUserIdsFrozen => allowedUserIds;
@@ -153,6 +161,8 @@ class Post {
     this.visibilitySchemaVersion = 0,
     this.visibilityLockedAt,
     this.requiresHanyangVerification = false,
+    this.tagIds = const [],
+    this.audienceTagIds = const [],
   })  : categoryKeys = _normalizePostCategoryKeys(
           categoryKeys,
           (categoryKey?.trim().isNotEmpty ?? false) ? categoryKey : category,
@@ -308,6 +318,8 @@ class Post {
     int? visibilitySchemaVersion,
     DateTime? visibilityLockedAt,
     bool? requiresHanyangVerification,
+    List<String>? tagIds,
+    List<String>? audienceTagIds,
   }) {
     return Post(
       id: id ?? this.id,
@@ -342,6 +354,8 @@ class Post {
       visibilityLockedAt: visibilityLockedAt ?? this.visibilityLockedAt,
       requiresHanyangVerification:
           requiresHanyangVerification ?? this.requiresHanyangVerification,
+      tagIds: tagIds ?? this.tagIds,
+      audienceTagIds: audienceTagIds ?? this.audienceTagIds,
     );
   }
 
@@ -381,6 +395,8 @@ class Post {
       if (visibilityLockedAt != null)
         'visibilityLockedAt': visibilityLockedAt!.millisecondsSinceEpoch,
       'requiresHanyangVerification': requiresHanyangVerification,
+      'tagIds': tagIds,
+      'audienceTagIds': audienceTagIds,
     };
   }
 
@@ -444,6 +460,19 @@ class Post {
           ? DateTime.fromMillisecondsSinceEpoch(map['visibilityLockedAt'])
           : null,
       requiresHanyangVerification: map['requiresHanyangVerification'] == true,
+      tagIds: parseTagIdList(map['tagIds']),
+      audienceTagIds: parseTagIdList(map['audienceTagIds']),
     );
   }
 }
+
+/// 문서의 tagIds/audienceTagIds(최대 3, 빈 값·중복 제외).
+List<String> parseTagIdList(Object? raw) => raw is List
+    ? raw
+        .whereType<String>()
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .take(3)
+        .toList(growable: false)
+    : const <String>[];

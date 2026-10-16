@@ -129,7 +129,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
         _selected = [..._selected]..remove(id);
       } else if (_selected.length >= widget.maxTags) {
         AppSnackBar.show(context,
-            message: l10n.tagLimitReached, type: AppSnackBarType.warning);
+            message: _limitMessage(l10n), type: AppSnackBarType.warning);
         return;
       } else {
         _selected = [..._selected, id];
@@ -143,7 +143,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
     if (_creating) return;
     if (_selected.length >= widget.maxTags) {
       AppSnackBar.show(context,
-          message: l10n.tagLimitReached, type: AppSnackBarType.warning);
+          message: _limitMessage(l10n), type: AppSnackBarType.warning);
       return;
     }
     setState(() => _creating = true);
@@ -165,6 +165,11 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
       if (mounted) setState(() => _creating = false);
     }
   }
+
+  String _limitMessage(AppLocalizations l10n) =>
+      widget.maxTags == InterestTagService.maxContentTags
+          ? l10n.contentTagLimit
+          : l10n.tagLimitReached;
 
   String _errorMessage(AppLocalizations l10n, Object error) =>
       switch (InterestTagService.errorCode(error)) {
@@ -385,7 +390,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    l10n.tagSelectedCount(_selected.length),
+                    l10n.tagSelectedCount(_selected.length, widget.maxTags),
                     key: const ValueKey('tag_picker_count'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

@@ -178,12 +178,12 @@ void main() {
     expect(find.text(l10n.tagPickerTitle), findsOneWidget);
     expect(find.text('#영화'), findsOneWidget);
     expect(find.text(l10n.tagSuggestFriends), findsOneWidget);
-    expect(find.text(l10n.tagSelectedCount(1)), findsOneWidget);
+    expect(find.text(l10n.tagSelectedCount(1, 8)), findsOneWidget);
 
     // 추천 칩 → 내 태그로.
     await tester.tap(find.byKey(const ValueKey('tag_picker_suggest_kpop')));
     await tester.pump();
-    expect(find.text(l10n.tagSelectedCount(2)), findsOneWidget);
+    expect(find.text(l10n.tagSelectedCount(2, 8)), findsOneWidget);
     expect(
         find.byKey(const ValueKey('tag_picker_selected_kpop')), findsOneWidget);
 
@@ -212,7 +212,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('tag_picker_create')));
     await tester.pumpAndSettle();
     expect(server.created, ['boardgame']);
-    expect(find.text(l10n.tagSelectedCount(4)), findsOneWidget);
+    expect(find.text(l10n.tagSelectedCount(4, 8)), findsOneWidget);
 
     // 8개를 넘기지 않는다.
     for (final name in ['aa', 'bb', 'cc', 'dd', 'ee']) {
@@ -223,7 +223,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('tag_picker_create')));
       await tester.pumpAndSettle();
     }
-    expect(find.text(l10n.tagSelectedCount(8)), findsOneWidget);
+    expect(find.text(l10n.tagSelectedCount(8, 8)), findsOneWidget);
     expect(server.created, ['boardgame', 'aa', 'bb', 'cc', 'dd']);
     expect(find.text(l10n.tagLimitReached), findsOneWidget);
     await tester.pump(const Duration(seconds: 4));

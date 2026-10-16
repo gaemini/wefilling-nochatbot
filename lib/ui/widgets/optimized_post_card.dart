@@ -2,6 +2,7 @@
 // 성능 최적화된 게시글 카드 위젯
 // const 생성자, 메모이제이션, 이미지 최적화
 
+import 'content_tag_row.dart';
 import 'package:flutter/material.dart';
 import 'motion_press.dart';
 import 'package:flutter/foundation.dart' show listEquals;
@@ -772,6 +773,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (post.isTagAudience) ...[
+                            SizedBox(height: contentTopGap),
+                            TagAudienceBadge(tagIds: post.audienceTagIds),
+                          ],
                           if (hasPrimaryContent) ...[
                             SizedBox(height: contentTopGap),
                             if (hasContent)
@@ -850,6 +855,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           ] else if (standaloneImageUrls.isNotEmpty) ...[
                             SizedBox(height: imageGap),
                             _buildPostImages(standaloneImageUrls),
+                          ],
+                          if (post.tagIds.isNotEmpty) ...[
+                            const SizedBox(height: DesignTokens.s8),
+                            ContentTagRow(tagIds: post.tagIds),
                           ],
                           Padding(
                             padding:
@@ -1386,15 +1395,16 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 onTap: widget.onCategoryTap == null
                     ? null
                     : () => widget.onCategoryTap!(category),
+                // 주제는 '#' 없이 회색('#'은 #태그 전용).
                 child: Text(
-                  '#${category.label(l10n)}',
+                  category.label(l10n),
                   textAlign: TextAlign.right,
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
-                    color: BrandColors.info,
+                    color: const Color(0xFF6B7280),
                     height: isChineseUi(context) ? 1.3 : 1.2,
                     letterSpacing: -0.2,
                   ),

@@ -139,17 +139,27 @@ class SuggestTagChip extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.count,
+    this.plus = false,
+    this.hash = true,
   });
 
   final String label;
   final VoidCallback? onTap;
   final int? count;
 
+  /// '＋ #영화'처럼 앞에 ＋.
+  final bool plus;
+
+  /// false면 '#' 없이(예: '＋ 태그 찾기·만들기').
+  final bool hash;
+
+  String get _text => '${plus ? '＋ ' : ''}${hash ? '#' : ''}$label';
+
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: '#$label',
+      label: _text,
       excludeSemantics: true,
       child: MotionPress(
         enabled: onTap != null,
@@ -167,7 +177,7 @@ class SuggestTagChip extends StatelessWidget {
                 children: [
                   Flexible(
                     child: Text(
-                      '#$label',
+                      _text,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tagTextStyle(
@@ -301,10 +311,12 @@ class TagPrimaryButton extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12))),
             backgroundColor: WidgetStateProperty.resolveWith((states) {
               if (busy) return TagColors.blue;
-              if (states.contains(WidgetState.disabled))
+              if (states.contains(WidgetState.disabled)) {
                 return TagColors.disabled;
-              if (states.contains(WidgetState.pressed))
+              }
+              if (states.contains(WidgetState.pressed)) {
                 return TagColors.bluePressed;
+              }
               return TagColors.blue;
             }),
             foregroundColor: WidgetStateProperty.resolveWith((states) =>

@@ -3471,8 +3471,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get tagOpenPage => '查看标签页';
 
   @override
-  String tagSelectedCount(int n) {
-    return '已选 $n/8';
+  String tagSelectedCount(int n, int max) {
+    return '已选 $n/$max';
   }
 
   @override
@@ -3578,4 +3578,54 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get profileTagsTitle => '#标签';
+
+  @override
+  String get postTopic => '主题';
+
+  @override
+  String get contentTagsTitle => '#标签';
+
+  @override
+  String get contentTagsHint => '添加了这些标签的人可以找到它';
+
+  @override
+  String get contentTagPickerTitle => '要添加哪些 #标签？';
+
+  @override
+  String get contentTagLimit => '最多可添加3个标签';
+
+  @override
+  String tagAudienceBadge(String tag) {
+    return '拥有 #$tag 的人';
+  }
+
+  @override
+  String tagShareTo(String tag) {
+    return '＋ 分享到 #$tag';
+  }
+
+  @override
+  String get tagShareWritePost => '写帖子';
+
+  @override
+  String get tagShareCreateMeetup => '创建聚会';
+
+  @override
+  String get tagPostsEmpty => '还没有带这个标签的帖子';
+
+  @override
+  String get tagMeetupsEmpty => '没有即将举行的聚会';
+
+  @override
+  String get meetupFilterAll => '全部聚会';
+
+  @override
+  String meetupTagCreate(String tag) {
+    return '＋ 创建 #$tag 聚会';
+  }
+
+  @override
+  String meetupTagEmpty(String tag) {
+    return '还没有 #$tag 聚会，来创建第一个吧';
+  }
 }

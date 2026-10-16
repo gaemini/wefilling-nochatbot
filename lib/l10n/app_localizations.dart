@@ -6541,8 +6541,8 @@ abstract class AppLocalizations {
   /// No description provided for @tagSelectedCount.
   ///
   /// In ko, this message translates to:
-  /// **'{n}/8 선택'**
-  String tagSelectedCount(int n);
+  /// **'{n}/{max} 선택'**
+  String tagSelectedCount(int n, int max);
 
   /// No description provided for @tagAdd.
   ///
@@ -6735,6 +6735,90 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'#태그'**
   String get profileTagsTitle;
+
+  /// No description provided for @postTopic.
+  ///
+  /// In ko, this message translates to:
+  /// **'주제'**
+  String get postTopic;
+
+  /// No description provided for @contentTagsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'#태그'**
+  String get contentTagsTitle;
+
+  /// No description provided for @contentTagsHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'붙인 태그를 단 사람이 이 글을 찾을 수 있어요'**
+  String get contentTagsHint;
+
+  /// No description provided for @contentTagPickerTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'어떤 #태그를 붙일까요?'**
+  String get contentTagPickerTitle;
+
+  /// No description provided for @contentTagLimit.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그는 3개까지 붙일 수 있어요'**
+  String get contentTagLimit;
+
+  /// No description provided for @tagAudienceBadge.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag} 가진 사람'**
+  String tagAudienceBadge(String tag);
+
+  /// No description provided for @tagShareTo.
+  ///
+  /// In ko, this message translates to:
+  /// **'＋ #{tag}에 공유'**
+  String tagShareTo(String tag);
+
+  /// No description provided for @tagShareWritePost.
+  ///
+  /// In ko, this message translates to:
+  /// **'포스트 쓰기'**
+  String get tagShareWritePost;
+
+  /// No description provided for @tagShareCreateMeetup.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 만들기'**
+  String get tagShareCreateMeetup;
+
+  /// No description provided for @tagPostsEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 이 태그가 붙은 글이 없어요'**
+  String get tagPostsEmpty;
+
+  /// No description provided for @tagMeetupsEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'예정된 모임이 없어요'**
+  String get tagMeetupsEmpty;
+
+  /// No description provided for @meetupFilterAll.
+  ///
+  /// In ko, this message translates to:
+  /// **'모든 모임'**
+  String get meetupFilterAll;
+
+  /// No description provided for @meetupTagCreate.
+  ///
+  /// In ko, this message translates to:
+  /// **'＋ #{tag} 모임 만들기'**
+  String meetupTagCreate(String tag);
+
+  /// No description provided for @meetupTagEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag} 모임이 아직 없어요. 처음으로 열어 보세요'**
+  String meetupTagEmpty(String tag);
 }
 
 class _AppLocalizationsDelegate

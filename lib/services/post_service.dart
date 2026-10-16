@@ -472,6 +472,33 @@ class PostService {
         .toList(growable: false);
   }
 
+  /// 태그 페이지 '포스트' 탭: 이 태그가 붙은 전체 공개 글(최신순).
+  Future<({List<Post> posts, DocumentSnapshot<Map<String, dynamic>>? cursor})>
+      fetchPublicTagPosts(
+    String tagId, {
+    DocumentSnapshot<Map<String, dynamic>>? after,
+    int limit = 20,
+  }) async {
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('posts')
+        .where('visibility', isEqualTo: 'public')
+        .where('tagIds', arrayContains: tagId)
+        .orderBy('createdAt', descending: true)
+        .limit(limit);
+    if (after != null) query = query.startAfterDocument(after);
+    final snapshot = await query.get();
+    final excluded = await ContentFilterService.getExcludedUserIds();
+    final posts = snapshot.docs
+        .where((doc) => doc.data()['isHidden'] != true)
+        .map((doc) => _buildPostFromFirestore(doc.id, doc.data()))
+        .where((post) => !excluded.contains(post.userId))
+        .toList(growable: false);
+    return (
+      posts: posts,
+      cursor: snapshot.docs.length == limit ? snapshot.docs.last : null,
+    );
+  }
+
   Post _buildPostFromFirestore(String id, Map<String, dynamic> data) {
     DateTime createdAt = DateTime.now();
     final rawCreatedAt = data['createdAt'];
@@ -527,6 +554,8 @@ class PostService {
           ? (data['visibilityLockedAt'] as Timestamp).toDate()
           : null,
       requiresHanyangVerification: data['requiresHanyangVerification'] == true,
+      tagIds: parseTagIdList(data['tagIds']),
+      audienceTagIds: parseTagIdList(data['audienceTagIds']),
       type: data['type'] ?? 'text',
       pollOptions: _parsePollOptions(data['pollOptions']),
       pollTotalVotes: data['pollTotalVotes'] ?? 0,
@@ -547,6 +576,7 @@ class PostService {
     bool requiresHanyangVerification = false,
     String type = 'text', // 'text' | 'poll'
     List<String> pollOptions = const [], // type == 'poll'일 때만 사용
+    List<String> tagIds = const [],
     SharedLinkPreview? linkPreview,
     File? linkPreviewImageFile,
     String linkPreviewImageSource = 'local_preview',
@@ -736,6 +766,7 @@ class PostService {
         'requiresHanyangVerification': requiresHanyangVerification,
         'type': type,
         'pollOptions': cleanedPollOptions,
+        if (tagIds.isNotEmpty) 'tagIds': tagIds.take(3).toList(),
         if (persistedLinkPreview != null)
           'linkPreview': _createPostLinkPreviewPayload(persistedLinkPreview),
         if (videoUpload != null) 'video': videoUpload.toPayload(),

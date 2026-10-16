@@ -305,6 +305,26 @@ class MeetupService {
     return x.year == y.year && x.month == y.month && x.day == y.day;
   }
 
+  /// 태그 페이지 '밋업' 탭: 이 태그가 붙은 전체 공개 모임(오늘 이후, 가까운 순).
+  Future<List<Meetup>> fetchPublicTagMeetups(String tagId,
+      {int limit = 30}) async {
+    final now = DateTime.now();
+    final startOfToday = DateTime(now.year, now.month, now.day);
+    final snapshot = await _firestore
+        .collection('meetups')
+        .where('visibility', isEqualTo: 'public')
+        .where('tagIds', arrayContains: tagId)
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfToday))
+        .orderBy('date')
+        .limit(limit)
+        .get();
+    final excluded = await ContentFilterService.getExcludedUserIds();
+    return snapshot.docs
+        .map((doc) => Meetup.fromJson({...doc.data(), 'id': doc.id}))
+        .where((meetup) => !excluded.contains(meetup.userId))
+        .toList(growable: false);
+  }
+
   // 모임 생성
   Future<bool> createMeetup({
     required String title,
@@ -323,6 +343,7 @@ class MeetupService {
     List<String> visibleToCategoryIds = const [], // 특정 카테고리에만 공개
     int? publicDurationHours, // null: 제한 없음, 그 외 1~12시간
     bool requiresHanyangVerification = false,
+    List<String> tagIds = const [],
   }) async {
     try {
       final user = _auth.currentUser;
@@ -408,6 +429,7 @@ class MeetupService {
           'visibleToCategoryIds': normalizedCategoryIds,
           'publicDurationHours': publicDurationHours,
           'requiresHanyangVerification': requiresHanyangVerification,
+          if (tagIds.isNotEmpty) 'tagIds': tagIds.take(3).toList(),
         }).timeout(const Duration(seconds: 30));
       } catch (error) {
         // 서버가 생성한 뒤 응답만 유실된 경우를 실패/중복으로 처리하지 않는다.

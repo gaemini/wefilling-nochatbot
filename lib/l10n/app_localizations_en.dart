@@ -3666,8 +3666,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tagOpenPage => 'Open tag page';
 
   @override
-  String tagSelectedCount(int n) {
-    return '$n/8 selected';
+  String tagSelectedCount(int n, int max) {
+    return '$n/$max selected';
   }
 
   @override
@@ -3774,4 +3774,54 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profileTagsTitle => '#Tags';
+
+  @override
+  String get postTopic => 'Topic';
+
+  @override
+  String get contentTagsTitle => '#Tags';
+
+  @override
+  String get contentTagsHint => 'People with these tags can find this';
+
+  @override
+  String get contentTagPickerTitle => 'Which #tags fit?';
+
+  @override
+  String get contentTagLimit => 'You can add up to 3 tags';
+
+  @override
+  String tagAudienceBadge(String tag) {
+    return 'People with #$tag';
+  }
+
+  @override
+  String tagShareTo(String tag) {
+    return '＋ Share to #$tag';
+  }
+
+  @override
+  String get tagShareWritePost => 'Write a post';
+
+  @override
+  String get tagShareCreateMeetup => 'Create a meetup';
+
+  @override
+  String get tagPostsEmpty => 'No posts with this tag yet';
+
+  @override
+  String get tagMeetupsEmpty => 'No upcoming meetups';
+
+  @override
+  String get meetupFilterAll => 'All meetups';
+
+  @override
+  String meetupTagCreate(String tag) {
+    return '＋ Create a #$tag meetup';
+  }
+
+  @override
+  String meetupTagEmpty(String tag) {
+    return 'No #$tag meetups yet. Start the first one';
+  }
 }

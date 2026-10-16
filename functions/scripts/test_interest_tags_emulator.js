@@ -161,6 +161,25 @@ async function main() {
   assert.equal(suggestions.friends[0].friendCount, 1);
   assert.ok(suggestions.popular.length > 0);
   assert.ok(suggestions.popular.every((t) => t.id !== undefined && t.holderCount >= 0));
+
+  // 글 태그 개수: posts 쓰기 트리거가 tags/{id}.postCount를 맞춘다.
+  const waitFor = async (check) => {
+    for (let i = 0; i < 40; i++) {
+      if (await check()) return true;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return false;
+  };
+  const before = intField(await readAdmin('tags/kpop'), 'postCount') || 0;
+  await seed('posts/p1', {userId: 'alice', ownerId: 'alice', visibility: 'public', tagIds: ['kpop'], content: 'hi'});
+  assert.ok(await waitFor(async () => intField(await readAdmin('tags/kpop'), 'postCount') === before + 1),
+    'postCount +1');
+  await request('DELETE', `${DOCS}/posts/p1`, 'owner');
+  assert.ok(await waitFor(async () => intField(await readAdmin('tags/kpop'), 'postCount') === before),
+    'postCount -1');
+  // 클라이언트는 글의 tagIds를 바꿀 수 없다.
+  await seed('posts/p2', {userId: 'alice', ownerId: 'alice', visibility: 'public', tagIds: ['kpop'], content: 'x'});
+  assert.equal((await patchAs('alice', 'posts/p2', {tagIds: ['running']})).status, 403);
   console.log('callables ok');
 }
 

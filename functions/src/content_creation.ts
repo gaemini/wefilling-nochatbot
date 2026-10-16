@@ -23,6 +23,7 @@ import {
   resolveFrozenAudience,
   VISIBILITY_SCHEMA_VERSION,
 } from './frozen_audience';
+import {resolveContentTagIds, resolveTagAudience} from './interest_tags';
 
 const POST_CATEGORY_KEYS = new Set([
   'style', 'create', 'photo', 'content', 'cafe',
@@ -535,13 +536,15 @@ export const createPostSecure = callables().runWith({timeoutSeconds: 120, memory
       throw new functions.https.HttpsError('invalid-argument', 'Invalid post tags.');
     }
     const categoryKey = categoryKeys[0];
-    const frozen = await resolveFrozenAudience(
+    const tagIds = await resolveContentTagIds(data.tagIds);
+    const tagAudience = await resolveTagAudience(uid, data, tagIds);
+    const frozen = tagAudience?.frozen ?? await resolveFrozenAudience(
       uid,
       data.visibility,
       data.visibleToCategoryIds,
     );
-    // 현재 포스트 UI는 public/group만 제공한다.
-    if (frozen.visibilityMode === 'friends') {
+    // 현재 포스트 UI는 public/group(+태그)만 제공한다. 친구 공개는 '#태그 · 친구 중에서만'뿐.
+    if (frozen.visibilityMode === 'friends' && !tagAudience) {
       throw new functions.https.HttpsError('invalid-argument', 'Unsupported post visibility.');
     }
     const isAnonymous = data.isAnonymous === true;
@@ -613,6 +616,7 @@ export const createPostSecure = callables().runWith({timeoutSeconds: 120, memory
       content,
       categoryKey,
       categoryKeys,
+      tagIds,
       imageUrls,
       createdAt: now,
       updatedAt: now,
@@ -625,6 +629,10 @@ export const createPostSecure = callables().runWith({timeoutSeconds: 120, memory
       notificationAudienceUserIdsFrozen,
       visibilityLockedAt: now,
       visibilitySchemaVersion: VISIBILITY_SCHEMA_VERSION,
+      ...(tagAudience ? {
+        audienceTagIds: tagAudience.audienceTagIds,
+        audienceFriendsOnly: tagAudience.friendsOnly,
+      } : {}),
       requiresHanyangVerification,
       isAnonymous,
       likes: 0,
@@ -879,7 +887,9 @@ export const createMeetupSecure = callables().runWith({timeoutSeconds: 120, memo
     const uid = requireUid(context);
     const data = object(raw);
     const meetupId = contentId(data.meetupId);
-    const frozen = await resolveFrozenAudience(
+    const tagIds = await resolveContentTagIds(data.tagIds);
+    const tagAudience = await resolveTagAudience(uid, data, tagIds);
+    const frozen = tagAudience?.frozen ?? await resolveFrozenAudience(
       uid,
       data.visibility,
       data.visibleToCategoryIds,
@@ -935,6 +945,7 @@ export const createMeetupSecure = callables().runWith({timeoutSeconds: 120, memo
       createdAt: now,
       updatedAt: now,
       category: text(data.category, 80, 'category') || '기타',
+      tagIds,
       thumbnailContent: text(data.thumbnailContent, 500, 'thumbnailContent'),
       ...(remoteUrls.length > 0 ? {thumbnailImageUrl: remoteUrls[0], imageUrls: remoteUrls} : {}),
       visibility: frozen.visibilityMode,
@@ -946,6 +957,10 @@ export const createMeetupSecure = callables().runWith({timeoutSeconds: 120, memo
       notificationAudienceUserIdsFrozen,
       visibilityLockedAt: now,
       visibilitySchemaVersion: VISIBILITY_SCHEMA_VERSION,
+      ...(tagAudience ? {
+        audienceTagIds: tagAudience.audienceTagIds,
+        audienceFriendsOnly: tagAudience.friendsOnly,
+      } : {}),
       requiresHanyangVerification,
       isConfirmed: false,
       publicWindowStatus: publicDurationHours == null ? 'unlimited' : 'timed',

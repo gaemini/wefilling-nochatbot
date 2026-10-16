@@ -261,7 +261,9 @@ service cloud.firestore {
         'visibilityLockedAt', 'visibilitySchemaVersion',
         'isAnonymous',
         'publicDurationHours', 'publicExpiresAt', 'publicExpiredAt',
-        'publicWindowStatus', 'expiredAt'
+        'publicWindowStatus', 'expiredAt',
+        // #태그와 태그 공개 범위는 생성 함수만 정한다.
+        'tagIds', 'audienceTagIds', 'audienceFriendsOnly'
       ]);
     }
 

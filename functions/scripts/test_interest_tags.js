@@ -10,6 +10,7 @@ const {
   legacyInterestsFor,
   mergeLegacyInterests,
   tagIdDiff,
+  contentTagCountDelta,
   OFFICIAL_INTEREST_TAGS,
   OFFICIAL_TAG_IDS,
   MAX_PROFILE_TAGS,
@@ -62,5 +63,13 @@ assert.deepEqual(mergeLegacyInterests([], ['travel', 'unknown']), ['travel']);
 assert.deepEqual(mergeLegacyInterests(['kpop'], null), ['kpop']);
 
 assert.deepEqual(tagIdDiff(['a', 'b'], ['b', 'c']), {added: ['c'], removed: ['a']});
+
+// 글·모임 태그 개수: 생성 +1, 삭제 -1, 숨김 -1, 태그 교체.
+const asObj = (m) => Object.fromEntries(m);
+assert.deepEqual(asObj(contentTagCountDelta(undefined, {tagIds: ['a', 'b']})), {a: 1, b: 1});
+assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a']}, undefined)), {a: -1});
+assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a']}, {tagIds: ['a'], isHidden: true})), {a: -1});
+assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a', 'b']}, {tagIds: ['b', 'c']})), {a: -1, c: 1});
+assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a'], likes: 1}, {tagIds: ['a'], likes: 2})), {});
 
 console.log('interest tag helper tests passed');

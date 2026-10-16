@@ -49,7 +49,7 @@ void main() {
       onChanged: (tags) => result = tags,
     ));
 
-    expect(find.text('Tags'), findsOneWidget);
+    expect(find.text('Topic'), findsOneWidget);
     expect(find.text('Style'), findsOneWidget);
     expect(find.text('Photo'), findsOneWidget);
     expect(find.text('Other'), findsOneWidget);

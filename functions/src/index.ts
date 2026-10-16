@@ -116,8 +116,8 @@ export {
 } from './hanyang_verification';
 
 export {translateContentBatch} from './content_translation';
-export {searchTags, createTag, setProfileTags, listTagHolders, getTagSummary, setTagPrefs, getTagSuggestions} from './interest_tags';
-import {signupProfileTagFields, syncLegacyInterestsToTags} from './interest_tags';
+export {searchTags, createTag, setProfileTags, listTagHolders, getTagSummary, setTagPrefs, getTagSuggestions, getTagAudienceFeed} from './interest_tags';
+import {signupProfileTagFields, syncLegacyInterestsToTags, tagAudienceAllows, viewerTagIds} from './interest_tags';
 import {
   READ_SYNC_DEBOUNCE_MS,
   ReadSyncTarget,
@@ -2808,13 +2808,15 @@ export const resolveMyReadableJoinedMeetupIds = callables()
 
     const readableIds = new Set<string>();
     const orphanParticipantRefs: admin.firestore.DocumentReference[] = [];
+    const hasTagMeetup = Array.from(meetupsById.values())
+      .some((doc) => doc.exists && doc.get('visibility') === 'tag');
+    const myTags = hasTagMeetup ? await viewerTagIds(userId) : [];
     participants.docs.forEach((participant) => {
       const meetupId = normalizeUidLoose(participant.data().meetupId);
       const meetup = meetupsById.get(meetupId);
-      if (meetup?.exists && canReadStoredMeetup(
-        userId,
-        (meetup.data() || {}) as Record<string, any>,
-      )) {
+      const meetupData = (meetup?.data() || {}) as Record<string, any>;
+      if (meetup?.exists && (canReadStoredMeetup(userId, meetupData) ||
+          tagAudienceAllows(myTags, meetupData))) {
         readableIds.add(meetupId);
       } else if (!meetup?.exists) {
         orphanParticipantRefs.push(participant.ref);
@@ -2891,7 +2893,9 @@ export const joinMeetupSecure = callables().https.onCall(async (data, context) =
   }
 
   const resolvedAudience = resolveStoredMeetupAudience(userId, initialData);
-  if (!resolvedAudience.canAccess) {
+  // 태그 공개 모임: 그 태그를 단 사람만 참여할 수 있다.
+  if (!resolvedAudience.canAccess &&
+      !tagAudienceAllows(await viewerTagIds(userId), initialData)) {
     throw new functions.https.HttpsError(
       'permission-denied',
       '이 밋업의 공개 대상에 포함되어 있지 않습니다.'

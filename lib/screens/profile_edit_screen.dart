@@ -885,7 +885,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (!mounted) return;
       setState(() => _tagSuggestions = [
             ...result.friends.map((e) => e.$1),
-            ...result.popular,
+            ...result.popular.map((e) => e.$1),
           ]);
     } catch (_) {
       // 추천 없이도 '태그 찾기·만들기'로 고를 수 있다.
@@ -965,7 +965,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   SuggestTagChip(
                     key: ValueKey('profile_tag_suggest_${tag.id}'),
                     label: tag.labelFor(language),
-                    count: tag.holderCount,
+                    meta: AppLocalizations.of(context)!
+                        .tagCountPeople(tag.holderCount),
                     onTap: () => _addTag(tag.id),
                   ),
               ],

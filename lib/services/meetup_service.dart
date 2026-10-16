@@ -347,6 +347,7 @@ class MeetupService {
     bool requiresHanyangVerification = false,
     List<String> tagIds = const [],
     bool audienceFriendsOnly = false,
+    List<String> audienceTagIds = const [],
   }) async {
     try {
       final user = _auth.currentUser;
@@ -439,6 +440,8 @@ class MeetupService {
           'requiresHanyangVerification': requiresHanyangVerification,
           if (tagIds.isNotEmpty) 'tagIds': tagIds.take(3).toList(),
           if (visibility == 'tag') 'audienceFriendsOnly': audienceFriendsOnly,
+          if (visibility == 'tag' && audienceTagIds.isNotEmpty)
+            'audienceTagIds': audienceTagIds.take(3).toList(),
         }).timeout(const Duration(seconds: 30));
       } catch (error) {
         // 서버가 생성한 뒤 응답만 유실된 경우를 실패/중복으로 처리하지 않는다.

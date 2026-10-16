@@ -42,7 +42,10 @@ class _FakeServer {
           'friends': [
             {..._kpop, 'friendCount': 2}
           ],
-          'popular': [_running, _long],
+          'popular': [
+            {..._running, 'delta': 7},
+            {..._long, 'delta': 0}
+          ],
         };
       case 'searchTags':
         final q = (data['q'] as String).toLowerCase().replaceAll('#', '');
@@ -71,7 +74,13 @@ class _FakeServer {
           'mine': false,
           'friendCount': 2,
           'friends': [
-            {'uid': 'f1', 'nickname': '하늘', 'nationality': '', 'photoURL': ''},
+            {
+              'uid': 'f1',
+              'nickname': '하늘',
+              'nationality': '',
+              'photoURL': '',
+              'tags': ['running', 'kpop']
+            },
             {
               'uid': 'f2',
               'nickname': 'Mina',
@@ -89,7 +98,9 @@ class _FakeServer {
             {
               'uid': 'u3',
               'nickname': 'Someone with a really long nickname here',
-              'university': 'Hanyang University ERICA campus'
+              'university': 'Hanyang University ERICA campus',
+              'studentType': 'exchange',
+              'tags': ['running', 'verylongtagname_abcd', 'kpop']
             },
           ],
           'cursor': null,
@@ -130,7 +141,7 @@ void main() {
         body: Wrap(children: [
           const TagChip(label: '러닝'),
           SelectedTagChip(label: '영화', onRemove: () => removed = true),
-          SuggestTagChip(label: 'K-POP', count: 5, onTap: () {}),
+          SuggestTagChip(label: 'K-POP', meta: '5명', onTap: () {}),
           const PlainChoiceChip(label: '카페', selected: true),
           const PlainChoiceChip(label: '공부', selected: false),
         ]),
@@ -139,20 +150,23 @@ void main() {
       scale: 1,
     ));
     expect(find.text('#러닝'), findsOneWidget);
-    expect(find.text('#영화'), findsOneWidget);
-    expect(find.text('#K-POP'), findsOneWidget);
-    expect(find.text('5'), findsOneWidget);
+    expect(find.text('# 영화'), findsOneWidget);
+    expect(find.text('# K-POP'), findsOneWidget);
+    expect(find.text('5명'), findsOneWidget);
     expect(find.text('카페'), findsOneWidget);
     expect(find.text('#카페'), findsNothing);
     expect(find.byIcon(Icons.check_rounded), findsOneWidget);
-    await tester.tap(find.text('#영화'));
+    await tester.tap(find.text('# 영화'));
     expect(removed, isTrue);
 
     // Wrap 안의 칩은 글자 폭만 쓴다(가로로 꽉 차지 않음).
     final screenWidth = tester.getSize(find.byType(Scaffold)).width;
-    for (final text in ['#러닝', '#K-POP']) {
-      final chip = find.ancestor(of: find.text(text), matching: find.byType(Material)).first;
-      expect(tester.getSize(chip).width, lessThan(screenWidth / 3), reason: text);
+    for (final text in ['#러닝', '# K-POP']) {
+      final chip = find
+          .ancestor(of: find.text(text), matching: find.byType(Material))
+          .first;
+      expect(tester.getSize(chip).width, lessThan(screenWidth / 3),
+          reason: text);
     }
   });
 
@@ -183,8 +197,13 @@ void main() {
         AppLocalizations.of(tester.element(find.byType(TagPickerScreen)))!;
 
     expect(find.text(l10n.tagPickerTitle), findsOneWidget);
-    expect(find.text('#영화'), findsOneWidget);
+    expect(find.text('# 영화'), findsOneWidget);
+    expect(find.text(l10n.tagPickerSubtitle), findsOneWidget);
+    expect(find.text(l10n.tagPickerMineMeta(1, 8)), findsOneWidget);
     expect(find.text(l10n.tagSuggestFriends), findsOneWidget);
+    // 친구 수는 '2명', 요즘 많이 다는 태그는 이번 주 증가 '+7'.
+    expect(find.text(l10n.tagCountPeople(2)), findsOneWidget);
+    expect(find.text('+7'), findsOneWidget);
     expect(find.text(l10n.tagSelectedCount(1, 8)), findsOneWidget);
 
     // 추천 칩 → 내 태그로.
@@ -241,6 +260,33 @@ void main() {
     expect(server.saved,
         ['movie', 'kpop', 'running', 'boardgame', 'aa', 'bb', 'cc', 'dd']);
     expect(popped, server.saved);
+  });
+
+  testWidgets('태그 페이지: #이름·다른 언어 이름·굵은 사람 수·친구/최근에 단 사람·프로필·공유·더보기',
+      (tester) async {
+    await tester.pumpWidget(app(const TagPageScreen(tagId: 'running'),
+        locale: const Locale('ko'), scale: 1));
+    await tester.pumpAndSettle();
+    final l10n =
+        AppLocalizations.of(tester.element(find.byType(TagPageScreen)))!;
+    expect(find.text('#러닝'), findsOneWidget);
+    expect(find.text('Running · 跑步 · ${l10n.tagOfficial}'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tag_page_count')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tag_page_share_link')), findsOneWidget);
+    expect(find.text(l10n.tagFriendsSection), findsOneWidget);
+    expect(find.text(l10n.tagOthersSection), findsOneWidget);
+    // 친구 하늘은 친구 줄에만(최근에 단 사람 줄에서 빠짐), 그 사람의 태그가 보조 줄.
+    expect(find.byKey(const ValueKey('tag_friend_f1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tag_person_f1')), findsNothing);
+    expect(find.text('#러닝 #kpop'), findsOneWidget);
+    expect(find.textContaining(l10n.tagExchangeStudent), findsOneWidget);
+    expect(find.text(l10n.tagProfileButton), findsWidgets);
+    expect(find.text(l10n.tagShareTo('러닝')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tag_page_more')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.tagMenuCopyLink), findsOneWidget);
+    expect(find.text(l10n.tagMenuReport), findsOneWidget);
   });
 
   // 오버플로우 없음: 폭 320/375/430 × 배율 1.0/1.3/2.0 × ko·en·zh.

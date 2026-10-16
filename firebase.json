@@ -64,6 +64,10 @@
       {
         "source": "/u/**",
         "destination": "/u/index.html"
+      },
+      {
+        "regex": "^/t/[^/]+/?$",
+        "destination": "/t/index.html"
       }
     ],
     "headers": [

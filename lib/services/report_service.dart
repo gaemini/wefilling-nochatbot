@@ -64,6 +64,33 @@ class ReportService {
     return success;
   }
 
+  /// 태그 신고: 운영자가 볼 수 있게 남기기만 한다(사람을 숨기지 않는다).
+  static Future<bool> reportTag({
+    required String tagId,
+    required String tagLabel,
+  }) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return false;
+      final reportRef = _firestore.collection('reports').doc();
+      await reportRef.set({
+        'id': reportRef.id,
+        'reporterId': currentUser.uid,
+        'reportedUserId': '',
+        'targetType': 'tag',
+        'targetId': tagId,
+        'targetTitle': '#$tagLabel',
+        'reason': 'tag',
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'pending',
+      });
+      return true;
+    } catch (e) {
+      Logger.error('❌ 태그 신고 실패: $e');
+      return false;
+    }
+  }
+
   // 신고하기
   static Future<bool> reportContent({
     required String reportedUserId,

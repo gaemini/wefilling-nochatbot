@@ -3488,10 +3488,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get tagAddShort => '＋ 标签';
 
   @override
-  String get tagSuggestFriends => '好友常用';
+  String get tagSuggestFriends => '好友常用的标签';
 
   @override
-  String get tagSuggestPopular => '最近热门';
+  String get tagSuggestPopular => '最近热门标签';
 
   @override
   String get tagDailyLimit => '今天不能再创建新标签了';
@@ -3563,7 +3563,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get tagFriendsSection => '好友';
 
   @override
-  String get tagOthersSection => '其他人';
+  String get tagOthersSection => '最近添加';
 
   @override
   String get tagPeopleEmpty => '还没有人添加这个标签';
@@ -3639,7 +3639,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String audienceTagDescription(String tags) {
-    return '只有添加了 $tags 的人可见';
+    return '资料中有 $tags 的人';
   }
 
   @override
@@ -3697,4 +3697,125 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get myTagsNewPosts => '我的 #标签 新帖';
+
+  @override
+  String get tagPickerSubtitle => '所选 #标签 会显示在资料中，并能看到分享给该标签的帖子和聚会。';
+
+  @override
+  String tagPickerMineMeta(int n, int max) {
+    return '$n/$max · 长按可隐藏';
+  }
+
+  @override
+  String tagCountPeople(int n) {
+    return '$n人';
+  }
+
+  @override
+  String get tagExploreSearchHint => '搜索 #标签';
+
+  @override
+  String get tagExploreCaptionRecommended => '常与你的标签一起添加';
+
+  @override
+  String get tagExploreCaptionPopular => '添加最多的标签';
+
+  @override
+  String get tagExploreCaptionFriends => '好友添加的标签';
+
+  @override
+  String get tagExploreCaptionTrending => '本周添加最多';
+
+  @override
+  String get tagExploreCaptionNew => '新创建的标签';
+
+  @override
+  String tagReasonFriends(String names) {
+    return '好友 $names';
+  }
+
+  @override
+  String tagReasonWeek(int n) {
+    return '本周 +$n';
+  }
+
+  @override
+  String tagReasonWith(String tag) {
+    return '常与 $tag 一起';
+  }
+
+  @override
+  String get tagReasonToday => '今天新建';
+
+  @override
+  String tagReasonDaysAgo(int n) {
+    return '$n天前新建';
+  }
+
+  @override
+  String get tagProfileButton => '资料';
+
+  @override
+  String get tagExchangeStudent => '交换生';
+
+  @override
+  String get tagMenuCopyLink => '复制链接';
+
+  @override
+  String get tagMenuReport => '举报标签';
+
+  @override
+  String get tagLinkCopied => '已复制链接';
+
+  @override
+  String tagShareText(String tag, String link) {
+    return '在微邻一起添加 #$tag $link';
+  }
+
+  @override
+  String get tagReported => '已提交举报';
+
+  @override
+  String get audienceSheetTitle => '谁可以看到？';
+
+  @override
+  String get audienceSheetSubtitle => '发布后无法更改';
+
+  @override
+  String get audiencePublic => '所有人';
+
+  @override
+  String get audiencePublicDescription => '微邻上的所有人';
+
+  @override
+  String get audienceFriends => '仅好友';
+
+  @override
+  String audienceFriendsDescription(int n) {
+    return '我的 $n 位好友';
+  }
+
+  @override
+  String get audienceGroup => '分组';
+
+  @override
+  String get audienceGroupDescription => '所选分组中的好友';
+
+  @override
+  String get audienceAnonymous => '匿名公开';
+
+  @override
+  String get audienceAnonymousDescription => '隐藏你的名字和头像';
+
+  @override
+  String get audienceHanyang => '仅限汉阳学生';
+
+  @override
+  String get audienceHanyangDescription => '所有人可见卡片，仅认证用户可查看内容';
+
+  @override
+  String get audienceRowLabel => '公开范围';
+
+  @override
+  String get postUploadAction => '发布';
 }

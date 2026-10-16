@@ -12,11 +12,12 @@ import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/content_tag_row.dart' show openTagPage;
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/tag_chips.dart';
+import '../ui/widgets/tag_rows.dart';
 import 'tag_page_screen.dart' show TagLimitException, updateMyTags;
 
 enum TagExploreFilter { recommended, friends, trending, newest }
 
-/// 태그 둘러보기: 검색 + 필터 알약(추천·친구·뜨는 태그·새 태그) + 태그 줄.
+/// 태그 둘러보기: 검색 + 필터 알약(추천·친구·뜨는 태그·새 태그) + 필터 설명 + 태그 줄.
 class TagExploreScreen extends StatefulWidget {
   const TagExploreScreen({super.key});
 
@@ -31,7 +32,8 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
   int _generation = 0;
 
   TagExploreFilter _filter = TagExploreFilter.recommended;
-  final _lists = <TagExploreFilter, List<(InterestTag, int?)>>{};
+  final _lists = <TagExploreFilter, List<ExploreTagItem>>{};
+  final _failed = <TagExploreFilter>{};
   bool _loading = false;
   String _query = '';
   List<InterestTag>? _results;
@@ -52,28 +54,14 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
 
   Future<void> _loadFilter(TagExploreFilter filter) async {
     if (_lists.containsKey(filter)) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _failed.remove(filter);
+    });
     try {
-      final List<(InterestTag, int?)> items;
-      switch (filter) {
-        case TagExploreFilter.recommended:
-        case TagExploreFilter.friends:
-          final suggestions = await _service.suggestions();
-          _lists[TagExploreFilter.recommended] = [
-            for (final tag in suggestions.popular) (tag, null),
-          ];
-          _lists[TagExploreFilter.friends] = [
-            for (final (tag, count) in suggestions.friends) (tag, count),
-          ];
-          items = _lists[filter]!;
-        case TagExploreFilter.trending:
-          items = [for (final tag in await _service.trending()) (tag, null)];
-        case TagExploreFilter.newest:
-          items = [for (final tag in await _service.newest()) (tag, null)];
-      }
-      _lists[filter] = items;
+      _lists[filter] = await _service.explore(filter.name);
     } catch (_) {
-      _lists.remove(filter);
+      _failed.add(filter);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -125,6 +113,60 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
     }
   }
 
+  String _filterLabel(AppLocalizations l10n, TagExploreFilter filter) =>
+      switch (filter) {
+        TagExploreFilter.recommended => l10n.tagExploreRecommended,
+        TagExploreFilter.friends => l10n.tagExploreFriends,
+        TagExploreFilter.trending => l10n.tagExploreTrending,
+        TagExploreFilter.newest => l10n.tagExploreNew,
+      };
+
+  String _caption(AppLocalizations l10n, List<String> mine) =>
+      switch (_filter) {
+        TagExploreFilter.recommended => mine.isEmpty
+            ? l10n.tagExploreCaptionPopular
+            : l10n.tagExploreCaptionRecommended,
+        TagExploreFilter.friends => l10n.tagExploreCaptionFriends,
+        TagExploreFilter.trending => l10n.tagExploreCaptionTrending,
+        TagExploreFilter.newest => l10n.tagExploreCaptionNew,
+      };
+
+  /// 줄 보조 문구: '125명 · 친구 jaemini, sora_k' / '19명 · 이번 주 +9' / '3명 · #사진과 함께'.
+  String _subtitle(AppLocalizations l10n, ExploreTagItem item) {
+    final people = l10n.tagHolders(item.tag.holderCount);
+    final count = l10n.tagCountPeople(item.tag.holderCount);
+    final language = Localizations.localeOf(context).languageCode;
+    switch (item.reasonType) {
+      case 'friends':
+        return item.friendNames.isEmpty
+            ? people
+            : '$count · ${l10n.tagReasonFriends(item.friendNames.join(', '))}';
+      case 'trending':
+        return '$count · ${l10n.tagReasonWeek(item.delta)}';
+      case 'with':
+        final withTag = item.withTag;
+        if (withTag == null) return people;
+        final label = '#${_service.labelFor(withTag, language)}';
+        return '$count · ${_withParticle(l10n.tagReasonWith(label), label, language)}';
+      case 'new':
+        final created =
+            DateTime.fromMillisecondsSinceEpoch(item.createdAtMillis);
+        final days = DateTime.now().difference(created).inDays;
+        return '$count · ${days <= 0 ? l10n.tagReasonToday : l10n.tagReasonDaysAgo(days)}';
+      default:
+        return [people, if (item.tag.official) l10n.tagOfficial].join(' · ');
+    }
+  }
+
+  /// 한국어 '와/과': 받침이 있으면 '과'.
+  static String _withParticle(String text, String label, String language) {
+    if (language != 'ko' || label.isEmpty) return text;
+    final last = label.codeUnitAt(label.length - 1);
+    final hasBatchim =
+        last >= 0xAC00 && last <= 0xD7A3 && (last - 0xAC00) % 28 != 0;
+    return hasBatchim ? text.replaceFirst('와 함께', '과 함께') : text;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -133,10 +175,9 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
       context
           .select<AuthProvider, Map<String, dynamic>?>((auth) => auth.userData),
     ).interestTagIds;
-    final rows = _query.isNotEmpty
-        ? [for (final tag in _results ?? const <InterestTag>[]) (tag, null)]
-        : _lists[_filter] ?? const <(InterestTag, int?)>[];
-    final loading = _query.isNotEmpty ? _results == null : _loading;
+    final searching = _query.isNotEmpty;
+    final items = _lists[_filter] ?? const <ExploreTagItem>[];
+    final loading = searching ? _results == null : _loading;
     return MediaQuery(
       data: media.copyWith(
           textScaler: media.textScaler.clamp(maxScaleFactor: 1.3)),
@@ -147,107 +188,126 @@ class _TagExploreScreenState extends State<TagExploreScreen> {
           surfaceTintColor: Colors.white,
           elevation: 0,
           leading: const BackButton(color: TagColors.ink),
-          title: Text(l10n.tagExploreTitle,
-              style: tagTextStyle(context, 17, FontWeight.w700, TagColors.ink)),
+          titleSpacing: 0,
+          title: Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: TagSearchField(
+              key: const ValueKey('tag_explore_search'),
+              controller: _controller,
+              hintText: l10n.tagExploreSearchHint,
+              onChanged: _onQuery,
+              dense: true,
+              onClear: () {
+                _controller.clear();
+                _onQuery('');
+              },
+            ),
+          ),
         ),
         body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-              child: TextField(
-                key: const ValueKey('tag_explore_search'),
-                controller: _controller,
-                onChanged: _onQuery,
-                style:
-                    tagTextStyle(context, 15, FontWeight.w500, TagColors.ink),
-                decoration: InputDecoration(
-                  hintText: l10n.tagSearchHint,
-                  hintStyle: tagTextStyle(
-                      context, 15, FontWeight.w500, TagColors.disabledText),
-                  prefixIcon:
-                      const Icon(Icons.search_rounded, color: TagColors.muted),
-                  filled: true,
-                  fillColor: const Color(0xFFF3F4F6),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ),
-            if (_query.isEmpty)
+            if (!searching) ...[
               SizedBox(
-                height: 44,
+                height: 48,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   children: [
                     for (final filter in TagExploreFilter.values) ...[
                       _FilterPill(
                         key: ValueKey('tag_explore_filter_${filter.name}'),
-                        label: switch (filter) {
-                          TagExploreFilter.recommended =>
-                            l10n.tagExploreRecommended,
-                          TagExploreFilter.friends => l10n.tagExploreFriends,
-                          TagExploreFilter.trending => l10n.tagExploreTrending,
-                          TagExploreFilter.newest => l10n.tagExploreNew,
-                        },
+                        label: _filterLabel(l10n, filter),
                         selected: _filter == filter,
                         onTap: () {
                           setState(() => _filter = filter);
                           _loadFilter(filter);
                         },
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 8),
                     ],
                   ],
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                child: Text(_caption(l10n, mine),
+                    key: const ValueKey('tag_explore_caption'),
+                    style: tagTextStyle(
+                        context, 13, FontWeight.w500, TagColors.muted)),
+              ),
+            ],
             Expanded(
               child: loading
                   ? const Center(
                       child: SizedBox.square(
                           dimension: 22,
                           child: CircularProgressIndicator(strokeWidth: 2)))
-                  : rows.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Text(
-                            _query.isEmpty
-                                ? l10n.tagExploreEmpty
-                                : l10n.tagNoResults,
-                            textAlign: TextAlign.center,
-                            style: tagTextStyle(
-                                context, 13, FontWeight.w500, TagColors.muted),
-                          ),
-                        )
-                      : ListView.builder(
-                          key: ValueKey('tag_explore_list_${_filter.name}'),
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                          itemCount: rows.length,
-                          itemBuilder: (context, index) {
-                            final (tag, friendCount) = rows[index];
-                            return _ExploreRow(
-                              key: ValueKey('tag_explore_${tag.id}'),
-                              tag: tag,
-                              friendCount: friendCount,
-                              mine: mine.contains(tag.id),
-                              busy: _busy.contains(tag.id),
-                              onOpen: () => openTagPage(context, tag.id),
-                              onAdd: () => _add(tag.id),
-                            );
-                          },
-                        ),
+                  : _list(l10n, mine, searching, items),
             ),
           ],
         ),
       ),
     );
   }
+
+  Widget _list(AppLocalizations l10n, List<String> mine, bool searching,
+      List<ExploreTagItem> items) {
+    final rows = searching
+        ? [
+            for (final tag in _results ?? const <InterestTag>[])
+              ExploreTagItem(tag: tag)
+          ]
+        : items;
+    if (rows.isEmpty) {
+      final failed = !searching && _failed.contains(_filter);
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          children: [
+            Text(
+              failed
+                  ? l10n.tagLoadFailed
+                  : searching
+                      ? l10n.tagNoResults
+                      : l10n.tagExploreEmpty,
+              textAlign: TextAlign.center,
+              style:
+                  tagTextStyle(context, 13, FontWeight.w500, TagColors.muted),
+            ),
+            if (failed)
+              TextButton(
+                onPressed: () => _loadFilter(_filter),
+                child: Text(l10n.retry),
+              ),
+          ],
+        ),
+      );
+    }
+    return ListView.builder(
+      key: ValueKey('tag_explore_list_${searching ? 'search' : _filter.name}'),
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+      itemCount: rows.length,
+      itemBuilder: (context, index) {
+        final item = rows[index];
+        return TagListRow(
+          key: ValueKey('tag_explore_${item.tag.id}'),
+          tag: item.tag,
+          subtitle: _subtitle(l10n, item),
+          added: mine.contains(item.tag.id),
+          busy: _busy.contains(item.tag.id),
+          onTap: () => openTagPage(context, item.tag.id),
+          onAction: mine.contains(item.tag.id)
+              ? () => openTagPage(context, item.tag.id)
+              : () => _add(item.tag.id),
+        );
+      },
+    );
+  }
 }
 
+/// 필터 알약: 고르면 검정 채움, 아니면 흰 바탕 + 회색 테두리.
 class _FilterPill extends StatelessWidget {
   const _FilterPill({
     super.key,
@@ -267,98 +327,23 @@ class _FilterPill extends StatelessWidget {
       selected: selected,
       child: MotionPress(
         child: Material(
-          color: selected ? TagColors.ink : const Color(0xFFF1F3F5),
-          shape: const StadiumBorder(),
+          color: selected ? TagColors.ink : Colors.white,
+          shape: StadiumBorder(
+            side: BorderSide(color: selected ? TagColors.ink : TagColors.line),
+          ),
           child: InkWell(
             customBorder: const StadiumBorder(),
             onTap: onTap,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Center(
+                widthFactor: 1,
                 child: Text(label,
-                    style: tagTextStyle(context, 13.5, FontWeight.w600,
-                        selected ? Colors.white : const Color(0xFF3D4651))),
+                    style: tagTextStyle(context, 14, FontWeight.w700,
+                        selected ? Colors.white : TagColors.ink)),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ExploreRow extends StatelessWidget {
-  const _ExploreRow({
-    super.key,
-    required this.tag,
-    required this.friendCount,
-    required this.mine,
-    required this.busy,
-    required this.onOpen,
-    required this.onAdd,
-  });
-
-  final InterestTag tag;
-  final int? friendCount;
-  final bool mine;
-  final bool busy;
-  final VoidCallback onOpen;
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final subtitle = [
-      l10n.tagHolders(tag.holderCount),
-      if (friendCount != null && friendCount! > 0)
-        l10n.tagFriendsAlso(friendCount!),
-      if (tag.official) l10n.tagOfficial,
-    ].join(' · ');
-    return InkWell(
-      onTap: onOpen,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            const TagHashTile(size: 44),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(tag.label(context),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tagTextStyle(
-                          context, 15, FontWeight.w700, TagColors.ink)),
-                  const SizedBox(height: 3),
-                  Text(subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tagTextStyle(
-                          context, 13, FontWeight.w500, TagColors.muted)),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            mine
-                ? TagSecondaryButton(
-                    label: l10n.tagAdded,
-                    height: 34,
-                    background: TagColors.blueSoft,
-                    foreground: TagColors.blue,
-                    onPressed: onOpen,
-                  )
-                : TagPrimaryButton(
-                    key: ValueKey('tag_explore_add_${tag.id}'),
-                    label: l10n.tagAdd,
-                    height: 34,
-                    busy: busy,
-                    icon: Icons.add_rounded,
-                    onPressed: onAdd,
-                  ),
-          ],
         ),
       ),
     );

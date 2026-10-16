@@ -116,7 +116,7 @@ export {
 } from './hanyang_verification';
 
 export {translateContentBatch} from './content_translation';
-export {searchTags, createTag, setProfileTags, listTagHolders, getTagSummary, setTagPrefs, getTagSuggestions, getTagAudienceFeed, estimateTagAudience, computeTagTrends, getMyTagNewCounts} from './interest_tags';
+export {searchTags, createTag, setProfileTags, listTagHolders, getTagSummary, setTagPrefs, getTagSuggestions, getTagAudienceFeed, estimateTagAudience, computeTagTrends, getMyTagNewCounts, exploreTags} from './interest_tags';
 import {
   contentAudienceIncludes,
   signupProfileTagFields,
@@ -1671,7 +1671,7 @@ export const finalizePendingRegistration = callables()
         updatedAt: now,
         lastLogin: now,
         ...completedProfileFields(profile),
-        ...signupProfileTagFields(tx, existing, profile.interests),
+        ...signupProfileTagFields(tx, uid, existing, profile.interests),
         pendingHanyangEmail: admin.firestore.FieldValue.delete(),
         pendingHanyangVerificationLinked: admin.firestore.FieldValue.delete(),
         pendingHanyangVerifiedAt: admin.firestore.FieldValue.delete(),
@@ -1872,7 +1872,7 @@ export const finalizeHanyangEmailVerification = callables()
       tx.set(userRef, {
         ...schemaFill,
         ...completedProfileFields(profile),
-        ...signupProfileTagFields(tx, existing, profile.interests),
+        ...signupProfileTagFields(tx, uid, existing, profile.interests),
         hanyangEmail: email,
         hanyangEmailVerified: true,
         hanyangEmailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2111,7 +2111,7 @@ export const finalizeEnglishSocialSignup = callables()
       tx.set(userRef, {
         ...schemaFill,
         ...completedProfileFields(profile),
-        ...signupProfileTagFields(tx, existing, profile.interests),
+        ...signupProfileTagFields(tx, uid, existing, profile.interests),
         uid,
         email: authEmail,
         signupLanguage,
@@ -2698,7 +2698,7 @@ export const onPrivatePostCreated = triggers().firestore
       const content = post.content || '';
       const preview = (typeof content === 'string' ? content : '').slice(0, 80);
 
-      if (visibility !== 'public' && visibility !== 'category') {
+      if (visibility !== 'public' && visibility !== 'category' && visibility !== 'friends') {
         runtimeLogsEnabled && runtimeInfo(`onPrivatePostCreated: 지원하지 않는 공개범위 스킵 (postId=${postId})`);
         return null;
       }
@@ -2713,7 +2713,7 @@ export const onPrivatePostCreated = triggers().firestore
         post.notificationAudienceUserIdsFrozen,
       ).filter((uid) => uid !== authorId);
       if (targetUserIds.length === 0) {
-        targetUserIds = visibility === 'category'
+        targetUserIds = visibility !== 'public'
           ? toUniqueStringArray(
             toInt(post.visibilitySchemaVersion) >= 2
               ? post.audienceUserIdsFrozen
@@ -5176,7 +5176,7 @@ export const createGeneralEmailSignup = callables()
         email: normalizedEmail,
         ...missingSchoolDefaults,
         ...completedProfileFields(profile),
-        ...signupProfileTagFields(transaction, current, profile.interests),
+        ...signupProfileTagFields(transaction, uid, current, profile.interests),
         photoURL: String(current.photoURL || ''),
         photoPath: String(current.photoPath || ''),
         photoAccessToken: String(current.photoAccessToken || ''),

@@ -2,8 +2,17 @@
   "applinks": {
     "details": [
       {
-        "appIDs": ["ULTS66B6QD.com.wefilling.app"],
-        "components": [{ "/": "/u/*" }]
+        "appIDs": [
+          "ULTS66B6QD.com.wefilling.app"
+        ],
+        "components": [
+          {
+            "/": "/u/*"
+          },
+          {
+            "/": "/t/*"
+          }
+        ]
       }
     ]
   }

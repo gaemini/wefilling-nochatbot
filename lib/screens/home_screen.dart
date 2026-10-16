@@ -325,11 +325,20 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   }
 
   /// 종류 탭 아래 '모든 모임' + 내 #태그 알약. 내 태그가 없으면 그리지 않는다.
-  Widget _buildTagFilterPills(List<Meetup> upcoming) {
-    final myTags = SocialProfileData.fromMap(
-      context.select<AuthProvider, Map<String, dynamic>?>(
-          (auth) => auth.userData),
-    ).interestTagIds;
+  // StreamBuilder 콜백 안에서 불리므로 자기 build를 가진 Builder에서 구독한다.
+  Widget _buildTagFilterPills(List<Meetup> upcoming) => Builder(
+        builder: (context) => _tagFilterPills(
+          context,
+          upcoming,
+          SocialProfileData.fromMap(
+            context.select<AuthProvider, Map<String, dynamic>?>(
+                (auth) => auth.userData),
+          ).interestTagIds,
+        ),
+      );
+
+  Widget _tagFilterPills(
+      BuildContext context, List<Meetup> upcoming, List<String> myTags) {
     if (myTags.isEmpty) return const SizedBox.shrink();
     if (_selectedTagFilter != null && !myTags.contains(_selectedTagFilter)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

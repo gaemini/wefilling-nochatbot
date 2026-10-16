@@ -53,11 +53,6 @@ void main() {
     InterestTagService.instance
       ..debugReset()
       ..debugGetTag = ((id) async => null)
-      ..debugTrending = (() async => ['boardgame'])
-      ..debugNewest = (() async => [
-            const InterestTag(
-                id: 'brandnewtag', displayName: 'Brand new', holderCount: 1)
-          ])
       ..debugCall = (name, data) async {
         calls.add(name);
         switch (name) {
@@ -67,6 +62,44 @@ void main() {
                 {..._tag('kpop', 'K-POP', 5), 'friendCount': 2}
               ],
               'popular': [_tag('climbing', 'Climbing', 40)],
+            };
+          case 'exploreTags':
+            return {
+              'items': switch (data['filter']) {
+                'friends' => [
+                    {
+                      ..._tag('kpop', 'K-POP', 5),
+                      'reason': {
+                        'type': 'friends',
+                        'friendCount': 2,
+                        'friendNames': ['jaemini', 'sora_k']
+                      }
+                    }
+                  ],
+                'trending' => [
+                    {
+                      ..._tag('boardgame', 'Board game', 9),
+                      'reason': {'type': 'trending', 'delta': 9}
+                    }
+                  ],
+                'newest' => [
+                    {
+                      ..._tag('brandnewtag', 'Brand new', 1),
+                      'reason': {
+                        'type': 'new',
+                        'createdAtMillis': DateTime.now()
+                            .subtract(const Duration(days: 2))
+                            .millisecondsSinceEpoch
+                      }
+                    }
+                  ],
+                _ => [
+                    {
+                      ..._tag('climbing', 'Climbing', 40),
+                      'reason': {'type': 'with', 'withTag': 'photo'}
+                    }
+                  ],
+              },
             };
           case 'getMyTagNewCounts':
             return {
@@ -98,29 +131,40 @@ void main() {
         child: app(child, locale: locale, scale: scale),
       );
 
-  testWidgets('둘러보기: 필터 알약마다 다른 목록, 내 태그는 추가됨', (tester) async {
+  testWidgets('둘러보기: 필터마다 설명과 줄 이유, 내 태그는 추가됨', (tester) async {
     await tester.pumpWidget(wrap(const TagExploreScreen(), tags: ['climbing']));
     await tester.pumpAndSettle();
     final l10n =
         AppLocalizations.of(tester.element(find.byType(TagExploreScreen)))!;
+    expect(find.text(l10n.tagExploreCaptionRecommended), findsOneWidget);
     expect(find.byKey(const ValueKey('tag_explore_climbing')), findsOneWidget);
+    // '#사진과 함께'(받침 있으면 '과').
+    expect(find.text('${l10n.tagCountPeople(40)} · #사진과 함께'), findsOneWidget);
     expect(find.text(l10n.tagAdded), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_friends')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('tag_explore_kpop')), findsOneWidget);
-    expect(find.textContaining(l10n.tagFriendsAlso(2)), findsOneWidget);
+    expect(find.text(l10n.tagExploreCaptionFriends), findsOneWidget);
+    expect(
+        find.text(
+            '${l10n.tagCountPeople(5)} · ${l10n.tagReasonFriends('jaemini, sora_k')}'),
+        findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_trending')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('tag_explore_boardgame')), findsOneWidget);
+    expect(find.text('${l10n.tagCountPeople(9)} · ${l10n.tagReasonWeek(9)}'),
+        findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_newest')));
     await tester.pumpAndSettle();
-    expect(
-        find.byKey(const ValueKey('tag_explore_brandnewtag')), findsOneWidget);
-    // 추천·친구는 한 번 불러와 같이 쓴다.
-    expect(calls.where((c) => c == 'getTagSuggestions').length, 1);
+    expect(find.text('${l10n.tagCountPeople(1)} · ${l10n.tagReasonDaysAgo(2)}'),
+        findsOneWidget);
+    expect(calls.where((c) => c == 'exploreTags').length, 4);
+
+    // 다시 고르면 다시 묻지 않는다.
+    await tester.tap(find.byKey(const ValueKey('tag_explore_filter_friends')));
+    await tester.pumpAndSettle();
+    expect(calls.where((c) => c == 'exploreTags').length, 4);
   });
 
   testWidgets('게시판 줄: 내 태그 새 글 개수, 둘러보기 링크, 다시 만들어도 2분 안엔 다시 묻지 않음',

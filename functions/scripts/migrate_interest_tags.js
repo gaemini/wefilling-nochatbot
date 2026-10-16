@@ -5,6 +5,8 @@
  * 1. Upserts the 20 official tags (tags/{id}) with ko/en/zh labels and aliases.
  * 2. Gives every user without interestTagIds a copy of their official interests.
  * 3. Recounts tags/{id}.holderCount from users.interestTagIds.
+ * 4. Fills tags/{id}/holders/{uid} (who holds the tag, newest-first list) and
+ *    removes holder rows of users who no longer hold the tag.
  *
  * Dry run (default): npm run migrate:interest-tags
  * Apply after reviewing output: npm run migrate:interest-tags -- --apply
@@ -46,6 +48,7 @@ async function main() {
   const usersSnapshot = await db.collection('users').get();
   const userWrites = [];
   const counts = new Map();
+  const heldPairs = new Set();
   for (const userDoc of usersSnapshot.docs) {
     const data = userDoc.data();
     let tagIds = Array.isArray(data.interestTagIds) ? data.interestTagIds : null;
@@ -56,7 +59,29 @@ async function main() {
     }
     const deleted = data.isDeleted === true || data.deleted === true || data.deleting === true;
     if (deleted) continue;
-    for (const id of new Set(tagIds)) counts.set(id, (counts.get(id) || 0) + 1);
+    for (const id of new Set(tagIds)) {
+      counts.set(id, (counts.get(id) || 0) + 1);
+      heldPairs.add(`${id}/${userDoc.id}`);
+    }
+  }
+
+  const holderSnapshot = await db.collectionGroup('holders').get();
+  const existingPairs = new Set();
+  const holderWrites = [];
+  for (const doc of holderSnapshot.docs) {
+    const tagId = doc.ref.parent.parent?.id;
+    if (!tagId || doc.ref.parent.parent.parent.id !== 'tags') continue;
+    const pair = `${tagId}/${doc.id}`;
+    existingPairs.add(pair);
+    if (!heldPairs.has(pair)) holderWrites.push((batch) => batch.delete(doc.ref));
+  }
+  for (const pair of heldPairs) {
+    if (existingPairs.has(pair)) continue;
+    const [tagId, uid] = pair.split('/');
+    holderWrites.push((batch) => batch.set(
+      db.collection('tags').doc(tagId).collection('holders').doc(uid),
+      {uid, addedAt: now},
+    ));
   }
 
   const tagWrites = [];
@@ -91,6 +116,7 @@ async function main() {
     usersGettingInterestTagIds: userWrites.length,
     officialTagsCreated: existingOfficial.filter((d) => !d.exists).length,
     holderCountChanges: countChanges,
+    holderRowsToWrite: holderWrites.length,
     heldButMissingTagDocs: unknownHeld,
   }, null, 2));
 
@@ -98,6 +124,7 @@ async function main() {
   // 사용자 복사를 먼저 끝낸 뒤 개수를 쓴다(개수는 복사본 기준으로 계산됨).
   await commitInChunks(userWrites);
   await commitInChunks(tagWrites);
+  await commitInChunks(holderWrites);
   console.log('interest tag migration applied');
 }
 

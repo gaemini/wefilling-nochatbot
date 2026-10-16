@@ -14,6 +14,8 @@ class TagPerson {
     this.photoURL = '',
     this.nationality = '',
     this.university = '',
+    this.studentType = '',
+    this.tags = const [],
   });
 
   final String uid;
@@ -21,6 +23,10 @@ class TagPerson {
   final String photoURL;
   final String nationality;
   final String university;
+  final String studentType;
+
+  /// 그 사람의 프로필 #태그(앞 4개).
+  final List<String> tags;
 
   factory TagPerson.fromMap(Map<dynamic, dynamic> map) => TagPerson(
         uid: (map['uid'] ?? '').toString(),
@@ -28,7 +34,24 @@ class TagPerson {
         photoURL: (map['photoURL'] ?? '').toString(),
         nationality: (map['nationality'] ?? '').toString(),
         university: (map['university'] ?? '').toString(),
+        studentType: (map['studentType'] ?? '').toString(),
+        tags: (map['tags'] as List? ?? const []).whereType<String>().toList(),
       );
+}
+
+/// 둘러보기 한 줄: 태그와 보조 문구 이유(type: with/friends/trending/new/popular).
+class ExploreTagItem {
+  const ExploreTagItem({required this.tag, this.reason = const {}});
+
+  final InterestTag tag;
+  final Map<String, dynamic> reason;
+
+  String get reasonType => (reason['type'] ?? '').toString();
+  List<String> get friendNames =>
+      (reason['friendNames'] as List? ?? const []).whereType<String>().toList();
+  int get delta => (reason['delta'] as num?)?.toInt() ?? 0;
+  String? get withTag => reason['withTag'] as String?;
+  int get createdAtMillis => (reason['createdAtMillis'] as num?)?.toInt() ?? 0;
 }
 
 /// 태그 페이지 머리·미리보기 시트에 쓰는 요약.
@@ -85,8 +108,6 @@ class InterestTagService extends ChangeNotifier {
   void debugReset() {
     debugCall = null;
     debugGetTag = null;
-    debugTrending = null;
-    debugNewest = null;
     _cache.clear();
     _loading.clear();
   }
@@ -175,7 +196,8 @@ class InterestTagService extends ChangeNotifier {
   }
 
   /// 추천: 친구들이 많이 단 태그(친구 수 포함), 많이 다는 태그.
-  Future<({List<(InterestTag, int)> friends, List<InterestTag> popular})>
+  /// friends: (태그, 단 친구 수), popular: (태그, 이번 주 증가).
+  Future<({List<(InterestTag, int)> friends, List<(InterestTag, int)> popular})>
       suggestions() async {
     final data0 = await _call('getTagSuggestions', <String, Object?>{});
     final data = Map<String, dynamic>.from(data0 as Map);
@@ -189,8 +211,31 @@ class InterestTagService extends ChangeNotifier {
             ((friendsRaw[i] as Map)['friendCount'] as num?)?.toInt() ?? 0
           ),
       ],
-      popular: _parse(data['popular']),
+      popular: [
+        for (final item in data['popular'] as List? ?? const [])
+          if (item is Map && item['id'] is String)
+            (
+              _cache[item['id'] as String] = InterestTag.fromMap(
+                  item['id'] as String, Map<String, dynamic>.from(item)),
+              (item['delta'] as num?)?.toInt() ?? 0,
+            ),
+      ],
     );
+  }
+
+  /// 태그 둘러보기: filter = recommended | friends | trending | newest.
+  Future<List<ExploreTagItem>> explore(String filter) async {
+    final data = Map<String, dynamic>.from(
+        await _call('exploreTags', {'filter': filter}) as Map);
+    return [
+      for (final item in data['items'] as List? ?? const [])
+        if (item is Map && item['id'] is String)
+          ExploreTagItem(
+            tag: _cache[item['id'] as String] = InterestTag.fromMap(
+                item['id'] as String, Map<String, dynamic>.from(item)),
+            reason: Map<String, dynamic>.from(item['reason'] as Map? ?? const {}),
+          ),
+    ];
   }
 
   Future<TagSummary> summary(String tagId) async {
@@ -234,44 +279,6 @@ class InterestTagService extends ChangeNotifier {
       if (notify != null) 'notify': notify,
     });
   }
-
-  /// 뜨는 태그(tags_trending/current, 하루 한 번 서버 계산).
-  Future<List<InterestTag>> trending() async {
-    final override = debugTrending;
-    final ids = override != null
-        ? await override()
-        : [
-            for (final item in ((await FirebaseFirestore.instance
-                            .doc('tags_trending/current')
-                            .get())
-                        .data()?['items'] as List? ??
-                    const []))
-              if (item is Map && item['id'] is String) item['id'] as String,
-          ];
-    return getMany(ids);
-  }
-
-  /// 새로 생긴 태그(최신순).
-  Future<List<InterestTag>> newest({int limit = 20}) async {
-    final override = debugNewest;
-    if (override != null) return override();
-    final snapshot = await FirebaseFirestore.instance
-        .collection('tags')
-        .where('status', isEqualTo: 'active')
-        .orderBy('createdAt', descending: true)
-        .limit(limit)
-        .get();
-    return [
-      for (final doc in snapshot.docs)
-        _cache[doc.id] = InterestTag.fromMap(doc.id, doc.data()),
-    ];
-  }
-
-  @visibleForTesting
-  Future<List<String>> Function()? debugTrending;
-
-  @visibleForTesting
-  Future<List<InterestTag>> Function()? debugNewest;
 
   /// 게시판 '내 #태그 새 글': 태그별로 [since] 이후 새 글 수.
   Future<Map<String, int>> myNewCounts(Map<String, int> since) async {

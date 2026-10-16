@@ -8,6 +8,7 @@ import '../services/interest_tag_service.dart';
 import '../ui/sheets/tag_settings_sheet.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/tag_chips.dart';
+import '../ui/widgets/tag_rows.dart';
 import '../utils/motion_haptics.dart';
 
 /// 태그 고르기. 완료하면 고른 tagId 목록을 돌려준다.
@@ -19,6 +20,7 @@ class TagPickerScreen extends StatefulWidget {
     this.saveOnDone = true,
     this.maxTags = InterestTagService.maxProfileTags,
     this.title,
+    this.subtitle,
   });
 
   final List<String> initialTagIds;
@@ -27,6 +29,11 @@ class TagPickerScreen extends StatefulWidget {
 
   /// 기본은 '요즘 어떤 걸 좋아하세요?'.
   final String? title;
+
+  /// 기본은 프로필 태그 안내(프로필 태그 고르기에서만).
+  final String? subtitle;
+
+  bool get _isProfile => maxTags == InterestTagService.maxProfileTags;
 
   @override
   State<TagPickerScreen> createState() => _TagPickerScreenState();
@@ -47,7 +54,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
   String? _normalized;
 
   List<(InterestTag, int)> _friendSuggestions = const [];
-  List<InterestTag> _popular = const [];
+  List<(InterestTag, int)> _popular = const [];
   bool _creating = false;
   bool _saving = false;
 
@@ -122,18 +129,22 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
   String _label(String id) =>
       _service.labelFor(id, Localizations.localeOf(context).languageCode);
 
+  String _limitMessage(AppLocalizations l10n) =>
+      widget.maxTags == InterestTagService.maxContentTags
+          ? l10n.contentTagLimit
+          : l10n.tagLimitReached;
+
   void _toggle(String id) {
     final l10n = AppLocalizations.of(context)!;
+    if (!_selected.contains(id) && _selected.length >= widget.maxTags) {
+      AppSnackBar.show(context,
+          message: _limitMessage(l10n), type: AppSnackBarType.warning);
+      return;
+    }
     setState(() {
-      if (_selected.contains(id)) {
-        _selected = [..._selected]..remove(id);
-      } else if (_selected.length >= widget.maxTags) {
-        AppSnackBar.show(context,
-            message: _limitMessage(l10n), type: AppSnackBarType.warning);
-        return;
-      } else {
-        _selected = [..._selected, id];
-      }
+      _selected = _selected.contains(id)
+          ? ([..._selected]..remove(id))
+          : [..._selected, id];
     });
     MotionHaptics.fire(context, MotionHapticEvent.selection);
   }
@@ -165,11 +176,6 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
       if (mounted) setState(() => _creating = false);
     }
   }
-
-  String _limitMessage(AppLocalizations l10n) =>
-      widget.maxTags == InterestTagService.maxContentTags
-          ? l10n.contentTagLimit
-          : l10n.tagLimitReached;
 
   String _errorMessage(AppLocalizations l10n, Object error) =>
       switch (InterestTagService.errorCode(error)) {
@@ -204,6 +210,8 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final media = MediaQuery.of(context);
+    final subtitle =
+        widget.subtitle ?? (widget._isProfile ? l10n.tagPickerSubtitle : null);
     return MediaQuery(
       data: media.copyWith(
           textScaler: media.textScaler.clamp(maxScaleFactor: 1.3)),
@@ -213,7 +221,13 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           elevation: 0,
-          leading: const BackButton(color: TagColors.ink),
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            key: const ValueKey('tag_picker_close'),
+            icon: const Icon(Icons.close_rounded, color: TagColors.ink),
+            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
         ),
         body: Column(
           children: [
@@ -222,21 +236,42 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
                 key: const ValueKey('tag_picker_list'),
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                 children: [
                   Text(
                     widget.title ?? l10n.tagPickerTitle,
                     style: tagTextStyle(
                         context, 24, FontWeight.w800, TagColors.ink),
                   ),
-                  const SizedBox(height: 16),
-                  _searchField(l10n),
-                  const SizedBox(height: 16),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 8),
+                    Text(subtitle,
+                        style: tagTextStyle(
+                            context, 14, FontWeight.w500, TagColors.muted)),
+                  ],
+                  const SizedBox(height: 18),
+                  TagSearchField(
+                    key: const ValueKey('tag_picker_search'),
+                    controller: _controller,
+                    hintText: l10n.tagSearchHint,
+                    onChanged: _onQueryChanged,
+                    onClear: () {
+                      _controller.clear();
+                      _onQueryChanged('');
+                    },
+                  ),
+                  const SizedBox(height: 22),
                   if (_query.isNotEmpty)
                     ..._resultRows(l10n)
                   else ...[
-                    if (_selected.isNotEmpty) ...[
-                      _sectionTitle(l10n.myTags),
+                    TagSectionTitle(
+                      title: l10n.myTags.replaceAll('#', '').trim(),
+                      meta: widget._isProfile
+                          ? l10n.tagPickerMineMeta(
+                              _selected.length, widget.maxTags)
+                          : '${_selected.length}/${widget.maxTags}',
+                    ),
+                    if (_selected.isNotEmpty)
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -246,32 +281,39 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
                               key: ValueKey('tag_picker_selected_$id'),
                               label: _label(id),
                               onRemove: () => _toggle(id),
-                              onLongPress: () => showTagSettingsSheet(
-                                context,
-                                tagId: id,
-                                label: _label(id),
-                                onRemove: () => _toggle(id),
-                              ),
+                              onLongPress: widget._isProfile
+                                  ? () => showTagSettingsSheet(
+                                        context,
+                                        tagId: id,
+                                        label: _label(id),
+                                        onRemove: () => _toggle(id),
+                                      )
+                                  : null,
                             ),
                         ],
                       ),
-                      const SizedBox(height: 24),
-                    ],
                     if (_friendSuggestions
                         .any((e) => !_selected.contains(e.$1.id))) ...[
-                      _sectionTitle(l10n.tagSuggestFriends),
+                      const SizedBox(height: 26),
+                      TagSectionTitle(title: l10n.tagSuggestFriends),
                       _suggestWrap([
                         for (final (tag, count) in _friendSuggestions)
-                          if (!_selected.contains(tag.id)) (tag, count),
-                      ]),
-                      const SizedBox(height: 24),
-                    ],
-                    if (_popular.any((tag) => !_selected.contains(tag.id))) ...[
-                      _sectionTitle(l10n.tagSuggestPopular),
-                      _suggestWrap([
-                        for (final tag in _popular)
                           if (!_selected.contains(tag.id))
-                            (tag, tag.holderCount),
+                            (tag, l10n.tagCountPeople(count)),
+                      ]),
+                    ],
+                    if (_popular.any((e) => !_selected.contains(e.$1.id))) ...[
+                      const SizedBox(height: 26),
+                      TagSectionTitle(title: l10n.tagSuggestPopular),
+                      _suggestWrap([
+                        for (final (tag, delta) in _popular)
+                          if (!_selected.contains(tag.id))
+                            (
+                              tag,
+                              delta > 0
+                                  ? '+$delta'
+                                  : l10n.tagCountPeople(tag.holderCount)
+                            ),
                       ]),
                     ],
                   ],
@@ -285,72 +327,38 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
     );
   }
 
-  Widget _sectionTitle(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Text(text,
-            style: tagTextStyle(context, 15, FontWeight.w700, TagColors.ink)),
-      );
-
-  Widget _suggestWrap(List<(InterestTag, int)> items) => Wrap(
+  Widget _suggestWrap(List<(InterestTag, String)> items) => Wrap(
         spacing: 8,
         runSpacing: 8,
         children: [
-          for (final (tag, count) in items)
+          for (final (tag, meta) in items)
             SuggestTagChip(
               key: ValueKey('tag_picker_suggest_${tag.id}'),
               label: tag.label(context),
-              count: count,
+              meta: meta,
               onTap: () => _toggle(tag.id),
             ),
         ],
       );
 
-  Widget _searchField(AppLocalizations l10n) => TextField(
-        key: const ValueKey('tag_picker_search'),
-        controller: _controller,
-        onChanged: _onQueryChanged,
-        textInputAction: TextInputAction.search,
-        maxLength: 30,
-        style: tagTextStyle(context, 15, FontWeight.w500, TagColors.ink),
-        decoration: InputDecoration(
-          counterText: '',
-          hintText: l10n.tagSearchHint,
-          hintStyle: tagTextStyle(
-              context, 15, FontWeight.w500, TagColors.disabledText),
-          prefixIcon: const Icon(Icons.search_rounded, color: TagColors.muted),
-          suffixIcon: _query.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.cancel_rounded,
-                      color: TagColors.disabledText, size: 20),
-                  onPressed: () {
-                    _controller.clear();
-                    _onQueryChanged('');
-                  },
-                ),
-          filled: true,
-          fillColor: const Color(0xFFF3F4F6),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-        ),
-      );
-
   List<Widget> _resultRows(AppLocalizations l10n) {
     final rows = <Widget>[
       for (final tag in _results)
-        _TagResultRow(
+        TagListRow(
           key: ValueKey('tag_result_${tag.id}'),
           tag: tag,
+          subtitle: [
+            l10n.tagHolders(tag.holderCount),
+            if (tag.official) l10n.tagOfficial,
+          ].join(' · '),
           added: _selected.contains(tag.id),
-          onToggle: () => _toggle(tag.id),
+          onAction: () => _toggle(tag.id),
         ),
     ];
     final canCreate = !_searching && !_exact && _normalized != null;
     if (canCreate) {
-      rows.add(_CreateRow(
+      rows.add(TagCreateRow(
+        key: const ValueKey('tag_picker_create'),
         label: l10n.tagCreate(_query.replaceFirst(RegExp(r'^#+'), '')),
         busy: _creating,
         onTap: _create,
@@ -377,153 +385,50 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
     return rows;
   }
 
-  Widget _bottomBar(AppLocalizations l10n) => DecoratedBox(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Color(0xFFF0F1F3))),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    l10n.tagSelectedCount(_selected.length, widget.maxTags),
-                    key: const ValueKey('tag_picker_count'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: tagTextStyle(
-                        context, 15, FontWeight.w700, TagColors.ink),
-                  ),
-                ),
-                SizedBox(
-                  width: 120,
-                  child: TagPrimaryButton(
-                    key: const ValueKey('tag_picker_done'),
-                    label: l10n.done,
-                    busy: _saving,
-                    onPressed: _done,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-}
-
-class _TagResultRow extends StatelessWidget {
-  const _TagResultRow({
-    super.key,
-    required this.tag,
-    required this.added,
-    required this.onToggle,
-  });
-
-  final InterestTag tag;
-  final bool added;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    return InkWell(
-      onTap: onToggle,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            const TagHashTile(size: 44),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    tag.label(context),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: tagTextStyle(
-                        context, 15, FontWeight.w700, TagColors.ink),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    [
-                      l10n.tagHolders(tag.holderCount),
-                      if (tag.official) l10n.tagOfficial,
-                    ].join(' · '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: tagTextStyle(
-                        context, 13, FontWeight.w500, TagColors.muted),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            added
-                ? TagSecondaryButton(
-                    label: l10n.tagAdded,
-                    height: 34,
-                    background: TagColors.blueSoft,
-                    foreground: TagColors.blue,
-                    onPressed: onToggle,
-                  )
-                : TagPrimaryButton(
-                    label: l10n.tagAdd, height: 34, onPressed: onToggle),
-          ],
-        ),
+  Widget _bottomBar(AppLocalizations l10n) {
+    final count = l10n.tagSelectedCount(_selected.length, widget.maxTags);
+    final lead = '${_selected.length}';
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFF0F1F3))),
       ),
-    );
-  }
-}
-
-class _CreateRow extends StatelessWidget {
-  const _CreateRow(
-      {required this.label, required this.busy, required this.onTap});
-
-  final String label;
-  final bool busy;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      key: const ValueKey('tag_picker_create'),
-      onTap: busy ? null : onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: const BoxDecoration(
-                color: TagColors.blue,
-                shape: BoxShape.circle,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text.rich(
+                  key: const ValueKey('tag_picker_count'),
+                  count.startsWith(lead)
+                      ? TextSpan(children: [
+                          TextSpan(
+                              text: lead,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: TagColors.ink)),
+                          TextSpan(text: count.substring(lead.length)),
+                        ])
+                      : TextSpan(text: count),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tagTextStyle(
+                      context, 15, FontWeight.w500, TagColors.muted),
+                ),
               ),
-              child: busy
-                  ? const Padding(
-                      padding: EdgeInsets.all(13),
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.add_rounded, color: Colors.white),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    tagTextStyle(context, 15, FontWeight.w700, TagColors.blue),
+              SizedBox(
+                width: 120,
+                child: TagPrimaryButton(
+                  key: const ValueKey('tag_picker_done'),
+                  label: l10n.done,
+                  busy: _saving,
+                  onPressed: _done,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

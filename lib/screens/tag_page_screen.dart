@@ -8,11 +8,14 @@ import '../services/interest_tag_service.dart';
 import '../services/tag_seen_store.dart';
 import '../ui/sheets/tag_preview_sheet.dart' show TagFaces;
 import '../ui/snackbar/app_snackbar.dart';
+import '../services/profile_link.dart';
+import '../services/report_service.dart';
+import '../ui/sheets/tag_settings_sheet.dart' show showTagHideSheet;
 import '../ui/widgets/tag_chips.dart';
-import '../ui/widgets/user_avatar.dart';
-import '../utils/country_flag_helper.dart';
+import '../ui/widgets/tag_rows.dart';
 import '../utils/motion_haptics.dart';
-import '../widgets/country_flag_circle.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'friend_profile_screen.dart';
 import 'create_meetup_screen.dart';
 import 'create_post_screen.dart';
@@ -171,7 +174,31 @@ class _TagPageScreenState extends State<TagPageScreen> {
     ));
   }
 
-  void _openShareSheet(String label) {
+  String get _label {
+    final summary = _summary;
+    final language = Localizations.localeOf(context).languageCode;
+    return summary?.tag.labelFor(language) ??
+        _service.labelFor(widget.tagId, language);
+  }
+
+  Future<void> _shareTag() async {
+    final l10n = AppLocalizations.of(context)!;
+    final link = ProfileLink.buildTag(widget.tagId);
+    final box = context.findRenderObject() as RenderBox?;
+    try {
+      await SharePlus.instance.share(ShareParams(
+        text: l10n.tagShareText(_label, link),
+        sharePositionOrigin: box == null || !box.hasSize
+            ? null
+            : box.localToGlobal(Offset.zero) & box.size,
+      ));
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: link));
+      if (mounted) AppSnackBar.show(context, message: l10n.tagLinkCopied);
+    }
+  }
+
+  void _openMoreMenu() {
     final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet<void>(
       context: context,
@@ -186,7 +213,71 @@ class _TagPageScreenState extends State<TagPageScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _ShareRow(
+              _SheetRow(
+                key: const ValueKey('tag_menu_copy'),
+                icon: Icons.link_rounded,
+                label: l10n.tagMenuCopyLink,
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await Clipboard.setData(
+                      ClipboardData(text: ProfileLink.buildTag(widget.tagId)));
+                  if (mounted) {
+                    AppSnackBar.show(context, message: l10n.tagLinkCopied);
+                  }
+                },
+              ),
+              if (_summary?.mine == true)
+                _SheetRow(
+                  key: const ValueKey('tag_menu_hide'),
+                  icon: Icons.visibility_off_outlined,
+                  label: l10n.tagHideFromList,
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    showTagHideSheet(context,
+                        tagId: widget.tagId, label: _label);
+                  },
+                ),
+              _SheetRow(
+                key: const ValueKey('tag_menu_report'),
+                icon: Icons.flag_outlined,
+                label: l10n.tagMenuReport,
+                color: const Color(0xFFB42318),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  final ok = await ReportService.reportTag(
+                      tagId: widget.tagId, tagLabel: _label);
+                  if (mounted) {
+                    AppSnackBar.show(context,
+                        message: ok ? l10n.tagReported : l10n.tagSaveFailed,
+                        type: ok
+                            ? AppSnackBarType.success
+                            : AppSnackBarType.error);
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openShareSheet() {
+    final l10n = AppLocalizations.of(context)!;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _SheetRow(
                 key: const ValueKey('tag_share_post'),
                 icon: Icons.edit_rounded,
                 label: l10n.tagShareWritePost,
@@ -200,7 +291,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
                   ));
                 },
               ),
-              _ShareRow(
+              _SheetRow(
                 key: const ValueKey('tag_share_meetup'),
                 icon: Icons.groups_rounded,
                 label: l10n.tagShareCreateMeetup,
@@ -208,7 +299,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
                   Navigator.of(sheetContext).pop();
                   Navigator.of(context).push<void>(MaterialPageRoute(
                     builder: (_) => CreateMeetupScreen(
-                      initialDayIndex: 0,
+                      initialDayIndex: DateTime.now().weekday - 1,
                       onCreateMeetup: (_, __) {},
                       initialTagIds: [widget.tagId],
                     ),
@@ -237,6 +328,20 @@ class _TagPageScreenState extends State<TagPageScreen> {
           surfaceTintColor: Colors.white,
           elevation: 0,
           leading: const BackButton(color: TagColors.ink),
+          actions: [
+            IconButton(
+              key: const ValueKey('tag_page_share_link'),
+              tooltip: l10n.share,
+              icon: const Icon(Icons.ios_share_rounded, color: TagColors.ink),
+              onPressed: _shareTag,
+            ),
+            IconButton(
+              key: const ValueKey('tag_page_more'),
+              icon: const Icon(Icons.more_horiz_rounded, color: TagColors.ink),
+              onPressed: _openMoreMenu,
+            ),
+            const SizedBox(width: 4),
+          ],
         ),
         floatingActionButton: summary == null
             ? null
@@ -244,13 +349,12 @@ class _TagPageScreenState extends State<TagPageScreen> {
                 key: const ValueKey('tag_page_share'),
                 backgroundColor: TagColors.blue,
                 foregroundColor: Colors.white,
-                onPressed: () => _openShareSheet(summary.tag
-                    .labelFor(Localizations.localeOf(context).languageCode)),
+                elevation: 2,
+                onPressed: _openShareSheet,
                 label: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: media.size.width - 120),
                   child: Text(
-                    l10n.tagShareTo(summary.tag.labelFor(
-                        Localizations.localeOf(context).languageCode)),
+                    l10n.tagShareTo(_label),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: tagTextStyle(
@@ -275,15 +379,15 @@ class _TagPageScreenState extends State<TagPageScreen> {
                           delegate: _TabBarDelegate(TabBar(
                             key: const ValueKey('tag_page_tabs'),
                             labelColor: TagColors.ink,
-                            unselectedLabelColor: TagColors.muted,
+                            unselectedLabelColor: TagColors.disabledText,
                             indicatorColor: TagColors.ink,
                             indicatorWeight: 2,
-                            indicatorSize: TabBarIndicatorSize.label,
+                            indicatorSize: TabBarIndicatorSize.tab,
                             dividerColor: const Color(0xFFF0F1F3),
                             labelStyle: tagTextStyle(
                                 context, 15, FontWeight.w700, TagColors.ink),
-                            unselectedLabelStyle: tagTextStyle(
-                                context, 15, FontWeight.w600, TagColors.muted),
+                            unselectedLabelStyle: tagTextStyle(context, 15,
+                                FontWeight.w600, TagColors.disabledText),
                             tabs: [
                               Tab(
                                   text: l10n
@@ -325,15 +429,19 @@ class _TagPageScreenState extends State<TagPageScreen> {
             _sectionLabel(l10n.tagFriendsSection),
             SliverList.builder(
               itemCount: friends.length,
-              itemBuilder: (_, i) => _PersonRow(
-                  person: friends[i], onTap: () => _openPerson(friends[i])),
+              itemBuilder: (_, i) => TagPersonRow(
+                  key: ValueKey('tag_friend_${friends[i].uid}'),
+                  person: friends[i],
+                  onOpen: () => _openPerson(friends[i])),
             ),
-            if (_people.isNotEmpty) _sectionLabel(l10n.tagOthersSection),
           ],
+          if (_people.isNotEmpty) _sectionLabel(l10n.tagOthersSection),
           SliverList.builder(
             itemCount: _people.length,
-            itemBuilder: (_, i) => _PersonRow(
-                person: _people[i], onTap: () => _openPerson(_people[i])),
+            itemBuilder: (_, i) => TagPersonRow(
+                key: ValueKey('tag_person_${_people[i].uid}'),
+                person: _people[i],
+                onOpen: () => _openPerson(_people[i])),
           ),
           SliverToBoxAdapter(
             child: _loadingPeople
@@ -354,41 +462,70 @@ class _TagPageScreenState extends State<TagPageScreen> {
 
   Widget _sectionLabel(String text) => SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 2),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
           child: Text(text,
-              style:
-                  tagTextStyle(context, 13, FontWeight.w600, TagColors.muted)),
+              style: tagTextStyle(context, 15, FontWeight.w700, TagColors.ink)),
         ),
       );
 
-  Widget _header(AppLocalizations l10n, TagSummary summary) {
+  /// 보조 줄: 공식 태그는 다른 언어 이름 + '공식 태그', 사용자 태그는 별칭.
+  String _subtitle(AppLocalizations l10n, TagSummary summary) {
     final tag = summary.tag;
     final language = Localizations.localeOf(context).languageCode;
-    final subtitle = [
+    final shown = tag.labelFor(language);
+    final names = <String>[
+      for (final lang in const ['en', 'zh', 'ko'])
+        if (tag.labels[lang] case final label?
+            when label != shown && label.isNotEmpty)
+          label,
+      if (!tag.official)
+        ...summary.aliases.where((alias) => alias != shown && alias != tag.id),
+    ];
+    return [
+      ...names.toSet().take(3),
       if (tag.official) l10n.tagOfficial,
-      ...summary.aliases.where((a) => a != tag.labelFor(language)).take(3),
     ].join(' · ');
+  }
+
+  Widget _header(AppLocalizations l10n, TagSummary summary) {
+    final tag = summary.tag;
+    final subtitle = _subtitle(l10n, summary);
+    final countText = summary.friendCount > 0
+        ? l10n.tagHoldersWithFriends(tag.holderCount, summary.friendCount)
+        : l10n.tagHolders(tag.holderCount);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const TagHashTile(size: 72, radius: 24),
+          Row(
+            children: [
+              const TagHashTile(size: 72, radius: 24),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('#$_label',
+                        key: const ValueKey('tag_page_name'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: tagTextStyle(
+                            context, 24, FontWeight.w800, TagColors.ink)),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tagTextStyle(
+                              context, 13, FontWeight.w500, TagColors.muted)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 14),
-          Text(tag.labelFor(language),
-              key: const ValueKey('tag_page_name'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: tagTextStyle(context, 24, FontWeight.w800, TagColors.ink)),
-          if (subtitle.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tagTextStyle(
-                    context, 13, FontWeight.w500, TagColors.muted)),
-          ],
-          const SizedBox(height: 12),
           Row(
             children: [
               if (summary.friends.isNotEmpty) ...[
@@ -396,15 +533,13 @@ class _TagPageScreenState extends State<TagPageScreen> {
                 const SizedBox(width: 8),
               ],
               Expanded(
-                child: Text(
-                  summary.friendCount > 0
-                      ? l10n.tagHoldersWithFriends(
-                          tag.holderCount, summary.friendCount)
-                      : l10n.tagHolders(tag.holderCount),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      tagTextStyle(context, 13, FontWeight.w600, TagColors.ink),
+                child: BoldNumberText(
+                  countText,
+                  key: const ValueKey('tag_page_count'),
+                  number: tag.holderCount,
+                  style: tagTextStyle(
+                      context, 13, FontWeight.w500, TagColors.muted),
+                  numberColor: TagColors.ink,
                 ),
               ),
             ],
@@ -462,79 +597,80 @@ class _TagPageScreenState extends State<TagPageScreen> {
   }
 }
 
-class _PersonRow extends StatelessWidget {
-  const _PersonRow({required this.person, required this.onTap});
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  _TabBarDelegate(this.tabBar);
 
-  final TagPerson person;
+  final TabBar tabBar;
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
+      ColoredBox(color: Colors.white, child: tabBar);
+
+  @override
+  bool shouldRebuild(covariant _TabBarDelegate oldDelegate) =>
+      oldDelegate.tabBar != tabBar;
+}
+
+class _SheetRow extends StatelessWidget {
+  const _SheetRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color = TagColors.ink,
+  });
+
+  final IconData icon;
+  final String label;
   final VoidCallback onTap;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final language = Localizations.localeOf(context).languageCode;
-    final country = person.nationality.isEmpty
-        ? ''
-        : CountryFlagHelper.getCountryInfo(person.nationality)
-                ?.getLocalizedName(language) ??
-            person.nationality;
-    final supporting = [
-      if (country.isNotEmpty) country,
-      if (person.university.isNotEmpty) person.university,
-    ].join(' · ');
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            UserAvatar(
-              uid: person.uid,
-              photoUrl: person.photoURL,
-              photoVersion: 0,
-              isAnonymous: false,
-              size: 44,
-              placeholderColor: const Color(0xFFF2F4F7),
-              placeholderIcon: Icons.person_outline_rounded,
+            Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFF1F3F5), shape: BoxShape.circle),
+              child: Icon(icon, size: 20, color: color),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(person.nickname,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tagTextStyle(
-                          context, 15, FontWeight.w700, TagColors.ink)),
-                  if (supporting.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        if (person.nationality.isNotEmpty) ...[
-                          CountryFlagCircle(
-                              nationality: person.nationality, size: 15),
-                          const SizedBox(width: 5),
-                        ],
-                        Expanded(
-                          child: Text(supporting,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: tagTextStyle(context, 13, FontWeight.w500,
-                                  TagColors.muted)),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
+              child: Text(label,
+                  style: tagTextStyle(context, 15, FontWeight.w700, color)),
             ),
-            const Icon(Icons.chevron_right_rounded,
-                color: TagColors.disabledText),
           ],
         ),
       ),
     );
   }
+}
+
+class _EmptyText extends StatelessWidget {
+  const _EmptyText(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.all(32),
+        child: Text(text,
+            textAlign: TextAlign.center,
+            style: tagTextStyle(context, 13, FontWeight.w500, TagColors.muted)),
+      );
 }
 
 class _ErrorState extends StatelessWidget {
@@ -558,78 +694,4 @@ class _ErrorState extends StatelessWidget {
       ),
     );
   }
-}
-
-class _TabBarDelegate extends SliverPersistentHeaderDelegate {
-  _TabBarDelegate(this.tabBar);
-
-  final TabBar tabBar;
-
-  @override
-  double get minExtent => tabBar.preferredSize.height;
-
-  @override
-  double get maxExtent => tabBar.preferredSize.height;
-
-  @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
-      ColoredBox(color: Colors.white, child: tabBar);
-
-  @override
-  bool shouldRebuild(covariant _TabBarDelegate oldDelegate) =>
-      oldDelegate.tabBar != tabBar;
-}
-
-class _ShareRow extends StatelessWidget {
-  const _ShareRow(
-      {super.key,
-      required this.icon,
-      required this.label,
-      required this.onTap});
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: const BoxDecoration(
-                  color: Color(0xFFF1F3F5), shape: BoxShape.circle),
-              child: Icon(icon, size: 20, color: TagColors.ink),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(label,
-                  style: tagTextStyle(
-                      context, 15, FontWeight.w700, TagColors.ink)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyText extends StatelessWidget {
-  const _EmptyText(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(32),
-        child: Text(text,
-            textAlign: TextAlign.center,
-            style: tagTextStyle(context, 13, FontWeight.w500, TagColors.muted)),
-      );
 }

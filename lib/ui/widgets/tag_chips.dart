@@ -27,6 +27,82 @@ TextStyle tagTextStyle(
       height: isChineseUi(context) ? 1.3 : 1.2,
     );
 
+/// 칩 안의 태그 글자: '# 러닝'(# 뒤 한 칸). 글·카드 안의 짧은 표기는 '#러닝'.
+String hashText(String label) => '# $label';
+
+/// 고를 수 있는 태그(공개 범위 시트): 고르면 연파랑 + 파란 ✓, 아니면 흰 바탕 + 빈 원.
+class ToggleTagChip extends StatelessWidget {
+  const ToggleTagChip({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '#$label',
+      excludeSemantics: true,
+      child: MotionPress(
+        enabled: onTap != null,
+        child: Material(
+          color: selected ? TagColors.blueSoft : Colors.white,
+          shape: StadiumBorder(
+            side: BorderSide(
+                color: selected ? TagColors.blueSoft : TagColors.line),
+          ),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: onTap,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 36),
+              padding: const EdgeInsets.only(left: 9, right: 13),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: selected ? TagColors.blue : Colors.white,
+                      border: Border.all(
+                          color: selected ? TagColors.blue : TagColors.line,
+                          width: 1.5),
+                    ),
+                    child: selected
+                        ? const Icon(Icons.check_rounded,
+                            size: 12, color: Colors.white)
+                        : null,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      hashText(label),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tagTextStyle(context, 14, FontWeight.w700,
+                          selected ? TagColors.blue : TagColors.ink),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 글·카드·프로필에 붙은 태그(누르면 태그 페이지). 연파랑 바탕 + 파란 글자.
 class TagChip extends StatelessWidget {
   const TagChip(
@@ -110,11 +186,11 @@ class SelectedTagChip extends StatelessWidget {
                 children: [
                   Flexible(
                     child: Text(
-                      '#$label',
+                      hashText(label),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tagTextStyle(
-                          context, 14, FontWeight.w600, Colors.white),
+                          context, 14, FontWeight.w700, Colors.white),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -144,14 +220,16 @@ class SuggestTagChip extends StatelessWidget {
     super.key,
     required this.label,
     required this.onTap,
-    this.count,
+    this.meta,
     this.plus = false,
     this.hash = true,
   });
 
   final String label;
   final VoidCallback? onTap;
-  final int? count;
+
+  /// 오른쪽 회색 보조 글자(예: '8명', '+34').
+  final String? meta;
 
   /// '＋ #영화'처럼 앞에 ＋.
   final bool plus;
@@ -159,7 +237,7 @@ class SuggestTagChip extends StatelessWidget {
   /// false면 '#' 없이(예: '＋ 태그 찾기·만들기').
   final bool hash;
 
-  String get _text => '${plus ? '＋ ' : ''}${hash ? '#' : ''}$label';
+  String get _text => '${plus ? '＋ ' : ''}${hash ? hashText(label) : label}';
 
   @override
   Widget build(BuildContext context) {
@@ -195,10 +273,10 @@ class SuggestTagChip extends StatelessWidget {
                               : TagColors.ink),
                     ),
                   ),
-                  if (count != null && count! > 0) ...[
+                  if (meta != null && meta!.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     Text(
-                      '$count',
+                      meta!,
                       style: tagTextStyle(context, 12.5, FontWeight.w500,
                           TagColors.disabledText),
                     ),

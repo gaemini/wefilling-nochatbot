@@ -5,12 +5,20 @@ import '../../services/interest_tag_service.dart';
 import '../snackbar/app_snackbar.dart';
 import '../widgets/tag_chips.dart';
 
+/// 태그 페이지 ⋯ 메뉴: 태그 사람 목록에서 나 숨기기만.
+Future<void> showTagHideSheet(
+  BuildContext context, {
+  required String tagId,
+  required String label,
+}) =>
+    showTagSettingsSheet(context, tagId: tagId, label: label);
+
 /// 내 태그를 길게 누르면: 태그 사람 목록에서 숨기기, 내 태그에서 빼기.
 Future<void> showTagSettingsSheet(
   BuildContext context, {
   required String tagId,
   required String label,
-  required VoidCallback onRemove,
+  VoidCallback? onRemove,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -35,7 +43,7 @@ class _TagSettingsSheet extends StatefulWidget {
 
   final String tagId;
   final String label;
-  final VoidCallback onRemove;
+  final VoidCallback? onRemove;
 
   @override
   State<_TagSettingsSheet> createState() => _TagSettingsSheetState();
@@ -115,18 +123,20 @@ class _TagSettingsSheetState extends State<_TagSettingsSheet> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: TagSecondaryButton(
-                label: l10n.tagRemoveFromMine,
-                foreground: const Color(0xFFB42318),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  widget.onRemove();
-                },
+            if (widget.onRemove != null) ...[
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: TagSecondaryButton(
+                  label: l10n.tagRemoveFromMine,
+                  foreground: const Color(0xFFB42318),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onRemove!();
+                  },
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

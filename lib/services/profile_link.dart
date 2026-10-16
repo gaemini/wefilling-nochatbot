@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../screens/friend_profile_screen.dart';
+import '../screens/tag_page_screen.dart';
 import 'navigation_service.dart';
 
 class ProfileLink {
@@ -26,6 +27,28 @@ class ProfileLink {
 
   /// 공유용 https 링크. 앱이 없으면 웹 안내 페이지가 열린다.
   static String build(String uid) => 'https://$webHost/u/$uid';
+
+  /// 태그 공유 링크(`/t/{tagId}`, 한글 등은 퍼센트 인코딩).
+  static String buildTag(String tagId) =>
+      'https://$webHost/t/${Uri.encodeComponent(tagId)}';
+
+  /// `https://…/t/{tagId}` 또는 `wefilling://t/{tagId}` 에서 tagId를 꺼낸다.
+  static String? parseTagId(Uri uri) {
+    String? raw;
+    if (uri.scheme == 'https' || uri.scheme == 'http') {
+      if (!_acceptedHosts.contains(uri.host)) return null;
+      final segments = uri.pathSegments;
+      if (segments.length >= 2 && segments[0] == 't') raw = segments[1];
+    } else if (uri.scheme == 'wefilling' && uri.host == 't') {
+      if (uri.pathSegments.isNotEmpty) raw = uri.pathSegments.first;
+    }
+    final tagId = raw?.trim() ?? '';
+    // 서버 태그 규칙(글자·숫자·_ 2–20자)과 같게 거른다.
+    if (!RegExp(r'^[\p{L}\p{N}_]{2,20}$', unicode: true).hasMatch(tagId)) {
+      return null;
+    }
+    return tagId;
+  }
 
   /// `https://wefilling.app/u/{uid}` 또는 `wefilling://u/{uid}` 에서 uid를 꺼낸다.
   static String? parseUid(Uri uri) {
@@ -51,6 +74,7 @@ class ProfileLinkService {
 
   StreamSubscription<Uri>? _subscription;
   String? _pendingUid;
+  String? _pendingTagId;
   String? _lastLink;
   DateTime? _lastLinkAt;
   bool _started = false;
@@ -72,7 +96,8 @@ class ProfileLinkService {
 
   void _handle(Uri uri) {
     final uid = ProfileLink.parseUid(uri);
-    if (uid == null) return;
+    final tagId = uid == null ? ProfileLink.parseTagId(uri) : null;
+    if (uid == null && tagId == null) return;
     // 콜드 스타트 링크는 getInitialLink와 uriLinkStream으로 두 번 올 수 있다.
     final now = DateTime.now();
     final key = uri.toString();
@@ -84,13 +109,15 @@ class ProfileLinkService {
     _lastLink = key;
     _lastLinkAt = now;
     _pendingUid = uid;
+    _pendingTagId = tagId;
     openPending();
   }
 
   /// 로그인 완료 후에도 호출해 보관된 링크를 연다.
   void openPending() {
     final uid = _pendingUid;
-    if (uid == null) return;
+    final tagId = _pendingTagId;
+    if (uid == null && tagId == null) return;
     final me = FirebaseAuth.instance.currentUser;
     final navigator = NavigationService.navigatorKey.currentState;
     // 로그인·가입 완료 전에는 보관만 한다(로그인 화면 위에 프로필을 올리지 않는다).
@@ -100,6 +127,14 @@ class ProfileLinkService {
       return;
     }
     _pendingUid = null;
+    _pendingTagId = null;
+    if (tagId != null) {
+      navigator.push<void>(
+        MaterialPageRoute(builder: (_) => TagPageScreen(tagId: tagId)),
+      );
+      return;
+    }
+    if (uid == null) return;
     if (me.uid == uid) return;
     navigator.push<void>(
       MaterialPageRoute(
@@ -112,7 +147,8 @@ class ProfileLinkService {
   }
 
   void _onRoutingReady() {
-    if (_pendingUid == null || !NavigationService.routingReadyListenable.value) {
+    if ((_pendingUid == null && _pendingTagId == null) ||
+        !NavigationService.routingReadyListenable.value) {
       return;
     }
     // 홈 화면이 먼저 그려진 뒤에 프로필을 올린다.

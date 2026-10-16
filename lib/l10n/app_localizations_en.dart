@@ -3686,7 +3686,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tagSuggestFriends => 'Popular with friends';
 
   @override
-  String get tagSuggestPopular => 'Popular now';
+  String get tagSuggestPopular => 'Trending this week';
 
   @override
   String get tagDailyLimit => 'You can\'t create more tags today';
@@ -3759,7 +3759,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tagFriendsSection => 'Friends';
 
   @override
-  String get tagOthersSection => 'Others';
+  String get tagOthersSection => 'Recently added';
 
   @override
   String get tagPeopleEmpty => 'No one has this tag yet';
@@ -3835,7 +3835,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String audienceTagDescription(String tags) {
-    return 'Only people with $tags can see it';
+    return 'People with $tags on their profile';
   }
 
   @override
@@ -3895,4 +3895,127 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get myTagsNewPosts => 'New in my #tags';
+
+  @override
+  String get tagPickerSubtitle =>
+      'Your #tags show on your profile, and you\'ll get posts and meetups shared with that tag.';
+
+  @override
+  String tagPickerMineMeta(int n, int max) {
+    return '$n/$max · Long-press to hide';
+  }
+
+  @override
+  String tagCountPeople(int n) {
+    return '$n';
+  }
+
+  @override
+  String get tagExploreSearchHint => 'Search #tags';
+
+  @override
+  String get tagExploreCaptionRecommended => 'Often added with your tags';
+
+  @override
+  String get tagExploreCaptionPopular => 'Most added tags';
+
+  @override
+  String get tagExploreCaptionFriends => 'Tags your friends have';
+
+  @override
+  String get tagExploreCaptionTrending => 'Added most this week';
+
+  @override
+  String get tagExploreCaptionNew => 'Newly created tags';
+
+  @override
+  String tagReasonFriends(String names) {
+    return 'Friends $names';
+  }
+
+  @override
+  String tagReasonWeek(int n) {
+    return '+$n this week';
+  }
+
+  @override
+  String tagReasonWith(String tag) {
+    return 'With $tag';
+  }
+
+  @override
+  String get tagReasonToday => 'New today';
+
+  @override
+  String tagReasonDaysAgo(int n) {
+    return '${n}d ago';
+  }
+
+  @override
+  String get tagProfileButton => 'Profile';
+
+  @override
+  String get tagExchangeStudent => 'Exchange student';
+
+  @override
+  String get tagMenuCopyLink => 'Copy link';
+
+  @override
+  String get tagMenuReport => 'Report tag';
+
+  @override
+  String get tagLinkCopied => 'Link copied';
+
+  @override
+  String tagShareText(String tag, String link) {
+    return 'Join #$tag on Wefilling $link';
+  }
+
+  @override
+  String get tagReported => 'Report submitted';
+
+  @override
+  String get audienceSheetTitle => 'Who can see this?';
+
+  @override
+  String get audienceSheetSubtitle => 'You can\'t change this after posting';
+
+  @override
+  String get audiencePublic => 'Everyone';
+
+  @override
+  String get audiencePublicDescription => 'Everyone on Wefilling';
+
+  @override
+  String get audienceFriends => 'Friends only';
+
+  @override
+  String audienceFriendsDescription(int n) {
+    return 'Your $n friends';
+  }
+
+  @override
+  String get audienceGroup => 'Groups';
+
+  @override
+  String get audienceGroupDescription => 'Friends in chosen groups';
+
+  @override
+  String get audienceAnonymous => 'Everyone, anonymously';
+
+  @override
+  String get audienceAnonymousDescription => 'Your name and photo are hidden';
+
+  @override
+  String get audienceHanyang => 'Hanyang students only';
+
+  @override
+  String get audienceHanyangDescription =>
+      'Everyone sees the card; only verified users see the content';
+
+  @override
+  String get audienceRowLabel => 'Audience';
+
+  @override
+  String get postUploadAction => 'Post';
 }

@@ -153,16 +153,30 @@ function tagRef(id: string) {
   return db().collection(COL.tags).doc(id);
 }
 
-/** 트랜잭션 안에서 태그별 holderCount를 올리고 내린다(쓰기만, 읽기 없음). */
+export function holderRef(tagId: string, uid: string) {
+  return tagRef(tagId).collection('holders').doc(uid);
+}
+
+/**
+ * 트랜잭션 안에서 태그별 holderCount를 올리고 내리고, tags/{id}/holders/{uid}
+ * (단 시각, '최근에 단 사람' 순서)를 맞춘다(쓰기만, 읽기 없음).
+ */
 export function writeHolderDelta(
   tx: admin.firestore.Transaction,
+  uid: string,
   added: readonly string[],
   removed: readonly string[],
 ): void {
   const inc = FieldValue.increment;
   const now = FieldValue.serverTimestamp();
-  added.forEach((id) => tx.set(tagRef(id), {holderCount: inc(1), lastHeldAt: now}, {merge: true}));
-  removed.forEach((id) => tx.set(tagRef(id), {holderCount: inc(-1)}, {merge: true}));
+  added.forEach((id) => {
+    tx.set(tagRef(id), {holderCount: inc(1), lastHeldAt: now}, {merge: true});
+    tx.set(holderRef(id, uid), {uid, addedAt: now});
+  });
+  removed.forEach((id) => {
+    tx.set(tagRef(id), {holderCount: inc(-1)}, {merge: true});
+    tx.delete(holderRef(id, uid));
+  });
 }
 
 /**
@@ -171,13 +185,14 @@ export function writeHolderDelta(
  */
 export function signupProfileTagFields(
   tx: admin.firestore.Transaction,
+  uid: string,
   existing: Record<string, unknown>,
   interests: readonly string[],
 ): {interestTagIds: string[]} {
   const next = Array.from(new Set(interests.filter((id) => OFFICIAL_TAG_IDS.has(id))))
     .slice(0, MAX_PROFILE_TAGS);
   const {added, removed} = tagIdDiff(stringArray(existing.interestTagIds), next);
-  writeHolderDelta(tx, added, removed);
+  writeHolderDelta(tx, uid, added, removed);
   return {interestTagIds: next};
 }
 
@@ -201,7 +216,7 @@ export async function syncLegacyInterestsToTags(
     const next = mergeLegacyInterests(prev, latest.interests);
     const {added, removed} = tagIdDiff(prev, next);
     if (added.length === 0 && removed.length === 0) return;
-    writeHolderDelta(tx, added, removed);
+    writeHolderDelta(tx, ref.id, added, removed);
     tx.update(ref, {interestTagIds: next});
   });
 }
@@ -335,7 +350,7 @@ export const setProfileTags = callables()
         }
       });
       const {added, removed} = tagIdDiff(prev, next);
-      writeHolderDelta(tx, added, removed);
+      writeHolderDelta(tx, uid, added, removed);
       tx.update(userRef, {
         interestTagIds: next,
         interests: legacyInterestsFor(next),
@@ -345,7 +360,10 @@ export const setProfileTags = callables()
     });
   });
 
-/** 태그를 단 사람(본인·비활성·차단·숨긴 사람 제외). 문서 id 커서 페이지. */
+/**
+ * 태그를 단 사람, 최근에 단 순(본인·비활성·차단·숨긴 사람 제외).
+ * tags/{id}/holders의 addedAt 커서 페이지. 커서는 'millis_uid'.
+ */
 export const listTagHolders = callables()
   .runWith({timeoutSeconds: 20, memory: '256MB'})
   .https.onCall(async (data, context) => {
@@ -354,17 +372,22 @@ export const listTagHolders = callables()
     if (!tagId) throw new functions.https.HttpsError('invalid-argument', 'tag-invalid');
     const limit = Math.max(1, Math.min(30, Math.trunc(Number(data?.limit) || 30)));
     const rawCursor = String(data?.cursor ?? '').trim();
-    if (rawCursor.length > 128 || rawCursor.includes('/')) {
+    const cursorMatch = /^(\d{1,15})_([A-Za-z0-9_-]{1,128})$/.exec(rawCursor);
+    if (rawCursor && !cursorMatch) {
       throw new functions.https.HttpsError('invalid-argument', 'cursor-invalid');
     }
-    let query = db().collection(COL.users)
-      .where('interestTagIds', 'array-contains', tagId)
-      .orderBy(FieldPath.documentId())
+    let query = tagRef(tagId).collection('holders')
+      .orderBy('addedAt', 'desc')
+      .orderBy(FieldPath.documentId(), 'desc')
       .limit(limit);
-    if (rawCursor) query = query.startAfter(rawCursor);
+    if (cursorMatch) {
+      query = query.startAfter(Timestamp.fromMillis(Number(cursorMatch[1])), cursorMatch[2]);
+    }
     const snapshot = await query.get();
-    const candidates = snapshot.docs.filter((doc) =>
-      doc.id !== uid && isSearchableUser(doc.id, doc.data()));
+    const ids = snapshot.docs.map((doc) => doc.id).filter((id) => id !== uid);
+    const userDocs = ids.length ? await db().getAll(...ids.map((id) => db().collection(COL.users).doc(id))) : [];
+    const candidates = userDocs.filter((doc) => doc.exists && isSearchableUser(doc.id, doc.data()) &&
+      stringArray(doc.get('interestTagIds')).includes(tagId));
     const related = candidates.length === 0 ? [] : await db().getAll(
       ...candidates.flatMap((doc) => [
         db().collection(COL.blocks).doc(`${uid}_${doc.id}`),
@@ -375,17 +398,12 @@ export const listTagHolders = callables()
     const users = candidates.filter((_, index) => {
       const hidden = related[index * 3 + 2]?.get(`tagPrefs.${tagId}.hidden`) === true;
       return !related[index * 3]?.exists && !related[index * 3 + 1]?.exists && !hidden;
-    }).map((doc) => {
-      const profile = doc.data();
-      return {
-        uid: doc.id,
-        nickname: String(profile.nickname || '').trim(),
-        photoURL: String(profile.photoURL || '').trim(),
-        nationality: String(profile.nationality || '').trim(),
-        university: String(profile.university || '').trim(),
-      };
-    });
-    const cursor = snapshot.size === limit ? snapshot.docs[snapshot.size - 1].id : null;
+    }).map(personSummary);
+    const last = snapshot.docs[snapshot.docs.length - 1];
+    const lastAdded = last?.get('addedAt') as Timestamp | undefined;
+    const cursor = snapshot.size === limit && last && lastAdded
+      ? `${lastAdded.toMillis()}_${last.id}`
+      : null;
     return {users, cursor};
   });
 
@@ -406,6 +424,9 @@ function personSummary(doc: admin.firestore.DocumentSnapshot) {
     photoURL: String(profile.photoURL || '').trim(),
     nationality: String(profile.nationality || '').trim(),
     university: String(profile.university || '').trim(),
+    studentType: String(profile.studentType || '').trim(),
+    // 사람 줄 보조 문구('#러닝 #카페 #사진').
+    tags: stringArray(profile.interestTagIds).slice(0, 4),
   };
 }
 
@@ -502,15 +523,15 @@ export const getTagSuggestions = callables()
       .slice(0, SUGGEST_LIMIT).map(([id]) => id);
     const [friendTagDocs, popular] = await Promise.all([
       friendTop.length ? db().getAll(...friendTop.map(tagRef)) : Promise.resolve([]),
-      db().collection(COL.tags).where('status', '==', 'active')
-        .orderBy('holderCount', 'desc').limit(SUGGEST_LIMIT + mine.size).get(),
+      popularTags(mine, SUGGEST_LIMIT),
     ]);
     const toItem = (doc: admin.firestore.DocumentSnapshot) =>
       ({id: doc.id, ...pickPublic(doc.data() ?? {})});
     return {
       friends: friendTagDocs.filter((doc) => doc.exists && doc.get('status') === 'active')
         .map((doc) => ({...toItem(doc), friendCount: counts.get(doc.id) ?? 0})),
-      popular: popular.docs.filter((doc) => !mine.has(doc.id)).slice(0, SUGGEST_LIMIT).map(toItem),
+      // '요즘 많이 다는 태그': 이번 주 증가(delta). 집계가 아직 없으면 많이 단 순.
+      popular,
     };
   });
 
@@ -711,24 +732,33 @@ export async function resolveTagAudience(
   if (data.isAnonymous === true || data.requiresHanyangVerification === true) {
     throw new functions.https.HttpsError('invalid-argument', 'tag-audience-unsupported');
   }
+  // 공개 범위 태그는 글 태그 중 고른 것(없으면 전부).
+  let audienceTagIds = [...tagIds];
+  if (Array.isArray(data.audienceTagIds) && data.audienceTagIds.length > 0) {
+    const chosen = Array.from(new Set(data.audienceTagIds.map((item) => normalizeTagName(item))));
+    if (chosen.some((id) => id == null || !tagIds.includes(id))) {
+      throw new functions.https.HttpsError('invalid-argument', 'tag-audience-invalid');
+    }
+    audienceTagIds = chosen as string[];
+  }
   const friendsOnly = data.audienceFriendsOnly === true;
   if (friendsOnly) {
     const friends = await resolveFrozenAudience(ownerId, 'friends', []);
     const holders = await tagHoldersAmong(
-      friends.audienceUserIdsFrozen.filter((id) => id !== ownerId), tagIds);
+      friends.audienceUserIdsFrozen.filter((id) => id !== ownerId), audienceTagIds);
     return {
       frozen: {
         visibilityMode: 'friends',
         audienceUserIdsFrozen: Array.from(new Set([ownerId, ...holders])).sort(),
         sourceGroupIds: [],
       },
-      audienceTagIds: [...tagIds],
+      audienceTagIds,
       friendsOnly: true,
     };
   }
   return {
     frozen: {visibilityMode: 'tag', audienceUserIdsFrozen: [ownerId], sourceGroupIds: []},
-    audienceTagIds: [...tagIds],
+    audienceTagIds,
     friendsOnly: false,
   };
 }
@@ -820,20 +850,17 @@ export function dayKey(millis: number): string {
   return new Date(millis).toISOString().slice(0, 10);
 }
 
-/** 7일 holderCount 증가로 뜨는 태그를 고른다. 예전 기록이 없으면 7일 안에 생긴 태그만 센다. */
+/**
+ * 7일 holderCount 증가로 뜨는 태그를 고른다. 7일 전 기록이 아직 없으면(집계 첫 주)
+ * 비워 둔다. 이전 직후 공식 태그 전체가 '이번 주 +n'으로 보이지 않게 한다.
+ */
 export function pickTrendingTags(
   now: Map<string, {count: number; createdAtMillis: number}>,
   before: Record<string, number> | null,
-  nowMillis: number,
 ): Array<{id: string; delta: number}> {
-  const windowStart = nowMillis - TREND_WINDOW_DAYS * 86400000;
+  if (!before) return [];
   return Array.from(now.entries())
-    .map(([id, tag]) => ({
-      id,
-      delta: before
-        ? tag.count - (before[id] ?? 0)
-        : tag.createdAtMillis >= windowStart ? tag.count : 0,
-    }))
+    .map(([id, tag]) => ({id, delta: tag.count - (before[id] ?? 0)}))
     .filter((item) => item.delta > 0)
     .sort((a, b) => b.delta - a.delta || a.id.localeCompare(b.id))
     .slice(0, TREND_LIMIT);
@@ -854,7 +881,7 @@ export const computeTagTrends = triggers()
     }));
     const daily = db().collection('tags_daily');
     const before = await daily.doc(dayKey(nowMillis - TREND_WINDOW_DAYS * 86400000)).get();
-    const items = pickTrendingTags(now, before.exists ? (before.get('counts') ?? {}) : null, nowMillis);
+    const items = pickTrendingTags(now, before.exists ? (before.get('counts') ?? {}) : null);
     const batch = db().batch();
     batch.set(daily.doc(dayKey(nowMillis)), {
       counts: Object.fromEntries(Array.from(now.entries()).map(([id, tag]) => [id, tag.count])),
@@ -892,4 +919,108 @@ export const getMyTagNewCounts = callables()
       return [tagId, publicCount.data().count + tagCount.data().count] as const;
     }));
     return {counts: Object.fromEntries(entries)};
+  });
+
+
+/** 요즘 많이 다는 태그: tags_trending/current(이번 주 증가), 없으면 많이 단 순. */
+async function popularTags(exclude: ReadonlySet<string>, limit: number) {
+  const trending = await db().collection('tags_trending').doc('current').get();
+  const items = (trending.get('items') as Array<{id: string; delta: number}> | undefined) ?? [];
+  const wanted = items.filter((item) => !exclude.has(item.id)).slice(0, limit);
+  if (wanted.length > 0) {
+    const docs = await db().getAll(...wanted.map((item) => tagRef(item.id)));
+    return docs.filter((doc) => doc.exists && doc.get('status') === 'active').map((doc) => ({
+      id: doc.id,
+      ...pickPublic(doc.data() ?? {}),
+      delta: wanted.find((item) => item.id === doc.id)?.delta ?? 0,
+    }));
+  }
+  const snap = await db().collection(COL.tags).where('status', '==', 'active')
+    .orderBy('holderCount', 'desc').limit(limit + exclude.size).get();
+  return snap.docs.filter((doc) => !exclude.has(doc.id)).slice(0, limit)
+    .map((doc) => ({id: doc.id, ...pickPublic(doc.data() ?? {}), delta: 0}));
+}
+
+const EXPLORE_LIMIT = 20;
+const COOCCUR_SAMPLE = 300;
+
+/**
+ * 태그 둘러보기 목록과 줄마다의 이유(보조 문구).
+ * - recommended: 내 태그와 함께 많이 달린 태그(reason.withTag). 내 태그가 없으면 많이 단 순.
+ * - friends: 친구들이 단 태그(reason.friendNames, friendCount)
+ * - trending: 이번 주 증가(reason.delta)
+ * - newest: 새로 생긴 태그(reason.createdAtMillis)
+ */
+export const exploreTags = callables()
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const filter = String(data?.filter ?? 'recommended');
+    const me = await db().collection(COL.users).doc(uid).get();
+    const mine = new Set(stringArray(me.get('interestTagIds')));
+    const toItem = (doc: admin.firestore.DocumentSnapshot, reason: Record<string, unknown>) =>
+      ({id: doc.id, ...pickPublic(doc.data() ?? {}), reason});
+    const activeDocs = async (ids: string[]) => ids.length === 0 ? [] :
+      (await db().getAll(...ids.map(tagRef))).filter((doc) => doc.exists && doc.get('status') === 'active');
+
+    if (filter === 'friends') {
+      const friendIds = Array.from(await friendIdCandidatesAtCreation(uid))
+        .filter((id) => id && id !== uid && !id.includes('/')).slice(0, FRIEND_SCAN_LIMIT);
+      const docs = friendIds.length ? await db().getAll(...friendIds.map((id) => db().collection(COL.users).doc(id))) : [];
+      const byTag = new Map<string, string[]>();
+      docs.filter((doc) => doc.exists && isSearchableUser(doc.id, doc.data())).forEach((doc) => {
+        const name = String(doc.get('nickname') || '').trim();
+        stringArray(doc.get('interestTagIds')).forEach((tagId) =>
+          byTag.set(tagId, [...(byTag.get(tagId) ?? []), name]));
+      });
+      const top = Array.from(byTag.entries()).sort((a, b) => b[1].length - a[1].length)
+        .slice(0, EXPLORE_LIMIT);
+      const tags = await activeDocs(top.map(([id]) => id));
+      return {items: tags.map((doc) => {
+        const names = byTag.get(doc.id) ?? [];
+        return toItem(doc, {type: 'friends', friendCount: names.length, friendNames: names.filter(Boolean).slice(0, 2)});
+      })};
+    }
+    if (filter === 'trending') {
+      const trending = await db().collection('tags_trending').doc('current').get();
+      const items = ((trending.get('items') as Array<{id: string; delta: number}> | undefined) ?? [])
+        .slice(0, EXPLORE_LIMIT);
+      const tags = await activeDocs(items.map((item) => item.id));
+      return {items: tags.map((doc) => toItem(doc, {
+        type: 'trending', delta: items.find((item) => item.id === doc.id)?.delta ?? 0,
+      }))};
+    }
+    if (filter === 'newest') {
+      const snap = await db().collection(COL.tags).where('status', '==', 'active')
+        .orderBy('createdAt', 'desc').limit(EXPLORE_LIMIT).get();
+      return {items: snap.docs.map((doc) => toItem(doc, {
+        type: 'new', createdAtMillis: (doc.get('createdAt') as Timestamp | undefined)?.toMillis() ?? 0,
+      }))};
+    }
+    // recommended
+    if (mine.size === 0) {
+      const popular = await popularTags(mine, EXPLORE_LIMIT);
+      return {items: popular.map((item) => ({...item, reason: {type: 'popular'}}))};
+    }
+    const sample = await db().collection(COL.users)
+      .where('interestTagIds', 'array-contains-any', Array.from(mine).slice(0, 10))
+      .limit(COOCCUR_SAMPLE).get();
+    const counts = new Map<string, number>();
+    const withTag = new Map<string, Map<string, number>>();
+    sample.docs.filter((doc) => doc.id !== uid && isSearchableUser(doc.id, doc.data())).forEach((doc) => {
+      const tags = stringArray(doc.get('interestTagIds'));
+      const shared = tags.filter((id) => mine.has(id));
+      tags.filter((id) => !mine.has(id)).forEach((id) => {
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+        const pairs = withTag.get(id) ?? new Map<string, number>();
+        shared.forEach((own) => pairs.set(own, (pairs.get(own) ?? 0) + 1));
+        withTag.set(id, pairs);
+      });
+    });
+    const top = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, EXPLORE_LIMIT);
+    const tags = await activeDocs(top.map(([id]) => id));
+    return {items: tags.map((doc) => {
+      const pairs = Array.from(withTag.get(doc.id)?.entries() ?? []).sort((a, b) => b[1] - a[1]);
+      return toItem(doc, {type: 'with', withTag: pairs[0]?.[0] ?? null});
+    })};
   });

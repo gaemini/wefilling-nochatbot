@@ -626,6 +626,7 @@ class PostService {
     List<String> pollOptions = const [], // type == 'poll'일 때만 사용
     List<String> tagIds = const [],
     bool audienceFriendsOnly = false,
+    List<String> audienceTagIds = const [],
     SharedLinkPreview? linkPreview,
     File? linkPreviewImageFile,
     String linkPreviewImageSource = 'local_preview',
@@ -649,7 +650,7 @@ class PostService {
       if (user == null) {
         throw Exception('로그인이 필요합니다');
       }
-      if (!const {'public', 'category', 'tag'}.contains(visibility)) {
+      if (!const {'public', 'friends', 'category', 'tag'}.contains(visibility)) {
         throw ArgumentError.value(visibility, 'visibility');
       }
       if (visibility == 'tag' && (tagIds.isEmpty || isAnonymous)) {
@@ -663,7 +664,7 @@ class PostService {
       if (visibility == 'category' && normalizedCategoryIds.isEmpty) {
         throw Exception('그룹 공개 게시글에 선택된 그룹이 없습니다.');
       }
-      if (visibility == 'category' && isAnonymous) {
+      if (visibility != 'public' && isAnonymous) {
         throw ArgumentError(
           '그룹 공개 게시글은 익명으로 작성할 수 없습니다.',
         );
@@ -820,6 +821,8 @@ class PostService {
         'pollOptions': cleanedPollOptions,
         if (tagIds.isNotEmpty) 'tagIds': tagIds.take(3).toList(),
         if (visibility == 'tag') 'audienceFriendsOnly': audienceFriendsOnly,
+        if (visibility == 'tag' && audienceTagIds.isNotEmpty)
+          'audienceTagIds': audienceTagIds.take(3).toList(),
         if (persistedLinkPreview != null)
           'linkPreview': _createPostLinkPreviewPayload(persistedLinkPreview),
         if (videoUpload != null) 'video': videoUpload.toPayload(),

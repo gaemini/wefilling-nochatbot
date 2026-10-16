@@ -3,6 +3,7 @@
 // 새로운 기능을 안전하게 출시하기 위한 토글 시스템
 // 환경변수 및 Firebase Remote Config 지원
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import '../utils/logger.dart';
@@ -38,9 +39,11 @@ class FeatureFlagService {
   /// 테스트에서 쓰는 강제 값(null이면 Remote Config).
   static bool? debugTagAudienceOverride;
 
+  /// 개발 빌드는 기본으로 켠다(서버 플래그는 따로). 출시 빌드는 Remote Config.
   static bool get tagAudienceEnabled =>
       debugTagAudienceOverride ??
-      FeatureFlagService().isFeatureEnabled(FEATURE_TAG_AUDIENCE);
+      (kDebugMode ||
+          FeatureFlagService().isFeatureEnabled(FEATURE_TAG_AUDIENCE));
 
   /// 서비스 초기화
   Future<void> init() async {

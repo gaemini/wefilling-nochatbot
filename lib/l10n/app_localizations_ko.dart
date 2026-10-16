@@ -3540,10 +3540,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get tagAddShort => '＋ 태그';
 
   @override
-  String get tagSuggestFriends => '친구들이 많이 단';
+  String get tagSuggestFriends => '친구들이 많이 단 태그';
 
   @override
-  String get tagSuggestPopular => '요즘 많이 다는';
+  String get tagSuggestPopular => '요즘 많이 다는 태그';
 
   @override
   String get tagDailyLimit => '오늘은 새 태그를 더 만들 수 없어요';
@@ -3615,7 +3615,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get tagFriendsSection => '친구';
 
   @override
-  String get tagOthersSection => '다른 사람';
+  String get tagOthersSection => '최근에 단 사람';
 
   @override
   String get tagPeopleEmpty => '아직 이 태그를 단 사람이 없어요';
@@ -3691,7 +3691,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String audienceTagDescription(String tags) {
-    return '$tags을 단 사람만 봐요';
+    return '$tags을 프로필에 단 사람';
   }
 
   @override
@@ -3749,4 +3749,126 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get myTagsNewPosts => '내 #태그 새 글';
+
+  @override
+  String get tagPickerSubtitle =>
+      '고른 #태그가 프로필에 보이고, 같은 태그를 단 사람에게 공유된 글과 모임을 받아요.';
+
+  @override
+  String tagPickerMineMeta(int n, int max) {
+    return '$n/$max · 길게 누르면 숨기기';
+  }
+
+  @override
+  String tagCountPeople(int n) {
+    return '$n명';
+  }
+
+  @override
+  String get tagExploreSearchHint => '#태그 검색';
+
+  @override
+  String get tagExploreCaptionRecommended => '내 태그와 함께 많이 달린 태그';
+
+  @override
+  String get tagExploreCaptionPopular => '많이 단 태그';
+
+  @override
+  String get tagExploreCaptionFriends => '친구들이 단 태그';
+
+  @override
+  String get tagExploreCaptionTrending => '이번 주에 많이 단 태그';
+
+  @override
+  String get tagExploreCaptionNew => '새로 생긴 태그';
+
+  @override
+  String tagReasonFriends(String names) {
+    return '친구 $names';
+  }
+
+  @override
+  String tagReasonWeek(int n) {
+    return '이번 주 +$n';
+  }
+
+  @override
+  String tagReasonWith(String tag) {
+    return '$tag와 함께';
+  }
+
+  @override
+  String get tagReasonToday => '오늘 생김';
+
+  @override
+  String tagReasonDaysAgo(int n) {
+    return '$n일 전 생김';
+  }
+
+  @override
+  String get tagProfileButton => '프로필';
+
+  @override
+  String get tagExchangeStudent => '교환학생';
+
+  @override
+  String get tagMenuCopyLink => '링크 복사';
+
+  @override
+  String get tagMenuReport => '태그 신고';
+
+  @override
+  String get tagLinkCopied => '링크를 복사했어요';
+
+  @override
+  String tagShareText(String tag, String link) {
+    return '위필링에서 #$tag 태그를 같이 달아요 $link';
+  }
+
+  @override
+  String get tagReported => '신고를 접수했어요';
+
+  @override
+  String get audienceSheetTitle => '누가 볼 수 있나요?';
+
+  @override
+  String get audienceSheetSubtitle => '글을 올린 뒤에는 바꿀 수 없어요';
+
+  @override
+  String get audiencePublic => '전체';
+
+  @override
+  String get audiencePublicDescription => '위필링의 모든 사람';
+
+  @override
+  String get audienceFriends => '친구만';
+
+  @override
+  String audienceFriendsDescription(int n) {
+    return '내 친구 $n명';
+  }
+
+  @override
+  String get audienceGroup => '그룹';
+
+  @override
+  String get audienceGroupDescription => '고른 그룹의 친구';
+
+  @override
+  String get audienceAnonymous => '익명으로 전체 공개';
+
+  @override
+  String get audienceAnonymousDescription => '이름과 사진을 숨겨요';
+
+  @override
+  String get audienceHanyang => '한양대학생만';
+
+  @override
+  String get audienceHanyangDescription => '카드는 모두에게 보이고, 인증된 사용자만 내용을 봐요';
+
+  @override
+  String get audienceRowLabel => '공개 범위';
+
+  @override
+  String get postUploadAction => '올리기';
 }

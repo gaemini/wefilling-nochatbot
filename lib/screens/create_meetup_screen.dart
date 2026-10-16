@@ -1,5 +1,4 @@
 import '../ui/sheets/audience_sheet.dart';
-import '../services/feature_flag_service.dart';
 import '../ui/widgets/content_tag_editor.dart';
 import 'dart:async';
 import 'dart:io';
@@ -25,8 +24,6 @@ import '../ui/snackbar/app_snackbar.dart';
 import '../ui/sheets/participant_count_sheet.dart';
 import '../utils/responsive_helper.dart';
 import '../l10n/ui_locale.dart';
-import '../design/tokens.dart';
-import '../ui/widgets/motion_selectable.dart';
 import '../ui/widgets/motion_processing_button.dart';
 
 // 모임 생성화면
@@ -64,51 +61,51 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   // ---- Typography (Inter + Noto Sans KR fallback) ----
   // 화면 전반 타이포 계층을 통일해서 “기본 폰트 섞임” 느낌을 제거
   TextStyle get _appBarTitleStyle => TextStyle(
-    fontFamily: uiFontFamily(context, 'Inter'),
-    fontFamilyFallback: const ['NotoSansKR'],
-    fontSize: 20,
-    fontWeight: FontWeight.w700,
-    height: isChineseUi(context) ? 1.3 : 1.2,
-    letterSpacing: -0.2,
-    color: Color(0xFF111827),
-  );
+        fontFamily: uiFontFamily(context, 'Inter'),
+        fontFamilyFallback: const ['NotoSansKR'],
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+        height: isChineseUi(context) ? 1.3 : 1.2,
+        letterSpacing: -0.2,
+        color: Color(0xFF111827),
+      );
 
   TextStyle get _sectionTitleStyle => TextStyle(
-    fontFamily: uiFontFamily(context, 'Inter'),
-    fontFamilyFallback: const ['NotoSansKR'],
-    fontSize: 16,
-    fontWeight: FontWeight.w700,
-    height: isChineseUi(context) ? 1.3 : 1.25,
-    letterSpacing: -0.1,
-    color: Color(0xFF111827),
-  );
+        fontFamily: uiFontFamily(context, 'Inter'),
+        fontFamilyFallback: const ['NotoSansKR'],
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        height: isChineseUi(context) ? 1.3 : 1.25,
+        letterSpacing: -0.1,
+        color: Color(0xFF111827),
+      );
 
   TextStyle get _helperStyle => TextStyle(
-    fontFamily: uiFontFamily(context, 'Inter'),
-    fontFamilyFallback: const ['NotoSansKR'],
-    fontSize: 12,
-    fontWeight: FontWeight.w500,
-    height: isChineseUi(context) ? 1.3 : 1.25,
-    color: Color(0xFF6B7280),
-  );
+        fontFamily: uiFontFamily(context, 'Inter'),
+        fontFamilyFallback: const ['NotoSansKR'],
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        height: isChineseUi(context) ? 1.3 : 1.25,
+        color: Color(0xFF6B7280),
+      );
 
   TextStyle get _inputTextStyle => TextStyle(
-    fontFamily: uiFontFamily(context, 'Inter'),
-    fontFamilyFallback: const ['NotoSansKR'],
-    fontSize: 14,
-    fontWeight: FontWeight.w500,
-    height: isChineseUi(context) ? 1.3 : 1.2,
-    color: Color(0xFF111827),
-  );
+        fontFamily: uiFontFamily(context, 'Inter'),
+        fontFamilyFallback: const ['NotoSansKR'],
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        height: isChineseUi(context) ? 1.3 : 1.2,
+        color: Color(0xFF111827),
+      );
 
   TextStyle get _hintTextStyle => TextStyle(
-    fontFamily: uiFontFamily(context, 'Inter'),
-    fontFamilyFallback: const ['NotoSansKR'],
-    fontSize: 14,
-    fontWeight: FontWeight.w400,
-    height: isChineseUi(context) ? 1.3 : 1.2,
-    color: Color(0xFF9CA3AF),
-  );
+        fontFamily: uiFontFamily(context, 'Inter'),
+        fontFamilyFallback: const ['NotoSansKR'],
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        height: isChineseUi(context) ? 1.3 : 1.2,
+        color: Color(0xFF9CA3AF),
+      );
 
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
@@ -122,6 +119,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   String? _selectedCategory; // 초기에는 선택 안 됨
   late List<String> _tagIds = widget.initialTagIds.take(3).toList();
   bool _tagAudienceFriendsOnly = false;
+  List<String> _audienceTagIds = const <String>[];
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
   // 카테고리는 build 메서드에서 동적으로 생성
 
@@ -297,7 +295,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           SizedBox(
                             height: pickerHeight,
                             child: CupertinoTheme(
-                              data:  CupertinoThemeData(
+                              data: CupertinoThemeData(
                                 textTheme: CupertinoTextThemeData(
                                   dateTimePickerTextStyle: TextStyle(
                                     fontFamily: uiFontFamily(context, 'Inter'),
@@ -371,8 +369,18 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   String _publicDurationLabel(BuildContext context, [int? hours]) {
     final value = hours ?? _publicDurationHours;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    if (value == null) return (isChineseUi(context) ? '不限时' : isKo ? '시간 제한 없음' : 'No time limit');
-    return (isChineseUi(context) ? '${value} ${value == 1 ? 'hour' : 'hours'}' : isKo ? '$value시간' : '$value ${value == 1 ? 'hour' : 'hours'}');
+    if (value == null) {
+      return (isChineseUi(context)
+          ? '不限时'
+          : isKo
+              ? '시간 제한 없음'
+              : 'No time limit');
+    }
+    return (isChineseUi(context)
+        ? '${value} ${value == 1 ? 'hour' : 'hours'}'
+        : isKo
+            ? '$value시간'
+            : '$value ${value == 1 ? 'hour' : 'hours'}');
   }
 
   Future<void> _showPublicDurationSheet() async {
@@ -404,7 +412,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      (isChineseUi(context) ? '聚会公开时长' : isKo ? '밋업 공개 시간' : 'Meetup public time'),
+                      (isChineseUi(context)
+                          ? '聚会公开时长'
+                          : isKo
+                              ? '밋업 공개 시간'
+                              : 'Meetup public time'),
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -415,21 +427,31 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      (isChineseUi(context) ? '所选时间结束后，未确认的聚会将消失。' : isKo
-                          ? '선택한 시간이 지나면 미확정 밋업은 목록에서 사라져요.'
-                          : 'Unconfirmed meetups disappear when the selected time ends.'),
+                      (isChineseUi(context)
+                          ? '所选时间结束后，未确认的聚会将消失。'
+                          : isKo
+                              ? '선택한 시간이 지나면 미확정 밋업은 목록에서 사라져요.'
+                              : 'Unconfirmed meetups disappear when the selected time ends.'),
                       style: _helperStyle.copyWith(height: 1.45),
                     ),
                     const SizedBox(height: 16),
                     _PublicDurationOption(
-                      label: (isChineseUi(context) ? '不限时' : isKo ? '시간 제한 없음' : 'No time limit'),
+                      label: (isChineseUi(context)
+                          ? '不限时'
+                          : isKo
+                              ? '시간 제한 없음'
+                              : 'No time limit'),
                       selected: _publicDurationHours == null,
                       icon: Icons.all_inclusive_rounded,
                       onTap: () => Navigator.pop(sheetContext, 0),
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      (isChineseUi(context) ? '公开时长' : isKo ? '공개 시간' : 'Public duration'),
+                      (isChineseUi(context)
+                          ? '公开时长'
+                          : isKo
+                              ? '공개 시간'
+                              : 'Public duration'),
                       style: TextStyle(
                         fontFamily: uiFontFamily(context, 'Inter'),
                         fontFamilyFallback: const ['NotoSansKR'],
@@ -452,7 +474,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       itemBuilder: (context, index) {
                         final hours = index + 1;
                         return _PublicDurationOption(
-                          label: (isChineseUi(context) ? '${hours}小时' : isKo ? '$hours시간' : '${hours}H'),
+                          label: (isChineseUi(context)
+                              ? '${hours}小时'
+                              : isKo
+                                  ? '$hours시간'
+                                  : '${hours}H'),
                           selected: _publicDurationHours == hours,
                           compact: true,
                           onTap: () => Navigator.pop(sheetContext, hours),
@@ -883,9 +909,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
             SizedBox.square(
               dimension: 48,
               child: IconButton(
-                tooltip: (isChineseUi(context) ? '收藏' : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '즐겨찾기'
-                    : 'Favorites'),
+                tooltip: (isChineseUi(context)
+                    ? '收藏'
+                    : Localizations.localeOf(context).languageCode == 'ko'
+                        ? '즐겨찾기'
+                        : 'Favorites'),
                 onPressed: _openMeetupFavorites,
                 icon: Icon(
                   Icons.star_border_rounded,
@@ -1002,6 +1030,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               enabled: !_isSubmitting,
                               onChanged: (ids) => setState(() {
                                 _tagIds = ids;
+                                _audienceTagIds = _audienceTagIds
+                                    .where(ids.contains)
+                                    .toList();
                                 if (ids.isEmpty && _visibility == 'tag') {
                                   _visibility = 'public';
                                 }
@@ -1092,7 +1123,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                       AppLocalizations.of(context)!
                                           .optionalField,
                                       style: TextStyle(
-                                        fontFamily: uiFontFamily(context, 'Inter'),
+                                        fontFamily:
+                                            uiFontFamily(context, 'Inter'),
                                         fontFamilyFallback: const [
                                           'NotoSansKR'
                                         ],
@@ -1101,7 +1133,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                             .clamp(11, 13)
                                             .toDouble(),
                                         fontWeight: FontWeight.w500,
-                                        height: isChineseUi(context) ? 1.3 : 1.2,
+                                        height:
+                                            isChineseUi(context) ? 1.3 : 1.2,
                                         color: Color(0xFF9CA3AF),
                                       ),
                                     ),
@@ -1168,7 +1201,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          fontFamily: uiFontFamily(context, 'Inter'),
+                                          fontFamily:
+                                              uiFontFamily(context, 'Inter'),
                                           fontFamilyFallback: const [
                                             'NotoSansKR'
                                           ],
@@ -1250,14 +1284,26 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                     child: MotionPress(
                                                       pressedScale: .92,
                                                       child: GestureDetector(
-                                                        onTap: () => _removeMeetupImageAt(0),
+                                                        onTap: () =>
+                                                            _removeMeetupImageAt(
+                                                                0),
                                                         child: Container(
-                                                          padding: const EdgeInsets.all(6),
-                                                          decoration: const BoxDecoration(
-                                                            color: Color(0xCC111827),
-                                                            shape: BoxShape.circle,
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .all(6),
+                                                          decoration:
+                                                              const BoxDecoration(
+                                                            color: Color(
+                                                                0xCC111827),
+                                                            shape:
+                                                                BoxShape.circle,
                                                           ),
-                                                          child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                                                          child: const Icon(
+                                                              Icons
+                                                                  .close_rounded,
+                                                              color:
+                                                                  Colors.white,
+                                                              size: 18),
                                                         ),
                                                       ),
                                                     ),
@@ -1283,9 +1329,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                         ),
                                                         child: Text(
                                                           '$total/$_maxMeetupImages',
-                                                          style:
-                                                               TextStyle(
-                                                            fontFamily: uiFontFamily(context, 'Inter'),
+                                                          style: TextStyle(
+                                                            fontFamily:
+                                                                uiFontFamily(
+                                                                    context,
+                                                                    'Inter'),
                                                             fontFamilyFallback: const [
                                                               'NotoSansKR'
                                                             ],
@@ -1500,12 +1548,14 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                             });
                                             AppSnackBar.show(
                                               context,
-                                              message: (isChineseUi(context) ? '验证汉阳大学邮箱后，即可使用校内可见范围。' : Localizations.localeOf(
-                                                              context)
-                                                          .languageCode ==
-                                                      'ko'
-                                                  ? '한양메일 인증 후 한양대 공개 범위를 사용할 수 있어요.'
-                                                  : 'Verify your Hanyang email to use Hanyang-only visibility.'),
+                                              message: (isChineseUi(context)
+                                                  ? '验证汉阳大学邮箱后，即可使用校内可见范围。'
+                                                  : Localizations.localeOf(
+                                                                  context)
+                                                              .languageCode ==
+                                                          'ko'
+                                                      ? '한양메일 인증 후 한양대 공개 범위를 사용할 수 있어요.'
+                                                      : 'Verify your Hanyang email to use Hanyang-only visibility.'),
                                               type: AppSnackBarType.warning,
                                             );
                                             return;
@@ -1545,6 +1595,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                               tagIds: _tagIds,
                                               audienceFriendsOnly:
                                                   _tagAudienceFriendsOnly,
+                                              audienceTagIds:
+                                                  _visibility == 'tag'
+                                                      ? _audienceChoice
+                                                          .audienceTagIds
+                                                      : const [],
                                             );
 
                                             if (success) {
@@ -1681,8 +1736,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     return MotionProcessingButton(
       busy: isLoading,
       onPressed: onPressed,
-      pressedScale:
-          isPrimary ? .975 : MotionProcessingButton.cautiousScale,
+      pressedScale: isPrimary ? .975 : MotionProcessingButton.cautiousScale,
       foreground: textColor,
       spinner: const SizedBox(
         width: 18,
@@ -1884,9 +1938,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: (isChineseUi(context) ? '最多可添加${_maxMeetupImages}张图片' : isKo
-            ? '이미지는 최대 $_maxMeetupImages장까지 첨부할 수 있어요'
-            : 'You can attach up to $_maxMeetupImages images'),
+        message: (isChineseUi(context)
+            ? '最多可添加${_maxMeetupImages}张图片'
+            : isKo
+                ? '이미지는 최대 $_maxMeetupImages장까지 첨부할 수 있어요'
+                : 'You can attach up to $_maxMeetupImages images'),
         type: AppSnackBarType.warning,
       );
       return;
@@ -1902,9 +1958,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       AppSnackBar.show(
         context,
-        message: (isChineseUi(context) ? '仅添加了前${_maxMeetupImages}张图片' : isKo
-            ? '이미지는 최대 $_maxMeetupImages장까지만 추가했어요'
-            : 'Only the first $_maxMeetupImages images were added'),
+        message: (isChineseUi(context)
+            ? '仅添加了前${_maxMeetupImages}张图片'
+            : isKo
+                ? '이미지는 최대 $_maxMeetupImages장까지만 추가했어요'
+                : 'Only the first $_maxMeetupImages images were added'),
         type: AppSnackBarType.info,
       );
     }
@@ -1941,66 +1999,80 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     );
   }
 
+  AudienceChoice get _audienceChoice => AudienceChoice(
+        kind: _requiresHanyangVerification
+            ? AudienceKind.hanyang
+            : switch (_visibility) {
+                'friends' => AudienceKind.friends,
+                'category' => AudienceKind.group,
+                'tag' => AudienceKind.tag,
+                _ => AudienceKind.public,
+              },
+        groupIds: _selectedCategoryIds,
+        audienceTagIds: _audienceTagIds.isEmpty ? _tagIds : _audienceTagIds,
+        friendsOnly: _tagAudienceFriendsOnly,
+      );
+
+  Future<void> _openAudienceSheet() async {
+    final auth = context.read<AuthProvider>();
+    final friendCount = (auth.userData?['friendsCount'] as num?)?.toInt() ?? 0;
+    final choice = await showAudienceSheet(
+      context,
+      initial: _audienceChoice,
+      tagIds: _tagIds,
+      friendCount: friendCount,
+      allowHanyang: auth.isHanyangEmailVerified,
+      pickGroups: (current) => Navigator.of(context).push<List<String>>(
+        MaterialPageRoute(
+          builder: (_) => MeetupVisibilityGroupSelectScreen(
+            categories: _friendCategories,
+            initialSelectedCategoryIds: current,
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    setState(() {
+      _visibility = choice.visibility;
+      _requiresHanyangVerification = choice.requiresHanyang;
+      _selectedCategoryIds =
+          choice.kind == AudienceKind.group ? [...choice.groupIds] : <String>[];
+      _audienceTagIds = choice.audienceTagIds;
+      _tagAudienceFriendsOnly =
+          choice.kind == AudienceKind.tag && choice.friendsOnly;
+    });
+  }
+
+  /// 공개 범위 한 줄: '공개 범위 · 값 ›' → '누가 볼 수 있나요?' 시트.
   Widget _buildMeetupVisibilitySection() {
     final l10n = AppLocalizations.of(context)!;
-    final isHanyangVerified =
-        context.watch<AuthProvider>().isHanyangEmailVerified;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          l10n.visibilityScope,
-          style: _responsiveSectionTitle(context),
+    return InkWell(
+      key: const ValueKey('create_meetup_audience'),
+      onTap: _isSubmitting ? null : _openAudienceSheet,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 52),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFEAECF0))),
         ),
-        SizedBox(height: context.rs(6).clamp(4, 8).toDouble()),
-        _VisibilitySegmentedControl(
-          selected: _requiresHanyangVerification ? 'hanyang' : _visibility,
-          groupSelectedCount: _selectedCategoryIds.length,
-          showHanyang: isHanyangVerified,
-          onSelectPublic: () {
-            setState(() {
-              _visibility = 'public';
-              _requiresHanyangVerification = false;
-              _selectedCategoryIds.clear();
-            });
-          },
-          onSelectFriends: () {
-            setState(() {
-              _visibility = 'friends';
-              _requiresHanyangVerification = false;
-              _selectedCategoryIds.clear();
-            });
-          },
-          onSelectGroup: _openMeetupGroupSelection,
-          onSelectHanyang: () {
-            setState(() {
-              _visibility = 'public';
-              _requiresHanyangVerification = true;
-              _selectedCategoryIds.clear();
-            });
-          },
+        child: Row(
+          children: [
+            Text(l10n.visibilityScope, style: _responsiveSectionTitle(context)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: AudiencePill(
+                  choice: _audienceChoice,
+                  enabled: !_isSubmitting,
+                  onTap: _openAudienceSheet,
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF98A2B3)),
+          ],
         ),
-        if (FeatureFlagService.tagAudienceEnabled)
-          TagAudienceOptionTile(
-            tagIds: _tagIds,
-            selected: _visibility == 'tag',
-            onTap: () async {
-              final choice = await showTagAudienceSheet(
-                context,
-                tagIds: _tagIds,
-                friendsOnly: _tagAudienceFriendsOnly,
-              );
-              if (choice == null || !mounted) return;
-              setState(() {
-                _visibility = 'tag';
-                _tagAudienceFriendsOnly = choice.friendsOnly;
-                _requiresHanyangVerification = false;
-                _selectedCategoryIds.clear();
-              });
-            },
-          ),
-      ],
+      ),
     );
   }
 
@@ -2010,20 +2082,30 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          (isChineseUi(context) ? '公开时长' : isKo ? '공개 시간' : 'Public time'),
+          (isChineseUi(context)
+              ? '公开时长'
+              : isKo
+                  ? '공개 시간'
+                  : 'Public time'),
           style: _responsiveSectionTitle(context),
         ),
         const SizedBox(height: 3),
         Text(
-          (isChineseUi(context) ? '未确认聚会的可见时长。' : isKo
-              ? '미확정 밋업이 목록에 표시되는 시간이에요.'
-              : 'How long an unconfirmed meetup stays visible.'),
+          (isChineseUi(context)
+              ? '未确认聚会的可见时长。'
+              : isKo
+                  ? '미확정 밋업이 목록에 표시되는 시간이에요.'
+                  : 'How long an unconfirmed meetup stays visible.'),
           style: _helperStyle,
         ),
         const SizedBox(height: 5),
         Semantics(
           button: true,
-          label: (isChineseUi(context) ? '选择聚会公开时长' : isKo ? '밋업 공개 시간 선택' : 'Select meetup public time'),
+          label: (isChineseUi(context)
+              ? '选择聚会公开时长'
+              : isKo
+                  ? '밋업 공개 시간 선택'
+                  : 'Select meetup public time'),
           value: _publicDurationLabel(context),
           child: InkWell(
             onTap: _showPublicDurationSheet,
@@ -2178,7 +2260,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           firstDay: DateTime.utc(2020, 1, 1),
                           lastDay: DateTime.utc(2035, 12, 31),
                           focusedDay: _focusedDay,
-                          locale: lang == 'zh' ? 'zh_CN' : lang == 'ko' ? 'ko_KR' : 'en_US',
+                          locale: lang == 'zh'
+                              ? 'zh_CN'
+                              : lang == 'ko'
+                                  ? 'ko_KR'
+                                  : 'en_US',
                           calendarFormat: CalendarFormat.month,
                           startingDayOfWeek: StartingDayOfWeek.sunday,
                           availableGestures: AvailableGestures.horizontalSwipe,
@@ -2293,26 +2379,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         ),
       ],
     );
-  }
-
-  Future<void> _openMeetupGroupSelection() async {
-    final result = await Navigator.of(context).push<List<String>>(
-      MaterialPageRoute(
-        builder: (_) => MeetupVisibilityGroupSelectScreen(
-          categories: _friendCategories,
-          initialSelectedCategoryIds: _selectedCategoryIds,
-        ),
-      ),
-    );
-
-    if (!mounted) return;
-    if (result == null) return;
-
-    setState(() {
-      _visibility = 'category';
-      _requiresHanyangVerification = false;
-      _selectedCategoryIds = result;
-    });
   }
 
   Widget _buildTimeField() {
@@ -2485,154 +2551,6 @@ class _PublicDurationOption extends StatelessWidget {
   }
 }
 
-class _VisibilitySegmentedControl extends StatelessWidget {
-  final String selected; // 'public' | 'friends' | 'category'
-  final int groupSelectedCount;
-  final VoidCallback onSelectPublic;
-  final VoidCallback onSelectFriends;
-  final VoidCallback onSelectGroup;
-  final VoidCallback onSelectHanyang;
-  final bool showHanyang;
-
-  const _VisibilitySegmentedControl({
-    required this.selected,
-    required this.groupSelectedCount,
-    required this.onSelectPublic,
-    required this.onSelectFriends,
-    required this.onSelectGroup,
-    required this.onSelectHanyang,
-    required this.showHanyang,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-
-    Widget item({
-      required Widget child,
-      required bool isSelected,
-      required VoidCallback onTap,
-    }) {
-      return Expanded(
-        child: MotionSelectable(
-          selected: isSelected,
-          pressedScale: MotionSelectable.segmentScale,
-          child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            child: AnimatedContainer(
-              duration: MotionTokens.of(context, MotionTokens.state),
-              curve: MotionTokens.curve,
-              constraints: const BoxConstraints(minHeight: 44),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: isSelected
-                        ? const Color(0xFF344054)
-                        : Colors.transparent,
-                    width: 2,
-                  ),
-                ),
-              ),
-              child: AnimatedDefaultTextStyle(
-                duration: MotionTokens.of(context, MotionTokens.state),
-                curve: MotionTokens.curve,
-                style: TextStyle(
-                  fontFamily: uiFontFamily(context, 'Inter'),
-                  fontFamilyFallback: const ['NotoSansKR'],
-                  fontSize: context.rf(14).clamp(12, 15).toDouble(),
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                  color: isSelected
-                      ? const Color(0xFF111827)
-                      : const Color(0xFF667085),
-                  height: isChineseUi(context) ? 1.3 : 1.2,
-                ),
-                child: MediaQuery.withClampedTextScaling(
-                  maxScaleFactor: 1.15,
-                  child: child,
-                ),
-              ),
-            ),
-          ),
-        ),
-        ),
-      );
-    }
-
-    final isPublic = selected == 'public';
-    final isFriends = selected == 'friends';
-    final isGroup = selected == 'category';
-    final isHanyang = selected == 'hanyang';
-
-    return Container(
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFEAECF0)),
-        ),
-      ),
-      child: Row(
-        children: [
-          item(
-            isSelected: isPublic,
-            onTap: onSelectPublic,
-            child: Text(
-              l10n.all,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          item(
-            isSelected: isFriends,
-            onTap: onSelectFriends,
-            child: Text(
-              l10n.meetupVisibilityFriendsAll,
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (showHanyang)
-            item(
-              isSelected: isHanyang,
-              onTap: onSelectHanyang,
-              child: Text(
-                (isChineseUi(context) ? '汉阳' : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '한양대'
-                    : 'Hanyang'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          item(
-            isSelected: isGroup,
-            onTap: onSelectGroup,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    l10n.groups,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (groupSelectedCount > 0) ...[
-                  const SizedBox(width: 3),
-                  Text('($groupSelectedCount)'),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _CreateMeetupCalendarDayCell extends StatelessWidget {
   final DateTime day;
   final bool isSelected;
@@ -2747,7 +2665,8 @@ class _MiniImageThumb extends StatelessWidget {
                     color: Color(0xCC111827),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.close_rounded, color: Colors.white, size: 14),
+                  child: const Icon(Icons.close_rounded,
+                      color: Colors.white, size: 14),
                 ),
               ),
             ),

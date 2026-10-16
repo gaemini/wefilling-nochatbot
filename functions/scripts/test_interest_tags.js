@@ -77,15 +77,16 @@ assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a']}, {tagIds: ['a'], isH
 assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a', 'b']}, {tagIds: ['b', 'c']})), {a: -1, c: 1});
 assert.deepEqual(asObj(contentTagCountDelta({tagIds: ['a'], likes: 1}, {tagIds: ['a'], likes: 2})), {});
 
-// 뜨는 태그: 7일 증가 순, 예전 기록이 없으면 7일 안에 생긴 태그만.
+// 뜨는 태그: 7일 증가 순, 7일 전 기록이 없으면 비움.
 const nowMs = Date.UTC(2026, 9, 16);
 const current = new Map([
   ['a', {count: 10, createdAtMillis: 0}],
   ['b', {count: 5, createdAtMillis: nowMs - 86400000}],
   ['c', {count: 3, createdAtMillis: 0}],
 ]);
-assert.deepEqual(pickTrendingTags(current, {a: 9, b: 0, c: 3}, nowMs), [{id: 'b', delta: 5}, {id: 'a', delta: 1}]);
-assert.deepEqual(pickTrendingTags(current, null, nowMs), [{id: 'b', delta: 5}]);
+assert.deepEqual(pickTrendingTags(current, {a: 9, b: 0, c: 3}), [{id: 'b', delta: 5}, {id: 'a', delta: 1}]);
+assert.deepEqual(pickTrendingTags(current, null), []);
+void nowMs;
 
 // 알림 문구(ko/en/zh).
 assert.equal(tagNotificationCopy('ko', 'post', '러닝', 3).message, '#러닝에 새 글 3개');

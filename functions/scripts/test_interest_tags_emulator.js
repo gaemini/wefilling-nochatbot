@@ -108,6 +108,9 @@ async function main() {
   assert.deepEqual(arrayField(running, 'aliases').sort(), ['러닝', '跑步'].sort());
   assert.equal(intField(await readAdmin('tags/cafe'), 'holderCount'), 1);
   assert.equal(intField(await readAdmin('tags/ai'), 'holderCount'), 0);
+  // 태그를 단 사람 목록(holders)도 채운다.
+  assert.equal((await readAdmin('tags/running/holders/alice')).fields.uid.stringValue, 'alice');
+  assert.equal((await readAdmin('tags/running/holders/bob')).fields.uid.stringValue, 'bob');
   console.log('migration ok');
 
   // 2) 규칙: 태그 읽기(활성만), 쓰기 거부, interestTagIds 직접 수정 거부.
@@ -161,6 +164,19 @@ async function main() {
   assert.deepEqual(holders.users.map((u) => u.uid), []);
   const holdersCarol = await call('listTagHolders', 'carol', {tagId: 'running'});
   assert.deepEqual(holdersCarol.users.map((u) => u.uid).sort(), ['alice', 'bob']);
+  // 사람 줄에 그 사람의 태그가 온다.
+  assert.ok(holdersCarol.users.find((u) => u.uid === 'alice').tags.includes('running'));
+  // 최근에 단 사람 먼저: bob이 방금 다시 저장(태그 교체)했으므로… 순서는 addedAt 기준.
+  const page1 = await call('listTagHolders', 'carol', {tagId: 'running', limit: 1});
+  assert.equal(page1.users.length, 1);
+  assert.match(page1.cursor, /^\d+_[A-Za-z0-9_-]+$/);
+  const page2 = await call('listTagHolders', 'carol', {tagId: 'running', limit: 1, cursor: page1.cursor});
+  assert.notEqual(page2.users[0].uid, page1.users[0].uid);
+  assert.equal((await call('listTagHolders', 'carol', {tagId: 'running', cursor: '../x'})).error, 'cursor-invalid');
+  // 태그를 빼면 holders에서도 빠진다.
+  await call('setProfileTags', 'alice', {tagIds: ['kpop', 'movie']});
+  assert.equal((await readAdmin('tags/running/holders/alice')).error?.code, 404);
+  await call('setProfileTags', 'alice', {tagIds: ['kpop', 'running', 'movie']});
 
   await seed('friendships/alice_carol', {uids: ['alice', 'carol']});
   const summary = await call('getTagSummary', 'carol', {tagId: 'running'});
@@ -182,7 +198,20 @@ async function main() {
   assert.deepEqual(suggestions.friends.map((t) => t.id).sort(), ['kpop', 'movie', 'running']);
   assert.equal(suggestions.friends[0].friendCount, 1);
   assert.ok(suggestions.popular.length > 0);
-  assert.ok(suggestions.popular.every((t) => t.id !== undefined && t.holderCount >= 0));
+  assert.ok(suggestions.popular.every((t) => t.id !== undefined && t.holderCount >= 0 && typeof t.delta === 'number'));
+
+  // 둘러보기: 추천(내 태그와 함께), 친구(이름), 새 태그.
+  const recommended = await call('exploreTags', 'carol', {filter: 'recommended'});
+  assert.ok(Array.isArray(recommended.items));
+  const friendsExplore = await call('exploreTags', 'carol', {filter: 'friends'});
+  const kpopRow = friendsExplore.items.find((t) => t.id === 'kpop');
+  assert.equal(kpopRow.reason.type, 'friends');
+  assert.equal(kpopRow.reason.friendCount, 1);
+  assert.deepEqual(kpopRow.reason.friendNames, ['tester']);
+  const newest = await call('exploreTags', 'carol', {filter: 'newest'});
+  assert.ok(newest.items.some((t) => t.id === 'kpop' && t.reason.type === 'new'));
+  const trendingEmpty = await call('exploreTags', 'carol', {filter: 'trending'});
+  assert.deepEqual(trendingEmpty.items, []);
 
   // 글 태그 개수: posts 쓰기 트리거가 tags/{id}.postCount를 맞춘다.
   const waitFor = async (check) => {
@@ -260,6 +289,9 @@ async function main() {
   await rejects({visibility: 'tag', tagIds: ['kpop']}, 'tag-audience-disabled');
   process.env.TAG_AUDIENCE_ENABLED = 'true';
   assert.equal(await resolveTagAudience('alice', {visibility: 'public'}, ['kpop']), null);
+  const subset = await resolveTagAudience('alice', {visibility: 'tag', audienceTagIds: ['#KPOP']}, ['kpop', 'running']);
+  assert.deepEqual(subset.audienceTagIds, ['kpop']);
+  await rejects({visibility: 'tag', tagIds: ['kpop'], audienceTagIds: ['running']}, 'tag-audience-invalid');
 
   // 도달 인원 추정.
   const kpopHolders = intField(await readAdmin('tags/kpop'), 'holderCount');

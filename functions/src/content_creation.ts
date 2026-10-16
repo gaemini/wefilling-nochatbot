@@ -543,15 +543,11 @@ export const createPostSecure = callables().runWith({timeoutSeconds: 120, memory
       data.visibility,
       data.visibleToCategoryIds,
     );
-    // 현재 포스트 UI는 public/group(+태그)만 제공한다. 친구 공개는 '#태그 · 친구 중에서만'뿐.
-    if (frozen.visibilityMode === 'friends' && !tagAudience) {
-      throw new functions.https.HttpsError('invalid-argument', 'Unsupported post visibility.');
-    }
     const isAnonymous = data.isAnonymous === true;
-    if (frozen.visibilityMode === 'category' && isAnonymous) {
+    if (frozen.visibilityMode !== 'public' && isAnonymous) {
       throw new functions.https.HttpsError(
         'invalid-argument',
-        'Group posts cannot be anonymous.',
+        'Only public posts can be anonymous.',
       );
     }
     const requiresHanyangVerification =

@@ -14,20 +14,21 @@ import '../models/friend_category.dart';
 import '../models/external_share_request.dart';
 import '../models/post_category.dart';
 import '../models/shared_link_preview.dart';
+import '../models/user_profile.dart';
 import '../providers/auth_provider.dart' as app_auth;
+import '../repositories/users_repository.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../services/friend_category_service.dart';
 import '../services/post_service.dart';
 import '../services/shared_link_preview_service.dart';
 import '../ui/widgets/fullscreen_file_image_viewer.dart';
+import '../ui/widgets/group_audience_preview.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/post_category_selector.dart';
 import '../ui/widgets/content_tag_editor.dart';
-import '../ui/sheets/audience_sheet.dart';
-import '../ui/widgets/tag_chips.dart';
-import '../ui/widgets/user_avatar.dart';
-import 'meetup_visibility_group_select_screen.dart';
+import '../ui/sheets/tag_audience_sheet.dart';
+import '../services/feature_flag_service.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../ui/widgets/chat_video_tile.dart';
 import '../ui/widgets/video_preparing_dialog.dart';
@@ -76,32 +77,39 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final _contentController = TextEditingController();
   final _contentFocusNode = FocusNode();
   final _composeScrollController = ScrollController();
+  final _visibilityScrollController = ScrollController();
   final List<File> _selectedImages = [];
   final List<AssetEntity> _selectedAssets = [];
   final List<File> _standaloneImages = [];
   final ImagePicker _imagePicker = ImagePicker();
   final PostService _postService = PostService();
   final _friendCategoryService = FriendCategoryService();
+  final _usersRepository = UsersRepository();
 
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
   List<FriendCategory> _friendCategories = [];
+  List<UserProfile> _selectedAudienceUsers = [];
+  bool _isLoadingAudienceUsers = false;
+  int _audienceLoadSeq = 0;
 
   bool _isSubmitting = false;
+  bool _isForwardTransition = true;
   bool _canProceed = false;
   bool _isResolvingSelectedImages = false;
   // 첨부 영상(최대 1개). 압축본은 video_compress 캐시에 있다가 제출 뒤 정리된다.
   PreparedVideo? _selectedVideo;
   // 제출 중 영상 업로드 진행률(0~1). 영상이 없으면 null.
   double? _videoUploadProgress;
+  int _stepIndex = 0;
 
   String _visibility = 'public';
   bool _requiresHanyangVerification = false;
   bool _isAnonymous = false;
   List<String> _selectedCategoryIds = [];
+  bool _showCategoryRequiredHint = false;
   final Set<PostCategory> _selectedPostTags = <PostCategory>{};
   late List<String> _tagIds = widget.initialTagIds.take(3).toList();
   bool _tagAudienceFriendsOnly = false;
-  List<String> _audienceTagIds = const <String>[];
   bool _showPostTagRequiredHint = false;
   SharedLinkPreview? _sharedLinkPreview;
   bool _sharedLinkRemoved = false;
@@ -292,11 +300,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final length = await cached.length();
       return length > 0 && length <= 20 * 1024 * 1024 ? cached : null;
     } catch (error) {
-      if (Logger.isVerboseEnabled) {
-        Logger.warning(
-          '[InstagramPreview][local-preview] unavailable=${error.runtimeType}',
-        );
-      }
+      if (Logger.isVerboseEnabled) Logger.warning(
+        '[InstagramPreview][local-preview] unavailable=${error.runtimeType}',
+      );
       return null;
     }
   }
@@ -328,6 +334,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _contentController.dispose();
     _contentFocusNode.dispose();
     _composeScrollController.dispose();
+    _visibilityScrollController.dispose();
     _categoriesSubscription?.cancel();
     _friendCategoryService.dispose();
     super.dispose();
@@ -341,6 +348,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       setState(() {
         _friendCategories = categories;
       });
+      if (_selectedCategoryIds.isNotEmpty) {
+        _refreshSelectedAudienceUsers();
+      }
     });
   }
 
@@ -361,6 +371,54 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (!mounted) return;
     setState(() {
       _canProceed = canProceed;
+    });
+  }
+
+  Set<String> _selectedAudienceIds() {
+    final selectedSet = _selectedCategoryIds.toSet();
+    final ids = <String>{};
+    for (final category in _friendCategories) {
+      if (!selectedSet.contains(category.id)) continue;
+      ids.addAll(category.friendIds);
+    }
+    return ids;
+  }
+
+  List<UserProfile> _membersForCategory(FriendCategory category) {
+    final memberIds = category.friendIds.toSet();
+    return _selectedAudienceUsers
+        .where((user) => memberIds.contains(user.uid))
+        .toList(growable: false);
+  }
+
+  Future<void> _refreshSelectedAudienceUsers() async {
+    final currentSeq = ++_audienceLoadSeq;
+    final audienceIds = _selectedAudienceIds().toList();
+
+    if (audienceIds.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _selectedAudienceUsers = [];
+        _isLoadingAudienceUsers = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isLoadingAudienceUsers = true;
+    });
+
+    final profiles = await _usersRepository.getUserProfilesBatch(audienceIds);
+    profiles.sort(
+      (left, right) =>
+          left.displayNameOrNickname.compareTo(right.displayNameOrNickname),
+    );
+
+    if (!mounted || currentSeq != _audienceLoadSeq) return;
+    setState(() {
+      _selectedAudienceUsers = profiles;
+      _isLoadingAudienceUsers = false;
     });
   }
 
@@ -665,8 +723,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       File? source;
       try {
         // iCloud에만 있는 영상은 여기서 내려받는다(네트워크가 없으면 null).
-        source =
-            await videoAssets.first.originFile ?? await videoAssets.first.file;
+        source = await videoAssets.first.originFile ?? await videoAssets.first.file;
       } catch (error) {
         Logger.warning('갤러리 영상 파일 읽기 실패: $error');
         source = null;
@@ -690,15 +747,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   static const Set<String> _videoExtensions = {
-    'mp4',
-    'mov',
-    'm4v',
-    '3gp',
-    'mkv',
-    'webm',
-    'avi',
-    'mpeg',
-    'mpg',
+    'mp4', 'mov', 'm4v', '3gp', 'mkv', 'webm', 'avi', 'mpeg', 'mpg',
   };
 
   bool _looksLikeVideo(XFile file) {
@@ -727,8 +776,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       Logger.error('포스트 영상 준비 실패', error, stackTrace);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(videoPrepareErrorMessage(context, error, limits))),
+        SnackBar(content: Text(videoPrepareErrorMessage(context, error, limits))),
       );
     }
   }
@@ -875,17 +923,35 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _checkCanProceed();
   }
 
+  Future<void> _goToStep(int index) async {
+    _dismissKeyboard();
+    if (!mounted) return;
+    setState(() {
+      _isForwardTransition = index > _stepIndex;
+      _stepIndex = index;
+    });
+  }
+
+  Future<void> _goToVisibilityStep() async {
+    final l10n = AppLocalizations.of(context)!;
+
+    if (!_canProceed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.postDraftIncompleteMessage)),
+      );
+      return;
+    }
+
+    await _goToStep(1);
+  }
+
   Future<bool> _confirmSubmitPost() async {
     if (!mounted) return false;
 
     HapticFeedback.mediumImpact();
     final l10n = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final bodyText = (isChineseUi(context)
-        ? '发布此动态？'
-        : isKo
-            ? '포스트를 등록할까요?'
-            : 'Do you want to post this?');
+    final bodyText = (isChineseUi(context) ? '发布此动态？' : isKo ? '포스트를 등록할까요?' : 'Do you want to post this?');
 
     final result = await showDialog<bool>(
       context: context,
@@ -1005,47 +1071,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        title: Text((isChineseUi(context)
-            ? '离开编辑页面？'
-            : isKo
-                ? '작성을 종료할까요?'
-                : 'Leave this post?')),
+        title: Text((isChineseUi(context) ? '离开编辑页面？' : isKo ? '작성을 종료할까요?' : 'Leave this post?')),
         content: Text(
-          (isChineseUi(context)
-              ? '保留草稿以便下次继续，或放弃此次分享。'
-              : isKo
-                  ? '공유한 내용과 현재 입력을 다음 앱 실행에서 이어서 작성하거나, 공유 요청을 완전히 폐기할 수 있어요.'
-                  : 'Keep this draft for the next app launch or discard the shared request.'),
+          (isChineseUi(context) ? '保留草稿以便下次继续，或放弃此次分享。' : isKo
+              ? '공유한 내용과 현재 입력을 다음 앱 실행에서 이어서 작성하거나, 공유 요청을 완전히 폐기할 수 있어요.'
+              : 'Keep this draft for the next app launch or discard the shared request.'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text((isChineseUi(context)
-                ? '继续编辑'
-                : isKo
-                    ? '계속 작성'
-                    : 'Keep writing')),
+            child: Text((isChineseUi(context) ? '继续编辑' : isKo ? '계속 작성' : 'Keep writing')),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext)
                 .pop(ExternalShareComposeOutcome.discarded),
             child: Text(
-              (isChineseUi(context)
-                  ? '放弃修改'
-                  : isKo
-                      ? '공유 요청 폐기'
-                      : 'Discard'),
+              (isChineseUi(context) ? '放弃修改' : isKo ? '공유 요청 폐기' : 'Discard'),
               style: const TextStyle(color: Colors.red),
             ),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext)
                 .pop(ExternalShareComposeOutcome.saved),
-            child: Text((isChineseUi(context)
-                ? '保留草稿'
-                : isKo
-                    ? '초안 유지'
-                    : 'Keep draft')),
+            child: Text((isChineseUi(context) ? '保留草稿' : isKo ? '초안 유지' : 'Keep draft')),
           ),
         ],
       ),
@@ -1061,11 +1109,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              (isChineseUi(context)
-                  ? '草稿保存失败，请重试。'
-                  : isKo
-                      ? '초안을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
-                      : 'Could not save the draft. Please try again.'),
+              (isChineseUi(context) ? '草稿保存失败，请重试。' : isKo
+                  ? '초안을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'
+                  : 'Could not save the draft. Please try again.'),
             ),
           ),
         );
@@ -1108,15 +1154,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context)
-                ? '请至少选择一个标签。'
-                : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '태그를 한 개 이상 선택해 주세요.'
-                    : 'Choose at least one tag.'),
+            (isChineseUi(context) ? '请至少选择一个标签。' : Localizations.localeOf(context).languageCode == 'ko'
+                ? '태그를 한 개 이상 선택해 주세요.'
+                : 'Choose at least one tag.'),
           ),
         ),
       );
-      _dismissKeyboard();
+      await _goToStep(0);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_composeScrollController.hasClients) return;
         _composeScrollController.animateTo(
@@ -1129,10 +1173,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
 
     if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
+      setState(() {
+        _showCategoryRequiredHint = true;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.groupSelectAtLeastOne)),
       );
-      await _openAudienceSheet();
+      await _visibilityScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
       return;
     }
 
@@ -1147,11 +1198,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            (isChineseUi(context)
-                ? '验证汉阳大学邮箱后，即可使用校内可见范围。'
-                : Localizations.localeOf(context).languageCode == 'ko'
-                    ? '한양메일 인증 후 한양대학생 전용으로 게시할 수 있어요.'
-                    : 'Verify your Hanyang email to use Hanyang-only visibility.'),
+            (isChineseUi(context) ? '验证汉阳大学邮箱后，即可使用校内可见范围。' : Localizations.localeOf(context).languageCode == 'ko'
+                ? '한양메일 인증 후 한양대학생 전용으로 게시할 수 있어요.'
+                : 'Verify your Hanyang email to use Hanyang-only visibility.'),
           ),
         ),
       );
@@ -1221,9 +1270,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         pollOptions: const [],
         tagIds: _tagIds,
         audienceFriendsOnly: _tagAudienceFriendsOnly,
-        audienceTagIds: _visibility == 'tag'
-            ? (_audienceTagIds.isEmpty ? _tagIds : _audienceTagIds)
-            : const [],
         linkPreview: _sharedLinkRemoved ? null : _sharedLinkPreview,
         linkPreviewImageFile: sharedPreviewImage,
         linkPreviewImageSource:
@@ -1235,11 +1281,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                (isChineseUi(context)
-                    ? 'Instagram预览保存失败，链接仍会发布。'
-                    : isKo
-                        ? 'Instagram 미리보기를 저장하지 못했어요. 링크만 포함해서 게시합니다.'
-                        : 'The Instagram preview could not be saved. The link will still be posted.'),
+                (isChineseUi(context) ? 'Instagram预览保存失败，链接仍会发布。' : isKo
+                    ? 'Instagram 미리보기를 저장하지 못했어요. 링크만 포함해서 게시합니다.'
+                    : 'The Instagram preview could not be saved. The link will still be posted.'),
               ),
             ),
           );
@@ -1307,41 +1351,102 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       ),
       flexibleSpace: _buildCenteredComposerTitle(l10n.writeStory),
       actions: [
-        // 공개 범위는 본문 위 알약에서 고르고, 여기서 바로 올린다.
-        TextButton(
-          key: const ValueKey('create_post_submit'),
-          onPressed: (_canProceed && !_isSubmitting) ? _submitPost : null,
-          style: TextButton.styleFrom(
-            foregroundColor: TagColors.blue,
-            disabledForegroundColor: const Color(0xFFD1D5DB),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+        SizedBox.square(
+          dimension: 48,
+          child: IconButton(
+            onPressed:
+                (_canProceed && !_isSubmitting) ? _goToVisibilityStep : null,
+            icon: Icon(
+              Icons.arrow_forward_rounded,
+              size: context.ri(23).clamp(21, 25).toDouble(),
+            ),
+            color: const Color(0xFF111827),
+            disabledColor: const Color(0xFFD1D5DB),
+            tooltip: MaterialLocalizations.of(context).nextPageTooltip,
           ),
-          child: _isSubmitting
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    // 영상 업로드는 오래 걸리므로 진행률을 보여 준다.
-                    if (_videoUploadProgress case final progress?) ...[
-                      const SizedBox(width: 6),
-                      Text('${(progress * 100).clamp(0, 100).round()}%'),
-                    ],
-                  ],
-                )
-              : Text(
-                  l10n.postUploadAction,
-                  style: TextStyle(
-                    fontFamily: uiFontFamily(context, 'Inter'),
-                    fontFamilyFallback: const ['NotoSansKR'],
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 2),
+      ],
+    );
+  }
+
+  PreferredSizeWidget _buildVisibilityAppBar() {
+    final l10n = AppLocalizations.of(context)!;
+    final useCompactShareAction = MediaQuery.sizeOf(context).width < 340 ||
+        MediaQuery.textScalerOf(context).scale(14) > 24;
+
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      surfaceTintColor: Colors.white,
+      toolbarHeight: _composerToolbarHeight,
+      automaticallyImplyLeading: false,
+      leadingWidth: 48,
+      leading: IconButton(
+        icon: Icon(
+          Icons.arrow_back_rounded,
+          color: const Color(0xFF111827),
+          size: context.ri(22).clamp(21, 24).toDouble(),
+        ),
+        onPressed: _isSubmitting ? null : () => _goToStep(0),
+        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+      ),
+      flexibleSpace: _buildCenteredComposerTitle(l10n.writeStory),
+      actions: [
+        if (useCompactShareAction)
+          MotionPress(
+            enabled: !_isSubmitting,
+            child: SizedBox.square(
+            dimension: 48,
+            child: IconButton(
+              onPressed: _isSubmitting ? null : _submitPost,
+              tooltip: l10n.share,
+              icon: _isSubmitting
+                  ? const SizedBox.square(
+                      dimension: 15,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      Icons.check_rounded,
+                      size: context.ri(21).clamp(20, 23).toDouble(),
+                    ),
+            ),
+            ),
+          )
+        else
+          MotionPress(
+            enabled: !_isSubmitting,
+            child: TextButton.icon(
+            onPressed: _isSubmitting ? null : _submitPost,
+            icon: _isSubmitting
+                ? const SizedBox.square(
+                    dimension: 15,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    Icons.check_rounded,
+                    size: context.ri(18).clamp(17, 20).toDouble(),
+                  ),
+            label: Text(
+              _isSubmitting && _videoUploadProgress != null
+                  ? '${(_videoUploadProgress! * 100).clamp(0, 100).round()}%'
+                  : l10n.share,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF111827),
+              disabledForegroundColor: const Color(0xFF9CA3AF),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(44, 44),
+            ),
+          ),
+          ),
+        const SizedBox(width: 4),
       ],
     );
   }
@@ -1506,97 +1611,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
   }
 
-  AudienceChoice get _audienceChoice => AudienceChoice(
-        kind: _requiresHanyangVerification
-            ? AudienceKind.hanyang
-            : _isAnonymous
-                ? AudienceKind.anonymous
-                : switch (_visibility) {
-                    'friends' => AudienceKind.friends,
-                    'category' => AudienceKind.group,
-                    'tag' => AudienceKind.tag,
-                    _ => AudienceKind.public,
-                  },
-        groupIds: _selectedCategoryIds,
-        audienceTagIds: _audienceTagIds.isEmpty ? _tagIds : _audienceTagIds,
-        friendsOnly: _tagAudienceFriendsOnly,
-      );
-
-  Future<void> _openAudienceSheet() async {
-    _dismissKeyboard();
-    final auth = context.read<app_auth.AuthProvider>();
-    final friendCount = (auth.userData?['friendsCount'] as num?)?.toInt() ?? 0;
-    final choice = await showAudienceSheet(
-      context,
-      initial: _audienceChoice,
-      tagIds: _tagIds,
-      friendCount: friendCount,
-      allowAnonymous: !_isExternalSocialShare,
-      allowHanyang: auth.isHanyangEmailVerified,
-      pickGroups: (current) => Navigator.of(context).push<List<String>>(
-        MaterialPageRoute(
-          builder: (_) => MeetupVisibilityGroupSelectScreen(
-            categories: _friendCategories,
-            initialSelectedCategoryIds: current,
-          ),
-        ),
-      ),
-    );
-    if (choice == null || !mounted) return;
-    setState(() {
-      _visibility = choice.visibility;
-      _isAnonymous = choice.isAnonymous;
-      _requiresHanyangVerification = choice.requiresHanyang;
-      _selectedCategoryIds =
-          choice.kind == AudienceKind.group ? choice.groupIds : <String>[];
-      _audienceTagIds = choice.audienceTagIds;
-      _tagAudienceFriendsOnly =
-          choice.kind == AudienceKind.tag && choice.friendsOnly;
-    });
-  }
-
-  /// 작성자 + 공개 범위 알약(누르면 '누가 볼 수 있나요?' 시트).
-  Widget _buildAuthorAudienceRow() {
-    final userData = context.watch<app_auth.AuthProvider>().userData;
-    final uid = context.read<app_auth.AuthProvider>().user?.uid ?? '';
-    final nickname = (userData?['nickname'] ?? '').toString();
-    return Row(
-      children: [
-        UserAvatar(
-          uid: uid,
-          photoUrl: (userData?['photoURL'] ?? '').toString(),
-          photoVersion: (userData?['photoVersion'] as num?)?.toInt() ?? 0,
-          isAnonymous: _isAnonymous,
-          size: 40,
-          placeholderColor: const Color(0xFFF2F4F7),
-          placeholderIcon: Icons.person_outline_rounded,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                nickname,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    tagTextStyle(context, 15, FontWeight.w700, TagColors.ink),
-              ),
-              const SizedBox(height: 4),
-              AudiencePill(
-                choice: _audienceChoice,
-                enabled: !_isSubmitting,
-                onTap: _openAudienceSheet,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildComposeBody() {
     final l10n = AppLocalizations.of(context)!;
     final imageLabel = l10n.postComposeImageRequired;
@@ -1624,8 +1638,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAuthorAudienceRow(),
-              SizedBox(height: context.rs(16).clamp(12, 18).toDouble()),
               PostCategorySelector(
                 selected: _selectedPostTags,
                 showError: _showPostTagRequiredHint,
@@ -1647,12 +1659,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 enabled: !_isSubmitting,
                 onChanged: (ids) => setState(() {
                   _tagIds = ids;
-                  _audienceTagIds =
-                      _audienceTagIds.where(ids.contains).toList();
                   // 태그를 다 빼면 '#태그 가진 사람' 공개는 쓸 수 없다.
-                  if (ids.isEmpty && _visibility == 'tag') {
-                    _visibility = 'public';
-                  }
+                  if (ids.isEmpty && _visibility == 'tag') _visibility = 'public';
                 }),
               ),
               SizedBox(height: context.rs(20).clamp(16, 22).toDouble()),
@@ -1737,15 +1745,406 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
   }
 
+  Widget _buildVisibilityOption({
+    required IconData icon,
+    required String title,
+    required String description,
+    required bool selected,
+    required VoidCallback onTap,
+    Widget? child,
+  }) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              vertical: context.rs(11).clamp(9, 13).toDouble(),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox.square(
+                      dimension: 30,
+                      child: Icon(
+                        icon,
+                        color: const Color(0xFF667085),
+                        size: context.ri(20).clamp(19, 22).toDouble(),
+                      ),
+                    ),
+                    SizedBox(width: context.rs(10)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF111827),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            description,
+                            style: TextStyle(
+                              fontFamily: uiFontFamily(context, 'Inter'),
+                              fontFamilyFallback: const ['NotoSansKR'],
+                              fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF6B7280),
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Icon(
+                      selected
+                          ? Icons.radio_button_checked_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      size: context.ri(23).clamp(22, 25).toDouble(),
+                      color: selected
+                          ? const Color(0xFF344054)
+                          : const Color(0xFFD0D5DD),
+                    ),
+                  ],
+                ),
+                if (child != null) ...[
+                  SizedBox(height: context.rs(10)),
+                  Padding(
+                    padding: EdgeInsets.only(left: context.rs(40)),
+                    child: child,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupSelectionButton(FriendCategory category) {
+    final isSelected = _selectedCategoryIds.contains(category.id);
+
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                final nextSelection = List<String>.from(_selectedCategoryIds);
+                if (isSelected) {
+                  nextSelection.remove(category.id);
+                } else {
+                  nextSelection.add(category.id);
+                }
+
+                setState(() {
+                  _selectedCategoryIds = nextSelection;
+                  if (nextSelection.isNotEmpty) {
+                    _showCategoryRequiredHint = false;
+                  }
+                });
+                unawaited(_refreshSelectedAudienceUsers());
+              },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          category.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: uiFontFamily(context, 'Inter'),
+                            fontFamilyFallback: const ['NotoSansKR'],
+                            fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                            fontWeight:
+                                isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: const Color(0xFF111827),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.circle_outlined,
+                        size: context.ri(21).clamp(20, 23).toDouble(),
+                        color: isSelected
+                            ? const Color(0xFF475467)
+                            : const Color(0xFFD0D5DD),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (isSelected)
+            GroupAudiencePreview(
+              members: _membersForCategory(category),
+              loading: _isLoadingAudienceUsers && category.friendIds.isNotEmpty,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupSelectionSection() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_friendCategories.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              _selectedCategoryIds.isEmpty
+                  ? l10n.postVisibilityNoGroupsSelected
+                  : l10n.postVisibilityGroupsSelected(
+                      _selectedCategoryIds.length),
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF667085),
+              ),
+            ),
+          ),
+        Column(
+          children: [
+            for (var index = 0; index < _friendCategories.length; index++) ...[
+              _buildGroupSelectionButton(_friendCategories[index]),
+              if (index != _friendCategories.length - 1)
+                const Divider(height: 1, color: Color(0xFFEAECF0)),
+            ],
+          ],
+        ),
+        if (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              l10n.groupSelectAtLeastOne,
+              style: TextStyle(
+                fontFamily: uiFontFamily(context, 'Inter'),
+                fontFamilyFallback: const ['NotoSansKR'],
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFB91C1C),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildVisibilityBody() {
+    final l10n = AppLocalizations.of(context)!;
+    final isHanyangEmailVerified =
+        context.watch<app_auth.AuthProvider>().isHanyangEmailVerified;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    final horizontalPadding = screenWidth < 360
+        ? 14.0
+        : screenWidth < 430
+            ? 16.0
+            : 20.0;
+
+    return SingleChildScrollView(
+      controller: _visibilityScrollController,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        context.rs(12).clamp(10, 16).toDouble(),
+        horizontalPadding,
+        DesignTokens.s24 + systemBottomInset,
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.postComposeVisibilityPrompt,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: context.rf(17).clamp(15.5, 18).toDouble(),
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF111827),
+                ),
+              ),
+              SizedBox(height: context.rs(14)),
+              _buildVisibilityOption(
+                icon: Icons.public_outlined,
+                title: l10n.postVisibilityPublicTitle,
+                description: l10n.postVisibilityPublicDescription,
+                selected: _visibility == 'public' &&
+                    !_isAnonymous &&
+                    !_requiresHanyangVerification,
+                onTap: () {
+                  setState(() {
+                    _visibility = 'public';
+                    _isAnonymous = false;
+                    _requiresHanyangVerification = false;
+                    _selectedCategoryIds = [];
+                    _showCategoryRequiredHint = false;
+                  });
+                },
+              ),
+              const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
+              _buildVisibilityOption(
+                icon: Icons.visibility_off_outlined,
+                title: l10n.postVisibilityAnonymousTitle,
+                description: l10n.postVisibilityAnonymousDescription,
+                selected: _visibility == 'public' &&
+                    _isAnonymous &&
+                    !_requiresHanyangVerification,
+                onTap: () {
+                  setState(() {
+                    _visibility = 'public';
+                    _isAnonymous = true;
+                    _requiresHanyangVerification = false;
+                    _selectedCategoryIds = [];
+                    _showCategoryRequiredHint = false;
+                  });
+                },
+              ),
+              if (isHanyangEmailVerified) ...[
+                const Divider(
+                  height: 1,
+                  indent: 40,
+                  color: Color(0xFFEAECF0),
+                ),
+                _buildVisibilityOption(
+                  icon: Icons.school_outlined,
+                  title: (isChineseUi(context) ? '仅限汉阳学生' : Localizations.localeOf(context).languageCode == 'ko'
+                      ? '한양대학생만'
+                      : 'Hanyang students only'),
+                  description: (isChineseUi(context) ? '所有人都能看到卡片，但只有认证用户可查看内容。' : Localizations.localeOf(context).languageCode ==
+                          'ko'
+                      ? '카드는 모두에게 보이고, 인증된 사용자만 내용을 볼 수 있어요.'
+                      : 'Everyone sees the card, but only verified users can view its content.'),
+                  selected: _requiresHanyangVerification,
+                  onTap: () {
+                    setState(() {
+                      _visibility = 'public';
+                      _isAnonymous = false;
+                      _requiresHanyangVerification = true;
+                      _selectedCategoryIds = [];
+                      _showCategoryRequiredHint = false;
+                    });
+                  },
+                ),
+              ],
+              const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
+              _buildVisibilityOption(
+                icon: Icons.group_outlined,
+                title: l10n.postVisibilityGroupTitle,
+                description: l10n.postVisibilityGroupDescription,
+                selected:
+                    _visibility == 'category' && !_requiresHanyangVerification,
+                onTap: () {
+                  setState(() {
+                    _visibility = 'category';
+                    _requiresHanyangVerification = false;
+                    // 그룹 공개는 작성자 정보가 보이는 공개 방식만 지원한다.
+                    // 익명 공개를 선택한 상태에서 그룹으로 전환하면 즉시 해제한다.
+                    _isAnonymous = false;
+                  });
+                },
+                child: _visibility == 'category'
+                    ? _buildGroupSelectionSection()
+                    : null,
+              ),
+              if (FeatureFlagService.tagAudienceEnabled) ...[
+                const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
+                TagAudienceOptionTile(
+                  tagIds: _tagIds,
+                  selected: _visibility == 'tag',
+                  onTap: _chooseTagAudience,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _chooseTagAudience() async {
+    final choice = await showTagAudienceSheet(
+      context,
+      tagIds: _tagIds,
+      friendsOnly: _tagAudienceFriendsOnly,
+    );
+    if (choice == null || !mounted) return;
+    setState(() {
+      _visibility = 'tag';
+      _tagAudienceFriendsOnly = choice.friendsOnly;
+      _isAnonymous = false;
+      _requiresHanyangVerification = false;
+      _selectedCategoryIds = [];
+      _showCategoryRequiredHint = false;
+    });
+  }
+
+  Widget _buildAnimatedBody() {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      transitionBuilder: (child, animation) {
+        final beginOffset = Offset(_isForwardTransition ? 0.12 : -0.12, 0);
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: beginOffset,
+            end: Offset.zero,
+          ).animate(animation),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+      child: KeyedSubtree(
+        key: ValueKey(_stepIndex),
+        child: _stepIndex == 0 ? _buildComposeBody() : _buildVisibilityBody(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: (widget.initialSharedRequest == null ||
               !widget.stayInAppAfterSharedPost) &&
+          _stepIndex == 0 &&
           !_isSubmitting,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop || _isSubmitting) return;
-        if (widget.initialSharedRequest != null &&
+        if (_stepIndex == 1) {
+          await _goToStep(0);
+        } else if (widget.initialSharedRequest != null &&
             widget.stayInAppAfterSharedPost) {
           await _handleClose();
         }
@@ -1753,10 +2152,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       child: Scaffold(
         backgroundColor: Colors.white,
         resizeToAvoidBottomInset: true,
-        appBar: _buildComposeAppBar(),
+        appBar:
+            _stepIndex == 0 ? _buildComposeAppBar() : _buildVisibilityAppBar(),
         // 키보드는 Scaffold의 resizeToAvoidBottomInset이 처리하고, 시스템
-        // 내비게이션 여백은 스크롤 본문의 viewPadding으로 한 번만 반영한다.
-        body: _buildComposeBody(),
+        // 내비게이션 여백은 각 스크롤 본문의 viewPadding으로 한 번만 반영한다.
+        body: _buildAnimatedBody(),
       ),
     );
   }

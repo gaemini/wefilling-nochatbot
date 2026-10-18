@@ -33,8 +33,8 @@ class ChatMetrics {
   static const double bubbleRadius = 16;
   static const double bubbleInnerRadius = 8;
 
-  /// 텍스트 말풍선 최대 폭 비율(375에서 236). 사진·파일은 0.76을 그대로 쓴다.
-  static const double textBubbleWidthFactor = 0.63;
+  /// 텍스트 말풍선 최대 폭 비율(375에서 270). 사진·파일은 0.76을 그대로 쓴다.
+  static const double textBubbleWidthFactor = 0.72;
   static const double mediaBubbleWidthFactor = 0.76;
 
   /// 같은 사람 연속 2, 사람이 바뀌면 10.

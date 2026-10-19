@@ -4307,4 +4307,103 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get friendNoTags => 'No tags yet';
+
+  @override
+  String get peopleNewTitle => 'People to meet';
+
+  @override
+  String get peopleSeeAll => 'See all';
+
+  @override
+  String get peopleSortHint => 'Sorted by shared interests';
+
+  @override
+  String get peopleAllSub => 'People who share your interests';
+
+  @override
+  String peopleOverlapMany(String a, String b, int n, int k) {
+    return '$a, $b +$k more in common';
+  }
+
+  @override
+  String peopleOverlapTwo(String a, String b) {
+    return '$a and $b in common';
+  }
+
+  @override
+  String peopleOverlapOne(String a) {
+    return '$a in common';
+  }
+
+  @override
+  String peopleMetaOverlap(String country, int n) {
+    return '$country · $n shared';
+  }
+
+  @override
+  String peopleMetaOverlapNoCountry(int n) {
+    return '$n shared';
+  }
+
+  @override
+  String peopleTipBoth(String tag) {
+    return '#$tag · you both like';
+  }
+
+  @override
+  String get peopleAdd => 'Add friend';
+
+  @override
+  String get peopleAddShort => 'Add';
+
+  @override
+  String get peopleRequested => 'Requested';
+
+  @override
+  String get peopleRequestedShort => 'Sent';
+
+  @override
+  String get peopleProfile => 'Profile';
+
+  @override
+  String get peopleAccept => 'Accept';
+
+  @override
+  String get peopleHide => 'Hide from suggestions';
+
+  @override
+  String peopleHidden(String name) {
+    return '$name hidden from suggestions';
+  }
+
+  @override
+  String get peopleUndo => 'Undo';
+
+  @override
+  String get peopleSortLabel => 'Most in common';
+
+  @override
+  String peopleCount(int n) {
+    return '$n people';
+  }
+
+  @override
+  String get peopleEmpty => 'No new suggestions right now';
+
+  @override
+  String get peopleMoreTagsCta => 'Pick more interests ›';
+
+  @override
+  String get peopleMoreTags => 'Add interests for better matches';
+
+  @override
+  String get peoplePick => 'Pick';
+
+  @override
+  String peopleAllChip(int n) {
+    return 'All $n';
+  }
+
+  @override
+  String get peopleActionFailed => 'Please try again in a moment';
 }

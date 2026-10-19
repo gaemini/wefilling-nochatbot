@@ -4155,4 +4155,103 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get friendNoTags => '아직 단 태그가 없어요';
+
+  @override
+  String get peopleNewTitle => '새로 알게 될 사람';
+
+  @override
+  String get peopleSeeAll => '모두 보기';
+
+  @override
+  String get peopleSortHint => '내 관심사와 많이 겹치는 순이에요';
+
+  @override
+  String get peopleAllSub => '나와 관심사가 겹치는 사람들이에요';
+
+  @override
+  String peopleOverlapMany(String a, String b, int n, int k) {
+    return '$a, $b 등 $n개 겹쳐요';
+  }
+
+  @override
+  String peopleOverlapTwo(String a, String b) {
+    return '$a, $b 2개 겹쳐요';
+  }
+
+  @override
+  String peopleOverlapOne(String a) {
+    return '$a 1개 겹쳐요';
+  }
+
+  @override
+  String peopleMetaOverlap(String country, int n) {
+    return '$country · $n개 겹침';
+  }
+
+  @override
+  String peopleMetaOverlapNoCountry(int n) {
+    return '$n개 겹침';
+  }
+
+  @override
+  String peopleTipBoth(String tag) {
+    return '#$tag · 둘 다 관심';
+  }
+
+  @override
+  String get peopleAdd => '친구 추가';
+
+  @override
+  String get peopleAddShort => '추가';
+
+  @override
+  String get peopleRequested => '요청 보냄';
+
+  @override
+  String get peopleRequestedShort => '요청됨';
+
+  @override
+  String get peopleProfile => '프로필';
+
+  @override
+  String get peopleAccept => '수락';
+
+  @override
+  String get peopleHide => '추천에서 숨기기';
+
+  @override
+  String peopleHidden(String name) {
+    return '$name님을 추천에서 숨겼어요';
+  }
+
+  @override
+  String get peopleUndo => '되돌리기';
+
+  @override
+  String get peopleSortLabel => '많이 겹치는 순';
+
+  @override
+  String peopleCount(int n) {
+    return '$n명';
+  }
+
+  @override
+  String get peopleEmpty => '지금은 새로 추천할 사람이 없어요';
+
+  @override
+  String get peopleMoreTagsCta => '관심사 더 고르기 ›';
+
+  @override
+  String get peopleMoreTags => '관심사를 늘리면 추천이 정확해져요';
+
+  @override
+  String get peoplePick => '고르기';
+
+  @override
+  String peopleAllChip(int n) {
+    return '전체 $n';
+  }
+
+  @override
+  String get peopleActionFailed => '잠시 후 다시 시도해 주세요';
 }

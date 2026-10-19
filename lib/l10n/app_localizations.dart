@@ -7659,6 +7659,168 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'아직 단 태그가 없어요'**
   String get friendNoTags;
+
+  /// No description provided for @peopleNewTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'새로 알게 될 사람'**
+  String get peopleNewTitle;
+
+  /// No description provided for @peopleSeeAll.
+  ///
+  /// In ko, this message translates to:
+  /// **'모두 보기'**
+  String get peopleSeeAll;
+
+  /// No description provided for @peopleSortHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 관심사와 많이 겹치는 순이에요'**
+  String get peopleSortHint;
+
+  /// No description provided for @peopleAllSub.
+  ///
+  /// In ko, this message translates to:
+  /// **'나와 관심사가 겹치는 사람들이에요'**
+  String get peopleAllSub;
+
+  /// No description provided for @peopleOverlapMany.
+  ///
+  /// In ko, this message translates to:
+  /// **'{a}, {b} 등 {n}개 겹쳐요'**
+  String peopleOverlapMany(String a, String b, int n, int k);
+
+  /// No description provided for @peopleOverlapTwo.
+  ///
+  /// In ko, this message translates to:
+  /// **'{a}, {b} 2개 겹쳐요'**
+  String peopleOverlapTwo(String a, String b);
+
+  /// No description provided for @peopleOverlapOne.
+  ///
+  /// In ko, this message translates to:
+  /// **'{a} 1개 겹쳐요'**
+  String peopleOverlapOne(String a);
+
+  /// No description provided for @peopleMetaOverlap.
+  ///
+  /// In ko, this message translates to:
+  /// **'{country} · {n}개 겹침'**
+  String peopleMetaOverlap(String country, int n);
+
+  /// No description provided for @peopleMetaOverlapNoCountry.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}개 겹침'**
+  String peopleMetaOverlapNoCountry(int n);
+
+  /// No description provided for @peopleTipBoth.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag} · 둘 다 관심'**
+  String peopleTipBoth(String tag);
+
+  /// No description provided for @peopleAdd.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 추가'**
+  String get peopleAdd;
+
+  /// No description provided for @peopleAddShort.
+  ///
+  /// In ko, this message translates to:
+  /// **'추가'**
+  String get peopleAddShort;
+
+  /// No description provided for @peopleRequested.
+  ///
+  /// In ko, this message translates to:
+  /// **'요청 보냄'**
+  String get peopleRequested;
+
+  /// No description provided for @peopleRequestedShort.
+  ///
+  /// In ko, this message translates to:
+  /// **'요청됨'**
+  String get peopleRequestedShort;
+
+  /// No description provided for @peopleProfile.
+  ///
+  /// In ko, this message translates to:
+  /// **'프로필'**
+  String get peopleProfile;
+
+  /// No description provided for @peopleAccept.
+  ///
+  /// In ko, this message translates to:
+  /// **'수락'**
+  String get peopleAccept;
+
+  /// No description provided for @peopleHide.
+  ///
+  /// In ko, this message translates to:
+  /// **'추천에서 숨기기'**
+  String get peopleHide;
+
+  /// No description provided for @peopleHidden.
+  ///
+  /// In ko, this message translates to:
+  /// **'{name}님을 추천에서 숨겼어요'**
+  String peopleHidden(String name);
+
+  /// No description provided for @peopleUndo.
+  ///
+  /// In ko, this message translates to:
+  /// **'되돌리기'**
+  String get peopleUndo;
+
+  /// No description provided for @peopleSortLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'많이 겹치는 순'**
+  String get peopleSortLabel;
+
+  /// No description provided for @peopleCount.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}명'**
+  String peopleCount(int n);
+
+  /// No description provided for @peopleEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'지금은 새로 추천할 사람이 없어요'**
+  String get peopleEmpty;
+
+  /// No description provided for @peopleMoreTagsCta.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사 더 고르기 ›'**
+  String get peopleMoreTagsCta;
+
+  /// No description provided for @peopleMoreTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사를 늘리면 추천이 정확해져요'**
+  String get peopleMoreTags;
+
+  /// No description provided for @peoplePick.
+  ///
+  /// In ko, this message translates to:
+  /// **'고르기'**
+  String get peoplePick;
+
+  /// No description provided for @peopleAllChip.
+  ///
+  /// In ko, this message translates to:
+  /// **'전체 {n}'**
+  String peopleAllChip(int n);
+
+  /// No description provided for @peopleActionFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 다시 시도해 주세요'**
+  String get peopleActionFailed;
 }
 
 class _AppLocalizationsDelegate

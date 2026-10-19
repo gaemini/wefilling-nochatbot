@@ -4102,4 +4102,103 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get friendNoTags => '还没有标签';
+
+  @override
+  String get peopleNewTitle => '可能认识的人';
+
+  @override
+  String get peopleSeeAll => '查看全部';
+
+  @override
+  String get peopleSortHint => '按共同兴趣排序';
+
+  @override
+  String get peopleAllSub => '和你兴趣相同的人';
+
+  @override
+  String peopleOverlapMany(String a, String b, int n, int k) {
+    return '$a、$b 等 $n 个共同兴趣';
+  }
+
+  @override
+  String peopleOverlapTwo(String a, String b) {
+    return '$a、$b 2 个共同兴趣';
+  }
+
+  @override
+  String peopleOverlapOne(String a) {
+    return '1 个共同兴趣：$a';
+  }
+
+  @override
+  String peopleMetaOverlap(String country, int n) {
+    return '$country · $n 个共同';
+  }
+
+  @override
+  String peopleMetaOverlapNoCountry(int n) {
+    return '$n 个共同';
+  }
+
+  @override
+  String peopleTipBoth(String tag) {
+    return '#$tag · 你们都喜欢';
+  }
+
+  @override
+  String get peopleAdd => '加好友';
+
+  @override
+  String get peopleAddShort => '添加';
+
+  @override
+  String get peopleRequested => '已发送';
+
+  @override
+  String get peopleRequestedShort => '已请求';
+
+  @override
+  String get peopleProfile => '主页';
+
+  @override
+  String get peopleAccept => '接受';
+
+  @override
+  String get peopleHide => '不再推荐';
+
+  @override
+  String peopleHidden(String name) {
+    return '已不再推荐 $name';
+  }
+
+  @override
+  String get peopleUndo => '撤销';
+
+  @override
+  String get peopleSortLabel => '共同最多';
+
+  @override
+  String peopleCount(int n) {
+    return '$n 人';
+  }
+
+  @override
+  String get peopleEmpty => '暂时没有新的推荐';
+
+  @override
+  String get peopleMoreTagsCta => '选择更多兴趣 ›';
+
+  @override
+  String get peopleMoreTags => '添加兴趣，推荐更准确';
+
+  @override
+  String get peoplePick => '选择';
+
+  @override
+  String peopleAllChip(int n) {
+    return '全部 $n';
+  }
+
+  @override
+  String get peopleActionFailed => '请稍后再试';
 }

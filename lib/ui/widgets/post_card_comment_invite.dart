@@ -75,8 +75,7 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
   static const _iconIdle = Color(0xFF98A2B3);
 
   /// 화면에 들어올 때 한 번: 고리(1.6s) · 아바타(0.9s) · 번역 아이콘(0.8s)을 Interval로.
-  late final AnimationController _nudge = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1600));
+  late final AnimationController _nudge;
 
   /// 60% 이상 보인 채 800ms 머물면 게이트에 요청.
   Timer? _dwell;
@@ -110,6 +109,9 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
   @override
   void initState() {
     super.initState();
+    // 로그인 전처럼 build에서 쓰지 않은 채 정리돼도 안전하게 미리 만든다.
+    _nudge = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1600));
     _controller.addListener(() {
       if (mounted) setState(() => _failed = false);
     });

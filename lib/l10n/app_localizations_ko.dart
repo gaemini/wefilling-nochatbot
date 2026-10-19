@@ -4002,4 +4002,83 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get savedPrivateHint => '저장됨은 나만 볼 수 있어요';
+
+  @override
+  String get lensMe => '나';
+
+  @override
+  String get lensMeUnit => '개 태그';
+
+  @override
+  String get lensFriends => '친구와 겹침';
+
+  @override
+  String get lensFriendsUnit => '명';
+
+  @override
+  String get lensCommunity => '커뮤니티';
+
+  @override
+  String get lensCommunityUnit => '이번 주 새 태그';
+
+  @override
+  String get interestMapTitle => '관심 지도';
+
+  @override
+  String interestMapCaptionMe(int n) {
+    return '내 태그 $n개 · 글에 많이 붙인 태그일수록 커요';
+  }
+
+  @override
+  String interestMapCaptionFriends(int n) {
+    return '친구 $n명이 내 태그를 같이 달았어요';
+  }
+
+  @override
+  String get interestMapCaptionCommunity => '이번 주 위필링 학생들이 많이 단 태그예요';
+
+  @override
+  String blockPosts(int n) {
+    return '글 $n';
+  }
+
+  @override
+  String blockFriends(int n) {
+    return '친구 $n';
+  }
+
+  @override
+  String get blockSuggest => '추천';
+
+  @override
+  String get overlapTitleAll => '나와 겹치는 사람';
+
+  @override
+  String get overlapTitleFriends => '겹치는 친구';
+
+  @override
+  String get overlapTitleOthers => '새로 알게 될 사람';
+
+  @override
+  String get overlapSeeAll => '모두 보기';
+
+  @override
+  String overlapSameInterests(int n) {
+    return '같은 관심사 $n개';
+  }
+
+  @override
+  String get overlapFriendChip => '친구';
+
+  @override
+  String get overlapAddFriend => '친구 추가';
+
+  @override
+  String get overlapRequested => '요청됨';
+
+  @override
+  String get overlapEmpty => '아직 겹치는 사람이 없어요';
+
+  @override
+  String get interestLoadFailed => '관심 정보를 불러오지 못했어요';
 }

@@ -29,12 +29,14 @@ class MyPageCacheService {
   /// 영구 저장소(Hive)는 앱 재실행 후 복원용 2차 캐시로 사용한다.
   static final Map<String, _RawCacheEntry> _memoryCache = {};
   static final Map<String, int> _friendCountMemoryCache = {};
+  static final Map<String, Map<dynamic, dynamic>> _interestMemoryCache = {};
 
   Future<Box<dynamic>>? _openingBox;
 
   static void clearMemory() {
     _memoryCache.clear();
     _friendCountMemoryCache.clear();
+    _interestMemoryCache.clear();
   }
 
   /// 현재 사용자 프로필의 친구 수를 기존 마이페이지 캐시에 함께 보관한다.
@@ -78,6 +80,66 @@ class MyPageCacheService {
       Logger.error('마이페이지 친구 수 캐시 저장 실패', error);
     }
   }
+
+  /// 관심 탭 요약·나와 겹치는 사람(원본 맵). 10분 안이면 새로 묻지 않는다.
+  static const Duration interestTtl = Duration(minutes: 10);
+
+  Future<({Map<String, dynamic> data, bool isFresh})?> readInterest(
+      String userId, String part) async {
+    final key = _key(userId, 'interest_$part');
+    try {
+      final memory = _interestMemoryCache[key];
+      final Map<dynamic, dynamic>? value;
+      if (memory != null) {
+        value = memory;
+      } else {
+        final box = await _box();
+        final stored = box?.get(key);
+        value = stored is Map ? stored : null;
+      }
+      if (value == null) return null;
+      final cachedAt = value['cachedAt'];
+      final data = value['data'];
+      if (cachedAt is! int || data is! Map) return null;
+      _interestMemoryCache[key] = value;
+      return (
+        data: _deepStringMap(data),
+        isFresh: DateTime.now()
+                .difference(DateTime.fromMillisecondsSinceEpoch(cachedAt)) <=
+            interestTtl,
+      );
+    } catch (error) {
+      Logger.error('관심 탭 캐시 읽기 실패', error);
+      return null;
+    }
+  }
+
+  Future<void> saveInterest(
+      String userId, String part, Map<String, dynamic> data) async {
+    final key = _key(userId, 'interest_$part');
+    final value = <String, dynamic>{
+      'cachedAt': DateTime.now().millisecondsSinceEpoch,
+      'data': data,
+    };
+    _interestMemoryCache[key] = value;
+    try {
+      final box = await _box();
+      await box?.put(key, value);
+    } catch (error) {
+      Logger.error('관심 탭 캐시 저장 실패', error);
+    }
+  }
+
+  static Map<String, dynamic> _deepStringMap(Map<dynamic, dynamic> map) => {
+        for (final entry in map.entries)
+          entry.key.toString(): _deepPlain(entry.value),
+      };
+
+  static Object? _deepPlain(Object? value) => switch (value) {
+        Map() => _deepStringMap(value),
+        List() => [for (final item in value) _deepPlain(item)],
+        _ => value,
+      };
 
   Future<MyPageCacheEntry<Post>?> readUserPosts(String userId) {
     return _readPosts(_key(userId, 'posts'));

@@ -7389,6 +7389,144 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'저장됨은 나만 볼 수 있어요'**
   String get savedPrivateHint;
+
+  /// No description provided for @lensMe.
+  ///
+  /// In ko, this message translates to:
+  /// **'나'**
+  String get lensMe;
+
+  /// No description provided for @lensMeUnit.
+  ///
+  /// In ko, this message translates to:
+  /// **'개 태그'**
+  String get lensMeUnit;
+
+  /// No description provided for @lensFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구와 겹침'**
+  String get lensFriends;
+
+  /// No description provided for @lensFriendsUnit.
+  ///
+  /// In ko, this message translates to:
+  /// **'명'**
+  String get lensFriendsUnit;
+
+  /// No description provided for @lensCommunity.
+  ///
+  /// In ko, this message translates to:
+  /// **'커뮤니티'**
+  String get lensCommunity;
+
+  /// No description provided for @lensCommunityUnit.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주 새 태그'**
+  String get lensCommunityUnit;
+
+  /// No description provided for @interestMapTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 지도'**
+  String get interestMapTitle;
+
+  /// No description provided for @interestMapCaptionMe.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그 {n}개 · 글에 많이 붙인 태그일수록 커요'**
+  String interestMapCaptionMe(int n);
+
+  /// No description provided for @interestMapCaptionFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {n}명이 내 태그를 같이 달았어요'**
+  String interestMapCaptionFriends(int n);
+
+  /// No description provided for @interestMapCaptionCommunity.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주 위필링 학생들이 많이 단 태그예요'**
+  String get interestMapCaptionCommunity;
+
+  /// No description provided for @blockPosts.
+  ///
+  /// In ko, this message translates to:
+  /// **'글 {n}'**
+  String blockPosts(int n);
+
+  /// No description provided for @blockFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {n}'**
+  String blockFriends(int n);
+
+  /// No description provided for @blockSuggest.
+  ///
+  /// In ko, this message translates to:
+  /// **'추천'**
+  String get blockSuggest;
+
+  /// No description provided for @overlapTitleAll.
+  ///
+  /// In ko, this message translates to:
+  /// **'나와 겹치는 사람'**
+  String get overlapTitleAll;
+
+  /// No description provided for @overlapTitleFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'겹치는 친구'**
+  String get overlapTitleFriends;
+
+  /// No description provided for @overlapTitleOthers.
+  ///
+  /// In ko, this message translates to:
+  /// **'새로 알게 될 사람'**
+  String get overlapTitleOthers;
+
+  /// No description provided for @overlapSeeAll.
+  ///
+  /// In ko, this message translates to:
+  /// **'모두 보기'**
+  String get overlapSeeAll;
+
+  /// No description provided for @overlapSameInterests.
+  ///
+  /// In ko, this message translates to:
+  /// **'같은 관심사 {n}개'**
+  String overlapSameInterests(int n);
+
+  /// No description provided for @overlapFriendChip.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구'**
+  String get overlapFriendChip;
+
+  /// No description provided for @overlapAddFriend.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 추가'**
+  String get overlapAddFriend;
+
+  /// No description provided for @overlapRequested.
+  ///
+  /// In ko, this message translates to:
+  /// **'요청됨'**
+  String get overlapRequested;
+
+  /// No description provided for @overlapEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 겹치는 사람이 없어요'**
+  String get overlapEmpty;
+
+  /// No description provided for @interestLoadFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 정보를 불러오지 못했어요'**
+  String get interestLoadFailed;
 }
 
 class _AppLocalizationsDelegate

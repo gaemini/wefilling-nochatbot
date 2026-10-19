@@ -21,6 +21,8 @@ const {
   MAX_PROFILE_TAGS,
   normalizeTagDescription,
   normalizeTagCategory,
+  countFriendTags,
+  rankOverlapPeople,
   OFFICIAL_TAG_STYLE,
   officialTagFields,
 } = require('../lib/interest_tags');
@@ -130,5 +132,19 @@ for (const tag of OFFICIAL_INTEREST_TAGS) {
   assert.ok(fields.emoji, tag.id);
 }
 assert.equal(officialTagFields(OFFICIAL_INTEREST_TAGS.find((t) => t.id === 'game')).category, 'play');
+
+// 관심 탭: 친구들이 단 태그 수, 겹침 순위(겹침 많은 순 → 친구 먼저), scope.
+assert.deepEqual(countFriendTags([['a', 'b'], ['a'], ['c', 'a', 'a']]),
+  [{id: 'a', friendHolders: 3}, {id: 'b', friendHolders: 1}, {id: 'c', friendHolders: 1}]);
+const people = [
+  {uid: 'p1', tags: ['a'], isFriend: false},
+  {uid: 'p2', tags: ['a'], isFriend: true},
+  {uid: 'p3', tags: ['a', 'b'], isFriend: false},
+  {uid: 'p4', tags: ['z'], isFriend: true},
+];
+assert.deepEqual(rankOverlapPeople(people, ['a', 'b'], 'all').map((p) => p.uid), ['p3', 'p2', 'p1']);
+assert.deepEqual(rankOverlapPeople(people, ['a', 'b'], 'friends').map((p) => p.uid), ['p2']);
+assert.deepEqual(rankOverlapPeople(people, ['a', 'b'], 'others').map((p) => p.uid), ['p3', 'p1']);
+assert.deepEqual(rankOverlapPeople(people, ['a', 'b'], 'all')[0].overlapTagIds, ['a', 'b']);
 
 console.log('interest tag helper tests passed');

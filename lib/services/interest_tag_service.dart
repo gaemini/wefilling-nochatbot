@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
 import '../config/app_backend.dart';
+import '../models/interest_overview.dart';
 import '../models/interest_tag.dart';
 import '../models/social_profile_data.dart';
 
@@ -201,6 +202,56 @@ class InterestTagService extends ChangeNotifier {
     if (!_cache.containsKey(id)) await get(id);
     return id;
   }
+
+  /// 마이페이지 관심 탭 요약. 함께 온 태그 정보는 이름 캐시에 넣는다.
+  Future<InterestOverview> myInterestOverview() async {
+    final data = _jsonSafe(await _call('getMyInterestOverview', <String, Object?>{}));
+    final overview = InterestOverview.fromMap(data);
+    if (overview.tags.isNotEmpty) {
+      _cache.addAll(overview.tags);
+      notifyListeners();
+    }
+    return overview;
+  }
+
+  /// 캐시에 저장했던 요약을 되살린다(태그 이름도 캐시에 넣는다).
+  InterestOverview restoreOverview(Map<String, dynamic> raw) {
+    final overview = InterestOverview.fromMap(raw);
+    for (final entry in overview.tags.entries) {
+      _cache.putIfAbsent(entry.key, () => entry.value);
+    }
+    return overview;
+  }
+
+  /// 나와 겹치는 사람(scope: all | friends | others), 20명씩.
+  Future<({List<OverlapPerson> people, String? cursor, int total})>
+      overlapPeople(String scope, {String? cursor}) async {
+    final data = _jsonSafe(await _call('getOverlapPeople', {
+      'scope': scope,
+      if (cursor != null) 'cursor': cursor,
+    }));
+    return (
+      people: [
+        for (final item in data['people'] as List? ?? const [])
+          if (item is Map) OverlapPerson.fromMap(item),
+      ],
+      cursor: data['cursor'] as String?,
+      total: (data['total'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 호출 결과(Map<Object?, Object?> 중첩)를 캐시에 그대로 넣을 수 있는 맵으로.
+  static Map<String, dynamic> _jsonSafe(Object? value) =>
+      Map<String, dynamic>.from(_plain(value) as Map? ?? const {});
+
+  static Object? _plain(Object? value) => switch (value) {
+        Map() => {
+            for (final entry in value.entries)
+              entry.key.toString(): _plain(entry.value),
+          },
+        List() => [for (final item in value) _plain(item)],
+        _ => value,
+      };
 
   /// 만든 사람이 한 줄 설명을 고친다. 정리된 설명을 돌려준다.
   Future<String> updateDescription(String tagId, String description) async {

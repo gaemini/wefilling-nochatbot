@@ -1171,3 +1171,177 @@ export const updateTagDescription = callables()
       return {tagId, description};
     });
   });
+
+// ---- 마이페이지 관심 탭 ----
+
+const OVERVIEW_TAG_LIMIT = 8;
+const OVERLAP_SCAN_LIMIT = 200;
+const OVERLAP_PAGE = 20;
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** 친구들이 단 태그별 친구 수(많은 순). */
+export function countFriendTags(friendTags: ReadonlyArray<readonly string[]>): Array<{id: string; friendHolders: number}> {
+  const counts = new Map<string, number>();
+  friendTags.forEach((tags) => new Set(tags).forEach((id) => counts.set(id, (counts.get(id) ?? 0) + 1)));
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([id, friendHolders]) => ({id, friendHolders}));
+}
+
+export type OverlapCandidate = {uid: string; tags: readonly string[]; isFriend: boolean};
+export type OverlapScope = 'all' | 'friends' | 'others';
+
+/** 겹침 수 많은 순, 같으면 친구 먼저. scope로 친구/친구 아닌 사람만 고른다. */
+export function rankOverlapPeople(
+  candidates: readonly OverlapCandidate[],
+  myTags: readonly string[],
+  scope: OverlapScope,
+): Array<OverlapCandidate & {overlapTagIds: string[]}> {
+  const mine = new Set(myTags);
+  return candidates
+    .filter((person) => scope === 'all' || (scope === 'friends') === person.isFriend)
+    .map((person) => ({...person, overlapTagIds: myTags.filter((id) => person.tags.includes(id))}))
+    .filter((person) => person.overlapTagIds.length > 0 && person.tags.some((id) => mine.has(id)))
+    .sort((a, b) => b.overlapTagIds.length - a.overlapTagIds.length ||
+      Number(b.isFriend) - Number(a.isFriend) || a.uid.localeCompare(b.uid));
+}
+
+async function friendIdList(uid: string): Promise<string[]> {
+  return Array.from(await friendIdCandidatesAtCreation(uid))
+    .filter((id) => id && id !== uid && !id.includes('/'))
+    .slice(0, FRIEND_SCAN_LIMIT);
+}
+
+/**
+ * 마이페이지 관심 탭을 한 번에 채운다(앱이 10분 캐시).
+ * myTags(내 글에 붙인 횟수) / friendOverlap(내 태그를 하나 이상 단 친구 수, 친구들이 단 태그)
+ * / community(이번 주 새 태그 수, 많이 단 태그와 이번 주 증가) / suggestions(아직 안 단 추천)
+ * / friendFaces(친구 버튼 얼굴 3개) / tags(위에 나온 태그의 공개 정보).
+ */
+export const getMyInterestOverview = callables()
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (_data, context) => {
+    const uid = requireUid(context);
+    const me = await db().collection(COL.users).doc(uid).get();
+    const myTags = stringArray(me.get('interestTagIds'));
+    const mine = new Set(myTags);
+    const friendIds = await friendIdList(uid);
+    const weekAgo = Timestamp.fromMillis(Date.now() - WEEK_MS);
+    const [friendDocs, myPosts, trending, newTags, popular] = await Promise.all([
+      friendIds.length ? db().getAll(...friendIds.map((id) => db().collection(COL.users).doc(id))) : Promise.resolve([]),
+      db().collection(COL.posts).where('userId', '==', uid).select('tagIds').limit(500).get(),
+      db().collection('tags_trending').doc('current').get(),
+      // 기존 인덱스(status, createdAt desc)를 쓰도록 같은 정렬을 붙인다.
+      db().collection(COL.tags).where('status', '==', 'active').where('createdAt', '>=', weekAgo)
+        .orderBy('createdAt', 'desc').count().get(),
+      db().collection(COL.tags).where('status', '==', 'active').orderBy('holderCount', 'desc')
+        .limit(OVERVIEW_TAG_LIMIT).get(),
+    ]);
+    const friends = friendDocs.filter((doc) => doc.exists && isSearchableUser(doc.id, doc.data()));
+    const friendTagLists = friends.map((doc) => stringArray(doc.get('interestTagIds')));
+    const friendTags = countFriendTags(friendTagLists);
+    const postCounts = new Map<string, number>();
+    myPosts.docs.forEach((doc) => stringArray(doc.get('tagIds'))
+      .forEach((id) => postCounts.set(id, (postCounts.get(id) ?? 0) + 1)));
+    const weekly = new Map(((trending.get('items') as Array<{id: string; delta: number}> | undefined) ?? [])
+      .map((item) => [item.id, Math.max(0, Number(item.delta) || 0)]));
+    const suggestions = friendTags.filter((item) => !mine.has(item.id)).slice(0, 2);
+    const ids = new Set<string>([
+      ...myTags,
+      ...friendTags.slice(0, OVERVIEW_TAG_LIMIT).map((item) => item.id),
+      ...suggestions.map((item) => item.id),
+    ]);
+    popular.docs.forEach((doc) => ids.delete(doc.id));
+    const extra = ids.size ? await db().getAll(...Array.from(ids).map(tagRef)) : [];
+    const tagDocs = [...popular.docs, ...extra].filter((doc) => doc.exists && doc.get('status') === 'active');
+    const active = new Set(tagDocs.map((doc) => doc.id));
+    // 블록 큰 칸의 얼굴: 태그별 친구 사진 최대 3장.
+    const tagFaces: Record<string, string[]> = {};
+    friends.forEach((doc) => {
+      const photo = String(doc.get('photoURL') || '').trim();
+      if (!photo.startsWith('https://')) return;
+      stringArray(doc.get('interestTagIds')).forEach((id) => {
+        if (!active.has(id)) return;
+        const list = tagFaces[id] ?? (tagFaces[id] = []);
+        if (list.length < 3) list.push(photo);
+      });
+    });
+    return {
+      myTags: myTags.filter((id) => active.has(id))
+        .map((id) => ({id, myPostCount: postCounts.get(id) ?? 0})),
+      friendOverlap: {
+        friendCount: friendTagLists.filter((tags) => tags.some((id) => mine.has(id))).length,
+        tags: friendTags.filter((item) => active.has(item.id)).slice(0, OVERVIEW_TAG_LIMIT),
+      },
+      community: {
+        newTagsThisWeek: newTags.data().count,
+        tags: popular.docs.filter((doc) => doc.get('status') === 'active').map((doc) => ({
+          id: doc.id,
+          holderCount: Math.max(0, Number(doc.get('holderCount') ?? 0) || 0),
+          weeklyGain: weekly.get(doc.id) ?? 0,
+        })),
+      },
+      suggestions: suggestions.filter((item) => active.has(item.id)),
+      friendFaces: friends.map((doc) => String(doc.get('photoURL') || '').trim())
+        .filter((url) => url.startsWith('https://')).slice(0, 3),
+      tagFaces,
+      tags: Object.fromEntries(tagDocs.map((doc) => [doc.id, {id: doc.id, ...pickPublic(doc.data() ?? {})}])),
+    };
+  });
+
+/**
+ * 나와 겹치는 사람: 내 태그(최대 10)를 하나 이상 단 사람, 겹침 많은 순(같으면 친구 먼저), 20명씩.
+ * 나·비활성·차단 관계·겹치는 태그를 모두 숨긴 사람은 뺀다. cursor는 다음 시작 순번.
+ */
+export const getOverlapPeople = callables()
+  .runWith({timeoutSeconds: 30, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const scope: OverlapScope = data?.scope === 'friends' || data?.scope === 'others' ? data.scope : 'all';
+    const start = Math.max(0, Math.trunc(Number(data?.cursor) || 0));
+    const me = await db().collection(COL.users).doc(uid).get();
+    const myTags = stringArray(me.get('interestTagIds')).slice(0, 10);
+    if (myTags.length === 0) return {people: [], cursor: null, total: 0};
+    const [friendIds, snap] = await Promise.all([
+      friendIdList(uid),
+      db().collection(COL.users).where('interestTagIds', 'array-contains-any', myTags)
+        .limit(OVERLAP_SCAN_LIMIT).get(),
+    ]);
+    const friendSet = new Set(friendIds);
+    const docs = new Map(snap.docs
+      .filter((doc) => doc.id !== uid && isSearchableUser(doc.id, doc.data()))
+      .map((doc) => [doc.id, doc]));
+    const ranked = rankOverlapPeople(Array.from(docs.values()).map((doc) => ({
+      uid: doc.id, tags: stringArray(doc.get('interestTagIds')), isFriend: friendSet.has(doc.id),
+    })), myTags, scope);
+    // 차단·숨김은 보여 줄 만큼만 확인한다.
+    const people: Array<Record<string, unknown>> = [];
+    let index = start;
+    while (people.length < OVERLAP_PAGE && index < ranked.length) {
+      const batch = ranked.slice(index, index + 30);
+      const related = await db().getAll(...batch.flatMap((person) => [
+        db().collection(COL.blocks).doc(`${uid}_${person.uid}`),
+        db().collection(COL.blocks).doc(`${person.uid}_${uid}`),
+        db().collection(COL.usersPrivate).doc(person.uid),
+      ]));
+      for (let i = 0; i < batch.length && people.length < OVERLAP_PAGE; i++) {
+        index++;
+        const person = batch[i];
+        if (related[i * 3]?.exists || related[i * 3 + 1]?.exists) continue;
+        const visible = person.overlapTagIds.filter((tagId) =>
+          related[i * 3 + 2]?.get(`tagPrefs.${tagId}.hidden`) !== true);
+        if (visible.length === 0) continue;
+        const profile = docs.get(person.uid)?.data() ?? {};
+        people.push({
+          uid: person.uid,
+          name: String(profile.nickname || '').trim(),
+          photoURL: String(profile.photoURL || '').trim(),
+          school: String(profile.university || '').trim(),
+          country: String(profile.nationality || '').trim(),
+          isFriend: person.isFriend,
+          overlapTagIds: visible,
+        });
+      }
+    }
+    return {people, cursor: index < ranked.length ? String(index) : null, total: ranked.length};
+  });

@@ -4150,4 +4150,84 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get savedPrivateHint => 'Only you can see saved posts';
+
+  @override
+  String get lensMe => 'Me';
+
+  @override
+  String get lensMeUnit => 'tags';
+
+  @override
+  String get lensFriends => 'With friends';
+
+  @override
+  String get lensFriendsUnit => 'friends';
+
+  @override
+  String get lensCommunity => 'Community';
+
+  @override
+  String get lensCommunityUnit => 'new this week';
+
+  @override
+  String get interestMapTitle => 'Interest map';
+
+  @override
+  String interestMapCaptionMe(int n) {
+    return '$n tags · bigger means used in more posts';
+  }
+
+  @override
+  String interestMapCaptionFriends(int n) {
+    return '$n friends share your tags';
+  }
+
+  @override
+  String get interestMapCaptionCommunity =>
+      'Tags Wefilling students added most this week';
+
+  @override
+  String blockPosts(int n) {
+    return '$n posts';
+  }
+
+  @override
+  String blockFriends(int n) {
+    return '$n friends';
+  }
+
+  @override
+  String get blockSuggest => 'Suggested';
+
+  @override
+  String get overlapTitleAll => 'People like you';
+
+  @override
+  String get overlapTitleFriends => 'Friends like you';
+
+  @override
+  String get overlapTitleOthers => 'People to meet';
+
+  @override
+  String get overlapSeeAll => 'See all';
+
+  @override
+  String overlapSameInterests(int n) {
+    return '$n shared interests';
+  }
+
+  @override
+  String get overlapFriendChip => 'Friend';
+
+  @override
+  String get overlapAddFriend => 'Add friend';
+
+  @override
+  String get overlapRequested => 'Requested';
+
+  @override
+  String get overlapEmpty => 'No one shares your tags yet';
+
+  @override
+  String get interestLoadFailed => 'Couldn\'t load your interests';
 }

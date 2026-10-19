@@ -3949,4 +3949,83 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get savedPrivateHint => '只有你能看到收藏';
+
+  @override
+  String get lensMe => '我';
+
+  @override
+  String get lensMeUnit => '个标签';
+
+  @override
+  String get lensFriends => '与好友重合';
+
+  @override
+  String get lensFriendsUnit => '人';
+
+  @override
+  String get lensCommunity => '社区';
+
+  @override
+  String get lensCommunityUnit => '本周新标签';
+
+  @override
+  String get interestMapTitle => '兴趣地图';
+
+  @override
+  String interestMapCaptionMe(int n) {
+    return '我的标签 $n 个 · 越常用越大';
+  }
+
+  @override
+  String interestMapCaptionFriends(int n) {
+    return '$n 位好友有相同标签';
+  }
+
+  @override
+  String get interestMapCaptionCommunity => '本周大家最常添加的标签';
+
+  @override
+  String blockPosts(int n) {
+    return '动态 $n';
+  }
+
+  @override
+  String blockFriends(int n) {
+    return '好友 $n';
+  }
+
+  @override
+  String get blockSuggest => '推荐';
+
+  @override
+  String get overlapTitleAll => '和我重合的人';
+
+  @override
+  String get overlapTitleFriends => '重合的好友';
+
+  @override
+  String get overlapTitleOthers => '可能认识的人';
+
+  @override
+  String get overlapSeeAll => '查看全部';
+
+  @override
+  String overlapSameInterests(int n) {
+    return '$n 个共同兴趣';
+  }
+
+  @override
+  String get overlapFriendChip => '好友';
+
+  @override
+  String get overlapAddFriend => '加好友';
+
+  @override
+  String get overlapRequested => '已请求';
+
+  @override
+  String get overlapEmpty => '还没有和你重合的人';
+
+  @override
+  String get interestLoadFailed => '无法加载兴趣信息';
 }

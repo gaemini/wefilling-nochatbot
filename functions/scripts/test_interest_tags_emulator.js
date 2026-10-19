@@ -253,6 +253,7 @@ async function main() {
   // 클라이언트는 글의 tagIds를 바꿀 수 없다.
   await seed('posts/p2', {userId: 'alice', ownerId: 'alice', visibility: 'public', tagIds: ['kpop'], content: 'x'});
   assert.equal((await patchAs('alice', 'posts/p2', {tagIds: ['running']})).status, 403);
+
   console.log('callables ok');
 
   // ===== 공개 범위 '#태그 가진 사람' =====
@@ -269,6 +270,23 @@ async function main() {
   // carol이 running을 더하면: bob(running, kpop 없음)은 새로 겹치고 alice(kpop)는 이미 겹친다.
   assert.deepEqual((await call('setProfileTags', 'carol', {tagIds: ['kpop', 'running']})).gain, {running: 1});
   await call('setProfileTags', 'carol', {tagIds: ['kpop']});
+
+  // 마이페이지 관심 탭: alice(kpop·running·movie), 친구 carol(kpop), bob은 alice가 차단.
+  const overview = await call('getMyInterestOverview', 'alice', {});
+  assert.deepEqual(overview.myTags.map((t) => t.id).sort(), ['kpop', 'movie', 'running']);
+  assert.equal(overview.myTags.find((t) => t.id === 'kpop').myPostCount, 1);
+  assert.equal(overview.friendOverlap.friendCount, 1);
+  assert.deepEqual(overview.friendOverlap.tags, [{id: 'kpop', friendHolders: 1}]);
+  assert.ok(overview.community.newTagsThisWeek >= 1);
+  assert.ok(overview.community.tags.length > 0);
+  assert.equal(overview.tags.kpop.displayName, 'K-POP');
+  assert.deepEqual(overview.suggestions, []);
+  const overlapAll = await call('getOverlapPeople', 'alice', {scope: 'all'});
+  assert.deepEqual(overlapAll.people.map((p) => [p.uid, p.isFriend, p.overlapTagIds]), [['carol', true, ['kpop']]]);
+  assert.equal(overlapAll.cursor, null);
+  assert.deepEqual((await call('getOverlapPeople', 'alice', {scope: 'others'})).people, []);
+  // 차단은 양쪽 모두 빠진다(alice가 bob을 차단).
+  assert.deepEqual((await call('getOverlapPeople', 'bob', {scope: 'all'})).people, []);
   const tagPostId = 'TagPost0000000000001';
   await createTagPost(tagPostId, {visibility: 'tag', tagIds: ['kpop']});
   const stored = await readAdmin(`posts/${tagPostId}`);

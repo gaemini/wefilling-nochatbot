@@ -36,14 +36,13 @@ import 'account_settings_screen.dart';
 import 'post_detail_screen.dart';
 import 'review_detail_screen.dart';
 import 'friends_page.dart';
-import 'tag_picker_screen.dart';
 import '../services/interest_tag_service.dart';
 import '../ui/widgets/tag_chips.dart';
 import '../ui/interest/activity_filter_bar.dart';
+import '../ui/interest/interest_tab.dart';
 import '../ui/interest/profile_tab_bar.dart';
 import '../ui/interest/stagger_in.dart';
-import '../ui/interest/tag_detail_sheet.dart'
-    show WfFlatButton, showTagDetailSheet;
+import '../ui/interest/tag_detail_sheet.dart' show WfFlatButton;
 import '../ui/interest/wf_colors.dart';
 import 'semester_todo_admin_screen.dart';
 import '../ui/widgets/profile_image_viewer.dart';
@@ -609,16 +608,7 @@ class _MyPageScreenState extends State<MyPageScreen>
     );
   }
 
-  Future<void> _openTagPicker(List<String> current) async {
-    final saved = await Navigator.of(context).push<List<String>>(
-      MaterialPageRoute(
-        builder: (_) => TagPickerScreen(initialTagIds: current),
-      ),
-    );
-    if (saved == null || !mounted) return;
-    await Provider.of<AuthProvider>(context, listen: false).refreshUser();
-    if (mounted) setState(() {});
-  }
+
 
   Widget _buildReviewGrid() {
     // 실제 로그인된 사용자 ID 가져오기
@@ -1201,40 +1191,21 @@ class _MyPageScreenState extends State<MyPageScreen>
         ),
       );
 
-  /// 관심 탭(3단계에서 숫자 카드·관심 지도·나와 겹치는 사람으로 채운다).
+  /// 관심 탭: 숫자 카드(보기 전환) → 관심 지도 → 나와 겹치는 사람.
   Widget _buildInterestTab() {
-    final social = SocialProfileData.fromMap(
-        Provider.of<AuthProvider>(context).userData);
-    final language = Localizations.localeOf(context).languageCode;
-    return ListenableBuilder(
-      listenable: InterestTagService.instance,
-      builder: (context, _) {
-        InterestTagService.instance.ensureLoaded(social.interestTagIds);
-        return ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final id in social.interestTagIds)
-                  TagChip(
-                    key: ValueKey('mypage_tag_$id'),
-                    label: InterestTagService.instance.labelFor(id, language),
-                    onTap: () => showTagDetailSheet(context, tagId: id),
-                  ),
-                TagChip(
-                  key: const ValueKey('mypage_add_tag'),
-                  label: AppLocalizations.of(context)!.tagAddShort,
-                  onTap: () => _openTagPicker(social.interestTagIds),
-                ),
-              ],
-            ),
-          ],
-        );
+    return InterestTab(
+      uid: Provider.of<AuthProvider>(context).user?.uid,
+      onOverview: (overview) {
+        if (!_sameFaces(overview.friendFaces, _friendFaces)) {
+          setState(() => _friendFaces = overview.friendFaces);
+        }
       },
     );
   }
+
+  static bool _sameFaces(List<String> a, List<String> b) =>
+      a.length == b.length &&
+      Iterable<int>.generate(a.length).every((i) => a[i] == b[i]);
 
   /// 🔒 저장됨: 기존 '저장한 글' 데이터. 나만 본다.
   Widget _buildSavedPosts() {

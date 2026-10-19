@@ -61,6 +61,10 @@ class PostCardCommentInvite extends StatefulWidget {
   @visibleForTesting
   static Future<bool> Function(String postId, String text)? debugAddComment;
 
+  /// 테스트에서 최근 댓글 번역(Firebase)을 끈다.
+  @visibleForTesting
+  static bool debugTranslateLatest = true;
+
   @override
   State<PostCardCommentInvite> createState() => _PostCardCommentInviteState();
 }
@@ -439,9 +443,13 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
             child: _showSent
                 ? Padding(
                     padding: const EdgeInsets.only(top: 6, left: 34),
-                    child: _SentPill(
-                      key: ValueKey('post-card-comment-sent:${widget.post.id}'),
-                      label: strings.sent,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _SentPill(
+                        key: ValueKey(
+                            'post-card-comment-sent:${widget.post.id}'),
+                        label: strings.sent,
+                      ),
                     ),
                   )
                 : const SizedBox(width: double.infinity),
@@ -617,14 +625,18 @@ class _SentPill extends StatelessWidget {
           children: [
             const Icon(Icons.check_rounded, size: 14, color: Color(0xFF15803D)),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: uiFontFamily(context, 'Inter'),
-                fontFamilyFallback: const ['NotoSansKR'],
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF15803D),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: uiFontFamily(context, 'Inter'),
+                  fontFamilyFallback: const ['NotoSansKR'],
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF15803D),
+                ),
               ),
             ),
           ],
@@ -683,7 +695,8 @@ class _LatestCommentLine extends StatelessWidget {
           ),
         );
     final guessed = guessTextLanguage(latest.text);
-    final translatable = latest.text.isNotEmpty &&
+    final translatable = PostCardCommentInvite.debugTranslateLatest &&
+        latest.text.isNotEmpty &&
         latest.text.characters.length < 120 &&
         guessed != language;
     return InkWell(

@@ -103,9 +103,16 @@ void main() {
       expect(
         postsBlock,
         contains(
-          "affectedKeys().hasAny(['linkPreview', 'video', 'snackChatId'])",
+          "affectedKeys().hasAny(['linkPreview', 'video', 'snackChatId', 'latestComment'])",
         ),
       );
+    });
+
+    test('카드의 최근 댓글(latestComment)은 댓글 트리거만 쓴다', () {
+      final hasOnlyLists = RegExp(r"hasOnly\(\[([^\]]*)\]\)")
+          .allMatches(postsBlock)
+          .map((m) => m.group(1)!);
+      expect(hasOnlyLists.any((list) => list.contains('latestComment')), isFalse);
     });
 
     test('비작성자 업데이트 allowlist에는 snackChatId가 없다', () {

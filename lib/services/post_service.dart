@@ -604,6 +604,7 @@ class PostService {
       requiresHanyangVerification: data['requiresHanyangVerification'] == true,
       tagIds: parseTagIdList(data['tagIds']),
       audienceTagIds: parseTagIdList(data['audienceTagIds']),
+      latestComment: PostLatestComment.tryParse(data['latestComment']),
       type: data['type'] ?? 'text',
       pollOptions: _parsePollOptions(data['pollOptions']),
       pollTotalVotes: data['pollTotalVotes'] ?? 0,

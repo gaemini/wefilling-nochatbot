@@ -14,7 +14,17 @@ import {
   withMailSecrets,
 } from './backend';
 import * as admin from 'firebase-admin';
+import {
+  FieldValue as FirestoreFieldValue,
+  Timestamp as FirestoreTimestamp,
+} from 'firebase-admin/firestore';
 import {decorateChatPush} from './chat_push_presentation';
+import {
+  isNewerThanLatest,
+  isVisibleTopLevelComment,
+  latestCommentFields,
+  recomputeLatestCommentIfNeeded,
+} from './latest_comment';
 export {querySnackChatMessages, getSnackChatMessageContext, getSnackChatMentionCandidates, validateSnackChatMentions} from './snack_chat_discovery';
 import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
@@ -3634,6 +3644,8 @@ async function adjustCommentTargetCount(
   targetId: string,
   delta: 1 | -1,
   eventId: string,
+  // 최상위 새 댓글이면 같은 트랜잭션에서 posts.latestComment도 바꾼다.
+  latestComment?: {id: string; data: admin.firestore.DocumentData},
 ): Promise<'post' | 'meetup' | null> {
   const postRef = db.collection('posts').doc(targetId);
   const meetupRef = db.collection('meetups').doc(targetId);
@@ -3651,13 +3663,20 @@ async function adjustCommentTargetCount(
         0,
         (Number.isFinite(current) ? Math.trunc(current) : 0) + delta,
       );
-      transaction.update(postRef, {commentCount: next});
+      const latest = latestComment &&
+        isVisibleTopLevelComment(latestComment.data) &&
+        isNewerThanLatest(post.get('latestComment'), latestComment.data) ?
+        latestCommentFields(latestComment.id, latestComment.data) :
+        null;
+      transaction.update(postRef, latest ?
+        {commentCount: next, latestComment: latest} :
+        {commentCount: next});
       transaction.create(markerRef, {
         targetId,
         delta,
         sourceEventId: eventId,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromMillis(
+        createdAt: FirestoreFieldValue.serverTimestamp(),
+        expiresAt: FirestoreTimestamp.fromMillis(
           Date.now() + 7 * 24 * 60 * 60 * 1000,
         ),
       });
@@ -3669,8 +3688,8 @@ async function adjustCommentTargetCount(
         targetId,
         delta,
         sourceEventId: eventId,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromMillis(
+        createdAt: FirestoreFieldValue.serverTimestamp(),
+        expiresAt: FirestoreTimestamp.fromMillis(
           Date.now() + 7 * 24 * 60 * 60 * 1000,
         ),
       });
@@ -3686,8 +3705,8 @@ async function adjustCommentTargetCount(
       targetId,
       delta,
       sourceEventId: eventId,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      expiresAt: admin.firestore.Timestamp.fromMillis(
+      createdAt: FirestoreFieldValue.serverTimestamp(),
+      expiresAt: FirestoreTimestamp.fromMillis(
         Date.now() + 7 * 24 * 60 * 60 * 1000,
       ),
     });
@@ -3709,7 +3728,10 @@ export const onCommentCreated = triggers().firestore
 
       // posts와 meetups 중 실제 대상 하나만 원자적으로 갱신한다. 문서가
       // 겹치거나 트리거가 재시도돼도 음수 및 잘못된 경로 갱신을 만들지 않는다.
-      await adjustCommentTargetCount(postId, 1, context.eventId);
+      await adjustCommentTargetCount(postId, 1, context.eventId, {
+        id: snapshot.id,
+        data: comment,
+      });
 
       const postDoc = await db.collection('posts').doc(postId).get();
       if (!postDoc.exists) return null;
@@ -3903,6 +3925,12 @@ export const onCommentDeleted = triggers().firestore
       if (comment?.isDeleted !== true) {
         await adjustCommentTargetCount(postId, -1, context.eventId);
       }
+      // 지운 댓글이 카드의 '최근 댓글'이면 다음 댓글로 바꾼다.
+      try {
+        await recomputeLatestCommentIfNeeded(postId, context.params.commentId as string);
+      } catch (e) {
+        console.error('onCommentDeleted: latestComment 재계산 오류(무시):', e);
+      }
 
       // ✅ 부모(최상위) 댓글이 삭제되면, 해당 댓글의 대댓글도 함께 삭제한다.
       // - 클라이언트는 타인의 대댓글을 삭제할 권한이 없을 수 있으므로(Admin SDK로 처리)
@@ -3949,6 +3977,11 @@ export const onCommentSoftDeleted = triggers().firestore
       if (!postId) return null;
 
       await adjustCommentTargetCount(postId, -1, context.eventId);
+      try {
+        await recomputeLatestCommentIfNeeded(postId, context.params.commentId as string);
+      } catch (e) {
+        console.error('onCommentSoftDeleted: latestComment 재계산 오류(무시):', e);
+      }
       return null;
     } catch (error) {
       console.error('onCommentSoftDeleted 오류:', error);

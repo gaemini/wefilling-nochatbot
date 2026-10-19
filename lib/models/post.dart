@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 // lib/models/post.dart
 // 게시글 데이터 모델 정의
 // 게시글 관련 속성 및 메서드 포함(제목,내용,작성자,작성일,좋아요 수 등)
@@ -120,6 +121,9 @@ class Post {
   /// visibility == 'tag'일 때 볼 수 있는 태그(= tagIds).
   final List<String> audienceTagIds;
 
+  /// 카드의 '최근 댓글 한 줄'(댓글 트리거가 비정규화). 없는 구버전 문서는 null.
+  final PostLatestComment? latestComment;
+
   bool get isTagAudience => visibility == 'tag';
 
   String get ownerId => userId;
@@ -163,6 +167,7 @@ class Post {
     this.requiresHanyangVerification = false,
     this.tagIds = const [],
     this.audienceTagIds = const [],
+    this.latestComment,
   })  : categoryKeys = _normalizePostCategoryKeys(
           categoryKeys,
           (categoryKey?.trim().isNotEmpty ?? false) ? categoryKey : category,
@@ -320,6 +325,7 @@ class Post {
     bool? requiresHanyangVerification,
     List<String>? tagIds,
     List<String>? audienceTagIds,
+    PostLatestComment? latestComment,
   }) {
     return Post(
       id: id ?? this.id,
@@ -356,6 +362,7 @@ class Post {
           requiresHanyangVerification ?? this.requiresHanyangVerification,
       tagIds: tagIds ?? this.tagIds,
       audienceTagIds: audienceTagIds ?? this.audienceTagIds,
+      latestComment: latestComment ?? this.latestComment,
     );
   }
 
@@ -397,6 +404,7 @@ class Post {
       'requiresHanyangVerification': requiresHanyangVerification,
       'tagIds': tagIds,
       'audienceTagIds': audienceTagIds,
+      if (latestComment != null) 'latestComment': latestComment!.toMap(),
     };
   }
 
@@ -462,8 +470,71 @@ class Post {
       requiresHanyangVerification: map['requiresHanyangVerification'] == true,
       tagIds: parseTagIdList(map['tagIds']),
       audienceTagIds: parseTagIdList(map['audienceTagIds']),
+      latestComment: PostLatestComment.tryParse(map['latestComment']),
     );
   }
+}
+
+/// posts/{id}.latestComment: 숨김·삭제되지 않은 가장 최근 최상위 댓글 1개.
+class PostLatestComment {
+  const PostLatestComment({
+    required this.commentId,
+    required this.authorId,
+    this.authorName = '',
+    this.authorPhotoUrl = '',
+    this.isAnonymous = false,
+    this.text = '',
+    this.hasMedia = false,
+    this.createdAt,
+  });
+
+  final String commentId;
+  final String authorId;
+
+  /// 익명 댓글이면 비어 있다(화면은 '익명').
+  final String authorName;
+  final String authorPhotoUrl;
+  final bool isAnonymous;
+
+  /// 본문 앞 120자.
+  final String text;
+
+  /// 사진·GIF만 있는 댓글.
+  final bool hasMedia;
+  final DateTime? createdAt;
+
+  /// Firestore 문서(Timestamp) 또는 캐시 맵(millis). 형식이 맞지 않으면 null.
+  static PostLatestComment? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final id = (raw['commentId'] ?? '').toString();
+    if (id.isEmpty) return null;
+    final created = raw['createdAt'];
+    return PostLatestComment(
+      commentId: id,
+      authorId: (raw['authorId'] ?? '').toString(),
+      authorName: (raw['authorName'] ?? '').toString(),
+      authorPhotoUrl: (raw['authorPhotoUrl'] ?? '').toString(),
+      isAnonymous: raw['isAnonymous'] == true,
+      text: (raw['text'] ?? '').toString(),
+      hasMedia: raw['hasMedia'] == true,
+      createdAt: created is int
+          ? DateTime.fromMillisecondsSinceEpoch(created)
+          : created is Timestamp
+              ? created.toDate()
+              : null,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'commentId': commentId,
+        'authorId': authorId,
+        'authorName': authorName,
+        'authorPhotoUrl': authorPhotoUrl,
+        'isAnonymous': isAnonymous,
+        'text': text,
+        'hasMedia': hasMedia,
+        if (createdAt != null) 'createdAt': createdAt!.millisecondsSinceEpoch,
+      };
 }
 
 /// 문서의 tagIds/audienceTagIds(최대 3, 빈 값·중복 제외).

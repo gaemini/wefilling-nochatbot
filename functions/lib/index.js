@@ -11,7 +11,9 @@ exports.notificationThreadIdFor = notificationThreadIdFor;
 const functions = require("firebase-functions");
 const backend_1 = require("./backend");
 const admin = require("firebase-admin");
+const firestore_1 = require("firebase-admin/firestore");
 const chat_push_presentation_1 = require("./chat_push_presentation");
+const latest_comment_1 = require("./latest_comment");
 var snack_chat_discovery_1 = require("./snack_chat_discovery");
 Object.defineProperty(exports, "querySnackChatMessages", { enumerable: true, get: function () { return snack_chat_discovery_1.querySnackChatMessages; } });
 Object.defineProperty(exports, "getSnackChatMessageContext", { enumerable: true, get: function () { return snack_chat_discovery_1.getSnackChatMessageContext; } });
@@ -3180,7 +3182,9 @@ async function isVerifiedCommentNotificationRecipient(notification) {
     return verifiedReply.parentAuthorId === recipientId &&
         recipientCommentId === verifiedReply.parentCommentId;
 }
-async function adjustCommentTargetCount(targetId, delta, eventId) {
+async function adjustCommentTargetCount(targetId, delta, eventId, 
+// 최상위 새 댓글이면 같은 트랜잭션에서 posts.latestComment도 바꾼다.
+latestComment) {
     const postRef = db.collection('posts').doc(targetId);
     const meetupRef = db.collection('meetups').doc(targetId);
     const markerId = crypto.createHash('sha256')
@@ -3195,13 +3199,20 @@ async function adjustCommentTargetCount(targetId, delta, eventId) {
         if (post.exists) {
             const current = Number(post.get('commentCount'));
             const next = Math.max(0, (Number.isFinite(current) ? Math.trunc(current) : 0) + delta);
-            transaction.update(postRef, { commentCount: next });
+            const latest = latestComment &&
+                (0, latest_comment_1.isVisibleTopLevelComment)(latestComment.data) &&
+                (0, latest_comment_1.isNewerThanLatest)(post.get('latestComment'), latestComment.data) ?
+                (0, latest_comment_1.latestCommentFields)(latestComment.id, latestComment.data) :
+                null;
+            transaction.update(postRef, latest ?
+                { commentCount: next, latestComment: latest } :
+                { commentCount: next });
             transaction.create(markerRef, {
                 targetId,
                 delta,
                 sourceEventId: eventId,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                createdAt: firestore_1.FieldValue.serverTimestamp(),
+                expiresAt: firestore_1.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
             });
             return 'post';
         }
@@ -3211,8 +3222,8 @@ async function adjustCommentTargetCount(targetId, delta, eventId) {
                 targetId,
                 delta,
                 sourceEventId: eventId,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                createdAt: firestore_1.FieldValue.serverTimestamp(),
+                expiresAt: firestore_1.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
             });
             return null;
         }
@@ -3223,8 +3234,8 @@ async function adjustCommentTargetCount(targetId, delta, eventId) {
             targetId,
             delta,
             sourceEventId: eventId,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            createdAt: firestore_1.FieldValue.serverTimestamp(),
+            expiresAt: firestore_1.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
         });
         return 'meetup';
     });
@@ -3244,7 +3255,10 @@ exports.onCommentCreated = (0, backend_1.triggers)().firestore
             return null;
         // posts와 meetups 중 실제 대상 하나만 원자적으로 갱신한다. 문서가
         // 겹치거나 트리거가 재시도돼도 음수 및 잘못된 경로 갱신을 만들지 않는다.
-        await adjustCommentTargetCount(postId, 1, context.eventId);
+        await adjustCommentTargetCount(postId, 1, context.eventId, {
+            id: snapshot.id,
+            data: comment,
+        });
         const postDoc = await db.collection('posts').doc(postId).get();
         if (!postDoc.exists)
             return null;
@@ -3421,6 +3435,13 @@ exports.onCommentDeleted = (0, backend_1.triggers)().firestore
         if ((comment === null || comment === void 0 ? void 0 : comment.isDeleted) !== true) {
             await adjustCommentTargetCount(postId, -1, context.eventId);
         }
+        // 지운 댓글이 카드의 '최근 댓글'이면 다음 댓글로 바꾼다.
+        try {
+            await (0, latest_comment_1.recomputeLatestCommentIfNeeded)(postId, context.params.commentId);
+        }
+        catch (e) {
+            console.error('onCommentDeleted: latestComment 재계산 오류(무시):', e);
+        }
         // ✅ 부모(최상위) 댓글이 삭제되면, 해당 댓글의 대댓글도 함께 삭제한다.
         // - 클라이언트는 타인의 대댓글을 삭제할 권한이 없을 수 있으므로(Admin SDK로 처리)
         // - 대댓글 삭제는 각각 onCommentDeleted를 다시 트리거하여 commentCount가 올바르게 감소한다.
@@ -3463,6 +3484,12 @@ exports.onCommentSoftDeleted = (0, backend_1.triggers)().firestore
         if (!postId)
             return null;
         await adjustCommentTargetCount(postId, -1, context.eventId);
+        try {
+            await (0, latest_comment_1.recomputeLatestCommentIfNeeded)(postId, context.params.commentId);
+        }
+        catch (e) {
+            console.error('onCommentSoftDeleted: latestComment 재계산 오류(무시):', e);
+        }
         return null;
     }
     catch (error) {

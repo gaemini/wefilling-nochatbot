@@ -982,7 +982,8 @@ service cloud.firestore {
         // 클라이언트가 게시 후 임의 URL/썸네일로 교체할 수 없다.
         // snackChatId는 createPostSnackChatSecure(Admin SDK)만 쓴다. 작성자도
         // 포스트를 다른 방에 연결하거나 연결을 지울 수 없다.
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkPreview', 'video', 'snackChatId'])) &&
+        // latestComment(카드의 최근 댓글 한 줄)는 댓글 트리거만 쓴다.
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkPreview', 'video', 'snackChatId', 'latestComment'])) &&
         visibilityFieldsUnchanged() &&
         (request.auth.uid == resource.data.userId ||
          (directContentOwnerBlockFree(resource.data.get('userId', '')) && (

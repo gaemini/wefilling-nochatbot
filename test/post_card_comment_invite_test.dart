@@ -65,7 +65,7 @@ void main() {
     expect(find.text('투표하고 이유를 남겨 보세요'), findsNothing);
   });
 
-  testWidgets('좁은 화면에서도 넘치지 않고, 탭하면 카드 위에서 바로 입력 시트가 열린다',
+  testWidgets('좁은 화면에서도 넘치지 않고, 누르면 시트 없이 카드 위에서 바로 입력',
       (tester) async {
     await tester.pumpWidget(_host(
       PostCardCommentInvite(
@@ -83,9 +83,12 @@ void main() {
     await tester.tap(pill);
     await tester.pumpAndSettle();
     expect(find.text('댓글 달기…'), findsOneWidget);
-    expect(find.textContaining('어떤 언어로 써도'), findsOneWidget);
-    // 어떤 글에 다는 댓글인지 한 줄로 보인다.
-    expect(find.textContaining('다음 학기 교양 추천해 주세요'), findsOneWidget);
+    // 시트·어두운 배경 없이 카드 안 입력칸이 포커스를 받는다.
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byKey(const ValueKey('post-card-comment-composer:p1')),
+        findsOneWidget);
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.focusNode!.hasFocus, isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -282,13 +285,22 @@ void main() {
           findsOneWidget);
     });
 
-    testWidgets('작성자 언어가 내 언어와 같으면 기존 안내 문구', (tester) async {
+    testWidgets('작성자 언어가 내 언어와 같으면 미리보기 없음', (tester) async {
       await tester.pumpWidget(sheetHost());
       await open(tester);
       await tester.enterText(find.byType(TextField), '좋아요');
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('post-card-comment-preview')), findsNothing);
-      expect(find.textContaining('어떤 언어로 써도'), findsOneWidget);
+    });
+
+    testWidgets('비운 채로 포커스를 잃으면 원래 입력 줄로', (tester) async {
+      await tester.pumpWidget(sheetHost());
+      await open(tester);
+      tester.widget<TextField>(find.byType(TextField)).focusNode!.unfocus();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('post-card-comment-composer:p1')),
+          findsNothing);
+      expect(find.text('어떻게 생각하세요?'), findsOneWidget);
     });
   });
 }

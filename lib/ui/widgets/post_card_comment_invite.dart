@@ -96,6 +96,36 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
   bool _showSent = false;
   Timer? _sentTimer;
 
+  /// 카드 위에서 바로 쓰는 중(시트·어두운 배경 없음).
+  bool _editing = false;
+  static const int _maxLength = 500;
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode(debugLabel: 'post-card-comment');
+  bool _sending = false;
+  bool _failed = false;
+
+  /// 추천 문장으로 채웠으면 그 문장(미리보기에 작성자 언어 버전을 바로 쓴다).
+  CommentSuggestion? _suggestion;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      if (mounted) setState(() => _failed = false);
+    });
+    // 비운 채로 다른 곳을 누르면 원래 입력 줄로 돌아간다.
+    _focusNode.addListener(() {
+      if (!mounted) return;
+      if (!_focusNode.hasFocus &&
+          _controller.text.trim().isEmpty &&
+          !_sending) {
+        setState(() => _editing = false);
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
   @override
   void didUpdateWidget(covariant PostCardCommentInvite oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -108,6 +138,8 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
 
   @override
   void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
     _sentTimer?.cancel();
     _dwell?.cancel();
     _rotate?.cancel();
@@ -197,7 +229,7 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
   String? get _viewerId =>
       widget.debugViewerId ?? FirebaseAuth.instance.currentUser?.uid;
 
-  Future<void> _openComposer() async {
+  void _openComposer() {
     if (_viewerId == null) return;
     // 누르면 회전을 멈추고, 이 카드는 오늘 다시 반응하지 않는다.
     _stopRotation();
@@ -205,17 +237,59 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
     _dwell = null;
     _nudged = true;
     CommentInviteNudgeGate.instance.markDone(widget.post.id);
-    final sent = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      useSafeArea: true,
-      builder: (_) => _CardCommentComposerSheet(post: widget.post),
+    setState(() => _editing = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  /// 추천 문장: 바로 보내지 않고 입력칸에 채운 뒤 커서를 끝에 둔다.
+  void _useSuggestion(CommentSuggestion suggestion, String text) {
+    HapticFeedback.selectionClick();
+    _suggestion = suggestion;
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
-    if (!mounted || sent == null || sent.trim().isEmpty) return;
-    HapticFeedback.lightImpact();
+    _focusNode.requestFocus();
+  }
+
+  Future<void> _send() async {
+    final text = _controller.text.trim();
+    if (_sending || text.isEmpty) return;
     setState(() {
-      _myRecentComment = sent.trim();
+      _sending = true;
+      _failed = false;
+    });
+    bool success;
+    final debugAdd = PostCardCommentInvite.debugAddComment;
+    try {
+      success = debugAdd != null
+          ? await debugAdd(widget.post.id, text)
+          : await CommentService().addComment(widget.post.id, text);
+    } catch (_) {
+      success = false;
+    }
+    if (!mounted) return;
+    if (!success) {
+      setState(() {
+        _sending = false;
+        _failed = true;
+      });
+      return;
+    }
+    // 카드/상세가 공유하는 댓글 수를 즉시 올린다(서버 집계가 뒤이어 확정).
+    if (debugAdd == null) {
+      PostService().adjustCachedCommentCount(widget.post.id, 1);
+    }
+    HapticFeedback.lightImpact();
+    _controller.clear();
+    _suggestion = null;
+    _focusNode.unfocus();
+    setState(() {
+      _sending = false;
+      _editing = false;
+      _myRecentComment = text;
       _showSent = true;
     });
     _sentTimer?.cancel();
@@ -238,6 +312,159 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
       return null;
     }
     return latest;
+  }
+
+  /// 카드 위 입력칸: 흰 바탕 + brand 1.5px, 모서리 18. 안에 보내기 버튼과 번역 미리보기.
+  Widget _inlineComposer(_InviteStrings strings) {
+    final mine = Localizations.localeOf(context).languageCode;
+    final typed = _controller.text.trim();
+    final hasText = typed.isNotEmpty;
+    final theirs = postSourceLanguage(widget.post);
+    final theirName = strings.languageName(theirs);
+    final showPreview =
+        hasText && theirs.isNotEmpty && theirs != mine && theirName != null;
+    final suggestion = _suggestion;
+    final translated = suggestion != null && typed == suggestion.forUi(mine)
+        ? suggestion.inLanguage(theirs)
+        : null;
+    final previewName =
+        widget.post.isAnonymous || widget.post.author.trim().isEmpty
+            ? strings.theAuthor
+            : widget.post.author.trim();
+    final small = TextStyle(
+      fontFamily: uiFontFamily(context, 'Inter'),
+      fontFamilyFallback: const ['NotoSansKR'],
+      fontSize: 12.5,
+      color: const Color(0xFF667085),
+      height: 1.3,
+    );
+    return Container(
+      key: ValueKey('post-card-comment-composer:${widget.post.id}'),
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _brand, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    minLines: 1,
+                    maxLines: 4,
+                    maxLength: _maxLength,
+                    textInputAction: TextInputAction.newline,
+                    style: TextStyle(
+                      fontFamily: uiFontFamily(context, 'Inter'),
+                      fontFamilyFallback: const ['NotoSansKR'],
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      color: const Color(0xFF101828),
+                    ),
+                    decoration: InputDecoration(
+                      hintText: strings.composerHint,
+                      hintStyle: const TextStyle(color: Color(0xFF98A2B3)),
+                      counterText: '',
+                      isDense: true,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              SizedBox.square(
+                dimension: 40,
+                child: Center(
+                  child: _sending
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      // 글자가 생기는 순간 0.4배에서 톡(320ms), 비면 사라진다.
+                      : AnimatedScale(
+                          scale: hasText ? 1 : 0,
+                          duration: MotionTokens.of(
+                              context, const Duration(milliseconds: 320)),
+                          curve: hasText ? const _PopFrom(.4) : Curves.easeIn,
+                          child: Semantics(
+                            button: true,
+                            enabled: hasText,
+                            label: strings.send,
+                            excludeSemantics: true,
+                            child: Material(
+                              color: _brand,
+                              shape: const CircleBorder(),
+                              child: InkWell(
+                                key: const ValueKey<String>(
+                                    'post-card-comment-send'),
+                                customBorder: const CircleBorder(),
+                                onTap: hasText ? _send : null,
+                                child: const SizedBox.square(
+                                  dimension: 34,
+                                  child: Icon(Icons.arrow_upward_rounded,
+                                      color: Colors.white, size: 19),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+          if (_failed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6, right: 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline_rounded,
+                      size: 14, color: Color(0xFFD92D20)),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      AppLocalizations.of(context)?.commentSubmitFailed ??
+                          strings.failed,
+                      style: small.copyWith(color: const Color(0xFFD92D20)),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (showPreview)
+            // '{작성자}에게는 {언어}로 보여요 · {번역}'(언어 이름만 brand 굵게).
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6, right: 10),
+              child: Text.rich(
+                key: const ValueKey('post-card-comment-preview'),
+                TextSpan(children: [
+                  for (final (part, bold)
+                      in strings.seenAs(previewName, theirName))
+                    TextSpan(
+                      text: part,
+                      style: bold
+                          ? const TextStyle(
+                              fontWeight: FontWeight.w700, color: _brand)
+                          : null,
+                    ),
+                  if (translated != null) TextSpan(text: ' · $translated'),
+                ]),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: small,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -312,11 +539,46 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
                 ),
               ),
             ),
+          // 추천 문장 3개: 쓰기 시작했고 비어 있을 때만 입력칸 바로 위 한 줄.
+          if (_editing && _controller.text.trim().isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 34, bottom: 8),
+              child: SizedBox(
+                height: 32,
+                child: Builder(builder: (context) {
+                  final mine = Localizations.localeOf(context).languageCode;
+                  final suggestions =
+                      commentSuggestionsFor(widget.post.categoryKey);
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: suggestions.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 6),
+                    itemBuilder: (context, index) {
+                      final text = suggestions[index].forUi(mine);
+                      return StaggerIn(
+                        index: index,
+                        offset: 6,
+                        step: const Duration(milliseconds: 50),
+                        duration: const Duration(milliseconds: 360),
+                        child: _SuggestionChip(
+                          key: ValueKey('post-card-comment-suggestion-$index'),
+                          label: text,
+                          onTap: () => _useSuggestion(suggestions[index], text),
+                        ),
+                      );
+                    },
+                  );
+                }),
+              ),
+            ),
           VisibilityDetector(
             key: ValueKey('comment-invite-vis:${widget.post.id}'),
             onVisibilityChanged: _onVisibility,
             child: Row(
               key: _rowKey,
+              crossAxisAlignment: _editing
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.center,
               children: [
                 // 아바타: 위로 3px · -6° → +4° → 제자리(900ms, 살짝 넘침).
                 AnimatedBuilder(
@@ -346,91 +608,98 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: CustomPaint(
-                    // 입력칸 고리: brand .28, 0 → 3px → 0(1.6s). 레이아웃은 흔들지 않는다.
-                    foregroundPainter: _RingPainter(_nudge, color: _brand),
-                    child: Semantics(
-                      button: true,
-                      label: prompt,
-                      excludeSemantics: true,
-                      child: MotionPress(
-                        pressedScale: .985,
-                        child: Material(
-                          color: const Color(0xFFF2F4F7),
-                          borderRadius: BorderRadius.circular(18),
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            key: ValueKey<String>(
-                              'post-card-comment-invite:${widget.post.id}',
-                            ),
-                            onTap: _openComposer,
-                            child: SizedBox(
-                              height: 36,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 13),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: _PhraseSwitcher(
-                                        text: _phrases.isEmpty
-                                            ? prompt
-                                            : _phrases[_phraseIndex.clamp(
-                                                0, _phrases.length - 1)],
-                                        style: TextStyle(
-                                          fontFamily:
-                                              uiFontFamily(context, 'Inter'),
-                                          fontFamilyFallback: const [
-                                            'NotoSansKR'
-                                          ],
-                                          fontSize: context
-                                              .rf(13.5)
-                                              .clamp(13, 14.5)
-                                              .toDouble(),
-                                          fontWeight: FontWeight.w500,
-                                          color: const Color(0xFF667085),
-                                          letterSpacing: -0.2,
-                                        ),
+                  child: _editing
+                      ? _inlineComposer(strings)
+                      : CustomPaint(
+                          // 입력칸 고리: brand .28, 0 → 3px → 0(1.6s). 레이아웃은 흔들지 않는다.
+                          foregroundPainter:
+                              _RingPainter(_nudge, color: _brand),
+                          child: Semantics(
+                            button: true,
+                            label: prompt,
+                            excludeSemantics: true,
+                            child: MotionPress(
+                              pressedScale: .985,
+                              child: Material(
+                                color: const Color(0xFFF2F4F7),
+                                borderRadius: BorderRadius.circular(18),
+                                clipBehavior: Clip.antiAlias,
+                                child: InkWell(
+                                  key: ValueKey<String>(
+                                    'post-card-comment-invite:${widget.post.id}',
+                                  ),
+                                  onTap: _openComposer,
+                                  child: SizedBox(
+                                    height: 36,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 13),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: _PhraseSwitcher(
+                                              text: _phrases.isEmpty
+                                                  ? prompt
+                                                  : _phrases[_phraseIndex.clamp(
+                                                      0, _phrases.length - 1)],
+                                              style: TextStyle(
+                                                fontFamily: uiFontFamily(
+                                                    context, 'Inter'),
+                                                fontFamilyFallback: const [
+                                                  'NotoSansKR'
+                                                ],
+                                                fontSize: context
+                                                    .rf(13.5)
+                                                    .clamp(13, 14.5)
+                                                    .toDouble(),
+                                                fontWeight: FontWeight.w500,
+                                                color: const Color(0xFF667085),
+                                                letterSpacing: -0.2,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          // 어떤 언어로 써도 번역돼 전달된다는 신호.
+                                          // 반응할 때 Y축으로 한 바퀴, 회색 → brand → 회색(800ms).
+                                          AnimatedBuilder(
+                                            animation: _nudge,
+                                            builder: (context, _) {
+                                              final t =
+                                                  (_nudge.value * 1600 / 800)
+                                                      .clamp(0.0, 1.0);
+                                              final spinning =
+                                                  _nudge.isAnimating && t < 1;
+                                              final icon = Icon(
+                                                Icons.translate_rounded,
+                                                size: 15,
+                                                color: spinning
+                                                    ? Color.lerp(
+                                                        _iconIdle,
+                                                        _brand,
+                                                        math.sin(t * math.pi))
+                                                    : _iconIdle,
+                                              );
+                                              if (!spinning) return icon;
+                                              return Transform(
+                                                alignment: Alignment.center,
+                                                transform: Matrix4.rotationY(
+                                                    Curves.easeInOut
+                                                            .transform(t) *
+                                                        2 *
+                                                        math.pi),
+                                                child: icon,
+                                              );
+                                            },
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
-                                    // 어떤 언어로 써도 번역돼 전달된다는 신호.
-                                    // 반응할 때 Y축으로 한 바퀴, 회색 → brand → 회색(800ms).
-                                    AnimatedBuilder(
-                                      animation: _nudge,
-                                      builder: (context, _) {
-                                        final t = (_nudge.value * 1600 / 800)
-                                            .clamp(0.0, 1.0);
-                                        final spinning =
-                                            _nudge.isAnimating && t < 1;
-                                        final icon = Icon(
-                                          Icons.translate_rounded,
-                                          size: 15,
-                                          color: spinning
-                                              ? Color.lerp(_iconIdle, _brand,
-                                                  math.sin(t * math.pi))
-                                              : _iconIdle,
-                                        );
-                                        if (!spinning) return icon;
-                                        return Transform(
-                                          alignment: Alignment.center,
-                                          transform: Matrix4.rotationY(
-                                              Curves.easeInOut.transform(t) *
-                                                  2 *
-                                                  math.pi),
-                                          child: icon,
-                                        );
-                                      },
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -798,365 +1067,6 @@ class _RecentCommentLine extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 카드에서 여는 댓글 입력 시트. 키보드 바로 위에 붙어 피드 위치를 지킨다.
-class _CardCommentComposerSheet extends StatefulWidget {
-  const _CardCommentComposerSheet({required this.post});
-
-  final Post post;
-
-  @override
-  State<_CardCommentComposerSheet> createState() =>
-      _CardCommentComposerSheetState();
-}
-
-class _CardCommentComposerSheetState extends State<_CardCommentComposerSheet> {
-  static const int _maxLength = 500;
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode(debugLabel: 'post-card-comment');
-  bool _sending = false;
-  bool _failed = false;
-  bool _focused = false;
-
-  /// 추천 문장으로 채웠으면 그 문장(미리보기에 작성자 언어 버전을 바로 쓴다).
-  CommentSuggestion? _suggestion;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.addListener(() {
-      if (mounted) setState(() => _failed = false);
-    });
-    _focusNode.addListener(() {
-      if (mounted) setState(() => _focused = _focusNode.hasFocus);
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  /// 추천 문장: 바로 보내지 않고 입력칸에 채운 뒤 커서를 끝에 둔다.
-  void _useSuggestion(CommentSuggestion suggestion, String text) {
-    HapticFeedback.selectionClick();
-    _suggestion = suggestion;
-    _controller.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-    _focusNode.requestFocus();
-  }
-
-  Future<void> _send() async {
-    final text = _controller.text.trim();
-    if (_sending || text.isEmpty) return;
-    setState(() {
-      _sending = true;
-      _failed = false;
-    });
-    bool success;
-    final debugAdd = PostCardCommentInvite.debugAddComment;
-    try {
-      success = debugAdd != null
-          ? await debugAdd(widget.post.id, text)
-          : await CommentService().addComment(widget.post.id, text);
-    } catch (_) {
-      success = false;
-    }
-    if (!mounted) return;
-    if (success) {
-      // 카드/상세가 공유하는 댓글 수를 즉시 올린다(서버 집계가 뒤이어 확정).
-      if (debugAdd == null) {
-        PostService().adjustCachedCommentCount(widget.post.id, 1);
-      }
-      Navigator.of(context).pop(text);
-      return;
-    }
-    setState(() {
-      _sending = false;
-      _failed = true;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final strings = _InviteStrings.of(context);
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    final hasText = _controller.text.trim().isNotEmpty;
-    final excerpt = widget.post.displayText.replaceAll('\n', ' ').trim();
-    final author = widget.post.isAnonymous
-        ? (AppLocalizations.of(context)?.anonymous ?? '')
-        : widget.post.author.trim();
-    final small = TextStyle(
-      fontFamily: uiFontFamily(context, 'Inter'),
-      fontFamilyFallback: const ['NotoSansKR'],
-      fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
-      color: const Color(0xFF667085),
-      height: 1.3,
-    );
-    final mine = Localizations.localeOf(context).languageCode;
-    final suggestions = commentSuggestionsFor(widget.post.categoryKey);
-    final typed = _controller.text.trim();
-    // 작성자 언어가 내 언어와 다를 때만 '작성자에게는 …로 보여요' 미리보기.
-    final theirs = postSourceLanguage(widget.post);
-    final theirName = strings.languageName(theirs);
-    final showPreview =
-        hasText && theirs.isNotEmpty && theirs != mine && theirName != null;
-    final suggestion = _suggestion;
-    final translated = suggestion != null && typed == suggestion.forUi(mine)
-        ? suggestion.inLanguage(theirs)
-        : null;
-    final previewName =
-        widget.post.isAnonymous || widget.post.author.trim().isEmpty
-            ? strings.theAuthor
-            : widget.post.author.trim();
-
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: Material(
-        color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        clipBehavior: Clip.antiAlias,
-        child: SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 10, 12, 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD0D5DD),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // 어떤 글에 다는 댓글인지 한 줄로 보여 준다.
-                Container(
-                  padding: const EdgeInsets.only(left: 10),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      left: BorderSide(color: Color(0xFFD0D5DD), width: 2.5),
-                    ),
-                  ),
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        if (author.isNotEmpty)
-                          TextSpan(
-                            text: '$author  ',
-                            style: small.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF344054),
-                            ),
-                          ),
-                        TextSpan(text: excerpt.isEmpty ? '…' : excerpt),
-                      ],
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: small,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // 추천 문장 3개: 입력이 비어 있을 때만 키보드 바로 위 한 줄.
-                if (!hasText)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: SizedBox(
-                      height: 32,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: suggestions.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 6),
-                        itemBuilder: (context, index) {
-                          final text = suggestions[index].forUi(mine);
-                          return StaggerIn(
-                            index: index,
-                            offset: 6,
-                            step: const Duration(milliseconds: 50),
-                            duration: const Duration(milliseconds: 360),
-                            child: _SuggestionChip(
-                              key: ValueKey(
-                                  'post-card-comment-suggestion-$index'),
-                              label: text,
-                              onTap: () =>
-                                  _useSuggestion(suggestions[index], text),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        focusNode: _focusNode,
-                        minLines: 1,
-                        maxLines: 4,
-                        maxLength: _maxLength,
-                        textInputAction: TextInputAction.newline,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                          color: const Color(0xFF101828),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: strings.composerHint,
-                          hintStyle: const TextStyle(color: Color(0xFF98A2B3)),
-                          counterText: '',
-                          filled: true,
-                          // 포커스: 흰 바탕 + brand 1.5px, 모서리 16.
-                          fillColor:
-                              _focused ? Colors.white : const Color(0xFFF2F4F7),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide.none,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF2E6CC2),
-                              width: 1.5,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox.square(
-                      dimension: 44,
-                      child: Center(
-                        child: _sending
-                            ? const SizedBox.square(
-                                dimension: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            // 글자가 생기는 순간 0.4배에서 톡(320ms), 비면 사라진다.
-                            : AnimatedScale(
-                                scale: hasText ? 1 : 0,
-                                duration: MotionTokens.of(
-                                    context, const Duration(milliseconds: 320)),
-                                curve: hasText
-                                    ? const _PopFrom(.4)
-                                    : Curves.easeIn,
-                                child: Semantics(
-                                  button: true,
-                                  enabled: hasText,
-                                  label: strings.send,
-                                  excludeSemantics: true,
-                                  child: Material(
-                                    color: hasText
-                                        ? const Color(0xFF4990E2)
-                                        : const Color(0xFFD0D5DD),
-                                    shape: const CircleBorder(),
-                                    child: InkWell(
-                                      key: const ValueKey<String>(
-                                        'post-card-comment-send',
-                                      ),
-                                      customBorder: const CircleBorder(),
-                                      onTap: hasText ? _send : null,
-                                      child: const SizedBox.square(
-                                        dimension: 36,
-                                        child: Icon(
-                                          Icons.arrow_upward_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      _failed
-                          ? Icons.error_outline_rounded
-                          : Icons.translate_rounded,
-                      size: 14,
-                      color: _failed
-                          ? const Color(0xFFD92D20)
-                          : const Color(0xFF98A2B3),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: _failed || !showPreview
-                          ? Text(
-                              _failed
-                                  ? (AppLocalizations.of(context)
-                                          ?.commentSubmitFailed ??
-                                      strings.failed)
-                                  : strings.translationHint,
-                              style: small.copyWith(
-                                color: _failed ? const Color(0xFFD92D20) : null,
-                              ),
-                            )
-                          // '{작성자}에게는 {언어}로 보여요 · {번역}'(언어 이름만 brand 굵게).
-                          : Text.rich(
-                              key: const ValueKey('post-card-comment-preview'),
-                              TextSpan(children: [
-                                for (final (part, bold)
-                                    in strings.seenAs(previewName, theirName))
-                                  TextSpan(
-                                    text: part,
-                                    style: bold
-                                        ? const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            color: Color(0xFF2E6CC2),
-                                          )
-                                        : null,
-                                  ),
-                                if (translated != null)
-                                  TextSpan(text: ' · $translated'),
-                              ]),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: small,
-                            ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +9,8 @@ import 'package:wefilling/l10n/app_localizations.dart';
 import 'package:wefilling/models/interest_tag.dart';
 import 'package:wefilling/providers/auth_provider.dart';
 import 'package:wefilling/screens/tag_explore_screen.dart';
+import 'package:wefilling/screens/tag_page_screen.dart';
+import 'package:wefilling/services/my_tags_store.dart';
 import 'package:wefilling/services/interest_tag_service.dart';
 import 'package:wefilling/ui/widgets/my_tags_new_row.dart';
 
@@ -15,9 +19,11 @@ import 'support/translation_test_backend.dart';
 
 class _Auth extends Fake with ChangeNotifier implements AuthProvider {
   _Auth(this.tags);
-  final List<String> tags;
+  List<String> tags;
   @override
   Map<String, dynamic>? get userData => {'interestTagIds': tags};
+  @override
+  Future<void> refreshUser() async => notifyListeners();
 }
 
 Map<String, Object?> _tag(String id, String name, int holders) => {
@@ -47,7 +53,11 @@ void main() {
   tearDownAll(backend.close);
 
   final calls = <String>[];
+  var createData = <String, Object?>{};
+  // 테스트 안에서 만들면 저장을 붙잡아 둔다(낙관적 상태 확인).
+  Completer<Object?>? hold;
   setUp(() {
+    hold = null;
     calls.clear();
     SharedPreferences.setMockInitialValues({});
     InterestTagService.instance
@@ -113,11 +123,13 @@ void main() {
               'normalized': (data['q'] as String).toLowerCase()
             };
           case 'createTag':
+            createData = data;
             return {
               'id': (data['name'] as String).toLowerCase(),
               'created': true
             };
           case 'setProfileTags':
+            if (hold != null) return hold!.future;
             return {'tagIds': data['tagIds']};
           case 'getTagSummary':
             return {
@@ -140,6 +152,7 @@ void main() {
           id: 'boardgame', displayName: 'Board game', holderCount: 9));
   });
   tearDown(() {
+    MyTagsStore.instance.debugReset();
     InterestTagService.instance.debugReset();
     MyTagsNewRowDebug.clear();
   });
@@ -153,33 +166,49 @@ void main() {
         child: app(child, locale: locale, scale: scale),
       );
 
-  testWidgets('둘러보기: 줄은 #이름·사람 수·설명만, 이유는 친구·뜨는·새 필터에서만', (tester) async {
+  String plain(String marked) => marked.replaceAll('**', '');
+
+  testWidgets('둘러보기 v4: 줄은 타일·#이름·사람 수·설명, 필터별 셋째 줄, 내 태그는 ✓',
+      (tester) async {
     await tester.pumpWidget(wrap(const TagExploreScreen(), tags: ['climbing']));
     await tester.pumpAndSettle();
     final l10n =
         AppLocalizations.of(tester.element(find.byType(TagExploreScreen)))!;
-    // 맨 위에 내 #태그 새 글(상단 바 '#' 버튼이 이 화면을 연다).
-    expect(find.text(l10n.myTagsNewPosts), findsOneWidget);
+    // 맨 위에 내 태그 새 글(분류 색 칩).
+    expect(find.text(l10n.exploreMyTagsTitle), findsOneWidget);
     expect(find.byKey(const ValueKey('board_my_tag_climbing')), findsOneWidget);
     expect(find.byKey(const ValueKey('tag_explore_climbing')), findsOneWidget);
     expect(find.text(l10n.tagCountPeople(40)), findsOneWidget);
     expect(find.text('실내 암장 같이 가요'), findsOneWidget);
-    // '#사진과 함께' 같은 연관 이유와 필터 설명 문구는 보이지 않는다.
-    expect(find.textContaining('함께'), findsNothing);
-    expect(find.text(l10n.tagExploreCaptionRecommended), findsNothing);
-    expect(find.text(l10n.tagAddedShort), findsOneWidget);
+    expect(
+        find.text(plain(l10n.exploreCaptionRecommended), findRichText: true),
+        findsOneWidget);
+    // '#사진과 함께' 같은 연관 이유는 없다.
+    expect(find.textContaining('사진과'), findsNothing);
+    // 내 태그는 ✓.
+    expect(
+        find.descendant(
+            of: find.byKey(const ValueKey('tag_row_add_climbing')),
+            matching: find.byIcon(Icons.check_rounded)),
+        findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_friends')));
     await tester.pumpAndSettle();
-    expect(find.text(l10n.tagReasonFriends('jaemini, sora_k')), findsOneWidget);
+    expect(find.text(plain(l10n.exploreCaptionFriends), findRichText: true),
+        findsOneWidget);
+    expect(
+        find.text('${l10n.exploreFriendPrefix} jaemini, sora_k',
+            findRichText: true),
+        findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_trending')));
     await tester.pumpAndSettle();
-    expect(find.text(l10n.tagReasonWeek(9)), findsOneWidget);
+    expect(find.text(l10n.tagWeeklyGain(9)), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_explore_filter_newest')));
     await tester.pumpAndSettle();
     expect(find.text(l10n.tagReasonDaysAgo(2)), findsOneWidget);
+    expect(find.text(l10n.tagExploreNew), findsWidgets);
     expect(calls.where((c) => c == 'exploreTags').length, 4);
 
     // 다시 고르면 다시 묻지 않는다.
@@ -188,9 +217,45 @@ void main() {
     expect(calls.where((c) => c == 'exploreTags').length, 4);
   });
 
-  testWidgets('둘러보기: 검색에 없으면 설명을 붙여 만들고 태그 페이지에서 설명을 고친다',
-      (tester) async {
-    await tester.pumpWidget(wrap(const TagExploreScreen()));
+  testWidgets('＋ → 바로 ✓(낙관적), 줄을 누르면 태그 시트', (tester) async {
+    final auth = _Auth([]);
+    await tester.pumpWidget(ChangeNotifierProvider<AuthProvider>.value(
+      value: auth,
+      child: app(const TagExploreScreen(),
+          locale: const Locale('ko'), scale: 1),
+    ));
+    await tester.pumpAndSettle();
+    hold = Completer<Object?>();
+    final add = find.byKey(const ValueKey('tag_row_add_climbing'));
+    await tester.tap(add);
+    await tester.pump();
+    expect(find.descendant(of: add, matching: find.byIcon(Icons.check_rounded)),
+        findsOneWidget);
+    auth.tags = ['climbing'];
+    hold!.complete({'tagIds': auth.tags, 'gain': {'climbing': 4}});
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final l10n =
+        AppLocalizations.of(tester.element(find.byType(TagExploreScreen)))!;
+    expect(find.text(l10n.tagOverlapGain(4)), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(calls, contains('setProfileTags'));
+
+    await tester.tap(find.byKey(const ValueKey('tag_explore_climbing')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tag_detail_name')), findsOneWidget);
+  });
+
+  testWidgets('검색에 없으면 만들기 카드 → 이름·설명·분류 → 만들면 바로 내 태그', (tester) async {
+    final auth = _Auth([]);
+    InterestTagService.instance.debugGetTag = (id) async => id == 'hanriver'
+        ? {..._tag('hanriver', 'hanriver', 0), 'category': 'active'}
+        : null;
+    await tester.pumpWidget(ChangeNotifierProvider<AuthProvider>.value(
+      value: auth,
+      child: app(const TagExploreScreen(),
+          locale: const Locale('ko'), scale: 1),
+    ));
     await tester.pumpAndSettle();
     final l10n =
         AppLocalizations.of(tester.element(find.byType(TagExploreScreen)))!;
@@ -198,16 +263,37 @@ void main() {
         find.byKey(const ValueKey('tag_explore_search')), 'hanriver');
     await tester.pump(const Duration(milliseconds: 310));
     await tester.pumpAndSettle();
-    expect(find.text(l10n.tagCreate('hanriver')), findsOneWidget);
+    expect(find.text(l10n.exploreCreateTitle('hanriver')), findsOneWidget);
+    expect(find.text(l10n.exploreCreateHint), findsOneWidget);
+    expect(find.text(l10n.exploreSimilarCount(1)), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('tag_explore_create_row')));
     await tester.pumpAndSettle();
-    expect(find.text('hanriver'), findsWidgets);
     await tester.enterText(find.byKey(const ValueKey('tag_create_description')),
         '한강에서 같이 뛰어요');
+    await tester
+        .tap(find.byKey(const ValueKey('tag_create_category_active')));
+    await tester.pump();
+    hold = Completer<Object?>();
     await tester.tap(find.byKey(const ValueKey('tag_create_submit')));
     await tester.pumpAndSettle();
+    auth.tags = ['hanriver'];
+    hold!.complete({'tagIds': auth.tags, 'gain': {}});
+    await tester.pumpAndSettle();
     expect(calls, containsAllInOrder(['createTag', 'setProfileTags']));
-    // 태그 페이지: 설명 + 더보기 '설명 수정'.
+    expect(createData['category'], 'active');
+    expect(createData['description'], '한강에서 같이 뛰어요');
+    // 만든 태그 줄이 맨 위에서 ✓.
+    expect(
+        find.descendant(
+            of: find.byKey(const ValueKey('tag_row_add_hanriver')),
+            matching: find.byIcon(Icons.check_rounded)),
+        findsOneWidget);
+  });
+
+  testWidgets('태그 페이지: 만든 사람은 더보기에서 설명을 고친다', (tester) async {
+    await tester.pumpWidget(
+        wrap(const TagPageScreen(tagId: 'hanriver'), tags: ['hanriver']));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('tag_page_description')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('tag_page_more')));
     await tester.pumpAndSettle();

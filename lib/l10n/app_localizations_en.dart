@@ -4260,4 +4260,43 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get overlapPlaceholder =>
       'Pick tags to see people who share them here';
+
+  @override
+  String get exploreMyTagsTitle => 'New in my tags';
+
+  @override
+  String get exploreEdit => 'Edit';
+
+  @override
+  String get exploreCaptionRecommended =>
+      'Often added **together with your tags**';
+
+  @override
+  String get exploreCaptionFriends => 'Tags **your friends added**';
+
+  @override
+  String get exploreCaptionTrending => 'Tags that **grew most this week**';
+
+  @override
+  String get exploreCaptionNew => '**Brand-new tags**. Be one of the first';
+
+  @override
+  String get exploreFriendPrefix => 'Friends';
+
+  @override
+  String exploreCreateTitle(String name) {
+    return 'Create #$name';
+  }
+
+  @override
+  String get exploreCreateHint =>
+      'This tag doesn\'t exist yet. It joins your tags right away';
+
+  @override
+  String exploreSimilarCount(int n) {
+    return '$n similar tags';
+  }
+
+  @override
+  String get exploreSimilarNone => 'No similar tags';
 }

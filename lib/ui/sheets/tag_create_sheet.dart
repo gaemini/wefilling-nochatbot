@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/interest_tag.dart';
 import '../../services/interest_tag_service.dart';
+import '../../design/tokens.dart';
+import '../interest/tag_palette.dart';
+import '../interest/wf_colors.dart';
 import '../widgets/tag_chips.dart';
 
 /// 새 태그 만들기: 이름 + 한 줄 설명. 만든(또는 이미 있던) 태그 id를 돌려준다.
@@ -49,6 +52,9 @@ class _TagCreateSheetState extends State<_TagCreateSheet> {
   bool _saving = false;
   String? _error;
 
+  /// 분류(선택, 기본 기타).
+  TagCategory _category = TagCategory.etc;
+
   bool get _editing => widget.editing != null;
 
   @override
@@ -79,7 +85,7 @@ class _TagCreateSheetState extends State<_TagCreateSheet> {
           ? await service.updateDescription(
               widget.editing!.id, _description.text)
           : await service.create(_name.text.trim(),
-              description: _description.text);
+              description: _description.text, category: _category.name);
       if (mounted) Navigator.of(context).pop(result);
     } catch (error) {
       if (mounted) {
@@ -169,6 +175,30 @@ class _TagCreateSheetState extends State<_TagCreateSheet> {
                       tagTextStyle(context, 15, FontWeight.w500, TagColors.ink),
                   decoration: _decoration(l10n.tagDescHint),
                 ),
+                if (editing == null) ...[
+                  _label(l10n.tagCategoryLabel),
+                  SizedBox(
+                    height: 36,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        for (final category in TagCategory.values)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: _CategoryChip(
+                              key: ValueKey('tag_create_category_${category.name}'),
+                              label: categoryLabel(l10n, category),
+                              category: category,
+                              selected: _category == category,
+                              onTap: () =>
+                                  setState(() => _category = category),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (editing == null)
                   Text(l10n.tagCreateNote,
                       style: tagTextStyle(
@@ -203,6 +233,58 @@ class _TagCreateSheetState extends State<_TagCreateSheet> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+String categoryLabel(AppLocalizations l10n, TagCategory category) =>
+    switch (category) {
+      TagCategory.food => l10n.tagCategoryFood,
+      TagCategory.culture => l10n.tagCategoryCulture,
+      TagCategory.active => l10n.tagCategoryActive,
+      TagCategory.learn => l10n.tagCategoryLearn,
+      TagCategory.play => l10n.tagCategoryPlay,
+      TagCategory.etc => l10n.tagCategoryEtc,
+    };
+
+/// 분류 칩: 고르면 분류 light 바탕 + dark 글자, 아니면 회색 면.
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({
+    super.key,
+    required this.label,
+    required this.category,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final TagCategory category;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: MotionTokens.of(context, MotionTokens.state),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? TagPalette.light(category) : WfColors.surface,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+                color: selected ? TagPalette.dark(category) : Colors.transparent,
+                width: 1.2),
+          ),
+          child: Text(label,
+              style: tagTextStyle(context, 13, FontWeight.w700,
+                  selected ? TagPalette.dark(category) : WfColors.ink2)),
         ),
       ),
     );

@@ -4057,4 +4057,41 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get overlapPlaceholder => '选择标签后，这里会出现和你重合的人';
+
+  @override
+  String get exploreMyTagsTitle => '我的标签新动态';
+
+  @override
+  String get exploreEdit => '编辑';
+
+  @override
+  String get exploreCaptionRecommended => '常与你的标签**一起添加**';
+
+  @override
+  String get exploreCaptionFriends => '**好友常加**的标签';
+
+  @override
+  String get exploreCaptionTrending => '本周**人数增长最多**的标签';
+
+  @override
+  String get exploreCaptionNew => '最近**新出现的标签**，快来抢先添加';
+
+  @override
+  String get exploreFriendPrefix => '好友';
+
+  @override
+  String exploreCreateTitle(String name) {
+    return '新建 #$name';
+  }
+
+  @override
+  String get exploreCreateHint => '还没有这个标签，创建后会直接加到你的标签';
+
+  @override
+  String exploreSimilarCount(int n) {
+    return '$n 个相似标签';
+  }
+
+  @override
+  String get exploreSimilarNone => '没有相似的标签';
 }

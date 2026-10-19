@@ -52,6 +52,8 @@ class ExploreTagItem {
       (reason['friendNames'] as List? ?? const []).whereType<String>().toList();
   int get delta => (reason['delta'] as num?)?.toInt() ?? 0;
   String? get withTag => reason['withTag'] as String?;
+  List<String> get friendPhotos =>
+      (reason['friendPhotos'] as List? ?? const []).whereType<String>().toList();
   int get createdAtMillis => (reason['createdAtMillis'] as num?)?.toInt() ?? 0;
 }
 
@@ -193,10 +195,12 @@ class InterestTagService extends ChangeNotifier {
   }
 
   /// 새 태그(이미 있으면 그 태그)의 id. [description]은 새로 만들 때만 쓴다.
-  Future<String> create(String name, {String description = ''}) async {
+  Future<String> create(String name,
+      {String description = '', String? category}) async {
     final data0 = await _call('createTag', {
       'name': name,
       if (description.trim().isNotEmpty) 'description': description.trim(),
+      if (category != null) 'category': category,
     });
     final id = (data0 as Map)['id'] as String;
     if (!_cache.containsKey(id)) await get(id);

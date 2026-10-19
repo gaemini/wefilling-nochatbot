@@ -109,12 +109,12 @@ void main() {
                 .decoration as BoxDecoration?)
             ?.color) ??
         Colors.transparent;
-    expect(pillColor('f_${_F.all}'), WfColors.ink);
-    await tester.tap(find.byKey(ValueKey('f_${_F.posts}')));
+    expect(pillColor('f_all'), WfColors.ink);
+    await tester.tap(find.byKey(const ValueKey('f_posts')));
     await tester.pumpAndSettle();
     expect(selected, _F.posts);
-    expect(pillColor('f_${_F.posts}'), WfColors.ink);
-    expect(pillColor('f_${_F.all}'), WfColors.surface);
+    expect(pillColor('f_posts'), WfColors.ink);
+    expect(pillColor('f_all'), WfColors.surface);
   });
 
   for (final width in [320.0, 375.0, 430.0]) {

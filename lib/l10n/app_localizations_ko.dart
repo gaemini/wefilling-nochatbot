@@ -4110,4 +4110,41 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get overlapPlaceholder => '태그를 고르면 여기에 나와 겹치는 사람이 나와요';
+
+  @override
+  String get exploreMyTagsTitle => '내 태그 새 글';
+
+  @override
+  String get exploreEdit => '편집';
+
+  @override
+  String get exploreCaptionRecommended => '내 태그와 함께 **많이 달린 태그**예요';
+
+  @override
+  String get exploreCaptionFriends => '친구들이 **많이 단 태그**예요';
+
+  @override
+  String get exploreCaptionTrending => '이번 주에 **사람이 많이 늘어난 태그**예요';
+
+  @override
+  String get exploreCaptionNew => '최근 **새로 생긴 태그**예요. 먼저 달아 보세요';
+
+  @override
+  String get exploreFriendPrefix => '친구';
+
+  @override
+  String exploreCreateTitle(String name) {
+    return '#$name 새로 만들기';
+  }
+
+  @override
+  String get exploreCreateHint => '아직 없는 태그예요. 만들면 내 태그에 바로 달려요';
+
+  @override
+  String exploreSimilarCount(int n) {
+    return '비슷한 태그 $n개';
+  }
+
+  @override
+  String get exploreSimilarNone => '비슷한 태그가 없어요';
 }

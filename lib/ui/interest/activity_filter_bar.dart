@@ -39,6 +39,9 @@ class WfFilterBar<T> extends StatelessWidget {
   final String keyPrefix;
   final EdgeInsets padding;
 
+  static String _keyOf(Object? value) =>
+      value is Enum ? value.name : '$value';
+
   @override
   Widget build(BuildContext context) {
     return MediaQuery.withClampedTextScaling(
@@ -54,7 +57,7 @@ class WfFilterBar<T> extends StatelessWidget {
                   children: [
                     for (final item in items) ...[
                       _Pill(
-                        key: ValueKey('${keyPrefix}_${item.value}'),
+                        key: ValueKey('${keyPrefix}_${_keyOf(item.value)}'),
                         item: item,
                         height: height,
                         selected: item.value == selected,

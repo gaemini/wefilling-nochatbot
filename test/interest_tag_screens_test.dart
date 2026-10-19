@@ -249,7 +249,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(server.created, ['boardgame']);
     expect(server.calls.lastWhere((c) => c.$1 == 'createTag').$2,
-        {'name': 'boardgame', 'description': '주말 보드게임'});
+        {'name': 'boardgame', 'description': '주말 보드게임', 'category': 'etc'});
     expect(find.text(l10n.tagSelectedCount(4, 8)), findsOneWidget);
 
     // 8개를 넘기지 않는다.

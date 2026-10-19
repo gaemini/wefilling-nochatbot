@@ -7581,6 +7581,72 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'태그를 고르면 여기에 나와 겹치는 사람이 나와요'**
   String get overlapPlaceholder;
+
+  /// No description provided for @exploreMyTagsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그 새 글'**
+  String get exploreMyTagsTitle;
+
+  /// No description provided for @exploreEdit.
+  ///
+  /// In ko, this message translates to:
+  /// **'편집'**
+  String get exploreEdit;
+
+  /// No description provided for @exploreCaptionRecommended.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그와 함께 **많이 달린 태그**예요'**
+  String get exploreCaptionRecommended;
+
+  /// No description provided for @exploreCaptionFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구들이 **많이 단 태그**예요'**
+  String get exploreCaptionFriends;
+
+  /// No description provided for @exploreCaptionTrending.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주에 **사람이 많이 늘어난 태그**예요'**
+  String get exploreCaptionTrending;
+
+  /// No description provided for @exploreCaptionNew.
+  ///
+  /// In ko, this message translates to:
+  /// **'최근 **새로 생긴 태그**예요. 먼저 달아 보세요'**
+  String get exploreCaptionNew;
+
+  /// No description provided for @exploreFriendPrefix.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구'**
+  String get exploreFriendPrefix;
+
+  /// No description provided for @exploreCreateTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{name} 새로 만들기'**
+  String exploreCreateTitle(String name);
+
+  /// No description provided for @exploreCreateHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 없는 태그예요. 만들면 내 태그에 바로 달려요'**
+  String get exploreCreateHint;
+
+  /// No description provided for @exploreSimilarCount.
+  ///
+  /// In ko, this message translates to:
+  /// **'비슷한 태그 {n}개'**
+  String exploreSimilarCount(int n);
+
+  /// No description provided for @exploreSimilarNone.
+  ///
+  /// In ko, this message translates to:
+  /// **'비슷한 태그가 없어요'**
+  String get exploreSimilarNone;
 }
 
 class _AppLocalizationsDelegate

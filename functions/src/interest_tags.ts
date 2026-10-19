@@ -1088,23 +1088,34 @@ export const exploreTags = callables()
     const activeDocs = async (ids: string[]) => ids.length === 0 ? [] :
       (await db().getAll(...ids.map(tagRef))).filter((doc) => doc.exists && doc.get('status') === 'active');
 
-    if (filter === 'friends') {
+    // 친구가 단 태그: 이름·사진(친구·추천 필터의 '친구 sound, grace' 줄).
+    const friendsByTag = async () => {
       const friendIds = Array.from(await friendIdCandidatesAtCreation(uid))
         .filter((id) => id && id !== uid && !id.includes('/')).slice(0, FRIEND_SCAN_LIMIT);
       const docs = friendIds.length ? await db().getAll(...friendIds.map((id) => db().collection(COL.users).doc(id))) : [];
-      const byTag = new Map<string, string[]>();
+      const byTag = new Map<string, Array<{name: string; photo: string}>>();
       docs.filter((doc) => doc.exists && isSearchableUser(doc.id, doc.data())).forEach((doc) => {
-        const name = String(doc.get('nickname') || '').trim();
+        const friend = {
+          name: String(doc.get('nickname') || '').trim(),
+          photo: String(doc.get('photoURL') || '').trim(),
+        };
         stringArray(doc.get('interestTagIds')).forEach((tagId) =>
-          byTag.set(tagId, [...(byTag.get(tagId) ?? []), name]));
+          byTag.set(tagId, [...(byTag.get(tagId) ?? []), friend]));
       });
+      return byTag;
+    };
+    const friendReason = (friends: Array<{name: string; photo: string}> | undefined) => ({
+      friendCount: friends?.length ?? 0,
+      friendNames: (friends ?? []).map((f) => f.name).filter(Boolean).slice(0, 2),
+      friendPhotos: (friends ?? []).map((f) => f.photo).filter((url) => url.startsWith('https://')).slice(0, 2),
+    });
+
+    if (filter === 'friends') {
+      const byTag = await friendsByTag();
       const top = Array.from(byTag.entries()).sort((a, b) => b[1].length - a[1].length)
         .slice(0, EXPLORE_LIMIT);
       const tags = await activeDocs(top.map(([id]) => id));
-      return {items: tags.map((doc) => {
-        const names = byTag.get(doc.id) ?? [];
-        return toItem(doc, {type: 'friends', friendCount: names.length, friendNames: names.filter(Boolean).slice(0, 2)});
-      })};
+      return {items: tags.map((doc) => toItem(doc, {type: 'friends', ...friendReason(byTag.get(doc.id))}))};
     }
     if (filter === 'trending') {
       const trending = await db().collection('tags_trending').doc('current').get();
@@ -1143,10 +1154,10 @@ export const exploreTags = callables()
       });
     });
     const top = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, EXPLORE_LIMIT);
-    const tags = await activeDocs(top.map(([id]) => id));
+    const [tags, byTag] = await Promise.all([activeDocs(top.map(([id]) => id)), friendsByTag()]);
     return {items: tags.map((doc) => {
       const pairs = Array.from(withTag.get(doc.id)?.entries() ?? []).sort((a, b) => b[1] - a[1]);
-      return toItem(doc, {type: 'with', withTag: pairs[0]?.[0] ?? null});
+      return toItem(doc, {type: 'with', withTag: pairs[0]?.[0] ?? null, ...friendReason(byTag.get(doc.id))});
     })};
   });
 

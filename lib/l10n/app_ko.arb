@@ -1762,5 +1762,18 @@
   "@pickTagsCaption": {"placeholders": {"n": {"type": "int"}}},
   "pickTagsShuffle": "↻ 다른 태그",
   "pickTagsDone": "완료",
-  "overlapPlaceholder": "태그를 고르면 여기에 나와 겹치는 사람이 나와요"
+  "overlapPlaceholder": "태그를 고르면 여기에 나와 겹치는 사람이 나와요",
+  "exploreMyTagsTitle": "내 태그 새 글",
+  "exploreEdit": "편집",
+  "exploreCaptionRecommended": "내 태그와 함께 **많이 달린 태그**예요",
+  "exploreCaptionFriends": "친구들이 **많이 단 태그**예요",
+  "exploreCaptionTrending": "이번 주에 **사람이 많이 늘어난 태그**예요",
+  "exploreCaptionNew": "최근 **새로 생긴 태그**예요. 먼저 달아 보세요",
+  "exploreFriendPrefix": "친구",
+  "exploreCreateTitle": "#{name} 새로 만들기",
+  "@exploreCreateTitle": {"placeholders": {"name": {"type": "String"}}},
+  "exploreCreateHint": "아직 없는 태그예요. 만들면 내 태그에 바로 달려요",
+  "exploreSimilarCount": "비슷한 태그 {n}개",
+  "@exploreSimilarCount": {"placeholders": {"n": {"type": "int"}}},
+  "exploreSimilarNone": "비슷한 태그가 없어요"
 }

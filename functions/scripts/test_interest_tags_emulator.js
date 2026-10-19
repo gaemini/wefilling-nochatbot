@@ -230,6 +230,9 @@ async function main() {
   assert.equal(kpopRow.reason.type, 'friends');
   assert.equal(kpopRow.reason.friendCount, 1);
   assert.deepEqual(kpopRow.reason.friendNames, ['tester']);
+  assert.ok(Array.isArray(kpopRow.reason.friendPhotos));
+  assert.ok(recommended.items.filter((t) => t.reason.type === 'with')
+    .every((t) => Array.isArray(t.reason.friendNames)));
   const newest = await call('exploreTags', 'carol', {filter: 'newest'});
   assert.ok(newest.items.some((t) => t.id === 'kpop' && t.reason.type === 'new'));
   const trendingEmpty = await call('exploreTags', 'carol', {filter: 'trending'});

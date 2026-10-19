@@ -1726,5 +1726,16 @@
   "pickTagsCaption": "Pick 3 to find people like you · {n}/3",
   "pickTagsShuffle": "↻ More tags",
   "pickTagsDone": "Done",
-  "overlapPlaceholder": "Pick tags to see people who share them here"
+  "overlapPlaceholder": "Pick tags to see people who share them here",
+  "exploreMyTagsTitle": "New in my tags",
+  "exploreEdit": "Edit",
+  "exploreCaptionRecommended": "Often added **together with your tags**",
+  "exploreCaptionFriends": "Tags **your friends added**",
+  "exploreCaptionTrending": "Tags that **grew most this week**",
+  "exploreCaptionNew": "**Brand-new tags**. Be one of the first",
+  "exploreFriendPrefix": "Friends",
+  "exploreCreateTitle": "Create #{name}",
+  "exploreCreateHint": "This tag doesn't exist yet. It joins your tags right away",
+  "exploreSimilarCount": "{n} similar tags",
+  "exploreSimilarNone": "No similar tags"
 }

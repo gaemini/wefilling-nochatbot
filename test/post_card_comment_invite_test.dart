@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:visibility_detector/visibility_detector.dart';
+import 'package:wefilling/services/comment_invite_nudge_gate.dart';
 import 'package:wefilling/models/post.dart';
 import 'package:wefilling/ui/widgets/post_action_group.dart';
 import 'package:wefilling/ui/widgets/post_card_comment_invite.dart';
@@ -36,6 +39,14 @@ Widget _host(Widget child, {double width = 360}) => MaterialApp(
     );
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    // 가시성 감지는 테스트에서 프레임마다(앱 설정은 그대로).
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+    CommentInviteNudgeGate.instance.debugReset();
+  });
+  tearDown(() => CommentInviteNudgeGate.instance.debugReset());
+
   testWidgets('댓글 수와 카드 종류에 상관없이 같은 문구 하나를 쓴다', (tester) async {
     for (final (type, count) in <(String, int)>[
       ('text', 0),

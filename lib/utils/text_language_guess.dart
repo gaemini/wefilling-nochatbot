@@ -17,16 +17,20 @@ String guessTextLanguage(String text) {
 String postSourceLanguage(Post post) {
   final fields = postTranslationSourceFields(post);
   if (fields.isNotEmpty) {
-    final result = ContentTranslationService.instance.latestResultFor(
-      ContentTranslationRequest(
-        contentType: 'post',
-        contentId: post.id,
-        sourceFields: fields,
-      ),
-    );
-    final code =
-        (result?.sourceLanguage ?? '').trim().toLowerCase().split('-').first;
-    if (code.isNotEmpty) return code;
+    try {
+      final result = ContentTranslationService.instance.latestResultFor(
+        ContentTranslationRequest(
+          contentType: 'post',
+          contentId: post.id,
+          sourceFields: fields,
+        ),
+      );
+      final code =
+          (result?.sourceLanguage ?? '').trim().toLowerCase().split('-').first;
+      if (code.isNotEmpty) return code;
+    } catch (_) {
+      // 번역 서비스를 쓸 수 없으면(초기화 전·테스트) 글자 체계로 추정한다.
+    }
   }
   return guessTextLanguage(post.displayText);
 }

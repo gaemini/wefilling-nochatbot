@@ -40,8 +40,9 @@ class MyTagsStore extends ChangeNotifier {
   /// 8개를 넘으면 [TagLimitException], 저장 실패면 되돌리고 다시 던진다.
   Future<Map<String, int>> save(
     AuthProvider auth,
-    List<String> Function(List<String> current) change,
-  ) async {
+    List<String> Function(List<String> current) change, {
+    bool withGain = false,
+  }) async {
     final next = change(resolve(serverTags(auth)));
     if (next.length > InterestTagService.maxProfileTags) {
       throw const TagLimitException();
@@ -51,9 +52,9 @@ class MyTagsStore extends ChangeNotifier {
     notifyListeners();
     final previous = _tail;
     final op = previous == null
-        ? InterestTagService.instance.saveProfileTags(next)
-        : previous
-            .then((_) => InterestTagService.instance.saveProfileTags(next));
+        ? InterestTagService.instance.saveProfileTags(next, withGain: withGain)
+        : previous.then((_) => InterestTagService.instance
+            .saveProfileTags(next, withGain: withGain));
     final tail = op.then<void>((_) {}, onError: (_) {});
     _tail = tail;
     tail.whenComplete(() {
@@ -78,7 +79,8 @@ class MyTagsStore extends ChangeNotifier {
 
   Future<int> add(AuthProvider auth, String tagId) async {
     final gain = await save(auth,
-        (current) => current.contains(tagId) ? current : [...current, tagId]);
+        (current) => current.contains(tagId) ? current : [...current, tagId],
+        withGain: true);
     return gain[tagId] ?? 0;
   }
 

@@ -276,9 +276,16 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text(l10n.tagOverlapGain(7)), findsOneWidget);
-    expect(calls.last.$1 == 'getOverlapPeople' || calls.last.$1 == 'getMyInterestOverview',
-        isTrue);
+    int count(String name) => calls.where((c) => c.$1 == name).length;
+    final peopleBefore = count('getOverlapPeople');
     await tester.pumpAndSettle();
+    // 비용: 요약은 다시 묻지 않고, 사람 목록은 1.5초 뒤 한 번만.
+    await tester.pump(const Duration(milliseconds: 1600));
+    await tester.pumpAndSettle();
+    expect(count('getMyInterestOverview'), 1);
+    expect(count('getOverlapPeople'), peopleBefore + 1);
+    expect(calls.where((c) => c.$1 == 'setProfileTags').single.$2['withGain'],
+        isTrue);
     expect(calls.where((c) => c.$1 == 'setProfileTags').single.$2['tagIds'],
         ['restaurants', 'cafe', 'music', 'travel']);
   });

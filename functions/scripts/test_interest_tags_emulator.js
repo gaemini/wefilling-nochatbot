@@ -155,9 +155,9 @@ async function main() {
   assert.equal(bgSummary.canEditDescription, true);
   assert.equal(bgSummary.tag.description, '보드게임 같이 해요');
 
-  // gain은 새로 단 태그만(running은 원래 있었다).
-  assert.deepEqual(await call('setProfileTags', 'alice', {tagIds: ['kpop', 'running', 'movie']}),
-    {tagIds: ['kpop', 'running', 'movie'], gain: {kpop: 0, movie: 0}});
+  // 여러 개를 한 번에 저장하면 gain을 계산하지 않는다(사람을 더 읽지 않음).
+  assert.deepEqual(await call('setProfileTags', 'alice', {tagIds: ['kpop', 'running', 'movie'], withGain: true}),
+    {tagIds: ['kpop', 'running', 'movie'], gain: {}});
   assert.equal(intField(await readAdmin('tags/kpop'), 'holderCount'), 1);
   // 분류: 공식 태그는 정해진 분류·이모지, 새 태그는 고른 분류(허용 값만).
   assert.equal(runningSearch.items.find((t) => t.id === 'running').category, 'active');
@@ -271,7 +271,10 @@ async function main() {
   };
   await call('setProfileTags', 'carol', {tagIds: ['kpop']});
   // carol이 running을 더하면: bob(running, kpop 없음)은 새로 겹치고 alice(kpop)는 이미 겹친다.
-  assert.deepEqual((await call('setProfileTags', 'carol', {tagIds: ['kpop', 'running']})).gain, {running: 1});
+  assert.deepEqual((await call('setProfileTags', 'carol', {tagIds: ['kpop', 'running'], withGain: true})).gain, {running: 1});
+  // withGain이 없으면 계산하지 않는다.
+  await call('setProfileTags', 'carol', {tagIds: ['kpop']});
+  assert.deepEqual((await call('setProfileTags', 'carol', {tagIds: ['kpop', 'running']})).gain, {});
   await call('setProfileTags', 'carol', {tagIds: ['kpop']});
 
   // 마이페이지 관심 탭: alice(kpop·running·movie), 친구 carol(kpop), bob은 alice가 차단.

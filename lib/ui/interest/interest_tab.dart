@@ -44,7 +44,6 @@ class InterestTab extends StatefulWidget {
   /// 요약을 받으면(캐시 포함) 부른다. 마이페이지 친구 버튼 얼굴에 쓴다.
   final ValueChanged<InterestOverview>? onOverview;
 
-
   @override
   State<InterestTab> createState() => InterestTabState();
 }
@@ -60,6 +59,13 @@ class InterestTabState extends State<InterestTab> {
   final _peopleTotal = <String, int>{};
   final _requested = <String>{};
   bool _interacted = false;
+  Timer? _peopleRefresh;
+
+  @override
+  void dispose() {
+    _peopleRefresh?.cancel();
+    super.dispose();
+  }
 
   /// 처음 사용자 화면에서 '완료'를 누른 뒤에는 태그가 3개 미만이어도 이 화면.
   bool _firstRunDone = false;
@@ -170,9 +176,11 @@ class InterestTabState extends State<InterestTab> {
     try {
       final gain = await MyTagsStore.instance.add(auth, tagId);
       HapticFeedback.lightImpact();
-      // 사람 카드의 원형 그래프와 숫자가 새 값으로 차오른다.
-      unawaited(_loadPeople(_lens, force: true));
-      unawaited(_load(force: true));
+      // 사람 카드의 원형 그래프와 숫자가 새 값으로 차오른다. 여러 번 연달아
+      // 눌러도 마지막에 한 번만 묻는다(요약은 다시 묻지 않는다: 내 태그는 바로 반영됨).
+      _peopleRefresh?.cancel();
+      _peopleRefresh = Timer(const Duration(milliseconds: 1500),
+          () => unawaited(_loadPeople(_lens, force: true)));
       return gain;
     } on TagLimitException {
       if (mounted) {
@@ -213,8 +221,8 @@ class InterestTabState extends State<InterestTab> {
     ));
   }
 
-  void _openExplore() => Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const TagExploreScreen()));
+  void _openExplore() => Navigator.of(context)
+      .push<void>(MaterialPageRoute(builder: (_) => const TagExploreScreen()));
 
   List<InterestBlockData> _blocks(
       AppLocalizations l10n, InterestOverview o, List<String> mine) {
@@ -299,8 +307,7 @@ class InterestTabState extends State<InterestTab> {
               hasPhoto: hasPhoto,
               hasBio: hasBio,
               onEditProfile: () => Navigator.of(context).push<void>(
-                  MaterialPageRoute(
-                      builder: (_) => const ProfileEditScreen())),
+                  MaterialPageRoute(builder: (_) => const ProfileEditScreen())),
               onSaving: (saving) {
                 if (mounted) setState(() => _firstRunSaving = saving);
               },
@@ -310,7 +317,6 @@ class InterestTabState extends State<InterestTab> {
                   _firstRunSaving = false;
                 });
                 unawaited(_loadPeople(_lens, force: true));
-                unawaited(_load(force: true));
               },
             ),
           );
@@ -676,8 +682,8 @@ class _OverlapPeopleScreenState extends State<OverlapPeopleScreen> {
                               setState(() => _requested.remove(person.uid));
                             }
                           },
-                          onOpenProfile: () =>
-                              Navigator.of(context).push<void>(MaterialPageRoute(
+                          onOpenProfile: () => Navigator.of(context)
+                              .push<void>(MaterialPageRoute(
                             builder: (_) => FriendProfileScreen(
                               userId: person.uid,
                               nickname: person.name,

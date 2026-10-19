@@ -447,16 +447,19 @@ export const setProfileTags = callables()
       return {tagIds: next, prev, added};
     });
     // '+n명과 겹쳐요': 새로 단 태그를 단 사람 중 전에 나와 겹치는 태그가 없던 사람 수(어림).
+    // 앱이 꼬리표를 보여 줄 때(태그 하나를 더할 때)만 계산한다. 여러 개를 한 번에 저장하면 읽지 않는다.
     let gain: Record<string, number> = {};
-    try {
-      gain = await overlapGain(uid, saved.prev, saved.added);
-    } catch (error) {
-      functions.logger.warn('setProfileTags gain failed', {error: String(error)});
+    if (data?.withGain === true && saved.added.length === 1) {
+      try {
+        gain = await overlapGain(uid, saved.prev, saved.added);
+      } catch (error) {
+        functions.logger.warn('setProfileTags gain failed', {error: String(error)});
+      }
     }
     return {tagIds: saved.tagIds, gain};
   });
 
-const GAIN_SCAN_LIMIT = 150;
+const GAIN_SCAN_LIMIT = 50;
 
 /** 새로 단 태그마다, 그 태그를 단 사람 중 [prev] 태그와 겹치지 않던 사람 수. */
 export async function overlapGain(
@@ -1188,7 +1191,7 @@ export const updateTagDescription = callables()
 const OVERVIEW_TAG_LIMIT = 8;
 /** 많이 단 태그: 관심 지도 8칸 + 처음 사용자 키캡 10개와 '다른 태그' 여분. */
 const OVERVIEW_POPULAR_LIMIT = 16;
-const OVERLAP_SCAN_LIMIT = 200;
+const OVERLAP_SCAN_LIMIT = 100;
 const OVERLAP_PAGE = 20;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -1242,7 +1245,7 @@ export const getMyInterestOverview = callables()
     const weekAgo = Timestamp.fromMillis(Date.now() - WEEK_MS);
     const [friendDocs, myPosts, trending, newTags, popular] = await Promise.all([
       friendIds.length ? db().getAll(...friendIds.map((id) => db().collection(COL.users).doc(id))) : Promise.resolve([]),
-      db().collection(COL.posts).where('userId', '==', uid).select('tagIds').limit(500).get(),
+      db().collection(COL.posts).where('userId', '==', uid).select('tagIds').limit(200).get(),
       db().collection('tags_trending').doc('current').get(),
       // 기존 인덱스(status, createdAt desc)를 쓰도록 같은 정렬을 붙인다.
       db().collection(COL.tags).where('status', '==', 'active').where('createdAt', '>=', weekAgo)

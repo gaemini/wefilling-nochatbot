@@ -52,8 +52,9 @@ class ExploreTagItem {
       (reason['friendNames'] as List? ?? const []).whereType<String>().toList();
   int get delta => (reason['delta'] as num?)?.toInt() ?? 0;
   String? get withTag => reason['withTag'] as String?;
-  List<String> get friendPhotos =>
-      (reason['friendPhotos'] as List? ?? const []).whereType<String>().toList();
+  List<String> get friendPhotos => (reason['friendPhotos'] as List? ?? const [])
+      .whereType<String>()
+      .toList();
   int get createdAtMillis => (reason['createdAtMillis'] as num?)?.toInt() ?? 0;
 }
 
@@ -209,7 +210,8 @@ class InterestTagService extends ChangeNotifier {
 
   /// 마이페이지 관심 탭 요약. 함께 온 태그 정보는 이름 캐시에 넣는다.
   Future<InterestOverview> myInterestOverview() async {
-    final data = _jsonSafe(await _call('getMyInterestOverview', <String, Object?>{}));
+    final data =
+        _jsonSafe(await _call('getMyInterestOverview', <String, Object?>{}));
     final overview = InterestOverview.fromMap(data);
     if (overview.tags.isNotEmpty) {
       _cache.addAll(overview.tags);
@@ -274,10 +276,14 @@ class InterestTagService extends ChangeNotifier {
       (await saveProfileTags(ids)).tagIds;
 
   /// 저장한 태그와, 새로 단 태그마다 '새로 겹치게 된 사람 수'(gain).
+  /// [withGain]이면 새로 단 태그 하나의 gain도 받는다(서버가 사람을 더 읽는다).
   Future<({List<String> tagIds, Map<String, int> gain})> saveProfileTags(
-      List<String> ids) async {
-    final data0 = await _call(
-        'setProfileTags', {'tagIds': ids.take(maxProfileTags).toList()});
+      List<String> ids,
+      {bool withGain = false}) async {
+    final data0 = await _call('setProfileTags', {
+      'tagIds': ids.take(maxProfileTags).toList(),
+      if (withGain) 'withGain': true,
+    });
     final data = data0 as Map;
     final rawGain = data['gain'];
     return (

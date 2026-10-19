@@ -144,6 +144,7 @@ class PostActionGroup extends StatelessWidget {
             countFontSize: responsiveCountSize,
             minExtent: responsiveMinExtent,
             animateCount: true,
+            popOnIncrease: true,
           ),
         ),
       ),
@@ -295,6 +296,9 @@ class _PostActionItem extends StatelessWidget {
   final bool animateCount;
   final Color? countColor;
 
+  /// 숫자가 늘면 1.0 → 1.15 → 1.0으로 톡(댓글을 남긴 직후).
+  final bool popOnIncrease;
+
   const _PostActionItem({
     this.icon,
     this.iconWidget,
@@ -309,6 +313,7 @@ class _PostActionItem extends StatelessWidget {
     this.emphasized = false,
     this.animateCount = false,
     this.countColor,
+    this.popOnIncrease = false,
   }) : assert(icon != null || iconWidget != null || progress);
 
   @override
@@ -380,10 +385,13 @@ class _PostActionItem extends StatelessWidget {
             ],
             if (!progress && animateCount)
               // 숫자 굴림: 커지면 아래→위, 작아지면 위→아래(state).
-              RollingCount(
-                count: count,
-                style: countStyle(),
-                leadingGap: compact ? 4 : DesignTokens.s4,
+              _PopOnIncrease(
+                value: popOnIncrease ? count : 0,
+                child: RollingCount(
+                  count: count,
+                  style: countStyle(),
+                  leadingGap: compact ? 4 : DesignTokens.s4,
+                ),
               )
             else if (!progress && count > 0) ...[
               SizedBox(width: compact ? 4 : DesignTokens.s4),
@@ -580,6 +588,53 @@ class _LikeButtonState extends State<_LikeButton>
               child: button,
             )
           : button,
+    );
+  }
+}
+
+/// [value]가 커질 때만 한 번 톡 튄다(350ms). 동작 줄이기면 그대로.
+class _PopOnIncrease extends StatefulWidget {
+  const _PopOnIncrease({required this.value, required this.child});
+
+  final int value;
+  final Widget child;
+
+  @override
+  State<_PopOnIncrease> createState() => _PopOnIncreaseState();
+}
+
+class _PopOnIncreaseState extends State<_PopOnIncrease>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pop = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 350));
+
+  @override
+  void didUpdateWidget(_PopOnIncrease oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value > oldWidget.value && !MotionTokens.reduceMotion(context)) {
+      _pop.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pop.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pop,
+      child: widget.child,
+      builder: (context, child) {
+        if (!_pop.isAnimating) return child!;
+        final v = _pop.value;
+        return Transform.scale(
+          scale: 1 + .15 * (v < .4 ? v / .4 : (1 - v) / .6),
+          child: child,
+        );
+      },
     );
   }
 }

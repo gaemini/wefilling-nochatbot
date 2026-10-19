@@ -4169,7 +4169,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get peopleAllSub => '나와 관심사가 겹치는 사람들이에요';
 
   @override
-  String peopleOverlapMany(String a, String b, int n, int k) {
+  String peopleOverlapMany(String a, String b, int n) {
     return '$a, $b 등 $n개 겹쳐요';
   }
 

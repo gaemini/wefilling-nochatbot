@@ -4321,8 +4321,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get peopleAllSub => 'People who share your interests';
 
   @override
-  String peopleOverlapMany(String a, String b, int n, int k) {
-    return '$a, $b +$k more in common';
+  String peopleOverlapMany(String a, String b, int n) {
+    return '$a, $b and more · $n in common';
   }
 
   @override

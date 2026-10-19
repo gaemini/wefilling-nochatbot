@@ -13,6 +13,7 @@ import '../../services/my_tags_store.dart';
 import '../../services/overlap_hidden_store.dart';
 import '../widgets/tag_chips.dart' show tagTextStyle;
 import 'friend_request_button.dart';
+import 'overlap_people_section.dart' show showPeopleHiddenUndo;
 import 'person_avatar.dart';
 import 'shared_tag_tile.dart';
 import 'stagger_in.dart';
@@ -158,9 +159,12 @@ class _OverlapPeopleScreenState extends State<OverlapPeopleScreen> {
     if (hide != true || !mounted) return;
     if (widget.onHide != null) {
       widget.onHide!(context, person);
-    } else {
-      OverlapHiddenStore.instance.hide(person.uid);
+      return;
     }
+    // 같은 저장소를 써서 관심 탭 레일에서도 빠진다.
+    OverlapHiddenStore.instance.hide(person.uid);
+    showPeopleHiddenUndo(context, person,
+        onUndo: () => OverlapHiddenStore.instance.restore(person.uid));
   }
 
   @override

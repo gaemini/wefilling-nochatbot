@@ -4116,7 +4116,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get peopleAllSub => '和你兴趣相同的人';
 
   @override
-  String peopleOverlapMany(String a, String b, int n, int k) {
+  String peopleOverlapMany(String a, String b, int n) {
     return '$a、$b 等 $n 个共同兴趣';
   }
 

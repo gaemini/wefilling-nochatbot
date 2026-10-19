@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'package:flutter/services.dart';
+
+import '../../design/tokens.dart';
+import '../snackbar/app_snackbar.dart';
+
 import '../../l10n/app_localizations.dart';
 import '../../models/interest_overview.dart';
 import '../widgets/tag_chips.dart' show tagTextStyle;
@@ -55,8 +60,9 @@ class OverlapPeopleHeader extends StatelessWidget {
                   key: const ValueKey('overlap-people-title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: tagTextStyle(context, 20, FontWeight.w800, WfColors.ink)
-                      .copyWith(letterSpacing: -.5),
+                  style:
+                      tagTextStyle(context, 20, FontWeight.w800, WfColors.ink)
+                          .copyWith(letterSpacing: -.5),
                 ),
               ),
               TextButton(
@@ -134,9 +140,15 @@ class OverlapPeopleRail extends StatelessWidget {
     required this.onOpenProfile,
     this.onHide,
     this.onLoadMore,
+    this.collapsing = const {},
+    this.onCollapsed,
   });
 
   final List<OverlapPerson> people;
+
+  /// 접히는 중인 카드(×). 다 접히면 [onCollapsed].
+  final Set<String> collapsing;
+  final ValueChanged<OverlapPerson>? onCollapsed;
   final PeopleRelation Function(OverlapPerson person) relationOf;
   final ValueChanged<OverlapPerson> onOpenProfile;
   final ValueChanged<OverlapPerson>? onHide;
@@ -162,14 +174,14 @@ class OverlapPeopleRail extends StatelessWidget {
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          physics: const SnapToItemPhysics(
-              extent: OverlapPersonCard.width + gap),
+          physics:
+              const SnapToItemPhysics(extent: OverlapPersonCard.width + gap),
           itemCount: people.length,
           itemBuilder: (context, index) {
             final person = people[index];
-            final card = Padding(
-              padding: EdgeInsets.only(
-                  right: index == people.length - 1 ? 0 : gap),
+            Widget card = Padding(
+              padding:
+                  EdgeInsets.only(right: index == people.length - 1 ? 0 : gap),
               child: Align(
                 alignment: Alignment.topCenter,
                 child: OverlapPersonCard(
@@ -181,6 +193,13 @@ class OverlapPeopleRail extends StatelessWidget {
                 ),
               ),
             );
+            if (collapsing.contains(person.uid)) {
+              card = _Collapse(
+                key: ValueKey('overlap_collapse_${person.uid}'),
+                onDone: () => onCollapsed?.call(person),
+                child: card,
+              );
+            }
             return index < 4
                 ? StaggerIn(
                     key: ValueKey('overlap_in_${person.uid}'),
@@ -196,4 +215,89 @@ class OverlapPeopleRail extends StatelessWidget {
       ),
     );
   }
+}
+
+/// × 숨기기: 0–45% 투명·0.9배 → 45–100% 폭(간격 포함)이 0으로(420ms). 동작 줄이기면 바로.
+class _Collapse extends StatefulWidget {
+  const _Collapse({super.key, required this.child, required this.onDone});
+
+  final Widget child;
+  final VoidCallback onDone;
+
+  @override
+  State<_Collapse> createState() => _CollapseState();
+}
+
+class _CollapseState extends State<_Collapse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller =
+        AnimationController(vsync: this, duration: peopleHideDuration);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_controller.isAnimating || _controller.value > 0) return;
+    if (MotionTokens.reduceMotion(context)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => widget.onDone());
+      return;
+    }
+    _controller.forward().whenComplete(() {
+      if (mounted) widget.onDone();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fade = CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0, .45, curve: peopleHideCurve));
+    final size = CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(.45, 1, curve: peopleHideCurve));
+    return SizeTransition(
+      sizeFactor: ReverseAnimation(size),
+      axis: Axis.horizontal,
+      alignment: AlignmentDirectional.centerStart,
+      child: FadeTransition(
+        opacity: ReverseAnimation(fade),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 1, end: .9).animate(fade),
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+/// '{name}님을 추천에서 숨겼어요' + 4초 '되돌리기'.
+void showPeopleHiddenUndo(
+  BuildContext context,
+  OverlapPerson person, {
+  required VoidCallback onUndo,
+}) {
+  final l10n = AppLocalizations.of(context)!;
+  AppSnackBar.show(
+    context,
+    message: l10n.peopleHidden(person.name.isEmpty ? l10n.user : person.name),
+    duration: const Duration(seconds: 4),
+    action: SnackBarAction(
+      label: l10n.peopleUndo,
+      onPressed: () {
+        HapticFeedback.selectionClick();
+        onUndo();
+      },
+    ),
+  );
 }

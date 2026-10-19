@@ -14,6 +14,7 @@ import '../../screens/tag_explore_screen.dart';
 import '../../services/cache/my_page_cache_service.dart';
 import '../../services/interest_tag_service.dart';
 import '../../services/my_tags_store.dart';
+import '../../services/overlap_hidden_store.dart';
 import '../snackbar/app_snackbar.dart';
 import '../widgets/tag_chips.dart' show tagTextStyle;
 import 'interest_bento.dart';
@@ -61,6 +62,9 @@ class InterestTabState extends State<InterestTab> {
   final _peopleTotal = <String, int>{};
   final _peopleCursor = <String, String?>{};
   final _loadingMore = <String>{};
+
+  /// × 로 접히는 중인 카드.
+  final _collapsing = <String>{};
   bool _interacted = false;
   Timer? _peopleRefresh;
 
@@ -192,6 +196,49 @@ class InterestTabState extends State<InterestTab> {
     } finally {
       _loadingMore.remove(scope);
     }
+  }
+
+  /// × : 접힌 뒤 목록에서 빼고 개수 -1, 서버 저장(기다리지 않음), 4초 '되돌리기'.
+  void _hidePerson(OverlapPerson person) {
+    setState(() => _collapsing.add(person.uid));
+  }
+
+  void _onCollapsed(OverlapPerson person) {
+    final scope = scopeOf(_lens);
+    final list = [...?_people[scope]];
+    final index = list.indexWhere((p) => p.uid == person.uid);
+    if (index < 0) return;
+    setState(() {
+      _collapsing.remove(person.uid);
+      list.removeAt(index);
+      _people[scope] = list;
+      _peopleTotal[scope] = ((_peopleTotal[scope] ?? 1) - 1).clamp(0, 1 << 30);
+    });
+    _savePeopleCache(scope);
+    OverlapHiddenStore.instance.hide(person.uid);
+    showPeopleHiddenUndo(context, person, onUndo: () {
+      if (!mounted) return;
+      OverlapHiddenStore.instance.restore(person.uid);
+      setState(() {
+        final current = [...?_people[scope]];
+        if (current.any((p) => p.uid == person.uid)) return;
+        current.insert(index.clamp(0, current.length), person);
+        _people[scope] = current;
+        _peopleTotal[scope] = (_peopleTotal[scope] ?? 0) + 1;
+      });
+      _savePeopleCache(scope);
+    });
+  }
+
+  /// 숨기기·되돌리기를 캐시에도 바로(다시 열 때 되살아나지 않게).
+  void _savePeopleCache(String scope) {
+    final uid = _uid;
+    final people = _people[scope];
+    if (uid == null || people == null) return;
+    unawaited(_cache.saveInterest(uid, 'people_$scope', {
+      'people': [for (final person in people) person.toMap()],
+      'total': _peopleTotal[scope] ?? people.length,
+    }));
   }
 
   void _selectLens(InterestLens lens) {
@@ -341,7 +388,7 @@ class InterestTabState extends State<InterestTab> {
           );
         }
         return ListenableBuilder(
-          listenable: _service,
+          listenable: Listenable.merge([_service, OverlapHiddenStore.instance]),
           builder: (context, _) =>
               _content(l10n, overview, mine, outgoing, incoming),
         );
@@ -360,7 +407,11 @@ class InterestTabState extends State<InterestTab> {
             .map((b) => b.tagId)
             .firstOrNull;
     final scope = scopeOf(_lens);
-    final people = _people[scope];
+    final hidden = OverlapHiddenStore.instance;
+    // '모두 보기'에서 숨긴 사람도 레일에서 빠진다.
+    final people =
+        _people[scope]?.where((p) => !hidden.isHidden(p.uid)).toList();
+    final hiddenCount = (_people[scope]?.length ?? 0) - (people?.length ?? 0);
     final caption = switch (_lens) {
       InterestLens.me => l10n.interestMapCaptionMe(mine.length),
       InterestLens.friends =>
@@ -435,7 +486,9 @@ class InterestTabState extends State<InterestTab> {
         ),
         OverlapPeopleHeader(
           title: peopleTitle,
-          count: _peopleTotal[scope],
+          count: _peopleTotal[scope] == null
+              ? null
+              : (_peopleTotal[scope]! - hiddenCount).clamp(0, 1 << 30),
           onSeeAll: () => Navigator.of(context).push<void>(
             MaterialPageRoute(
               builder: (_) =>
@@ -465,6 +518,9 @@ class InterestTabState extends State<InterestTab> {
               incoming: incoming,
             ),
             onOpenProfile: _openProfile,
+            onHide: _hidePerson,
+            collapsing: _collapsing,
+            onCollapsed: _onCollapsed,
             onLoadMore: () => unawaited(_loadMorePeople()),
           ),
       ],

@@ -12,6 +12,7 @@ import 'package:wefilling/providers/relationship_provider.dart';
 import 'package:wefilling/services/cache/my_page_cache_service.dart';
 import 'package:wefilling/services/interest_tag_service.dart';
 import 'package:wefilling/services/my_tags_store.dart';
+import 'package:wefilling/services/overlap_hidden_store.dart';
 import 'package:wefilling/ui/interest/interest_block_tile.dart';
 import 'package:wefilling/ui/interest/interest_tab.dart';
 
@@ -141,6 +142,7 @@ void main() {
     calls.clear();
     save = null;
     MyTagsStore.instance.debugReset();
+    OverlapHiddenStore.instance.debugReset();
     InterestTagService.instance
       ..debugReset()
       ..debugGetTag = ((id) async => null)
@@ -170,6 +172,8 @@ void main() {
             };
           case 'setProfileTags':
             return save!.future;
+          case 'setSuggestionHidden':
+            return {'uid': data['uid'], 'hidden': data['hidden']};
         }
         throw UnimplementedError(name);
       };
@@ -353,6 +357,36 @@ void main() {
             of: find.byKey(const ValueKey('friend-request-p1')),
             matching: find.text('요청 보냄')),
         findsOneWidget);
+  });
+
+  testWidgets('× → 접힌 뒤 빠지고 개수 -1, 되돌리기 → 원래 자리', (tester) async {
+    tall(tester);
+    await tester.pumpWidget(host(_Auth(['restaurants', 'cafe', 'music'])));
+    await tester.pumpAndSettle();
+    final l10n = l10nOf(tester);
+    expect(find.text('${l10n.overlapTitleAll}  2', findRichText: true),
+        findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('overlap-hide-p1')));
+    await tester.pump(const Duration(milliseconds: 200));
+    // 접히는 중에는 아직 목록에 있다.
+    expect(find.byKey(const ValueKey('overlap_card_p1')), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('overlap_card_p1')), findsNothing);
+    expect(find.text('${l10n.overlapTitleAll}  1', findRichText: true),
+        findsOneWidget);
+    expect(calls.where((c) => c.$1 == 'setSuggestionHidden').single.$2,
+        {'uid': 'p1', 'hidden': true});
+    expect(find.text(l10n.peopleHidden('grace')), findsOneWidget);
+    await tester.tap(find.text(l10n.peopleUndo));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('overlap_card_p1')), findsOneWidget);
+    // 원래 자리(첫 번째).
+    final p1 = tester.getTopLeft(find.byKey(const ValueKey('overlap_card_p1')));
+    final f1 = tester.getTopLeft(find.byKey(const ValueKey('overlap_card_f1')));
+    expect(p1.dx < f1.dx, isTrue);
+    expect(calls.where((c) => c.$1 == 'setSuggestionHidden').last.$2,
+        {'uid': 'p1', 'hidden': false});
+    await tester.pump(const Duration(seconds: 5));
   });
 
   testWidgets('동작 줄이기: 꼬리표·원형 채움 없이 ✓만', (tester) async {

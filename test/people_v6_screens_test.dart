@@ -146,7 +146,7 @@ void main() {
     await tester.pumpWidget(host(card(_person(
         'x', ['restaurants', 'cafe', 'music', 'movie', 'travel']))));
     expect(
-        find.text(l10n.peopleOverlapMany('맛집', '카페', 5, 3),
+        find.text(l10n.peopleOverlapMany('맛집', '카페', 5),
             findRichText: true),
         findsOneWidget);
     // 원형 그래프는 없다.
@@ -263,4 +263,25 @@ void main() {
       });
     }
   }
+
+  testWidgets('모두 보기: 길게 눌러 숨기면 빠지고 되돌리면 다시', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 900);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+        host(const OverlapPeopleScreen(scope: 'others', title: '새로 알게 될 사람')));
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(
+        tester.element(find.byType(OverlapPeopleScreen)))!;
+    await tester.longPress(find.byKey(const ValueKey('overlap_all_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('overlap-hide-sheet')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('overlap_all_b')), findsNothing);
+    expect(OverlapHiddenStore.instance.isHidden('b'), isTrue);
+    await tester.tap(find.text(l10n.peopleUndo));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('overlap_all_b')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+  });
 }

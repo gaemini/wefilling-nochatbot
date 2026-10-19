@@ -1744,7 +1744,7 @@
   "peopleSeeAll": "See all",
   "peopleSortHint": "Sorted by shared interests",
   "peopleAllSub": "People who share your interests",
-  "peopleOverlapMany": "{a}, {b} +{k} more in common",
+  "peopleOverlapMany": "{a}, {b} and more · {n} in common",
   "peopleOverlapTwo": "{a} and {b} in common",
   "peopleOverlapOne": "{a} in common",
   "peopleMetaOverlap": "{country} · {n} shared",

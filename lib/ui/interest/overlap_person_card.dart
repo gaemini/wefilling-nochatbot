@@ -210,7 +210,7 @@ class OverlapReason extends StatelessWidget {
         <= 0 => '',
         1 => l10n.peopleOverlapOne(names[0]),
         2 => l10n.peopleOverlapTwo(names[0], names[1]),
-        _ => l10n.peopleOverlapMany(names[0], names[1], n, n - 2),
+        _ => l10n.peopleOverlapMany(names[0], names[1], n),
       };
 
   @override

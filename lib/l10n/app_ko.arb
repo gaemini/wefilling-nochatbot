@@ -1784,7 +1784,7 @@
   "peopleSortHint": "내 관심사와 많이 겹치는 순이에요",
   "peopleAllSub": "나와 관심사가 겹치는 사람들이에요",
   "peopleOverlapMany": "{a}, {b} 등 {n}개 겹쳐요",
-  "@peopleOverlapMany": {"placeholders": {"a": {"type": "String"}, "b": {"type": "String"}, "n": {"type": "int"}, "k": {"type": "int"}}},
+  "@peopleOverlapMany": {"placeholders": {"a": {"type": "String"}, "b": {"type": "String"}, "n": {"type": "int"}}},
   "peopleOverlapTwo": "{a}, {b} 2개 겹쳐요",
   "@peopleOverlapTwo": {"placeholders": {"a": {"type": "String"}, "b": {"type": "String"}}},
   "peopleOverlapOne": "{a} 1개 겹쳐요",

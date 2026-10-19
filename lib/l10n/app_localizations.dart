@@ -7688,7 +7688,7 @@ abstract class AppLocalizations {
   ///
   /// In ko, this message translates to:
   /// **'{a}, {b} 등 {n}개 겹쳐요'**
-  String peopleOverlapMany(String a, String b, int n, int k);
+  String peopleOverlapMany(String a, String b, int n);
 
   /// No description provided for @peopleOverlapTwo.
   ///

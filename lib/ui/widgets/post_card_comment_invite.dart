@@ -29,6 +29,8 @@ import '../../services/post_service.dart';
 import '../../services/user_info_cache_service.dart';
 import '../../utils/responsive_helper.dart';
 import '../../utils/text_language_guess.dart';
+import '../interest/stagger_in.dart';
+import 'comment_suggestions.dart';
 import 'motion_press.dart';
 import 'post_translation_feed.dart';
 import 'translatable_content.dart';
@@ -520,6 +522,55 @@ class _PhraseSwitcher extends StatelessWidget {
   }
 }
 
+/// 0.4배에서 시작해 살짝 넘쳤다 돌아오는 곡선(AnimatedScale은 0에서 출발하므로 구간을 당긴다).
+class _PopFrom extends Curve {
+  const _PopFrom(this.from);
+
+  final double from;
+
+  @override
+  double transformInternal(double t) {
+    final eased = MotionTokens.springOut.transform(t);
+    return from + (1 - from) * eased;
+  }
+}
+
+/// 추천 문장 칩: 높이 32, 모서리 16, #F3F4F6, 13.5/w600.
+class _SuggestionChip extends StatelessWidget {
+  const _SuggestionChip({super.key, required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF3F4F6),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF344054),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 8px 아래에서 올라오며 나타난다(medium). 동작 줄이기면 바로.
 class _RiseIn extends StatelessWidget {
   const _RiseIn({super.key, required this.child});
@@ -757,12 +808,19 @@ class _CardCommentComposerSheetState extends State<_CardCommentComposerSheet> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'post-card-comment');
   bool _sending = false;
   bool _failed = false;
+  bool _focused = false;
+
+  /// 추천 문장으로 채웠으면 그 문장(미리보기에 작성자 언어 버전을 바로 쓴다).
+  CommentSuggestion? _suggestion;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(() {
       if (mounted) setState(() => _failed = false);
+    });
+    _focusNode.addListener(() {
+      if (mounted) setState(() => _focused = _focusNode.hasFocus);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
@@ -774,6 +832,17 @@ class _CardCommentComposerSheetState extends State<_CardCommentComposerSheet> {
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// 추천 문장: 바로 보내지 않고 입력칸에 채운 뒤 커서를 끝에 둔다.
+  void _useSuggestion(CommentSuggestion suggestion, String text) {
+    HapticFeedback.selectionClick();
+    _suggestion = suggestion;
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _focusNode.requestFocus();
   }
 
   Future<void> _send() async {
@@ -823,6 +892,22 @@ class _CardCommentComposerSheetState extends State<_CardCommentComposerSheet> {
       color: const Color(0xFF667085),
       height: 1.3,
     );
+    final mine = Localizations.localeOf(context).languageCode;
+    final suggestions = commentSuggestionsFor(widget.post.categoryKey);
+    final typed = _controller.text.trim();
+    // 작성자 언어가 내 언어와 다를 때만 '작성자에게는 …로 보여요' 미리보기.
+    final theirs = postSourceLanguage(widget.post);
+    final theirName = strings.languageName(theirs);
+    final showPreview =
+        hasText && theirs.isNotEmpty && theirs != mine && theirName != null;
+    final suggestion = _suggestion;
+    final translated = suggestion != null && typed == suggestion.forUi(mine)
+        ? suggestion.inLanguage(theirs)
+        : null;
+    final previewName =
+        widget.post.isAnonymous || widget.post.author.trim().isEmpty
+            ? strings.theAuthor
+            : widget.post.author.trim();
 
     return AnimatedPadding(
       duration: const Duration(milliseconds: 160),
@@ -879,6 +964,35 @@ class _CardCommentComposerSheetState extends State<_CardCommentComposerSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                // 추천 문장 3개: 입력이 비어 있을 때만 키보드 바로 위 한 줄.
+                if (!hasText)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: SizedBox(
+                      height: 32,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: suggestions.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 6),
+                        itemBuilder: (context, index) {
+                          final text = suggestions[index].forUi(mine);
+                          return StaggerIn(
+                            index: index,
+                            offset: 6,
+                            step: const Duration(milliseconds: 50),
+                            duration: const Duration(milliseconds: 360),
+                            child: _SuggestionChip(
+                              key: ValueKey(
+                                  'post-card-comment-suggestion-$index'),
+                              label: text,
+                              onTap: () =>
+                                  _useSuggestion(suggestions[index], text),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -901,10 +1015,23 @@ class _CardCommentComposerSheetState extends State<_CardCommentComposerSheet> {
                           hintStyle: const TextStyle(color: Color(0xFF98A2B3)),
                           counterText: '',
                           filled: true,
-                          fillColor: const Color(0xFFF2F4F7),
+                          // 포커스: 흰 바탕 + brand 1.5px, 모서리 16.
+                          fillColor:
+                              _focused ? Colors.white : const Color(0xFFF2F4F7),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(16),
                             borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF2E6CC2),
+                              width: 1.5,
+                            ),
                           ),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -924,28 +1051,37 @@ class _CardCommentComposerSheetState extends State<_CardCommentComposerSheet> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : Semantics(
-                                button: true,
-                                enabled: hasText,
-                                label: strings.send,
-                                excludeSemantics: true,
-                                child: Material(
-                                  color: hasText
-                                      ? const Color(0xFF4990E2)
-                                      : const Color(0xFFD0D5DD),
-                                  shape: const CircleBorder(),
-                                  child: InkWell(
-                                    key: const ValueKey<String>(
-                                      'post-card-comment-send',
-                                    ),
-                                    customBorder: const CircleBorder(),
-                                    onTap: hasText ? _send : null,
-                                    child: const SizedBox.square(
-                                      dimension: 36,
-                                      child: Icon(
-                                        Icons.arrow_upward_rounded,
-                                        color: Colors.white,
-                                        size: 20,
+                            // 글자가 생기는 순간 0.4배에서 톡(320ms), 비면 사라진다.
+                            : AnimatedScale(
+                                scale: hasText ? 1 : 0,
+                                duration: MotionTokens.of(
+                                    context, const Duration(milliseconds: 320)),
+                                curve: hasText
+                                    ? const _PopFrom(.4)
+                                    : Curves.easeIn,
+                                child: Semantics(
+                                  button: true,
+                                  enabled: hasText,
+                                  label: strings.send,
+                                  excludeSemantics: true,
+                                  child: Material(
+                                    color: hasText
+                                        ? const Color(0xFF4990E2)
+                                        : const Color(0xFFD0D5DD),
+                                    shape: const CircleBorder(),
+                                    child: InkWell(
+                                      key: const ValueKey<String>(
+                                        'post-card-comment-send',
+                                      ),
+                                      customBorder: const CircleBorder(),
+                                      onTap: hasText ? _send : null,
+                                      child: const SizedBox.square(
+                                        dimension: 36,
+                                        child: Icon(
+                                          Icons.arrow_upward_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -969,16 +1105,39 @@ class _CardCommentComposerSheetState extends State<_CardCommentComposerSheet> {
                     ),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: Text(
-                        _failed
-                            ? (AppLocalizations.of(context)
-                                    ?.commentSubmitFailed ??
-                                strings.failed)
-                            : strings.translationHint,
-                        style: small.copyWith(
-                          color: _failed ? const Color(0xFFD92D20) : null,
-                        ),
-                      ),
+                      child: _failed || !showPreview
+                          ? Text(
+                              _failed
+                                  ? (AppLocalizations.of(context)
+                                          ?.commentSubmitFailed ??
+                                      strings.failed)
+                                  : strings.translationHint,
+                              style: small.copyWith(
+                                color: _failed ? const Color(0xFFD92D20) : null,
+                              ),
+                            )
+                          // '{작성자}에게는 {언어}로 보여요 · {번역}'(언어 이름만 brand 굵게).
+                          : Text.rich(
+                              key: const ValueKey('post-card-comment-preview'),
+                              TextSpan(children: [
+                                for (final (part, bold)
+                                    in strings.seenAs(previewName, theirName))
+                                  TextSpan(
+                                    text: part,
+                                    style: bold
+                                        ? const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF2E6CC2),
+                                          )
+                                        : null,
+                                  ),
+                                if (translated != null)
+                                  TextSpan(text: ' · $translated'),
+                              ]),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: small,
+                            ),
                     ),
                   ],
                 ),
@@ -1035,6 +1194,15 @@ class _InviteStrings {
         "Write in $mine, they'll read it in $theirs",
         '用$mine写，对方会看到$theirs',
       );
+
+  String get theAuthor => _t('작성자', 'The author', '作者');
+
+  /// '{이름}에게는 {언어}로 보여요'를 (조각, 굵게) 목록으로(언어 이름만 굵게).
+  List<(String, bool)> seenAs(String name, String language) => isChinese
+      ? [('$name看到的是', false), (language, true)]
+      : isKorean
+          ? [('$name에게는 ', false), (language, true), ('로 보여요', false)]
+          : [('$name sees it in ', false), (language, true)];
 
   /// 화면 언어로 쓴 언어 이름. 모르는 언어는 null(문구 3을 넣지 않는다).
   String? languageName(String code) {

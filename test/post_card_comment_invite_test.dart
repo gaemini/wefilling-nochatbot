@@ -133,7 +133,8 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('post-card-comment-invite:p1')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), text);
-      await tester.pump();
+      // 보내기 버튼이 톡 나타날 때까지.
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('post-card-comment-send')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
@@ -198,5 +199,96 @@ void main() {
     await tester.pump(const Duration(milliseconds: 140));
     expect(popped(), findsNothing);
     await tester.pumpAndSettle();
+  });
+
+  group('③ 하단 시트', () {
+    var sent = 0;
+    setUp(() {
+      sent = 0;
+      PostCardCommentInvite.debugAddComment = (_, __) async {
+        sent++;
+        return true;
+      };
+    });
+    tearDown(() => PostCardCommentInvite.debugAddComment = null);
+
+    Widget sheetHost({Locale locale = const Locale('ko'), String category = 'other'}) =>
+        MaterialApp(
+          locale: locale,
+          supportedLocales: const [Locale('ko'), Locale('en'), Locale('zh')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          home: Scaffold(
+            body: PostCardCommentInvite(
+              post: Post(
+                id: 'p1',
+                title: '',
+                content: '다음 학기 교양 추천해 주세요',
+                author: 'jaemin',
+                createdAt: DateTime(2026, 10, 10),
+                userId: 'author-uid',
+                categoryKey: category,
+              ),
+              commentCount: 0,
+              onOpenComments: () {},
+              debugViewerId: 'me',
+              debugBlockedIds: const {},
+            ),
+          ),
+        );
+
+    Future<void> open(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('post-card-comment-invite:p1')));
+      await tester.pumpAndSettle();
+    }
+
+    double sendScale(WidgetTester tester) => tester
+        .widget<AnimatedScale>(find.ancestor(
+            of: find.byKey(const ValueKey('post-card-comment-send')),
+            matching: find.byType(AnimatedScale)))
+        .scale;
+
+    testWidgets('분류별 추천 문장, 누르면 채우기만(전송 없음), 보내기 버튼 등장', (tester) async {
+      await tester.pumpWidget(sheetHost(category: 'academic_study'));
+      await open(tester);
+      expect(find.text('수업 화이팅!'), findsOneWidget);
+      expect(find.text('무슨 수업이에요?'), findsOneWidget);
+      expect(sendScale(tester), 0);
+      await tester.tap(find.byKey(const ValueKey('post-card-comment-suggestion-1')));
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.controller!.text, '무슨 수업이에요?');
+      expect(field.controller!.selection.baseOffset, '무슨 수업이에요?'.length);
+      expect(sent, 0);
+      expect(sendScale(tester), 1);
+      // 글자가 생기면 추천 문장은 사라진다.
+      expect(find.text('수업 화이팅!'), findsNothing);
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pumpAndSettle();
+      expect(sendScale(tester), 0);
+    });
+
+    testWidgets('미리보기: 추천 문장은 작성자 언어 버전을 번역 호출 없이', (tester) async {
+      await tester.pumpWidget(sheetHost(locale: const Locale('en')));
+      await open(tester);
+      await tester.tap(find.text('Nice!'));
+      await tester.pumpAndSettle();
+      expect(
+          find.text('jaemin sees it in Korean · 좋네요!', findRichText: true),
+          findsOneWidget);
+      // 직접 쓴 글은 언어 안내까지만(목표 언어 번역 경로가 없다).
+      await tester.enterText(find.byType(TextField), 'Where is this place?');
+      await tester.pumpAndSettle();
+      expect(find.text('jaemin sees it in Korean', findRichText: true),
+          findsOneWidget);
+    });
+
+    testWidgets('작성자 언어가 내 언어와 같으면 기존 안내 문구', (tester) async {
+      await tester.pumpWidget(sheetHost());
+      await open(tester);
+      await tester.enterText(find.byType(TextField), '좋아요');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('post-card-comment-preview')), findsNothing);
+      expect(find.textContaining('어떤 언어로 써도'), findsOneWidget);
+    });
   });
 }

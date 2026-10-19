@@ -4078,4 +4078,49 @@ class AppLocalizationsEn extends AppLocalizations {
   String tagCreated(String tag) {
     return 'Created #$tag';
   }
+
+  @override
+  String tagWeeklyGain(int n) {
+    return '+$n this week';
+  }
+
+  @override
+  String tagFriendsAlsoNamed(String names) {
+    return 'Friends $names also added it';
+  }
+
+  @override
+  String get tagAddToMinePlain => 'Add to my tags';
+
+  @override
+  String get tagUndo => 'Undo';
+
+  @override
+  String get tagRetryLater => 'Please try again in a moment';
+
+  @override
+  String tagOverlapGain(int n) {
+    return 'Overlaps with +$n';
+  }
+
+  @override
+  String get tagCategoryLabel => 'Category';
+
+  @override
+  String get tagCategoryFood => 'Food';
+
+  @override
+  String get tagCategoryCulture => 'Culture';
+
+  @override
+  String get tagCategoryActive => 'Active';
+
+  @override
+  String get tagCategoryLearn => 'Learning';
+
+  @override
+  String get tagCategoryPlay => 'Play';
+
+  @override
+  String get tagCategoryEtc => 'Other';
 }

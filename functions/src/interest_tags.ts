@@ -33,6 +33,39 @@ export type OfficialTag = {
   description: {ko: string; en: string; zh: string};
 };
 
+/** 관심사 분류: 태그마다 색을 따로 두지 않고 분류 하나에 한 색을 쓴다. */
+export const TAG_CATEGORIES = ['food', 'culture', 'active', 'learn', 'play', 'etc'] as const;
+export type TagCategory = typeof TAG_CATEGORIES[number];
+
+/** 공식 태그 분류·이모지(서버만 쓴다). 없는 태그는 etc, 이모지 없음. */
+export const OFFICIAL_TAG_STYLE: Readonly<Record<string, {category: TagCategory; emoji: string}>> = {
+  restaurants: {category: 'food', emoji: '🍜'},
+  cafe: {category: 'food', emoji: '☕'},
+  music: {category: 'culture', emoji: '🎧'},
+  movie: {category: 'culture', emoji: '🎬'},
+  photo: {category: 'culture', emoji: '📷'},
+  performance: {category: 'culture', emoji: '🎭'},
+  exhibition: {category: 'culture', emoji: '🖼️'},
+  travel: {category: 'active', emoji: '✈️'},
+  fitness: {category: 'active', emoji: '🏋️'},
+  running: {category: 'active', emoji: '🏃'},
+  soccer: {category: 'active', emoji: '⚽'},
+  basketball: {category: 'active', emoji: '🏀'},
+  volunteer: {category: 'active', emoji: '🤝'},
+  language: {category: 'learn', emoji: '🗣️'},
+  study: {category: 'learn', emoji: '📚'},
+  ai: {category: 'learn', emoji: '🤖'},
+  reading: {category: 'learn', emoji: '📖'},
+  startup: {category: 'learn', emoji: '🚀'},
+  development: {category: 'learn', emoji: '💻'},
+  game: {category: 'play', emoji: '🎮'},
+};
+
+/** 허용된 분류만 받는다. 그 밖은 etc. */
+export function normalizeTagCategory(raw: unknown): TagCategory {
+  return (TAG_CATEGORIES as readonly string[]).includes(String(raw)) ? raw as TagCategory : 'etc';
+}
+
 /** lib/models/social_profile_data.dart SocialProfileCatalog.interests와 같은 표. */
 export const OFFICIAL_INTEREST_TAGS: readonly OfficialTag[] = [
   {id: 'restaurants', ko: '맛집', en: 'Food spots', zh: '美食探店',
@@ -147,6 +180,8 @@ export function officialTagFields(tag: OfficialTag): Record<string, unknown> {
     aliases: officialTagAliases(tag),
     labels: {ko: tag.ko, en: tag.en, zh: tag.zh},
     descriptions: tag.description,
+    category: OFFICIAL_TAG_STYLE[tag.id]?.category ?? 'etc',
+    emoji: OFFICIAL_TAG_STYLE[tag.id]?.emoji ?? '',
     official: true,
     createdBy: 'system',
   };
@@ -280,6 +315,8 @@ function pickPublic(data: admin.firestore.DocumentData) {
     // 어떤 태그인지: 공식 태그는 언어별(descriptions), 사용자 태그는 만든 사람이 쓴 한 줄.
     description: String(data.description ?? ''),
     descriptions: data.descriptions && typeof data.descriptions === 'object' ? data.descriptions : {},
+    category: normalizeTagCategory(data.category),
+    emoji: typeof data.emoji === 'string' ? data.emoji.slice(0, 8) : '',
     official: data.official === true,
     holderCount: Math.max(0, Number(data.holderCount ?? 0) || 0),
     postCount: Math.max(0, Number(data.postCount ?? 0) || 0),
@@ -345,6 +382,7 @@ export const createTag = callables()
       return {id: doc.id, created: false};
     }
     const description = normalizeTagDescription(data?.description);
+    const category = normalizeTagCategory(data?.category);
     const display = Array.from(String(data?.name).normalize('NFKC').trim().replace(/^#+/, ''))
       .slice(0, TAG_NAME_MAX).join('');
     const day = new Date().toISOString().slice(0, 10);
@@ -364,7 +402,7 @@ export const createTag = callables()
       const now = FieldValue.serverTimestamp();
       tx.set(tagRef(id), {
         name: id, displayName: display, aliases: [], labels: {}, official: false,
-        description,
+        description, category, emoji: '',
         holderCount: 0, postCount: 0, meetupCount: 0, status: 'active',
         createdBy: uid, createdAt: now, updatedAt: now,
       });
@@ -384,7 +422,7 @@ export const setProfileTags = callables()
     const uid = requireUid(context);
     const requested = sanitizeProfileTagIds(data?.tagIds);
     const userRef = db().collection(COL.users).doc(uid);
-    return db().runTransaction(async (tx) => {
+    const saved = await db().runTransaction(async (tx) => {
       const user = await tx.get(userRef);
       if (!user.exists || !isSearchableUser(uid, user.data())) {
         throw new functions.https.HttpsError('failed-precondition', 'account-unavailable');
@@ -406,9 +444,39 @@ export const setProfileTags = callables()
         interests: legacyInterestsFor(next),
         profileUpdatedAt: FieldValue.serverTimestamp(),
       });
-      return {tagIds: next};
+      return {tagIds: next, prev, added};
     });
+    // '+n명과 겹쳐요': 새로 단 태그를 단 사람 중 전에 나와 겹치는 태그가 없던 사람 수(어림).
+    let gain: Record<string, number> = {};
+    try {
+      gain = await overlapGain(uid, saved.prev, saved.added);
+    } catch (error) {
+      functions.logger.warn('setProfileTags gain failed', {error: String(error)});
+    }
+    return {tagIds: saved.tagIds, gain};
   });
+
+const GAIN_SCAN_LIMIT = 150;
+
+/** 새로 단 태그마다, 그 태그를 단 사람 중 [prev] 태그와 겹치지 않던 사람 수. */
+export async function overlapGain(
+  uid: string,
+  prev: readonly string[],
+  added: readonly string[],
+): Promise<Record<string, number>> {
+  const before = new Set(prev);
+  const entries = await Promise.all(added.map(async (tagId) => {
+    const snap = await db().collection(COL.users)
+      .where('interestTagIds', 'array-contains', tagId)
+      .limit(GAIN_SCAN_LIMIT)
+      .get();
+    const count = snap.docs.filter((doc) => doc.id !== uid &&
+      isSearchableUser(doc.id, doc.data()) &&
+      !stringArray(doc.get('interestTagIds')).some((id) => before.has(id))).length;
+    return [tagId, count] as const;
+  }));
+  return Object.fromEntries(entries);
+}
 
 /**
  * 태그를 단 사람, 최근에 단 순(본인·비활성·차단·숨긴 사람 제외).
@@ -518,7 +586,12 @@ export const getTagSummary = callables()
     if (!tag.exists || tag.get('status') !== 'active') {
       throw new functions.https.HttpsError('not-found', 'tag-unavailable');
     }
-    const friends = await friendTagHolders(uid, tagId);
+    const [friends, trending] = await Promise.all([
+      friendTagHolders(uid, tagId),
+      db().collection('tags_trending').doc('current').get(),
+    ]);
+    const weekly = ((trending.get('items') as Array<{id: string; delta: number}> | undefined) ?? [])
+      .find((item) => item.id === tagId)?.delta ?? 0;
     const pref = prefs.get(`tagPrefs.${tagId}`) ?? {};
     return {
       tag: {id: tag.id, ...pickPublic(tag.data() ?? {})},
@@ -527,6 +600,7 @@ export const getTagSummary = callables()
       canEditDescription: tag.get('official') !== true && tag.get('createdBy') === uid,
       friendCount: friends.length,
       friends: friends.slice(0, FRIEND_FACE_LIMIT),
+      weeklyGain: Math.max(0, Number(weekly) || 0),
       hidden: pref.hidden === true,
       notify: pref.notify === true,
     };

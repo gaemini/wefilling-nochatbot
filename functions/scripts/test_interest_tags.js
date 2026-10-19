@@ -20,6 +20,9 @@ const {
   OFFICIAL_TAG_IDS,
   MAX_PROFILE_TAGS,
   normalizeTagDescription,
+  normalizeTagCategory,
+  OFFICIAL_TAG_STYLE,
+  officialTagFields,
 } = require('../lib/interest_tags');
 const {SOCIAL_PROFILE_INTEREST_IDS} = require('../lib/user_search_index');
 
@@ -115,5 +118,17 @@ assert.throws(() => normalizeTagDescription(3), /tag-description-invalid/);
 for (const tag of OFFICIAL_INTEREST_TAGS) {
   assert.ok(tag.description.ko && tag.description.en && tag.description.zh, tag.id);
 }
+
+// 분류·이모지: 허용 값만, 공식 태그는 모두 분류가 있다.
+assert.equal(normalizeTagCategory('food'), 'food');
+assert.equal(normalizeTagCategory('FOOD'), 'etc');
+assert.equal(normalizeTagCategory(undefined), 'etc');
+for (const tag of OFFICIAL_INTEREST_TAGS) {
+  assert.ok(OFFICIAL_TAG_STYLE[tag.id], tag.id);
+  const fields = officialTagFields(tag);
+  assert.notEqual(fields.category, 'etc', tag.id);
+  assert.ok(fields.emoji, tag.id);
+}
+assert.equal(officialTagFields(OFFICIAL_INTEREST_TAGS.find((t) => t.id === 'game')).category, 'play');
 
 console.log('interest tag helper tests passed');

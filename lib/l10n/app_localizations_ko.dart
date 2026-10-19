@@ -3930,4 +3930,49 @@ class AppLocalizationsKo extends AppLocalizations {
   String tagCreated(String tag) {
     return '#$tag 태그를 만들었어요';
   }
+
+  @override
+  String tagWeeklyGain(int n) {
+    return '이번 주 +$n명';
+  }
+
+  @override
+  String tagFriendsAlsoNamed(String names) {
+    return '친구 $names님도 달았어요';
+  }
+
+  @override
+  String get tagAddToMinePlain => '내 태그에 추가';
+
+  @override
+  String get tagUndo => '되돌리기';
+
+  @override
+  String get tagRetryLater => '잠시 후 다시 시도해 주세요';
+
+  @override
+  String tagOverlapGain(int n) {
+    return '+$n명과 겹쳐요';
+  }
+
+  @override
+  String get tagCategoryLabel => '분류';
+
+  @override
+  String get tagCategoryFood => '맛집·카페';
+
+  @override
+  String get tagCategoryCulture => '문화';
+
+  @override
+  String get tagCategoryActive => '활동';
+
+  @override
+  String get tagCategoryLearn => '배움';
+
+  @override
+  String get tagCategoryPlay => '놀이';
+
+  @override
+  String get tagCategoryEtc => '기타';
 }

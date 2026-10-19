@@ -7257,6 +7257,84 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'#{tag} 태그를 만들었어요'**
   String tagCreated(String tag);
+
+  /// No description provided for @tagWeeklyGain.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주 +{n}명'**
+  String tagWeeklyGain(int n);
+
+  /// No description provided for @tagFriendsAlsoNamed.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {names}님도 달았어요'**
+  String tagFriendsAlsoNamed(String names);
+
+  /// No description provided for @tagAddToMinePlain.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그에 추가'**
+  String get tagAddToMinePlain;
+
+  /// No description provided for @tagUndo.
+  ///
+  /// In ko, this message translates to:
+  /// **'되돌리기'**
+  String get tagUndo;
+
+  /// No description provided for @tagRetryLater.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 다시 시도해 주세요'**
+  String get tagRetryLater;
+
+  /// No description provided for @tagOverlapGain.
+  ///
+  /// In ko, this message translates to:
+  /// **'+{n}명과 겹쳐요'**
+  String tagOverlapGain(int n);
+
+  /// No description provided for @tagCategoryLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'분류'**
+  String get tagCategoryLabel;
+
+  /// No description provided for @tagCategoryFood.
+  ///
+  /// In ko, this message translates to:
+  /// **'맛집·카페'**
+  String get tagCategoryFood;
+
+  /// No description provided for @tagCategoryCulture.
+  ///
+  /// In ko, this message translates to:
+  /// **'문화'**
+  String get tagCategoryCulture;
+
+  /// No description provided for @tagCategoryActive.
+  ///
+  /// In ko, this message translates to:
+  /// **'활동'**
+  String get tagCategoryActive;
+
+  /// No description provided for @tagCategoryLearn.
+  ///
+  /// In ko, this message translates to:
+  /// **'배움'**
+  String get tagCategoryLearn;
+
+  /// No description provided for @tagCategoryPlay.
+  ///
+  /// In ko, this message translates to:
+  /// **'놀이'**
+  String get tagCategoryPlay;
+
+  /// No description provided for @tagCategoryEtc.
+  ///
+  /// In ko, this message translates to:
+  /// **'기타'**
+  String get tagCategoryEtc;
 }
 
 class _AppLocalizationsDelegate

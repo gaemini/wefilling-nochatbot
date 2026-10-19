@@ -3877,4 +3877,49 @@ class AppLocalizationsZh extends AppLocalizations {
   String tagCreated(String tag) {
     return '已创建 #$tag';
   }
+
+  @override
+  String tagWeeklyGain(int n) {
+    return '本周 +$n人';
+  }
+
+  @override
+  String tagFriendsAlsoNamed(String names) {
+    return '好友 $names 也添加了';
+  }
+
+  @override
+  String get tagAddToMinePlain => '添加到我的标签';
+
+  @override
+  String get tagUndo => '撤销';
+
+  @override
+  String get tagRetryLater => '请稍后再试';
+
+  @override
+  String tagOverlapGain(int n) {
+    return '与 +$n 人重合';
+  }
+
+  @override
+  String get tagCategoryLabel => '分类';
+
+  @override
+  String get tagCategoryFood => '美食';
+
+  @override
+  String get tagCategoryCulture => '文化';
+
+  @override
+  String get tagCategoryActive => '运动';
+
+  @override
+  String get tagCategoryLearn => '学习';
+
+  @override
+  String get tagCategoryPlay => '娱乐';
+
+  @override
+  String get tagCategoryEtc => '其他';
 }

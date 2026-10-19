@@ -1699,5 +1699,21 @@
   "tagDescSave": "저장",
   "tagDescSaved": "설명을 저장했어요",
   "tagCreated": "#{tag} 태그를 만들었어요",
-  "@tagCreated": {"placeholders": {"tag": {"type": "String"}}}
+  "@tagCreated": {"placeholders": {"tag": {"type": "String"}}},
+  "tagWeeklyGain": "이번 주 +{n}명",
+  "@tagWeeklyGain": {"placeholders": {"n": {"type": "int"}}},
+  "tagFriendsAlsoNamed": "친구 {names}님도 달았어요",
+  "@tagFriendsAlsoNamed": {"placeholders": {"names": {"type": "String"}}},
+  "tagAddToMinePlain": "내 태그에 추가",
+  "tagUndo": "되돌리기",
+  "tagRetryLater": "잠시 후 다시 시도해 주세요",
+  "tagOverlapGain": "+{n}명과 겹쳐요",
+  "@tagOverlapGain": {"placeholders": {"n": {"type": "int"}}},
+  "tagCategoryLabel": "분류",
+  "tagCategoryFood": "맛집·카페",
+  "tagCategoryCulture": "문화",
+  "tagCategoryActive": "활동",
+  "tagCategoryLearn": "배움",
+  "tagCategoryPlay": "놀이",
+  "tagCategoryEtc": "기타"
 }

@@ -65,6 +65,7 @@ class TagSummary {
     this.hidden = false,
     this.notify = false,
     this.canEditDescription = false,
+    this.weeklyGain = 0,
   });
 
   final InterestTag tag;
@@ -78,6 +79,9 @@ class TagSummary {
   /// 만든 사람만(공식 태그 제외) 설명을 고칠 수 있다.
   final bool canEditDescription;
 
+  /// 이번 주에 이 태그를 새로 단 사람 수(뜨는 태그 집계).
+  final int weeklyGain;
+
   TagSummary copyWith(
           {InterestTag? tag, bool? mine, bool? hidden, bool? notify}) =>
       TagSummary(
@@ -89,6 +93,7 @@ class TagSummary {
         hidden: hidden ?? this.hidden,
         notify: notify ?? this.notify,
         canEditDescription: canEditDescription,
+        weeklyGain: weeklyGain,
       );
 }
 
@@ -210,10 +215,26 @@ class InterestTagService extends ChangeNotifier {
     return saved;
   }
 
-  Future<List<String>> setProfileTags(List<String> ids) async {
+  Future<List<String>> setProfileTags(List<String> ids) async =>
+      (await saveProfileTags(ids)).tagIds;
+
+  /// 저장한 태그와, 새로 단 태그마다 '새로 겹치게 된 사람 수'(gain).
+  Future<({List<String> tagIds, Map<String, int> gain})> saveProfileTags(
+      List<String> ids) async {
     final data0 = await _call(
         'setProfileTags', {'tagIds': ids.take(maxProfileTags).toList()});
-    return ((data0 as Map)['tagIds'] as List).cast<String>();
+    final data = data0 as Map;
+    final rawGain = data['gain'];
+    return (
+      tagIds: (data['tagIds'] as List).cast<String>(),
+      gain: rawGain is Map
+          ? {
+              for (final entry in rawGain.entries)
+                if (entry.value is num)
+                  entry.key.toString(): (entry.value as num).toInt(),
+            }
+          : const <String, int>{},
+    );
   }
 
   /// 추천: 친구들이 많이 단 태그(친구 수 포함), 많이 다는 태그.
@@ -278,6 +299,7 @@ class InterestTagService extends ChangeNotifier {
       hidden: data['hidden'] == true,
       notify: data['notify'] == true,
       canEditDescription: data['canEditDescription'] == true,
+      weeklyGain: (data['weeklyGain'] as num?)?.toInt() ?? 0,
     );
   }
 

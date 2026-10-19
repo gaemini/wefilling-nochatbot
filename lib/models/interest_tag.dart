@@ -12,6 +12,8 @@ class InterestTag {
     this.meetupCount = 0,
     this.description = '',
     this.descriptions = const {},
+    this.category = '',
+    this.emoji = '',
   });
 
   final String id;
@@ -28,6 +30,10 @@ class InterestTag {
   final String description;
   final Map<String, String> descriptions;
 
+  /// 분류(food·culture·active·learn·play·etc)와 이모지. 서버만 쓴다.
+  final String category;
+  final String emoji;
+
   InterestTag copyWith(
           {int? holderCount,
           int? postCount,
@@ -43,6 +49,8 @@ class InterestTag {
         meetupCount: meetupCount ?? this.meetupCount,
         description: description ?? this.description,
         descriptions: description != null ? const {} : descriptions,
+        category: category,
+        emoji: emoji,
       );
 
   String descriptionFor(String languageCode) =>
@@ -82,6 +90,8 @@ class InterestTag {
       description:
           map['description'] is String ? map['description'] as String : '',
       descriptions: _strings(map['descriptions']),
+      category: map['category'] is String ? map['category'] as String : '',
+      emoji: map['emoji'] is String ? map['emoji'] as String : '',
     );
   }
 }

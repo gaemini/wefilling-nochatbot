@@ -1652,5 +1652,18 @@
   "tagDescAdd": "添加说明",
   "tagDescSave": "保存",
   "tagDescSaved": "说明已保存",
-  "tagCreated": "已创建 #{tag}"
+  "tagCreated": "已创建 #{tag}",
+  "tagWeeklyGain": "本周 +{n}人",
+  "tagFriendsAlsoNamed": "好友 {names} 也添加了",
+  "tagAddToMinePlain": "添加到我的标签",
+  "tagUndo": "撤销",
+  "tagRetryLater": "请稍后再试",
+  "tagOverlapGain": "与 +{n} 人重合",
+  "tagCategoryLabel": "分类",
+  "tagCategoryFood": "美食",
+  "tagCategoryCulture": "文化",
+  "tagCategoryActive": "运动",
+  "tagCategoryLearn": "学习",
+  "tagCategoryPlay": "娱乐",
+  "tagCategoryEtc": "其他"
 }

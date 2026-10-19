@@ -155,9 +155,17 @@ async function main() {
   assert.equal(bgSummary.canEditDescription, true);
   assert.equal(bgSummary.tag.description, '보드게임 같이 해요');
 
+  // gain은 새로 단 태그만(running은 원래 있었다).
   assert.deepEqual(await call('setProfileTags', 'alice', {tagIds: ['kpop', 'running', 'movie']}),
-    {tagIds: ['kpop', 'running', 'movie']});
+    {tagIds: ['kpop', 'running', 'movie'], gain: {kpop: 0, movie: 0}});
   assert.equal(intField(await readAdmin('tags/kpop'), 'holderCount'), 1);
+  // 분류: 공식 태그는 정해진 분류·이모지, 새 태그는 고른 분류(허용 값만).
+  assert.equal(runningSearch.items.find((t) => t.id === 'running').category, 'active');
+  assert.equal(runningSearch.items.find((t) => t.id === 'running').emoji, '🏃');
+  await call('createTag', 'bob', {name: 'ramenclub', category: 'food'});
+  await call('createTag', 'bob', {name: 'weirdcat', category: 'spaceship'});
+  assert.equal((await readAdmin('tags/ramenclub')).fields.category.stringValue, 'food');
+  assert.equal((await readAdmin('tags/weirdcat')).fields.category.stringValue, 'etc');
   assert.equal(intField(await readAdmin('tags/cafe'), 'holderCount'), 0);
   assert.equal(intField(await readAdmin('tags/movie'), 'holderCount'), 1);
   assert.deepEqual(arrayField(await readAdmin('users/alice'), 'interests'), ['running', 'movie']);
@@ -258,6 +266,9 @@ async function main() {
     return Array.isArray(r.json) ? r.json.filter((row) => row.document).map((row) => row.document.name.split('/').pop()) : r.json;
   };
   await call('setProfileTags', 'carol', {tagIds: ['kpop']});
+  // carol이 running을 더하면: bob(running, kpop 없음)은 새로 겹치고 alice(kpop)는 이미 겹친다.
+  assert.deepEqual((await call('setProfileTags', 'carol', {tagIds: ['kpop', 'running']})).gain, {running: 1});
+  await call('setProfileTags', 'carol', {tagIds: ['kpop']});
   const tagPostId = 'TagPost0000000000001';
   await createTagPost(tagPostId, {visibility: 'tag', tagIds: ['kpop']});
   const stored = await readAdmin(`posts/${tagPostId}`);
@@ -344,6 +355,7 @@ async function main() {
   await seed('tags_trending/current', {items: [{id: 'kpop', delta: 2}]});
   await seed('tags_daily/2026-10-16', {counts: {kpop: 2}});
   assert.equal((await getAs('carol', 'tags_trending/current')).status, 200);
+  assert.equal((await call('getTagSummary', 'carol', {tagId: 'kpop'})).weeklyGain, 2);
   assert.equal((await getAs('carol', 'tags_daily/2026-10-16')).status, 403);
   // 새 글 개수: carol(kpop) → 태그 공개 글 1개(공개 글 p2는 createdAt 없음).
   assert.deepEqual(await call('getMyTagNewCounts', 'carol', {}), {counts: {kpop: 1}});

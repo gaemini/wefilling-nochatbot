@@ -1672,5 +1672,18 @@
   "tagDescAdd": "Add a description",
   "tagDescSave": "Save",
   "tagDescSaved": "Description saved",
-  "tagCreated": "Created #{tag}"
+  "tagCreated": "Created #{tag}",
+  "tagWeeklyGain": "+{n} this week",
+  "tagFriendsAlsoNamed": "Friends {names} also added it",
+  "tagAddToMinePlain": "Add to my tags",
+  "tagUndo": "Undo",
+  "tagRetryLater": "Please try again in a moment",
+  "tagOverlapGain": "Overlaps with +{n}",
+  "tagCategoryLabel": "Category",
+  "tagCategoryFood": "Food",
+  "tagCategoryCulture": "Culture",
+  "tagCategoryActive": "Active",
+  "tagCategoryLearn": "Learning",
+  "tagCategoryPlay": "Play",
+  "tagCategoryEtc": "Other"
 }

@@ -131,6 +131,16 @@ class MotionTokens {
   static const Curve curve = Curves.easeOutCubic;
   static const Curve decelerate = Curves.easeOut;
 
+  /// 원형 채움·크게 바뀌는 상태(ease-in-out, 600ms 안팎).
+  static const Curve emphasized = Cubic(.65, 0, .35, 1);
+
+  /// 살짝 넘쳤다 돌아오는 곡선(탭 밑줄, 톡 튀는 숫자, ＋→✓).
+  static const Curve springOut = Cubic(.3, 1.25, .5, 1);
+
+  /// 버튼·칩·카드 누름(120ms).
+  static const Curve pressSnappy = Curves.easeOut;
+  static const Duration pressShort = Duration(milliseconds: 120);
+
   static bool reduceMotion(BuildContext context) {
     // 필요한 항목만 구독한다. MediaQuery 전체를 구독하면 키보드가 오르내리는
     // 매 프레임마다 이 값을 쓰는 모든 위젯이 다시 그려진다.

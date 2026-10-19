@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
-import '../models/social_profile_data.dart';
 import '../providers/auth_provider.dart';
 import '../services/interest_tag_service.dart';
+import '../services/my_tags_store.dart';
+export '../services/my_tags_store.dart' show TagLimitException;
 import '../services/tag_seen_store.dart';
 import '../ui/sheets/tag_preview_sheet.dart' show TagFaces;
 import '../ui/snackbar/app_snackbar.dart';
@@ -22,29 +23,22 @@ import 'create_meetup_screen.dart';
 import 'create_post_screen.dart';
 import 'tag_content_tabs.dart';
 
-/// 내 프로필 태그를 하나 더하거나 뺀다. 저장 뒤 프로필을 다시 읽는다.
+/// 내 프로필 태그를 하나 더하거나 뺀다(낙관적 반영, 실패하면 되돌림).
 Future<List<String>> updateMyTags(
   BuildContext context, {
   String? add,
   String? remove,
 }) async {
   final auth = context.read<AuthProvider>();
-  final current = SocialProfileData.fromMap(auth.userData).interestTagIds;
-  final next = [
-    for (final id in current)
-      if (id != remove) id,
-    if (add != null && !current.contains(add)) add,
-  ];
-  if (next.length > InterestTagService.maxProfileTags) {
-    throw const TagLimitException();
-  }
-  final saved = await InterestTagService.instance.setProfileTags(next);
-  await auth.refreshUser();
-  return saved;
-}
-
-class TagLimitException implements Exception {
-  const TagLimitException();
+  await MyTagsStore.instance.save(
+    auth,
+    (current) => [
+      for (final id in current)
+        if (id != remove) id,
+      if (add != null && !current.contains(add)) add,
+    ],
+  );
+  return MyTagsStore.serverTags(auth);
 }
 
 /// 태그 페이지: 태그 정보, 내 태그 추가·알림, 태그를 단 사람(친구 먼저).

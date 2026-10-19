@@ -23,6 +23,8 @@ const {
   normalizeTagCategory,
   countFriendTags,
   rankOverlapPeople,
+  overlapTagCounts,
+  nextHiddenSuggestions,
   OFFICIAL_TAG_STYLE,
   officialTagFields,
 } = require('../lib/interest_tags');
@@ -146,5 +148,20 @@ assert.deepEqual(rankOverlapPeople(people, ['a', 'b'], 'all').map((p) => p.uid),
 assert.deepEqual(rankOverlapPeople(people, ['a', 'b'], 'friends').map((p) => p.uid), ['p2']);
 assert.deepEqual(rankOverlapPeople(people, ['a', 'b'], 'others').map((p) => p.uid), ['p3', 'p1']);
 assert.deepEqual(rankOverlapPeople(people, ['a', 'b'], 'all')[0].overlapTagIds, ['a', 'b']);
+
+// v6: 같은 겹침이면 친구 → 최근 활동 → uid, 칩 숫자, 숨김 목록 최신 300.
+assert.deepEqual(rankOverlapPeople([
+  {uid: 'z', tags: ['a'], isFriend: false, lastActiveMillis: 5},
+  {uid: 'y', tags: ['a'], isFriend: false, lastActiveMillis: 9},
+  {uid: 'x', tags: ['a'], isFriend: false},
+], ['a'], 'all').map((p) => p.uid), ['y', 'z', 'x']);
+assert.deepEqual(overlapTagCounts([{overlapTagIds: ['a', 'b']}, {overlapTagIds: ['a']}]), {a: 2, b: 1});
+assert.deepEqual(nextHiddenSuggestions(['a', 'b'], 'a', true), ['b', 'a']);
+assert.deepEqual(nextHiddenSuggestions(['a', 'b'], 'a', false), ['b']);
+const many = Array.from({length: 300}, (_, i) => `u${i}`);
+const capped = nextHiddenSuggestions(many, 'new', true);
+assert.equal(capped.length, 300);
+assert.equal(capped[0], 'u1');
+assert.equal(capped[299], 'new');
 
 console.log('interest tag helper tests passed');

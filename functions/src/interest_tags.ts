@@ -1204,10 +1204,19 @@ export function countFriendTags(friendTags: ReadonlyArray<readonly string[]>): A
     .map(([id, friendHolders]) => ({id, friendHolders}));
 }
 
-export type OverlapCandidate = {uid: string; tags: readonly string[]; isFriend: boolean};
+export type OverlapCandidate = {
+  uid: string;
+  tags: readonly string[];
+  isFriend: boolean;
+  /** 최근 활동(있으면). 같은 겹침 수에서 최근 활동 순. */
+  lastActiveMillis?: number;
+};
 export type OverlapScope = 'all' | 'friends' | 'others';
 
-/** 겹침 수 많은 순, 같으면 친구 먼저. scope로 친구/친구 아닌 사람만 고른다. */
+/**
+ * 겹침 수 많은 순 → 친구 먼저 → 최근 활동(lastActiveAt) → uid(결정적이라 페이지가 겹치지 않음).
+ * scope로 친구/친구 아닌 사람만 고른다.
+ */
 export function rankOverlapPeople(
   candidates: readonly OverlapCandidate[],
   myTags: readonly string[],
@@ -1219,7 +1228,32 @@ export function rankOverlapPeople(
     .map((person) => ({...person, overlapTagIds: myTags.filter((id) => person.tags.includes(id))}))
     .filter((person) => person.overlapTagIds.length > 0 && person.tags.some((id) => mine.has(id)))
     .sort((a, b) => b.overlapTagIds.length - a.overlapTagIds.length ||
-      Number(b.isFriend) - Number(a.isFriend) || a.uid.localeCompare(b.uid));
+      Number(b.isFriend) - Number(a.isFriend) ||
+      (b.lastActiveMillis ?? 0) - (a.lastActiveMillis ?? 0) ||
+      a.uid.localeCompare(b.uid));
+}
+
+/** 첫 페이지 칩 숫자: 내 태그별로 그 태그가 겹치는 사람 수. */
+export function overlapTagCounts(
+  ranked: ReadonlyArray<{overlapTagIds: readonly string[]}>,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  ranked.forEach((person) => person.overlapTagIds.forEach((id) => {
+    counts[id] = (counts[id] ?? 0) + 1;
+  }));
+  return counts;
+}
+
+export const HIDDEN_SUGGESTION_LIMIT = 300;
+
+/** 숨긴 사람 목록 갱신: 숨기면 맨 뒤에 붙이고(중복 없이) 최신 300개만, 되돌리면 뺀다. */
+export function nextHiddenSuggestions(
+  current: readonly string[],
+  uid: string,
+  hidden: boolean,
+): string[] {
+  const rest = current.filter((id) => id !== uid);
+  return hidden ? [...rest, uid].slice(-HIDDEN_SUGGESTION_LIMIT) : rest;
 }
 
 async function friendIdList(uid: string): Promise<string[]> {
@@ -1314,21 +1348,49 @@ export const getOverlapPeople = callables()
   .https.onCall(async (data, context) => {
     const uid = requireUid(context);
     const scope: OverlapScope = data?.scope === 'friends' || data?.scope === 'others' ? data.scope : 'all';
-    const start = Math.max(0, Math.trunc(Number(data?.cursor) || 0));
-    const me = await db().collection(COL.users).doc(uid).get();
+    const rawCursor = data?.cursor;
+    const start = Math.max(0, Math.trunc(Number(rawCursor) || 0));
+    const firstPage = rawCursor == null || rawCursor === '';
+    const [me, mine] = await Promise.all([
+      db().collection(COL.users).doc(uid).get(),
+      db().collection(COL.usersPrivate).doc(uid).get(),
+    ]);
     const myTags = stringArray(me.get('interestTagIds')).slice(0, 10);
-    if (myTags.length === 0) return {people: [], cursor: null, total: 0};
-    const [friendIds, snap] = await Promise.all([
+    // 내 태그 중 하나로 거르기(아니면 무시).
+    const tagId = normalizeTagName(data?.tagId);
+    const filterTag = tagId && myTags.includes(tagId) ? tagId : null;
+    if (myTags.length === 0) {
+      return {people: [], cursor: null, nextCursor: null, total: 0, tagCounts: {}};
+    }
+    const hiddenUids = new Set(stringArray(mine.get('hiddenSuggestionUids')));
+    const [friendIds, snap, blockedByMe, blockedMe] = await Promise.all([
       friendIdList(uid),
-      db().collection(COL.users).where('interestTagIds', 'array-contains-any', myTags)
+      (filterTag ?
+        db().collection(COL.users).where('interestTagIds', 'array-contains', filterTag) :
+        db().collection(COL.users).where('interestTagIds', 'array-contains-any', myTags))
         .limit(OVERLAP_SCAN_LIMIT).get(),
+      // 차단 관계는 한 번에 읽어 순위·칩 숫자에서 뺀다(페이지별 문서 확인은 그대로 둔다).
+      db().collection(COL.blocks).where('blocker', '==', uid).get(),
+      db().collection(COL.blocks).where('blocked', '==', uid).get(),
+    ]);
+    const blocked = new Set([
+      ...blockedByMe.docs.map((doc) => String(doc.get('blocked') ?? '')),
+      ...blockedMe.docs.map((doc) => String(doc.get('blocker') ?? '')),
     ]);
     const friendSet = new Set(friendIds);
     const docs = new Map(snap.docs
-      .filter((doc) => doc.id !== uid && isSearchableUser(doc.id, doc.data()))
+      .filter((doc) => doc.id !== uid && !hiddenUids.has(doc.id) && !blocked.has(doc.id) &&
+        isSearchableUser(doc.id, doc.data()))
       .map((doc) => [doc.id, doc]));
+    const activeMillis = (doc: admin.firestore.DocumentSnapshot) => {
+      const value = doc.get('lastActiveAt') as {toMillis?: () => number} | undefined;
+      return typeof value?.toMillis === 'function' ? value.toMillis() : 0;
+    };
     const ranked = rankOverlapPeople(Array.from(docs.values()).map((doc) => ({
-      uid: doc.id, tags: stringArray(doc.get('interestTagIds')), isFriend: friendSet.has(doc.id),
+      uid: doc.id,
+      tags: stringArray(doc.get('interestTagIds')),
+      isFriend: friendSet.has(doc.id),
+      lastActiveMillis: activeMillis(doc),
     })), myTags, scope);
     // 차단·숨김은 보여 줄 만큼만 확인한다.
     const people: Array<Record<string, unknown>> = [];
@@ -1348,16 +1410,47 @@ export const getOverlapPeople = callables()
           related[i * 3 + 2]?.get(`tagPrefs.${tagId}.hidden`) !== true);
         if (visible.length === 0) continue;
         const profile = docs.get(person.uid)?.data() ?? {};
+        const photo = String(profile.photoURL || '').trim();
+        const nationality = String(profile.nationality || '').trim();
         people.push({
           uid: person.uid,
           name: String(profile.nickname || '').trim(),
-          photoURL: String(profile.photoURL || '').trim(),
+          photoURL: photo,
+          photoUrl: photo,
           school: String(profile.university || '').trim(),
-          country: String(profile.nationality || '').trim(),
+          country: nationality,
+          nationality,
           isFriend: person.isFriend,
+          // 내 태그 순서(rankOverlapPeople가 myTags 순으로 만든다).
           overlapTagIds: visible,
         });
       }
     }
-    return {people, cursor: index < ranked.length ? String(index) : null, total: ranked.length};
+    const nextCursor = index < ranked.length ? String(index) : null;
+    return {
+      people,
+      cursor: nextCursor,
+      nextCursor,
+      // 총수·칩 숫자는 첫 페이지에서만(차단은 페이지마다 확인하므로 어림값).
+      ...(firstPage ? {total: ranked.length, tagCounts: filterTag ? {} : overlapTagCounts(ranked)} : {}),
+    };
+  });
+
+/** '새로 알게 될 사람'에서 숨기기/되돌리기. users_private/{me}.hiddenSuggestionUids(최신 300). */
+export const setSuggestionHidden = callables()
+  .runWith({timeoutSeconds: 10, memory: '256MB'})
+  .https.onCall(async (data, context) => {
+    const uid = requireUid(context);
+    const target = typeof data?.uid === 'string' ? data.uid.trim() : '';
+    if (!target || target === uid || target.includes('/') || target.length > 128) {
+      throw new functions.https.HttpsError('invalid-argument', 'uid-invalid');
+    }
+    const hidden = data?.hidden !== false;
+    const ref = db().collection(COL.usersPrivate).doc(uid);
+    await db().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const next = nextHiddenSuggestions(stringArray(snap.get('hiddenSuggestionUids')), target, hidden);
+      tx.set(ref, {hiddenSuggestionUids: next}, {merge: true});
+    });
+    return {uid: target, hidden};
   });

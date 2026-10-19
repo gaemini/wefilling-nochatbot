@@ -181,7 +181,7 @@ async function main() {
   assert.ok(searchK.items.some((t) => t.id === 'kpop'));
   assert.equal((await call('searchTags', 'alice', {q: 'kpop'})).exact, true);
 
-  await seed('blocks/alice_bob', {blockerId: 'alice', blockedId: 'bob'});
+  await seed('blocks/alice_bob', {blockerId: 'alice', blockedId: 'bob', blocker: 'alice', blocked: 'bob'});
   const holders = await call('listTagHolders', 'alice', {tagId: 'running'});
   assert.deepEqual(holders.users.map((u) => u.uid), []);
   const holdersCarol = await call('listTagHolders', 'carol', {tagId: 'running'});
@@ -293,6 +293,20 @@ async function main() {
   assert.deepEqual((await call('getOverlapPeople', 'alice', {scope: 'others'})).people, []);
   // 차단은 양쪽 모두 빠진다(alice가 bob을 차단).
   assert.deepEqual((await call('getOverlapPeople', 'bob', {scope: 'all'})).people, []);
+  // v6: 첫 페이지만 total·tagCounts, 태그로 거르기, nationality·photoUrl 필드.
+  assert.deepEqual(overlapAll.tagCounts, {kpop: 1});
+  assert.equal(overlapAll.total, 1);
+  assert.equal(overlapAll.nextCursor, null);
+  assert.ok('nationality' in overlapAll.people[0] && 'photoUrl' in overlapAll.people[0]);
+  assert.deepEqual((await call('getOverlapPeople', 'alice', {scope: 'all', tagId: 'kpop'})).people.map((p) => p.uid), ['carol']);
+  assert.deepEqual((await call('getOverlapPeople', 'alice', {scope: 'all', tagId: 'movie'})).people, []);
+  // 숨기기: 새로고침 뒤에도 빠지고, 되돌리면 다시 나온다. 나 자신·빈 uid는 거부.
+  assert.deepEqual(await call('setSuggestionHidden', 'alice', {uid: 'carol', hidden: true}), {uid: 'carol', hidden: true});
+  assert.deepEqual((await call('getOverlapPeople', 'alice', {scope: 'all'})).people, []);
+  await call('setSuggestionHidden', 'alice', {uid: 'carol', hidden: false});
+  assert.deepEqual((await call('getOverlapPeople', 'alice', {scope: 'all'})).people.map((p) => p.uid), ['carol']);
+  assert.equal((await call('setSuggestionHidden', 'alice', {uid: 'alice', hidden: true})).error, 'uid-invalid');
+  assert.equal((await call('setSuggestionHidden', 'alice', {uid: '', hidden: true})).error, 'uid-invalid');
   const tagPostId = 'TagPost0000000000001';
   await createTagPost(tagPostId, {visibility: 'tag', tagIds: ['kpop']});
   const stored = await readAdmin(`posts/${tagPostId}`);

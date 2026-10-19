@@ -9,6 +9,7 @@ import '../../models/interest_overview.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/relationship_provider.dart';
 import '../../screens/friend_profile_screen.dart';
+import '../../screens/profile_edit_screen.dart';
 import '../../screens/tag_explore_screen.dart';
 import '../../services/cache/my_page_cache_service.dart';
 import '../../services/interest_tag_service.dart';
@@ -16,6 +17,7 @@ import '../../services/my_tags_store.dart';
 import '../snackbar/app_snackbar.dart';
 import '../widgets/tag_chips.dart' show tagTextStyle;
 import 'interest_bento.dart';
+import 'first_run_interest.dart';
 import 'interest_block_tile.dart';
 import 'overlap_person_card.dart';
 import 'stat_lens_tiles.dart';
@@ -30,7 +32,6 @@ class InterestTab extends StatefulWidget {
     super.key,
     required this.uid,
     this.onOverview,
-    this.firstRunBuilder,
     this.cache,
   });
 
@@ -43,9 +44,6 @@ class InterestTab extends StatefulWidget {
   /// 요약을 받으면(캐시 포함) 부른다. 마이페이지 친구 버튼 얼굴에 쓴다.
   final ValueChanged<InterestOverview>? onOverview;
 
-  /// 내 태그가 3개 미만일 때 대신 보여 줄 처음 사용자 화면(4단계).
-  final Widget Function(BuildContext context, VoidCallback onDone)?
-      firstRunBuilder;
 
   @override
   State<InterestTab> createState() => InterestTabState();
@@ -65,6 +63,9 @@ class InterestTabState extends State<InterestTab> {
 
   /// 처음 사용자 화면에서 '완료'를 누른 뒤에는 태그가 3개 미만이어도 이 화면.
   bool _firstRunDone = false;
+
+  /// 처음 사용자 화면이 저장하는 동안(낙관적으로 3개가 되어도 화면을 유지).
+  bool _firstRunSaving = false;
 
   static String scopeOf(InterestLens lens) => switch (lens) {
         InterestLens.me => 'all',
@@ -265,13 +266,13 @@ class InterestTabState extends State<InterestTab> {
     // select는 build에서만(빌더 콜백 안에서 부르면 오류).
     final outgoing = context.select<RelationshipProvider, Set<String>>(
         (r) => r.outgoingRequests.map((request) => request.toUid).toSet());
+    final hasPhoto = context.select<AuthProvider, bool>((auth) =>
+        (auth.userData?['photoURL'] ?? '').toString().startsWith('https://'));
+    final hasBio = context.select<AuthProvider, bool>(
+        (auth) => (auth.userData?['bio'] ?? '').toString().trim().isNotEmpty);
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: MyTagsBuilder(builder: (context, mine) {
-        final firstRun = widget.firstRunBuilder;
-        if (firstRun != null && mine.length < 3 && !_firstRunDone) {
-          return firstRun(context, () => setState(() => _firstRunDone = true));
-        }
         final overview = _overview;
         if (overview == null) {
           return Center(
@@ -286,6 +287,32 @@ class InterestTabState extends State<InterestTab> {
                 : const SizedBox.square(
                     dimension: 22,
                     child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        // 처음 사용자(내 태그 3개 미만): 완성도 카드 + 키캡으로 3개 고르기.
+        if ((mine.length < 3 || _firstRunSaving) && !_firstRunDone) {
+          return ListenableBuilder(
+            listenable: _service,
+            builder: (context, _) => FirstRunInterest(
+              overview: overview,
+              mine: mine,
+              hasPhoto: hasPhoto,
+              hasBio: hasBio,
+              onEditProfile: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                      builder: (_) => const ProfileEditScreen())),
+              onSaving: (saving) {
+                if (mounted) setState(() => _firstRunSaving = saving);
+              },
+              onDone: () {
+                setState(() {
+                  _firstRunDone = true;
+                  _firstRunSaving = false;
+                });
+                unawaited(_loadPeople(_lens, force: true));
+                unawaited(_load(force: true));
+              },
+            ),
           );
         }
         return ListenableBuilder(

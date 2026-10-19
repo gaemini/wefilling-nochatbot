@@ -1175,6 +1175,8 @@ export const updateTagDescription = callables()
 // ---- 마이페이지 관심 탭 ----
 
 const OVERVIEW_TAG_LIMIT = 8;
+/** 많이 단 태그: 관심 지도 8칸 + 처음 사용자 키캡 10개와 '다른 태그' 여분. */
+const OVERVIEW_POPULAR_LIMIT = 16;
 const OVERLAP_SCAN_LIMIT = 200;
 const OVERLAP_PAGE = 20;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1235,7 +1237,7 @@ export const getMyInterestOverview = callables()
       db().collection(COL.tags).where('status', '==', 'active').where('createdAt', '>=', weekAgo)
         .orderBy('createdAt', 'desc').count().get(),
       db().collection(COL.tags).where('status', '==', 'active').orderBy('holderCount', 'desc')
-        .limit(OVERVIEW_TAG_LIMIT).get(),
+        .limit(OVERVIEW_POPULAR_LIMIT).get(),
     ]);
     const friends = friendDocs.filter((doc) => doc.exists && isSearchableUser(doc.id, doc.data()));
     const friendTagLists = friends.map((doc) => stringArray(doc.get('interestTagIds')));

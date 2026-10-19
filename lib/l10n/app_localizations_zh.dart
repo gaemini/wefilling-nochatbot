@@ -4028,4 +4028,33 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get interestLoadFailed => '无法加载兴趣信息';
+
+  @override
+  String get completionTitle => '资料完成度';
+
+  @override
+  String get completionPhoto => '头像';
+
+  @override
+  String get completionBio => '自我介绍';
+
+  @override
+  String get completionTags => '3 个兴趣标签';
+
+  @override
+  String get pickTagsTitle => '选择兴趣标签';
+
+  @override
+  String pickTagsCaption(int n) {
+    return '选 3 个，帮你找到志同道合的人 · $n/3';
+  }
+
+  @override
+  String get pickTagsShuffle => '↻ 换一批';
+
+  @override
+  String get pickTagsDone => '完成';
+
+  @override
+  String get overlapPlaceholder => '选择标签后，这里会出现和你重合的人';
 }

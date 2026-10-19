@@ -1752,5 +1752,15 @@
   "overlapAddFriend": "친구 추가",
   "overlapRequested": "요청됨",
   "overlapEmpty": "아직 겹치는 사람이 없어요",
-  "interestLoadFailed": "관심 정보를 불러오지 못했어요"
+  "interestLoadFailed": "관심 정보를 불러오지 못했어요",
+  "completionTitle": "프로필 완성도",
+  "completionPhoto": "프로필 사진",
+  "completionBio": "자기소개",
+  "completionTags": "관심 태그 3개",
+  "pickTagsTitle": "관심 태그 고르기",
+  "pickTagsCaption": "3개를 고르면 나와 겹치는 사람을 찾아 드려요 · {n}/3",
+  "@pickTagsCaption": {"placeholders": {"n": {"type": "int"}}},
+  "pickTagsShuffle": "↻ 다른 태그",
+  "pickTagsDone": "완료",
+  "overlapPlaceholder": "태그를 고르면 여기에 나와 겹치는 사람이 나와요"
 }

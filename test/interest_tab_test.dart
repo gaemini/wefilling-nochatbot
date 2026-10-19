@@ -314,12 +314,12 @@ void main() {
 
   testWidgets('다시 열면 10분 안에는 캐시만(호출 0)', (tester) async {
     final cache = _MemCache();
-    await tester.pumpWidget(host(_Auth(['restaurants']), cache: cache));
+    await tester.pumpWidget(host(_Auth(['restaurants', 'cafe', 'music']), cache: cache));
     await tester.pumpAndSettle();
     expect(calls.where((c) => c.$1 == 'getMyInterestOverview'), hasLength(1));
     calls.clear();
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(host(_Auth(['restaurants']), cache: cache));
+    await tester.pumpWidget(host(_Auth(['restaurants', 'cafe', 'music']), cache: cache));
     await tester.pumpAndSettle();
     expect(calls, isEmpty);
     expect(find.text('41'), findsOneWidget);

@@ -7527,6 +7527,60 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'관심 정보를 불러오지 못했어요'**
   String get interestLoadFailed;
+
+  /// No description provided for @completionTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'프로필 완성도'**
+  String get completionTitle;
+
+  /// No description provided for @completionPhoto.
+  ///
+  /// In ko, this message translates to:
+  /// **'프로필 사진'**
+  String get completionPhoto;
+
+  /// No description provided for @completionBio.
+  ///
+  /// In ko, this message translates to:
+  /// **'자기소개'**
+  String get completionBio;
+
+  /// No description provided for @completionTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 태그 3개'**
+  String get completionTags;
+
+  /// No description provided for @pickTagsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 태그 고르기'**
+  String get pickTagsTitle;
+
+  /// No description provided for @pickTagsCaption.
+  ///
+  /// In ko, this message translates to:
+  /// **'3개를 고르면 나와 겹치는 사람을 찾아 드려요 · {n}/3'**
+  String pickTagsCaption(int n);
+
+  /// No description provided for @pickTagsShuffle.
+  ///
+  /// In ko, this message translates to:
+  /// **'↻ 다른 태그'**
+  String get pickTagsShuffle;
+
+  /// No description provided for @pickTagsDone.
+  ///
+  /// In ko, this message translates to:
+  /// **'완료'**
+  String get pickTagsDone;
+
+  /// No description provided for @overlapPlaceholder.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그를 고르면 여기에 나와 겹치는 사람이 나와요'**
+  String get overlapPlaceholder;
 }
 
 class _AppLocalizationsDelegate

@@ -4081,4 +4081,33 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get interestLoadFailed => '관심 정보를 불러오지 못했어요';
+
+  @override
+  String get completionTitle => '프로필 완성도';
+
+  @override
+  String get completionPhoto => '프로필 사진';
+
+  @override
+  String get completionBio => '자기소개';
+
+  @override
+  String get completionTags => '관심 태그 3개';
+
+  @override
+  String get pickTagsTitle => '관심 태그 고르기';
+
+  @override
+  String pickTagsCaption(int n) {
+    return '3개를 고르면 나와 겹치는 사람을 찾아 드려요 · $n/3';
+  }
+
+  @override
+  String get pickTagsShuffle => '↻ 다른 태그';
+
+  @override
+  String get pickTagsDone => '완료';
+
+  @override
+  String get overlapPlaceholder => '태그를 고르면 여기에 나와 겹치는 사람이 나와요';
 }

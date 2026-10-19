@@ -1697,5 +1697,14 @@
   "overlapAddFriend": "加好友",
   "overlapRequested": "已请求",
   "overlapEmpty": "还没有和你重合的人",
-  "interestLoadFailed": "无法加载兴趣信息"
+  "interestLoadFailed": "无法加载兴趣信息",
+  "completionTitle": "资料完成度",
+  "completionPhoto": "头像",
+  "completionBio": "自我介绍",
+  "completionTags": "3 个兴趣标签",
+  "pickTagsTitle": "选择兴趣标签",
+  "pickTagsCaption": "选 3 个，帮你找到志同道合的人 · {n}/3",
+  "pickTagsShuffle": "↻ 换一批",
+  "pickTagsDone": "完成",
+  "overlapPlaceholder": "选择标签后，这里会出现和你重合的人"
 }

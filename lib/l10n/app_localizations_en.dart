@@ -4230,4 +4230,34 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get interestLoadFailed => 'Couldn\'t load your interests';
+
+  @override
+  String get completionTitle => 'Profile completion';
+
+  @override
+  String get completionPhoto => 'Profile photo';
+
+  @override
+  String get completionBio => 'Bio';
+
+  @override
+  String get completionTags => '3 interest tags';
+
+  @override
+  String get pickTagsTitle => 'Pick your interests';
+
+  @override
+  String pickTagsCaption(int n) {
+    return 'Pick 3 to find people like you · $n/3';
+  }
+
+  @override
+  String get pickTagsShuffle => '↻ More tags';
+
+  @override
+  String get pickTagsDone => 'Done';
+
+  @override
+  String get overlapPlaceholder =>
+      'Pick tags to see people who share them here';
 }

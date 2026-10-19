@@ -1717,5 +1717,14 @@
   "overlapAddFriend": "Add friend",
   "overlapRequested": "Requested",
   "overlapEmpty": "No one shares your tags yet",
-  "interestLoadFailed": "Couldn't load your interests"
+  "interestLoadFailed": "Couldn't load your interests",
+  "completionTitle": "Profile completion",
+  "completionPhoto": "Profile photo",
+  "completionBio": "Bio",
+  "completionTags": "3 interest tags",
+  "pickTagsTitle": "Pick your interests",
+  "pickTagsCaption": "Pick 3 to find people like you · {n}/3",
+  "pickTagsShuffle": "↻ More tags",
+  "pickTagsDone": "Done",
+  "overlapPlaceholder": "Pick tags to see people who share them here"
 }

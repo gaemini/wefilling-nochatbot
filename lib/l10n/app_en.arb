@@ -1737,5 +1737,7 @@
   "exploreCreateTitle": "Create #{name}",
   "exploreCreateHint": "This tag doesn't exist yet. It joins your tags right away",
   "exploreSimilarCount": "{n} similar tags",
-  "exploreSimilarNone": "No similar tags"
+  "exploreSimilarNone": "No similar tags",
+  "friendOverlapCaption": "{n} shared interests · shared tags are highlighted",
+  "friendNoTags": "No tags yet"
 }

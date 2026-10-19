@@ -4147,4 +4147,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get exploreSimilarNone => '비슷한 태그가 없어요';
+
+  @override
+  String friendOverlapCaption(int n) {
+    return '나와 겹치는 관심사 $n개 · 겹치는 태그는 진하게 보여요';
+  }
+
+  @override
+  String get friendNoTags => '아직 단 태그가 없어요';
 }

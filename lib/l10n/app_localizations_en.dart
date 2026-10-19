@@ -4299,4 +4299,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get exploreSimilarNone => 'No similar tags';
+
+  @override
+  String friendOverlapCaption(int n) {
+    return '$n shared interests · shared tags are highlighted';
+  }
+
+  @override
+  String get friendNoTags => 'No tags yet';
 }

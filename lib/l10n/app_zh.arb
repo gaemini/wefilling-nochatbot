@@ -1717,5 +1717,7 @@
   "exploreCreateTitle": "新建 #{name}",
   "exploreCreateHint": "还没有这个标签，创建后会直接加到你的标签",
   "exploreSimilarCount": "{n} 个相似标签",
-  "exploreSimilarNone": "没有相似的标签"
+  "exploreSimilarNone": "没有相似的标签",
+  "friendOverlapCaption": "与你重合的兴趣 {n} 个 · 重合的标签会高亮",
+  "friendNoTags": "还没有标签"
 }

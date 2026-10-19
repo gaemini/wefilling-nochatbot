@@ -7647,6 +7647,18 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'비슷한 태그가 없어요'**
   String get exploreSimilarNone;
+
+  /// No description provided for @friendOverlapCaption.
+  ///
+  /// In ko, this message translates to:
+  /// **'나와 겹치는 관심사 {n}개 · 겹치는 태그는 진하게 보여요'**
+  String friendOverlapCaption(int n);
+
+  /// No description provided for @friendNoTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 단 태그가 없어요'**
+  String get friendNoTags;
 }
 
 class _AppLocalizationsDelegate

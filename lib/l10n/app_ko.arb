@@ -1775,5 +1775,8 @@
   "exploreCreateHint": "아직 없는 태그예요. 만들면 내 태그에 바로 달려요",
   "exploreSimilarCount": "비슷한 태그 {n}개",
   "@exploreSimilarCount": {"placeholders": {"n": {"type": "int"}}},
-  "exploreSimilarNone": "비슷한 태그가 없어요"
+  "exploreSimilarNone": "비슷한 태그가 없어요",
+  "friendOverlapCaption": "나와 겹치는 관심사 {n}개 · 겹치는 태그는 진하게 보여요",
+  "@friendOverlapCaption": {"placeholders": {"n": {"type": "int"}}},
+  "friendNoTags": "아직 단 태그가 없어요"
 }

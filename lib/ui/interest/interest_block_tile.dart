@@ -243,7 +243,9 @@ class _InterestBlockTileState extends State<InterestBlockTile>
                             ),
                           );
                         },
+                        // 이모지는 아이콘처럼 글자 배율을 따르지 않는다(작은 칸 넘침 방지).
                         child: Text(data.emoji.isEmpty ? '#' : data.emoji,
+                            textScaler: TextScaler.noScaling,
                             style: TextStyle(
                                 fontSize: large ? 44 : 24,
                                 height: 1.1,

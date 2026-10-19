@@ -4094,4 +4094,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get exploreSimilarNone => '没有相似的标签';
+
+  @override
+  String friendOverlapCaption(int n) {
+    return '与你重合的兴趣 $n 个 · 重合的标签会高亮';
+  }
+
+  @override
+  String get friendNoTags => '还没有标签';
 }

@@ -1,204 +1,149 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../design/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/interest_overview.dart';
-import '../../services/cache/app_image_cache_manager.dart';
 import '../../services/interest_tag_service.dart';
-import '../../utils/country_flag_helper.dart';
 import '../widgets/tag_chips.dart' show tagTextStyle;
-import 'tag_detail_sheet.dart' show WfFlatButton;
-import 'tag_palette.dart';
+import 'friend_request_button.dart';
+import 'person_avatar.dart';
+import 'shared_tag_tile.dart';
 import 'wf_colors.dart';
 
-/// 겹침 비율 원형 그래프(트랙 + 호, 두께 4, 끝 둥글게).
-class OverlapRingPainter extends CustomPainter {
-  OverlapRingPainter(this.progress, {required this.track, required this.arc});
-
-  final double progress;
-  final Color track, arc;
-
-  @override
-  void paint(Canvas c, Size s) {
-    final r = Rect.fromLTWH(2, 2, s.width - 4, s.height - 4);
-    final p = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-    c.drawArc(r, 0, 6.2832, false, p..color = track);
-    c.drawArc(r, -1.5708, 6.2832 * progress.clamp(0, 1), false, p..color = arc);
-  }
-
-  @override
-  bool shouldRepaint(OverlapRingPainter o) =>
-      o.progress != progress || o.arc != arc;
-}
-
-/// 나와 겹치는 사람 카드: 폭 176, 모서리 22, 회색 면.
-/// 아바타 52 + 원형 그래프 44(겹치는 수 / 내 태그 수) / 이름(+친구 칩) / 학교·국가
-/// / '같은 관심사 n개' / 겹치는 태그 칩 최대 3 + '+n' / [친구 추가 | 요청됨 | 프로필].
-class OverlapPersonCard extends StatelessWidget {
+/// '새로 알게 될 사람' 카드(v6): 폭 252, 모서리 22, 회색 면, 패딩 16, 테두리·그림자 없음.
+/// 아바타(국기) + 이름·나라 / 겹치는 관심사 이모지 타일 / 이유 한 줄 / 친구 버튼, 오른쪽 위 ×.
+/// 버튼·타일·×가 아닌 곳을 누르면 프로필.
+class OverlapPersonCard extends StatefulWidget {
   const OverlapPersonCard({
     super.key,
     required this.person,
-    required this.myTagCount,
-    required this.requested,
-    required this.onAddFriend,
+    required this.relation,
     required this.onOpenProfile,
+    this.onHide,
   });
 
   final OverlapPerson person;
-  final int myTagCount;
-  final bool requested;
-  final VoidCallback onAddFriend;
+  final PeopleRelation relation;
   final VoidCallback onOpenProfile;
 
-  static const double width = 176;
+  /// × → 추천에서 숨기기.
+  final VoidCallback? onHide;
+
+  static const double width = 252;
+
+  /// 레일 높이(글자 배율에 맞춰). 내용대로 약 220.
+  static double heightFor(BuildContext context) {
+    final f = MediaQuery.textScalerOf(context).scale(10) / 10;
+    return 188 + 38 * f;
+  }
+
+  @override
+  State<OverlapPersonCard> createState() => _OverlapPersonCardState();
+}
+
+class _OverlapPersonCardState extends State<OverlapPersonCard> {
+  bool _pressed = false;
+  int _celebrate = 0;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final language = Localizations.localeOf(context).languageCode;
-    final overlap = person.overlapTagIds.length;
-    final progress = myTagCount == 0 ? 0.0 : overlap / myTagCount;
-    final country = person.country.isEmpty
-        ? ''
-        : CountryFlagHelper.getCountryInfo(person.country)
-                ?.getLocalizedName(language) ??
-            person.country;
-    final place = [person.school, country].where((v) => v.isNotEmpty).join(' · ');
+    final person = widget.person;
     final name = person.name.isEmpty ? l10n.user : person.name;
+    final country = countryNameOf(person.country, language);
     return GestureDetector(
-      onTap: onOpenProfile,
-      child: Container(
-        width: width,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: WfColors.surface,
-          borderRadius: BorderRadius.circular(WfRadius.card),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onOpenProfile,
+      child: AnimatedScale(
+        scale: _pressed ? .98 : 1,
+        duration: MotionTokens.of(context, MotionTokens.pressShort),
+        curve: MotionTokens.pressSnappy,
+        child: Stack(
           children: [
-            Row(
-              children: [
-                _Avatar(photo: person.photoURL, name: name),
-                const Spacer(),
-                SizedBox.square(
-                  dimension: 44,
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0, end: progress),
-                    duration: MotionTokens.of(
-                        context, const Duration(milliseconds: 600)),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, value, _) => CustomPaint(
-                      painter: OverlapRingPainter(value,
-                          track: WfColors.surface2, arc: WfColors.brand),
-                      child: Center(
-                        child: Text('$overlap',
-                            style: tagTextStyle(
-                                context, 15, FontWeight.w900, WfColors.brand)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Flexible(
-                  child: Text(name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tagTextStyle(
-                          context, 16, FontWeight.w800, WfColors.ink)),
-                ),
-                if (person.isFriend) ...[
-                  const SizedBox(width: 5),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(l10n.overlapFriendChip,
-                        style: tagTextStyle(
-                            context, 11, FontWeight.w700, WfColors.ink2)),
-                  ),
-                ],
-              ],
-            ),
-            if (place.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(place,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: tagTextStyle(
-                      context, 12.5, FontWeight.w500, WfColors.ink3)),
-            ],
-            const SizedBox(height: 8),
-            Text(l10n.overlapSameInterests(overlap),
-                style:
-                    tagTextStyle(context, 12.5, FontWeight.w700, WfColors.ink2)),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 24,
-              child: Row(
+            Container(
+              width: OverlapPersonCard.width,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: WfColors.surface,
+                borderRadius: BorderRadius.circular(WfRadius.card),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  for (final id in person.overlapTagIds.take(3))
-                    Flexible(child: _TagChip(tagId: id)),
-                  if (person.overlapTagIds.length > 3)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 2),
-                      child: Text('+${person.overlapTagIds.length - 3}',
-                          style: tagTextStyle(
-                              context, 12, FontWeight.w700, WfColors.ink3)),
-                    ),
+                  Row(
+                    children: [
+                      PersonAvatar(
+                        uid: person.uid,
+                        name: name,
+                        photoUrl: person.photoURL,
+                        nationality: person.country,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: tagTextStyle(context, 16.5,
+                                        FontWeight.w800, WfColors.ink)
+                                    .copyWith(letterSpacing: -.3)),
+                            if (country.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(country,
+                                  key: const ValueKey('overlap-card-country'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: tagTextStyle(context, 13,
+                                      FontWeight.w500, WfColors.ink3)),
+                            ],
+                          ],
+                        ),
+                      ),
+                      // × 자리.
+                      const SizedBox(width: 26),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SharedTagTiles(
+                    tagIds: person.overlapTagIds,
+                    celebrate: _celebrate,
+                  ),
+                  const SizedBox(height: 10),
+                  OverlapReason(tagIds: person.overlapTagIds),
+                  const SizedBox(height: 14),
+                  FriendRequestButton(
+                    uid: person.uid,
+                    relation: widget.relation,
+                    size: PeopleButtonSize.card,
+                    onOpenProfile: widget.onOpenProfile,
+                    onAdded: () => setState(() => _celebrate++),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: person.isFriend
-                  ? WfFlatButton(
-                      key: ValueKey('overlap_profile_${person.uid}'),
-                      label: l10n.tagProfileButton,
-                      height: 36,
-                      radius: 10,
-                      fontSize: 13.5,
-                      background: Colors.white,
-                      pressedBackground: WfColors.surface2,
-                      foreground: WfColors.ink,
-                      onPressed: onOpenProfile,
-                    )
-                  : requested
-                      ? WfFlatButton(
-                          key: ValueKey('overlap_requested_${person.uid}'),
-                          label: l10n.overlapRequested,
-                          height: 36,
-                          radius: 10,
-                          fontSize: 13.5,
-                          background: WfColors.surface2,
-                          pressedBackground: WfColors.surface2,
-                          foreground: WfColors.ink3,
-                          onPressed: null,
-                        )
-                      : WfFlatButton(
-                          key: ValueKey('overlap_add_${person.uid}'),
-                          label: l10n.overlapAddFriend,
-                          height: 36,
-                          radius: 10,
-                          fontSize: 13.5,
-                          background: WfColors.ink,
-                          pressedBackground: WfColors.ink2,
-                          foreground: Colors.white,
-                          onPressed: onAddFriend,
-                        ),
-            ),
+            // ×: 카드 위 10 · 오른쪽 10(보이는 원 30, 히트 44).
+            if (widget.onHide != null)
+              Positioned(
+                top: 10 - 7,
+                right: 10 - 7,
+                child: _HideButton(
+                  key: ValueKey('overlap-hide-${person.uid}'),
+                  label: l10n.peopleHide,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    widget.onHide!();
+                  },
+                ),
+              ),
           ],
         ),
       ),
@@ -206,64 +151,97 @@ class OverlapPersonCard extends StatelessWidget {
   }
 }
 
-class _TagChip extends StatelessWidget {
-  const _TagChip({required this.tagId});
+/// × : 보이는 원 30(누르면 surface2), 아이콘 14 ink4, 히트 영역 44.
+class _HideButton extends StatefulWidget {
+  const _HideButton({super.key, required this.label, required this.onTap});
 
-  final String tagId;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_HideButton> createState() => _HideButtonState();
+}
+
+class _HideButtonState extends State<_HideButton> {
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
-    final service = InterestTagService.instance;
-    final colors = TagChipColors.of(service.cached(tagId), tagId);
-    final label = service.labelFor(
-        tagId, Localizations.localeOf(context).languageCode);
-    return Container(
-      margin: const EdgeInsets.only(right: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 7),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: colors.light,
-        borderRadius: BorderRadius.circular(8),
+    return Semantics(
+      button: true,
+      label: widget.label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: SizedBox.square(
+          dimension: 44,
+          child: Center(
+            child: AnimatedContainer(
+              duration: MotionTokens.of(context, MotionTokens.pressShort),
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _pressed ? WfColors.surface2 : Colors.transparent,
+              ),
+              child: const Icon(Icons.close_rounded,
+                  size: 14, color: WfColors.ink4),
+            ),
+          ),
+        ),
       ),
-      child: Text('#$label',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: tagTextStyle(context, 11.5, FontWeight.w700, colors.dark)),
     );
   }
 }
 
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.photo, required this.name});
+/// 이유 한 줄: '**맛집, 카페** 등 5개 겹쳐요'(앞 1–2개 태그 이름만 굵게).
+class OverlapReason extends StatelessWidget {
+  const OverlapReason({super.key, required this.tagIds, this.fontSize = 13.5});
 
-  final String photo;
-  final String name;
+  final List<String> tagIds;
+  final double fontSize;
+
+  static String textFor(AppLocalizations l10n, List<String> names, int n) =>
+      switch (n) {
+        <= 0 => '',
+        1 => l10n.peopleOverlapOne(names[0]),
+        2 => l10n.peopleOverlapTwo(names[0], names[1]),
+        _ => l10n.peopleOverlapMany(names[0], names[1], n, n - 2),
+      };
 
   @override
   Widget build(BuildContext context) {
-    final initial = name.characters.isEmpty ? '?' : name.characters.first;
-    final fallback = ColoredBox(
-      color: WfColors.surface2,
-      child: Center(
-        child: Text(initial.toUpperCase(),
-            style: tagTextStyle(context, 20, FontWeight.w800, WfColors.ink3)),
-      ),
-    );
-    return ClipOval(
-      child: SizedBox.square(
-        dimension: 52,
-        child: photo.startsWith('https://')
-            ? CachedNetworkImage(
-                imageUrl: photo,
-                cacheManager: AppImageCacheManager.instance,
-                fit: BoxFit.cover,
-                memCacheWidth: 160,
-                fadeInDuration: Duration.zero,
-                placeholder: (_, __) => fallback,
-                errorWidget: (_, __, ___) => fallback,
-              )
-            : fallback,
-      ),
+    final l10n = AppLocalizations.of(context)!;
+    final language = Localizations.localeOf(context).languageCode;
+    final service = InterestTagService.instance;
+    final names = [
+      for (final id in tagIds.take(2)) service.labelFor(id, language),
+    ];
+    final text = textFor(l10n, names, tagIds.length);
+    // 태그 이름(앞 1–2개)만 굵게.
+    final spans = <TextSpan>[];
+    var rest = text;
+    for (final name in names) {
+      final at = rest.indexOf(name);
+      if (at < 0) continue;
+      if (at > 0) spans.add(TextSpan(text: rest.substring(0, at)));
+      spans.add(TextSpan(
+          text: name,
+          style: const TextStyle(
+              fontWeight: FontWeight.w700, color: WfColors.ink)));
+      rest = rest.substring(at + name.length);
+    }
+    if (rest.isNotEmpty) spans.add(TextSpan(text: rest));
+    return Text.rich(
+      TextSpan(children: spans),
+      key: const ValueKey('overlap-reason'),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: tagTextStyle(context, fontSize, FontWeight.w500, WfColors.ink3),
     );
   }
 }

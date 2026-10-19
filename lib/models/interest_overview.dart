@@ -131,9 +131,9 @@ class OverlapPerson {
   factory OverlapPerson.fromMap(Map<dynamic, dynamic> map) => OverlapPerson(
         uid: (map['uid'] ?? '').toString(),
         name: (map['name'] ?? '').toString(),
-        photoURL: (map['photoURL'] ?? '').toString(),
+        photoURL: (map['photoURL'] ?? map['photoUrl'] ?? '').toString(),
         school: (map['school'] ?? '').toString(),
-        country: (map['country'] ?? '').toString(),
+        country: (map['country'] ?? map['nationality'] ?? '').toString(),
         isFriend: map['isFriend'] == true,
         overlapTagIds: [
           for (final id in map['overlapTagIds'] is List

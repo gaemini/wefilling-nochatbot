@@ -229,21 +229,41 @@ class InterestTagService extends ChangeNotifier {
     return overview;
   }
 
-  /// 나와 겹치는 사람(scope: all | friends | others), 20명씩.
-  Future<({List<OverlapPerson> people, String? cursor, int total})>
-      overlapPeople(String scope, {String? cursor}) async {
+  /// 나와 겹치는 사람(scope: all | friends | others), 20명씩. [tagId]면 그 태그를 단 사람만.
+  /// total·tagCounts는 첫 페이지에서만 온다.
+  Future<
+      ({
+        List<OverlapPerson> people,
+        String? cursor,
+        int total,
+        Map<String, int> tagCounts,
+      })> overlapPeople(String scope, {String? cursor, String? tagId}) async {
     final data = _jsonSafe(await _call('getOverlapPeople', {
       'scope': scope,
       if (cursor != null) 'cursor': cursor,
+      if (tagId != null) 'tagId': tagId,
     }));
+    final rawCounts = data['tagCounts'];
     return (
       people: [
         for (final item in data['people'] as List? ?? const [])
           if (item is Map) OverlapPerson.fromMap(item),
       ],
-      cursor: data['cursor'] as String?,
+      cursor: (data['nextCursor'] ?? data['cursor']) as String?,
       total: (data['total'] as num?)?.toInt() ?? 0,
+      tagCounts: rawCounts is Map
+          ? {
+              for (final entry in rawCounts.entries)
+                if (entry.value is num)
+                  entry.key.toString(): (entry.value as num).toInt(),
+            }
+          : const <String, int>{},
     );
+  }
+
+  /// '새로 알게 될 사람'에서 숨기기/되돌리기(서버 users_private.hiddenSuggestionUids).
+  Future<void> setSuggestionHidden(String uid, {required bool hidden}) async {
+    await _call('setSuggestionHidden', {'uid': uid, 'hidden': hidden});
   }
 
   /// 호출 결과(Map<Object?, Object?> 중첩)를 캐시에 그대로 넣을 수 있는 맵으로.

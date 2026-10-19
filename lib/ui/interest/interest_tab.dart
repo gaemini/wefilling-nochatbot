@@ -19,7 +19,9 @@ import '../widgets/tag_chips.dart' show tagTextStyle;
 import 'interest_bento.dart';
 import 'first_run_interest.dart';
 import 'interest_block_tile.dart';
-import 'overlap_person_card.dart';
+import 'friend_request_button.dart';
+import 'overlap_people_screen.dart';
+import 'overlap_people_section.dart';
 import 'stat_lens_tiles.dart';
 import 'tag_detail_sheet.dart';
 import 'tag_palette.dart';
@@ -57,7 +59,8 @@ class InterestTabState extends State<InterestTab> {
   String? _uid;
   final _people = <String, List<OverlapPerson>>{};
   final _peopleTotal = <String, int>{};
-  final _requested = <String>{};
+  final _peopleCursor = <String, String?>{};
+  final _loadingMore = <String>{};
   bool _interacted = false;
   Timer? _peopleRefresh;
 
@@ -154,6 +157,7 @@ class InterestTabState extends State<InterestTab> {
       setState(() {
         _people[scope] = result.people;
         _peopleTotal[scope] = result.total;
+        _peopleCursor[scope] = result.cursor;
       });
       unawaited(_cache.saveInterest(uid, 'people_$scope', {
         'people': [for (final person in result.people) person.toMap()],
@@ -161,6 +165,32 @@ class InterestTabState extends State<InterestTab> {
       }));
     } catch (_) {
       if (mounted) setState(() => _people.putIfAbsent(scope, () => const []));
+    }
+  }
+
+  /// 레일 끝에서 3장 전: 다음 20명.
+  Future<void> _loadMorePeople() async {
+    final scope = scopeOf(_lens);
+    final cursor = _peopleCursor[scope];
+    if (cursor == null || !_loadingMore.add(scope)) return;
+    try {
+      final result = await _service.overlapPeople(scope, cursor: cursor);
+      if (!mounted) return;
+      setState(() {
+        final seen = {
+          for (final p in _people[scope] ?? const <OverlapPerson>[]) p.uid
+        };
+        _people[scope] = [
+          ...?_people[scope],
+          for (final person in result.people)
+            if (!seen.contains(person.uid)) person,
+        ];
+        _peopleCursor[scope] = result.cursor;
+      });
+    } catch (_) {
+      // 다음에 다시 끝에 오면 묻는다.
+    } finally {
+      _loadingMore.remove(scope);
     }
   }
 
@@ -196,19 +226,6 @@ class InterestTabState extends State<InterestTab> {
     return null;
   }
 
-  Future<void> _addFriend(OverlapPerson person) async {
-    final l10n = AppLocalizations.of(context)!;
-    setState(() => _requested.add(person.uid));
-    final ok = await context
-        .read<RelationshipProvider>()
-        .sendFriendRequest(person.uid, silent: true);
-    if (!ok && mounted) {
-      setState(() => _requested.remove(person.uid));
-      AppSnackBar.show(context,
-          message: l10n.tagRetryLater, type: AppSnackBarType.error);
-    }
-  }
-
   void _openProfile(OverlapPerson person) {
     Navigator.of(context).push<void>(MaterialPageRoute(
       builder: (_) => FriendProfileScreen(
@@ -216,7 +233,7 @@ class InterestTabState extends State<InterestTab> {
         nickname: person.name,
         photoURL: person.photoURL,
         university: person.school,
-        allowNonFriendsPreview: true,
+        allowNonFriendsPreview: !person.isFriend,
       ),
     ));
   }
@@ -274,6 +291,8 @@ class InterestTabState extends State<InterestTab> {
     // select는 build에서만(빌더 콜백 안에서 부르면 오류).
     final outgoing = context.select<RelationshipProvider, Set<String>>(
         (r) => r.outgoingRequests.map((request) => request.toUid).toSet());
+    final incoming = context.select<RelationshipProvider, Set<String>>(
+        (r) => r.incomingRequests.map((request) => request.fromUid).toSet());
     final hasPhoto = context.select<AuthProvider, bool>((auth) =>
         (auth.userData?['photoURL'] ?? '').toString().startsWith('https://'));
     final hasBio = context.select<AuthProvider, bool>(
@@ -323,14 +342,15 @@ class InterestTabState extends State<InterestTab> {
         }
         return ListenableBuilder(
           listenable: _service,
-          builder: (context, _) => _content(l10n, overview, mine, outgoing),
+          builder: (context, _) =>
+              _content(l10n, overview, mine, outgoing, incoming),
         );
       }),
     );
   }
 
   Widget _content(AppLocalizations l10n, InterestOverview overview,
-      List<String> mine, Set<String> outgoing) {
+      List<String> mine, Set<String> outgoing, Set<String> incoming) {
     final blocks = _blocks(l10n, overview, mine);
     final mineSet = mine.toSet();
     final breathe = _interacted
@@ -413,25 +433,14 @@ class InterestTabState extends State<InterestTab> {
             ),
           ),
         ),
-        const SizedBox(height: 28),
-        _SectionTitle(
+        OverlapPeopleHeader(
           title: peopleTitle,
           count: _peopleTotal[scope],
-          trailing: TextButton(
-            key: const ValueKey('overlap_see_all'),
-            onPressed: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => OverlapPeopleScreen(
-                    scope: scope, title: peopleTitle, myTagCount: mine.length),
-              ),
+          onSeeAll: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) =>
+                  OverlapPeopleScreen(scope: scope, title: peopleTitle),
             ),
-            style: TextButton.styleFrom(
-              foregroundColor: WfColors.ink3,
-              minimumSize: const Size(44, 44),
-            ),
-            child: Text(l10n.overlapSeeAll,
-                style:
-                    tagTextStyle(context, 13, FontWeight.w600, WfColors.ink3)),
           ),
         ),
         if (people == null)
@@ -444,21 +453,19 @@ class InterestTabState extends State<InterestTab> {
             ),
           )
         else if (people.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            child: Text(l10n.overlapEmpty,
-                style:
-                    tagTextStyle(context, 13, FontWeight.w500, WfColors.ink3)),
-          )
+          OverlapPeopleEmpty(onPickMore: _openExplore)
         else
-          OverlapPeopleRow(
+          OverlapPeopleRail(
             key: ValueKey('overlap_row_$scope'),
             people: people,
-            myTagCount: mine.length,
-            isRequested: (uid) =>
-                _requested.contains(uid) || outgoing.contains(uid),
-            onAddFriend: _addFriend,
+            relationOf: (person) => peopleRelationOf(
+              person.uid,
+              isFriend: person.isFriend,
+              outgoing: outgoing,
+              incoming: incoming,
+            ),
             onOpenProfile: _openProfile,
+            onLoadMore: () => unawaited(_loadMorePeople()),
           ),
       ],
     );
@@ -466,10 +473,9 @@ class InterestTabState extends State<InterestTab> {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, this.count, this.trailing});
+  const _SectionTitle({required this.title, this.trailing});
 
   final String title;
-  final int? count;
   final Widget? trailing;
 
   @override
@@ -479,16 +485,8 @@ class _SectionTitle extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text.rich(
-              TextSpan(children: [
-                TextSpan(text: title),
-                if (count != null && count! > 0)
-                  TextSpan(
-                    text: '  $count',
-                    style: tagTextStyle(
-                        context, 15, FontWeight.w700, WfColors.ink4),
-                  ),
-              ]),
+            child: Text(
+              title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: tagTextStyle(context, 19, FontWeight.w800, WfColors.ink)
@@ -497,217 +495,6 @@ class _SectionTitle extends StatelessWidget {
           ),
           if (trailing != null) trailing!,
         ],
-      ),
-    );
-  }
-}
-
-/// 사람 카드 가로 줄(카드 폭 + 간격 단위로 멈춘다).
-class OverlapPeopleRow extends StatelessWidget {
-  const OverlapPeopleRow({
-    super.key,
-    required this.people,
-    required this.myTagCount,
-    required this.isRequested,
-    required this.onAddFriend,
-    required this.onOpenProfile,
-  });
-
-  final List<OverlapPerson> people;
-  final int myTagCount;
-  final bool Function(String uid) isRequested;
-  final ValueChanged<OverlapPerson> onAddFriend;
-  final ValueChanged<OverlapPerson> onOpenProfile;
-
-  static double heightFor(BuildContext context) {
-    final f = MediaQuery.textScalerOf(context).scale(10) / 10;
-    return 186 + 56 * f;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const gap = 10.0;
-    return SizedBox(
-      height: heightFor(context),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        physics: const _SnapPhysics(OverlapPersonCard.width + gap),
-        itemCount: people.length,
-        separatorBuilder: (_, __) => const SizedBox(width: gap),
-        itemBuilder: (context, index) => OverlapPersonCard(
-          key: ValueKey('overlap_card_${people[index].uid}'),
-          person: people[index],
-          myTagCount: myTagCount,
-          requested: isRequested(people[index].uid),
-          onAddFriend: () => onAddFriend(people[index]),
-          onOpenProfile: () => onOpenProfile(people[index]),
-        ),
-      ),
-    );
-  }
-}
-
-/// 카드 단위로 멈추는 가로 스크롤(scroll-snap).
-class _SnapPhysics extends ScrollPhysics {
-  const _SnapPhysics(this.extent, {super.parent});
-
-  final double extent;
-
-  @override
-  _SnapPhysics applyTo(ScrollPhysics? ancestor) =>
-      _SnapPhysics(extent, parent: buildParent(ancestor));
-
-  @override
-  Simulation? createBallisticSimulation(
-      ScrollMetrics position, double velocity) {
-    if ((velocity <= 0 && position.pixels <= position.minScrollExtent) ||
-        (velocity >= 0 && position.pixels >= position.maxScrollExtent)) {
-      return super.createBallisticSimulation(position, velocity);
-    }
-    final tolerance = toleranceFor(position);
-    var page = position.pixels / extent;
-    if (velocity < -tolerance.velocity) {
-      page = page.floorToDouble();
-    } else if (velocity > tolerance.velocity) {
-      page = page.ceilToDouble();
-    } else {
-      page = page.roundToDouble();
-    }
-    final target = (page * extent)
-        .clamp(position.minScrollExtent, position.maxScrollExtent)
-        .toDouble();
-    if ((target - position.pixels).abs() < tolerance.distance) return null;
-    return ScrollSpringSimulation(spring, position.pixels, target, velocity,
-        tolerance: tolerance);
-  }
-
-  @override
-  bool get allowImplicitScrolling => false;
-}
-
-/// '모두 보기': 나와 겹치는 사람 전체(20명씩).
-class OverlapPeopleScreen extends StatefulWidget {
-  const OverlapPeopleScreen({
-    super.key,
-    required this.scope,
-    required this.title,
-    required this.myTagCount,
-  });
-
-  final String scope;
-  final String title;
-  final int myTagCount;
-
-  @override
-  State<OverlapPeopleScreen> createState() => _OverlapPeopleScreenState();
-}
-
-class _OverlapPeopleScreenState extends State<OverlapPeopleScreen> {
-  final _people = <OverlapPerson>[];
-  final _requested = <String>{};
-  String? _cursor;
-  bool _loading = false;
-  bool _done = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _more();
-  }
-
-  Future<void> _more() async {
-    if (_loading || _done) return;
-    setState(() => _loading = true);
-    try {
-      final result = await InterestTagService.instance
-          .overlapPeople(widget.scope, cursor: _cursor);
-      if (!mounted) return;
-      setState(() {
-        _people.addAll(result.people);
-        _cursor = result.cursor;
-        _done = result.cursor == null;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _done = true);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final outgoing = context.select<RelationshipProvider, Set<String>>(
-        (r) => r.outgoingRequests.map((request) => request.toUid).toSet());
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        title: Text(widget.title,
-            style: tagTextStyle(context, 17, FontWeight.w800, WfColors.ink)),
-      ),
-      body: NotificationListener<ScrollEndNotification>(
-        onNotification: (notification) {
-          if (notification.metrics.extentAfter < 300) _more();
-          return false;
-        },
-        child: _people.isEmpty && !_loading
-            ? Center(
-                child: Text(l10n.overlapEmpty,
-                    style: tagTextStyle(
-                        context, 14, FontWeight.w500, WfColors.ink3)))
-            : SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(
-                    16, 8, 16, 24 + MediaQuery.viewPaddingOf(context).bottom),
-                child: Center(
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      for (final person in _people)
-                        OverlapPersonCard(
-                          key: ValueKey('overlap_all_${person.uid}'),
-                          person: person,
-                          myTagCount: widget.myTagCount,
-                          requested: _requested.contains(person.uid) ||
-                              outgoing.contains(person.uid),
-                          onAddFriend: () async {
-                            setState(() => _requested.add(person.uid));
-                            final ok = await context
-                                .read<RelationshipProvider>()
-                                .sendFriendRequest(person.uid, silent: true);
-                            if (!ok && mounted) {
-                              setState(() => _requested.remove(person.uid));
-                            }
-                          },
-                          onOpenProfile: () => Navigator.of(context)
-                              .push<void>(MaterialPageRoute(
-                            builder: (_) => FriendProfileScreen(
-                              userId: person.uid,
-                              nickname: person.name,
-                              photoURL: person.photoURL,
-                              university: person.school,
-                              allowNonFriendsPreview: true,
-                            ),
-                          )),
-                        ),
-                      if (_loading)
-                        const SizedBox(
-                          width: double.infinity,
-                          height: 60,
-                          child: Center(
-                            child: SizedBox.square(
-                                dimension: 22,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2)),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
       ),
     );
   }

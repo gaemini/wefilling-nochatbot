@@ -32,6 +32,8 @@ class _Relations extends Fake with ChangeNotifier implements RelationshipProvide
   @override
   List<FriendRequest> get outgoingRequests => const [];
   @override
+  List<FriendRequest> get incomingRequests => const [];
+  @override
   Future<bool> sendFriendRequest(String toUid, {bool silent = false}) async {
     sent.add(toUid);
     return true;
@@ -332,17 +334,25 @@ void main() {
     expect(find.text('41'), findsOneWidget);
   });
 
-  testWidgets('친구 추가 → 요청됨, 친구는 프로필 버튼', (tester) async {
+  testWidgets('친구 추가 → 바로 요청 보냄(silent), 친구는 프로필', (tester) async {
     tall(tester);
     final relations = _Relations();
     await tester.pumpWidget(
         host(_Auth(['restaurants', 'cafe', 'music']), relations: relations));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('overlap_profile_f1')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('overlap_add_p1')));
+    expect(
+        find.descendant(
+            of: find.byKey(const ValueKey('friend-request-f1')),
+            matching: find.text('프로필')),
+        findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('friend-request-p1')));
     await tester.pumpAndSettle();
     expect(relations.sent, ['p1']);
-    expect(find.byKey(const ValueKey('overlap_requested_p1')), findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byKey(const ValueKey('friend-request-p1')),
+            matching: find.text('요청 보냄')),
+        findsOneWidget);
   });
 
   testWidgets('동작 줄이기: 꼬리표·원형 채움 없이 ✓만', (tester) async {

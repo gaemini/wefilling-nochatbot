@@ -37,6 +37,8 @@ class _Relations extends Fake
     implements RelationshipProvider {
   @override
   List<FriendRequest> get outgoingRequests => const [];
+  @override
+  List<FriendRequest> get incomingRequests => const [];
 }
 
 class _MemCache extends MyPageCacheService {

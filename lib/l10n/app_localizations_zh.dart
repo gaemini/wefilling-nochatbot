@@ -3922,4 +3922,31 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get tagCategoryEtc => '其他';
+
+  @override
+  String get profileTabInterest => '兴趣';
+
+  @override
+  String get profileTabActivity => '动态';
+
+  @override
+  String get activityFilterReviews => '聚会回顾';
+
+  @override
+  String get activityFilterSaved => '已收藏';
+
+  @override
+  String get activityKindPost => '动态';
+
+  @override
+  String get activityKindReview => '回顾';
+
+  @override
+  String get activityEmpty => '还没有动态';
+
+  @override
+  String get savedPostsEmpty => '没有收藏的动态';
+
+  @override
+  String get savedPrivateHint => '只有你能看到收藏';
 }

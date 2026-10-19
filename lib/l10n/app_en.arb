@@ -1685,5 +1685,14 @@
   "tagCategoryActive": "Active",
   "tagCategoryLearn": "Learning",
   "tagCategoryPlay": "Play",
-  "tagCategoryEtc": "Other"
+  "tagCategoryEtc": "Other",
+  "profileTabInterest": "Interests",
+  "profileTabActivity": "Activity",
+  "activityFilterReviews": "Reviews",
+  "activityFilterSaved": "Saved",
+  "activityKindPost": "Post",
+  "activityKindReview": "Review",
+  "activityEmpty": "No activity yet",
+  "savedPostsEmpty": "No saved posts",
+  "savedPrivateHint": "Only you can see saved posts"
 }

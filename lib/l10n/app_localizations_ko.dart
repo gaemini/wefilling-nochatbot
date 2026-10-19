@@ -3975,4 +3975,31 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get tagCategoryEtc => '기타';
+
+  @override
+  String get profileTabInterest => '관심';
+
+  @override
+  String get profileTabActivity => '활동';
+
+  @override
+  String get activityFilterReviews => '모임 후기';
+
+  @override
+  String get activityFilterSaved => '저장됨';
+
+  @override
+  String get activityKindPost => '포스트';
+
+  @override
+  String get activityKindReview => '모임 후기';
+
+  @override
+  String get activityEmpty => '아직 활동이 없어요';
+
+  @override
+  String get savedPostsEmpty => '저장한 글이 없어요';
+
+  @override
+  String get savedPrivateHint => '저장됨은 나만 볼 수 있어요';
 }

@@ -1665,5 +1665,14 @@
   "tagCategoryActive": "运动",
   "tagCategoryLearn": "学习",
   "tagCategoryPlay": "娱乐",
-  "tagCategoryEtc": "其他"
+  "tagCategoryEtc": "其他",
+  "profileTabInterest": "兴趣",
+  "profileTabActivity": "动态",
+  "activityFilterReviews": "聚会回顾",
+  "activityFilterSaved": "已收藏",
+  "activityKindPost": "动态",
+  "activityKindReview": "回顾",
+  "activityEmpty": "还没有动态",
+  "savedPostsEmpty": "没有收藏的动态",
+  "savedPrivateHint": "只有你能看到收藏"
 }

@@ -4123,4 +4123,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tagCategoryEtc => 'Other';
+
+  @override
+  String get profileTabInterest => 'Interests';
+
+  @override
+  String get profileTabActivity => 'Activity';
+
+  @override
+  String get activityFilterReviews => 'Reviews';
+
+  @override
+  String get activityFilterSaved => 'Saved';
+
+  @override
+  String get activityKindPost => 'Post';
+
+  @override
+  String get activityKindReview => 'Review';
+
+  @override
+  String get activityEmpty => 'No activity yet';
+
+  @override
+  String get savedPostsEmpty => 'No saved posts';
+
+  @override
+  String get savedPrivateHint => 'Only you can see saved posts';
 }

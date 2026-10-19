@@ -1715,5 +1715,14 @@
   "tagCategoryActive": "활동",
   "tagCategoryLearn": "배움",
   "tagCategoryPlay": "놀이",
-  "tagCategoryEtc": "기타"
+  "tagCategoryEtc": "기타",
+  "profileTabInterest": "관심",
+  "profileTabActivity": "활동",
+  "activityFilterReviews": "모임 후기",
+  "activityFilterSaved": "저장됨",
+  "activityKindPost": "포스트",
+  "activityKindReview": "모임 후기",
+  "activityEmpty": "아직 활동이 없어요",
+  "savedPostsEmpty": "저장한 글이 없어요",
+  "savedPrivateHint": "저장됨은 나만 볼 수 있어요"
 }

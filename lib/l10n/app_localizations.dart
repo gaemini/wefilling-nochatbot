@@ -7335,6 +7335,60 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'기타'**
   String get tagCategoryEtc;
+
+  /// No description provided for @profileTabInterest.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심'**
+  String get profileTabInterest;
+
+  /// No description provided for @profileTabActivity.
+  ///
+  /// In ko, this message translates to:
+  /// **'활동'**
+  String get profileTabActivity;
+
+  /// No description provided for @activityFilterReviews.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 후기'**
+  String get activityFilterReviews;
+
+  /// No description provided for @activityFilterSaved.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장됨'**
+  String get activityFilterSaved;
+
+  /// No description provided for @activityKindPost.
+  ///
+  /// In ko, this message translates to:
+  /// **'포스트'**
+  String get activityKindPost;
+
+  /// No description provided for @activityKindReview.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 후기'**
+  String get activityKindReview;
+
+  /// No description provided for @activityEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 활동이 없어요'**
+  String get activityEmpty;
+
+  /// No description provided for @savedPostsEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장한 글이 없어요'**
+  String get savedPostsEmpty;
+
+  /// No description provided for @savedPrivateHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장됨은 나만 볼 수 있어요'**
+  String get savedPrivateHint;
 }
 
 class _AppLocalizationsDelegate

@@ -4,7 +4,6 @@
 // 기존 기능 유지 + 새로운 탭 구조
 
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../ui/widgets/motion_press.dart';
@@ -35,13 +34,17 @@ import 'user_meetups_screens.dart';
 import 'notification_settings_screen.dart';
 import 'account_settings_screen.dart';
 import 'post_detail_screen.dart';
-import 'saved_posts_screen.dart';
 import 'review_detail_screen.dart';
 import 'friends_page.dart';
 import 'tag_picker_screen.dart';
 import '../services/interest_tag_service.dart';
-import '../ui/sheets/tag_preview_sheet.dart';
 import '../ui/widgets/tag_chips.dart';
+import '../ui/interest/activity_filter_bar.dart';
+import '../ui/interest/profile_tab_bar.dart';
+import '../ui/interest/stagger_in.dart';
+import '../ui/interest/tag_detail_sheet.dart'
+    show WfFlatButton, showTagDetailSheet;
+import '../ui/interest/wf_colors.dart';
 import 'semester_todo_admin_screen.dart';
 import '../ui/widgets/profile_image_viewer.dart';
 import '../utils/profile_photo_policy.dart';
@@ -66,6 +69,11 @@ class _MyPageScreenState extends State<MyPageScreen>
   final MyPageCacheService _myPageCacheService = MyPageCacheService();
   late TabController _tabController;
   bool _showPostsAsGrid = false;
+  _ActivityFilter _activityFilter = _ActivityFilter.all;
+
+  /// 친구 버튼 앞 얼굴(상위 3명 사진). 관심 탭 요약이 채운다.
+  List<String> _friendFaces = const [];
+  Stream<List<Post>>? _savedPostsStream;
   // 통계 숫자(Posts/Friends/Reviews 등) 깜빡임 방지용 마지막 값 캐시
 
   String? _myPageCacheUserId;
@@ -82,7 +90,7 @@ class _MyPageScreenState extends State<MyPageScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
 
     // 마이페이지에서는 친구요청 뱃지에 필요한 요청 스트림만 유지한다.
     // 친구 목록은 Friends 화면에 진입할 때 기존 방식으로 조회한다.
@@ -284,16 +292,9 @@ class _MyPageScreenState extends State<MyPageScreen>
         bottom: true,
         child: NestedScrollView(
           headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
-            final isKorean =
-                Localizations.localeOf(context).languageCode == 'ko';
-            final postsLabel = AppLocalizations.of(context)!.posts;
-            final reviewsLabel = (isChineseUi(context)
-                ? '聚会回顾'
-                : isKorean
-                    ? '모임 후기'
-                    : 'Meetup Reviews');
-            final myMeetupsLabel = AppLocalizations.of(context)!.myMeetups;
-
+            final l10n = AppLocalizations.of(context)!;
+            final activityCount = (_userPosts?.length ?? 0) +
+                (_userReviews?.length ?? 0);
             return <Widget>[
               SliverToBoxAdapter(
                 child: _buildProfileHeader(),
@@ -301,34 +302,12 @@ class _MyPageScreenState extends State<MyPageScreen>
               SliverPersistentHeader(
                 pinned: true,
                 delegate: _SliverAppBarDelegate(
-                  TabBar(
+                  ProfileTabBar(
                     controller: _tabController,
-                    labelColor: const Color(0xFF111827),
-                    unselectedLabelColor: const Color(0xFF9CA3AF),
-                    indicatorColor: AppColors.pointColor,
-                    indicatorWeight: 2,
-                    dividerColor: const Color(0xFFF1F3F5),
-                    labelStyle: AppTheme.labelMedium.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
-                    unselectedLabelStyle: AppTheme.labelMedium.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
                     tabs: [
-                      _buildProfileTab(
-                        postsLabel,
-                        sizingLabel: reviewsLabel,
-                      ),
-                      _buildProfileTab(
-                        reviewsLabel,
-                        sizingLabel: reviewsLabel,
-                      ),
-                      _buildProfileTab(
-                        myMeetupsLabel,
-                        sizingLabel: reviewsLabel,
-                      ),
+                      ProfileTabLabel(l10n.profileTabInterest),
+                      ProfileTabLabel(l10n.profileTabActivity,
+                          count: activityCount),
                     ],
                   ),
                 ),
@@ -339,53 +318,14 @@ class _MyPageScreenState extends State<MyPageScreen>
             controller: _tabController,
             children: [
               _KeepAliveTab(
-                key: const PageStorageKey('mypage_posts_tab'),
-                child: _buildUserPosts(),
+                key: const PageStorageKey('mypage_interest_tab'),
+                child: _buildInterestTab(),
               ),
               _KeepAliveTab(
-                key: const PageStorageKey('mypage_reviews_tab'),
-                child: _buildReviewGrid(),
-              ),
-              _KeepAliveTab(
-                key: const PageStorageKey('mypage_my_meetups_tab'),
-                child: const UserMeetupsView(),
+                key: const PageStorageKey('mypage_activity_tab'),
+                child: _buildActivityTab(),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileTab(String label, {required String sizingLabel}) {
-    return Tab(
-      height: 46,
-      child: MotionPress(
-        pressedScale: MotionSelectable.segmentScale,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                ExcludeSemantics(
-                  child: Opacity(
-                    opacity: 0,
-                    child: Text(
-                      sizingLabel,
-                      maxLines: 1,
-                      softWrap: false,
-                    ),
-                  ),
-                ),
-                Text(
-                  label,
-                  maxLines: 1,
-                  softWrap: false,
-                ),
-              ],
-            ),
           ),
         ),
       ),
@@ -409,9 +349,6 @@ class _MyPageScreenState extends State<MyPageScreen>
     final photoUrl = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(rawPhotoUrl)
         ? rawPhotoUrl
         : '';
-    final profileCompletion = social.completionFor(
-      hasProfilePhoto: photoUrl.isNotEmpty,
-    );
     final languageCode = Localizations.localeOf(context).languageCode;
     final zh = isChineseUi(context);
     final l10n = AppLocalizations.of(context)!;
@@ -459,43 +396,6 @@ class _MyPageScreenState extends State<MyPageScreen>
           child: Text('·',
               style: style(12, FontWeight.w400, const Color(0xFF9A9A9A))),
         );
-
-    Widget actionButton({
-      required Key key,
-      required String label,
-      required VoidCallback onTap,
-      bool primary = false,
-    }) {
-      // 높이를 고정하면 글꼴·글자 배율에 따라 글자 아래가 잘린다. 최소 38.
-      return ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 38),
-        child: FilledButton(
-          key: key,
-          onPressed: onTap,
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(0, 38),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            backgroundColor:
-                primary ? const Color(0xFF2C6BC0) : const Color(0xFFF2F2F2),
-            foregroundColor: primary ? Colors.white : const Color(0xFF111827),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: style(
-              13,
-              FontWeight.w600,
-              primary ? Colors.white : const Color(0xFF111827),
-            ),
-          ),
-        ),
-      );
-    }
 
     final friendLabel = zh
         ? '好友 ${_friendCount ?? 0}'
@@ -645,16 +545,39 @@ class _MyPageScreenState extends State<MyPageScreen>
                     line: 20),
               ),
             ],
+            // '같이 하고 싶은 것'은 프로필 편집에서만 고치고, 여기서는 회색 한 줄.
+            if (social.preferredActivities.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                AppLocalizations.of(context)!.tagActivitiesLine(
+                  social.preferredActivities
+                      .map((id) => SocialProfileCatalog.labelFor(
+                            id,
+                            SocialProfileCatalog.activities,
+                            languageCode,
+                          ))
+                      .join(', '),
+                ),
+                key: const ValueKey('mypage_activities_line'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style(13, FontWeight.w500, WfColors.ink3, line: 18),
+              ),
+            ],
             const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
                   flex: 5,
-                  child: actionButton(
+                  child: WfFlatButton(
                     key: const ValueKey('mypage_edit_button'),
                     label: l10n.profileEdit,
-                    primary: true,
-                    onTap: () async {
+                    background: WfColors.brand,
+                    pressedBackground: WfColors.brandPressed,
+                    foreground: Colors.white,
+                    leading: const Icon(Icons.edit_outlined,
+                        size: 16, color: Colors.white),
+                    onPressed: () async {
                       await Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -668,118 +591,18 @@ class _MyPageScreenState extends State<MyPageScreen>
                 const SizedBox(width: 8),
                 Expanded(
                   flex: 3,
-                  child: actionButton(
+                  child: WfFlatButton(
                     key: const ValueKey('mypage_friends_button'),
                     label: friendLabel,
-                    onTap: _navigateToFriendsPage,
+                    background: WfColors.surface,
+                    pressedBackground: WfColors.surface2,
+                    foreground: WfColors.ink,
+                    leading: _FriendFaces(photos: _friendFaces),
+                    onPressed: _navigateToFriendsPage,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            ListenableBuilder(
-              listenable: InterestTagService.instance,
-              builder: (context, _) {
-                InterestTagService.instance.ensureLoaded(social.interestTagIds);
-                return Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final id in social.interestTagIds)
-                      TagChip(
-                        key: ValueKey('mypage_tag_$id'),
-                        label: InterestTagService.instance
-                            .labelFor(id, languageCode),
-                        onTap: () => showTagPreviewSheet(context, tagId: id),
-                      ),
-                    _AddTagChip(
-                      key: const ValueKey('mypage_add_tag'),
-                      label: AppLocalizations.of(context)!.tagAddShort,
-                      onTap: () => _openTagPicker(social.interestTagIds),
-                    ),
-                  ],
-                );
-              },
-            ),
-            if (social.preferredActivities.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                AppLocalizations.of(context)!.tagActivitiesLine(
-                  social.preferredActivities
-                      .map((id) => SocialProfileCatalog.labelFor(
-                            id,
-                            SocialProfileCatalog.activities,
-                            languageCode,
-                          ))
-                      .join(', '),
-                ),
-                key: const ValueKey('mypage_activities_line'),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: style(13, FontWeight.w500, const Color(0xFF6B7280),
-                    line: 18),
-              ),
-            ],
-            if (profileCompletion < 100) ...[
-              const SizedBox(height: 12),
-              InkWell(
-                onTap: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ProfileEditScreen(),
-                    ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 30,
-                        height: 30,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            CircularProgressIndicator(
-                              value: profileCompletion / 100,
-                              strokeWidth: 3,
-                              backgroundColor: const Color(0xFFE2E8F0),
-                              color: AppColors.pointColor,
-                            ),
-                            Center(
-                              child: Text(
-                                '$profileCompletion',
-                                style: style(10, FontWeight.w700,
-                                    const Color(0xFF475569)),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          languageCode == 'ko'
-                              ? (social.interestTagIds.isEmpty
-                                  ? '관심사를 추가하면 비슷한 친구들이 더 쉽게 다가올 수 있어요.'
-                                  : '대화 질문을 설정하면 첫 DM이 더 자연스러워져요.')
-                              : (social.interestTagIds.isEmpty
-                                  ? 'Add interests so similar people can find you.'
-                                  : 'Add a question to make the first DM easier.'),
-                          style: style(
-                              13, FontWeight.w500, const Color(0xFF475569),
-                              line: 18),
-                        ),
-                      ),
-                      const Icon(Icons.chevron_right_rounded,
-                          size: 20, color: Color(0xFF94A3B8)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -1161,7 +984,7 @@ class _MyPageScreenState extends State<MyPageScreen>
 
     return _buildPostCollection(
       posts,
-      showControls: true,
+      showControls: false,
       storageKey: 'mypage_user_posts',
     );
   }
@@ -1175,7 +998,6 @@ class _MyPageScreenState extends State<MyPageScreen>
       color: Colors.white,
       child: Column(
         children: [
-          if (showControls) _buildPostCollectionControls(),
           Expanded(
             child: _showPostsAsGrid
                 ? _buildBorderlessPostGrid(posts, storageKey: storageKey)
@@ -1186,106 +1008,96 @@ class _MyPageScreenState extends State<MyPageScreen>
     );
   }
 
-  Widget _buildPostCollectionControls() {
+  String _postTitle(Post post) => post.displayText.trim().isEmpty
+      ? AppLocalizations.of(context)!.activityKindPost
+      : post.displayText;
+
+  String? _postTag(Post post) {
+    if (post.tagIds.isEmpty) return null;
+    final language = Localizations.localeOf(context).languageCode;
+    return '#${InterestTagService.instance.labelFor(post.tagIds.first, language)}';
+  }
+
+  Widget _buildActivityPostRow(Post post) {
     final l10n = AppLocalizations.of(context)!;
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 10, 4),
-      child: Row(
+    return ActivityRow(
+      key: ValueKey('mypage_activity_post_${post.id}'),
+      thumbnail: _buildPostThumbnail(post),
+      title: _postTitle(post),
+      kind: l10n.activityKindPost,
+      date: DateFormat('yyyy.MM.dd').format(post.createdAt),
+      tag: _postTag(post),
+      likes: post.likes,
+      onTap: () => _openPostDetail(post.id),
+    );
+  }
+
+  Widget _buildActivityReviewRow(ReviewPost review) {
+    final l10n = AppLocalizations.of(context)!;
+    final title = review.content.trim().isNotEmpty
+        ? review.content.trim()
+        : review.meetupTitle;
+    return ActivityRow(
+      key: ValueKey('mypage_activity_review_${review.id}'),
+      thumbnail: review.imageUrls.isEmpty
+          ? const ColoredBox(
+              color: WfColors.surface,
+              child: Icon(Icons.photo_library_outlined,
+                  color: WfColors.ink4, size: 26),
+            )
+          : _buildCachedImage(review.imageUrls.first, fit: BoxFit.cover),
+      title: title,
+      kind: l10n.activityKindReview,
+      date: DateFormat('yyyy.MM.dd').format(review.createdAt),
+      likes: review.likedBy.length,
+      onTap: () => _openReviewDetail(review),
+      onLongPress: () => _showReviewOptions(review),
+    );
+  }
+
+  /// 활동 탭: 필터 알약(전체·포스트·모임 후기·내 모임·🔒 저장됨) + 목록/격자.
+  /// 데이터는 기존 로더·캐시를 그대로 쓰고 필터는 앱에서 거른다.
+  Widget _buildActivityTab() {
+    final l10n = AppLocalizations.of(context)!;
+    final posts = _userPosts;
+    final reviews = _userReviews;
+    final showToggle = _activityFilter == _ActivityFilter.all ||
+        _activityFilter == _ActivityFilter.posts ||
+        _activityFilter == _ActivityFilter.saved;
+    final Widget content = switch (_activityFilter) {
+      _ActivityFilter.all => _buildAllActivity(),
+      _ActivityFilter.posts => _buildUserPosts(),
+      _ActivityFilter.reviews => _buildReviewGrid(),
+      _ActivityFilter.meetups => const UserMeetupsView(),
+      _ActivityFilter.saved => _buildSavedPosts(),
+    };
+    return ColoredBox(
+      color: Colors.white,
+      child: Column(
         children: [
+          WfFilterBar<_ActivityFilter>(
+            keyPrefix: 'mypage_activity_filter',
+            selected: _activityFilter,
+            onSelected: (value) => setState(() => _activityFilter = value),
+            items: [
+              WfFilterItem(_ActivityFilter.all, l10n.all,
+                  count: posts == null && reviews == null
+                      ? null
+                      : (posts?.length ?? 0) + (reviews?.length ?? 0)),
+              WfFilterItem(_ActivityFilter.posts, l10n.posts,
+                  count: posts?.length),
+              WfFilterItem(_ActivityFilter.reviews, l10n.activityFilterReviews,
+                  count: reviews?.length),
+              WfFilterItem(_ActivityFilter.meetups, l10n.myMeetups),
+              WfFilterItem(_ActivityFilter.saved, l10n.activityFilterSaved,
+                  icon: Icons.lock_outline_rounded),
+            ],
+            trailing: showToggle ? _buildViewToggle() : null,
+          ),
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  Semantics(
-                    selected: true,
-                    button: true,
-                    child: Material(
-                      color: const Color(0xFFF3F4F6),
-                      borderRadius: BorderRadius.circular(18),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        child: Text(
-                          l10n.all,
-                          style: TextStyle(
-                            fontFamily: uiFontFamily(context, 'Inter'),
-                            fontFamilyFallback: const ['NotoSansKR'],
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF4B5563),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  TextButton(
-                    onPressed: _navigateToSavedPosts,
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF6B7280),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(
-                      (isChineseUi(context)
-                          ? '收藏的动态'
-                          : isKo
-                              ? '저장한 글'
-                              : 'Saved Posts'),
-                      style: TextStyle(
-                        fontFamily: uiFontFamily(context, 'Inter'),
-                        fontFamilyFallback: const ['NotoSansKR'],
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          MotionSelectable(
-            selected: _showPostsAsGrid,
-            pressedScale: .92,
-            child: IconButton(
-              key: const ValueKey('mypage_posts_grid_toggle'),
-              tooltip: 'Grid',
-              onPressed: () => setState(() => _showPostsAsGrid = true),
-              iconSize: 19,
-              padding: const EdgeInsets.all(6),
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              icon: Icon(
-                Icons.grid_view_rounded,
-                color: _showPostsAsGrid
-                    ? AppColors.pointColor
-                    : const Color(0xFF9CA3AF),
-              ),
-            ),
-          ),
-          MotionSelectable(
-            selected: !_showPostsAsGrid,
-            pressedScale: .92,
-            child: IconButton(
-              key: const ValueKey('mypage_posts_list_toggle'),
-              tooltip: 'List',
-              onPressed: () => setState(() => _showPostsAsGrid = false),
-              iconSize: 19,
-              padding: const EdgeInsets.all(6),
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              icon: Icon(
-                Icons.format_list_bulleted_rounded,
-                color: !_showPostsAsGrid
-                    ? AppColors.pointColor
-                    : const Color(0xFF9CA3AF),
-              ),
+            child: KeyedSubtree(
+              key: ValueKey('mypage_activity_${_activityFilter.name}'),
+              child: content,
             ),
           ),
         ],
@@ -1293,154 +1105,195 @@ class _MyPageScreenState extends State<MyPageScreen>
     );
   }
 
+  Widget _buildViewToggle() {
+    return MotionSelectable(
+      selected: _showPostsAsGrid,
+      pressedScale: .92,
+      child: IconButton(
+        key: ValueKey(_showPostsAsGrid
+            ? 'mypage_posts_list_toggle'
+            : 'mypage_posts_grid_toggle'),
+        tooltip: _showPostsAsGrid ? 'List' : 'Grid',
+        onPressed: () => setState(() => _showPostsAsGrid = !_showPostsAsGrid),
+        iconSize: 20,
+        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+        icon: Icon(
+          _showPostsAsGrid
+              ? Icons.format_list_bulleted_rounded
+              : Icons.grid_view_rounded,
+          color: WfColors.ink3,
+        ),
+      ),
+    );
+  }
+
+  /// 전체: 포스트와 모임 후기를 날짜순으로.
+  Widget _buildAllActivity() {
+    final l10n = AppLocalizations.of(context)!;
+    final posts = _userPosts;
+    final reviews = _userReviews;
+    if ((posts == null && _isLoadingUserPosts) ||
+        (reviews == null && _isLoadingReviews)) {
+      if (posts == null && reviews == null) {
+        return const Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(AppColors.pointColor),
+          ),
+        );
+      }
+    }
+    final items = <(DateTime, Object)>[
+      for (final post in posts ?? const <Post>[]) (post.createdAt, post),
+      for (final review in reviews ?? const <ReviewPost>[])
+        (review.createdAt, review),
+    ]..sort((a, b) => b.$1.compareTo(a.$1));
+    if (items.isEmpty) {
+      return Center(
+        child: Text(l10n.activityEmpty,
+            style: tagTextStyle(context, 14, FontWeight.w600, WfColors.ink3)),
+      );
+    }
+    if (_showPostsAsGrid) {
+      return GridView.builder(
+        key: const PageStorageKey('mypage_activity_all.grid'),
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 6,
+          mainAxisSpacing: 6,
+        ),
+        itemCount: items.length,
+        itemBuilder: (context, index) {
+          final item = items[index].$2;
+          return item is Post
+              ? InkWell(
+                  onTap: () => _openPostDetail(item.id),
+                  child: _buildPostThumbnail(item),
+                )
+              : _buildReviewThumb(item as ReviewPost);
+        },
+      );
+    }
+    return ListView.builder(
+      key: const PageStorageKey('mypage_activity_all.list'),
+      padding: EdgeInsets.only(
+          top: 2, bottom: 16 + MediaQuery.viewPaddingOf(context).bottom),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index].$2;
+        return StaggerIn(
+          index: index,
+          child: item is Post
+              ? _buildActivityPostRow(item)
+              : _buildActivityReviewRow(item as ReviewPost),
+        );
+      },
+    );
+  }
+
+  Widget _buildReviewThumb(ReviewPost review) => InkWell(
+        onTap: () => _openReviewDetail(review),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: review.imageUrls.isEmpty
+              ? const ColoredBox(color: WfColors.surface)
+              : _buildCachedImage(review.imageUrls.first, fit: BoxFit.cover),
+        ),
+      );
+
+  /// 관심 탭(3단계에서 숫자 카드·관심 지도·나와 겹치는 사람으로 채운다).
+  Widget _buildInterestTab() {
+    final social = SocialProfileData.fromMap(
+        Provider.of<AuthProvider>(context).userData);
+    final language = Localizations.localeOf(context).languageCode;
+    return ListenableBuilder(
+      listenable: InterestTagService.instance,
+      builder: (context, _) {
+        InterestTagService.instance.ensureLoaded(social.interestTagIds);
+        return ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final id in social.interestTagIds)
+                  TagChip(
+                    key: ValueKey('mypage_tag_$id'),
+                    label: InterestTagService.instance.labelFor(id, language),
+                    onTap: () => showTagDetailSheet(context, tagId: id),
+                  ),
+                TagChip(
+                  key: const ValueKey('mypage_add_tag'),
+                  label: AppLocalizations.of(context)!.tagAddShort,
+                  onTap: () => _openTagPicker(social.interestTagIds),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 🔒 저장됨: 기존 '저장한 글' 데이터. 나만 본다.
+  Widget _buildSavedPosts() {
+    final l10n = AppLocalizations.of(context)!;
+    return StreamBuilder<List<Post>>(
+      stream: _savedPostsStream ??= _postService.getSavedPosts(),
+      builder: (context, snapshot) {
+        final saved = snapshot.data;
+        if (saved == null) {
+          return snapshot.hasError
+              ? Center(child: Text(l10n.error))
+              : const Center(
+                  child: CircularProgressIndicator(
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(AppColors.pointColor),
+                  ),
+                );
+        }
+        if (saved.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline_rounded,
+                    size: 28, color: WfColors.ink4),
+                const SizedBox(height: 10),
+                Text(l10n.savedPostsEmpty,
+                    style: tagTextStyle(
+                        context, 15, FontWeight.w700, WfColors.ink2)),
+                const SizedBox(height: 4),
+                Text(l10n.savedPrivateHint,
+                    style: tagTextStyle(
+                        context, 13, FontWeight.w500, WfColors.ink3)),
+              ],
+            ),
+          );
+        }
+        return _buildPostCollection(
+          saved,
+          showControls: false,
+          storageKey: 'mypage_saved_posts',
+        );
+      },
+    );
+  }
+
   Widget _buildBorderlessPostList(
     List<Post> posts, {
     required String storageKey,
   }) {
-    final metrics = _PostListMetrics.from(context);
-    return ListView.separated(
+    return ListView.builder(
       key: PageStorageKey('$storageKey.list'),
-      padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
+      padding: EdgeInsets.only(
+          top: 2, bottom: 16 + MediaQuery.viewPaddingOf(context).bottom),
       scrollCacheExtent: const ScrollCacheExtent.viewport(1.25),
       itemCount: posts.length,
-      separatorBuilder: (_, __) => const Divider(
-        height: 1,
-        thickness: 1,
-        color: Color(0xFFF1F3F5),
-      ),
-      itemBuilder: (context, index) => _buildBorderlessPostRow(posts[index]),
-    );
-  }
-
-  Widget _buildBorderlessPostRow(Post post) {
-    final l10n = AppLocalizations.of(context)!;
-    final metadata = post.postCategories
-        .map((category) => category.label(l10n))
-        .toSet()
-        .join(' · ');
-    final metrics = _PostListMetrics.from(context);
-
-    return Material(
-      color: Colors.white,
-      child: InkWell(
-        onTap: () => _openPostDetail(post.id),
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: metrics.verticalPadding),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildPostThumbnail(post, size: metrics.thumbnailSize),
-              SizedBox(width: metrics.contentGap),
-              Expanded(
-                child: SizedBox(
-                  height: metrics.rowHeight,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        post.displayText,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const <String>['NotoSansKR'],
-                          fontSize: metrics.titleFontSize,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF111827),
-                          height: isChineseUi(context) ? 1.3 : 1.25,
-                        ),
-                      ),
-                      SizedBox(height: metrics.titleGap),
-                      Text(
-                        DateFormat('yyyy.MM.dd').format(post.createdAt),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const <String>['NotoSansKR'],
-                          fontSize: metrics.supportingFontSize,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF9CA3AF),
-                          height: isChineseUi(context) ? 1.3 : 1.2,
-                        ),
-                      ),
-                      const Spacer(),
-                      SizedBox(height: metrics.metadataGap),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.notes_rounded,
-                            size: metrics.metadataIconSize,
-                            color: const Color(0xFF9CA3AF),
-                          ),
-                          SizedBox(width: metrics.iconGap),
-                          Expanded(
-                            child: Text(
-                              metadata,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: uiFontFamily(context, 'Inter'),
-                                fontFamilyFallback: const <String>[
-                                  'NotoSansKR',
-                                ],
-                                fontSize: metrics.supportingFontSize,
-                                fontWeight: FontWeight.w500,
-                                color: const Color(0xFF6B7280),
-                                height: isChineseUi(context) ? 1.3 : 1.2,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              SizedBox(width: metrics.trailingGap),
-              SizedBox(
-                height: metrics.rowHeight,
-                child: Align(
-                  alignment: Alignment.bottomRight,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: metrics.trailingMaxWidth,
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.bottomRight,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.favorite_rounded,
-                            size: metrics.likeIconSize,
-                            color: BrandColors.textSecondary,
-                          ),
-                          SizedBox(width: metrics.iconGap),
-                          Text(
-                            '${post.likes}',
-                            maxLines: 1,
-                            style: TextStyle(
-                              fontFamily: uiFontFamily(context, 'Inter'),
-                              fontFamilyFallback: const <String>[
-                                'NotoSansKR',
-                              ],
-                              fontSize: metrics.supportingFontSize,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF6B7280),
-                              height: isChineseUi(context) ? 1.3 : 1.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      itemBuilder: (context, index) => StaggerIn(
+        index: index,
+        child: _buildActivityPostRow(posts[index]),
       ),
     );
   }
@@ -1982,14 +1835,7 @@ class _MyPageScreenState extends State<MyPageScreen>
     unawaited(_refreshExactFriendCount(userId, _myPageLoadToken));
   }
 
-  void _navigateToSavedPosts() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const SavedPostsScreen(),
-      ),
-    );
-  }
+
 
   void _showLogoutConfirmDialog(
       BuildContext context, AuthProvider authProvider) {
@@ -2157,92 +2003,6 @@ class MyPageSettingsSheet {
   }
 }
 
-class _PostListMetrics {
-  const _PostListMetrics({
-    required this.horizontalPadding,
-    required this.verticalPadding,
-    required this.thumbnailSize,
-    required this.rowHeight,
-    required this.contentGap,
-    required this.trailingGap,
-    required this.titleGap,
-    required this.metadataGap,
-    required this.iconGap,
-    required this.titleFontSize,
-    required this.supportingFontSize,
-    required this.metadataIconSize,
-    required this.likeIconSize,
-    required this.trailingMaxWidth,
-  });
-
-  factory _PostListMetrics.from(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final textScaler = MediaQuery.textScalerOf(context);
-    final compact = width < 360;
-    final wide = width >= 600;
-
-    final horizontalPadding = compact ? 12.0 : (wide ? 24.0 : 16.0);
-    final verticalPadding = compact ? 8.0 : (wide ? 12.0 : 10.0);
-    final thumbnailSize = compact ? 76.0 : (wide ? 92.0 : 84.0);
-    final contentGap = compact ? 10.0 : (wide ? 14.0 : 12.0);
-    final trailingGap = compact ? 4.0 : (wide ? 8.0 : 6.0);
-    final titleGap = compact ? 3.0 : (wide ? 5.0 : 4.0);
-    final metadataGap = compact ? 3.0 : (wide ? 5.0 : 4.0);
-    final iconGap = compact ? 3.0 : 4.0;
-    final titleFontSize = compact ? 15.0 : (wide ? 17.0 : 16.0);
-    final supportingFontSize = compact ? 12.0 : (wide ? 14.0 : 13.0);
-    final metadataIconSize = compact ? 16.0 : (wide ? 18.0 : 17.0);
-    final likeIconSize = compact ? 17.0 : (wide ? 19.0 : 18.0);
-    final trailingMaxWidth = compact ? 56.0 : (wide ? 84.0 : 72.0);
-
-    final titleBlockHeight = textScaler.scale(titleFontSize) * 1.25 * 2;
-    final supportingLineHeight = textScaler.scale(supportingFontSize) * 1.2;
-    final metadataLineHeight = math.max(
-      supportingLineHeight,
-      metadataIconSize,
-    );
-    final requiredHeight = titleBlockHeight +
-        titleGap +
-        supportingLineHeight +
-        metadataGap +
-        metadataLineHeight +
-        2;
-
-    return _PostListMetrics(
-      horizontalPadding: horizontalPadding,
-      verticalPadding: verticalPadding,
-      thumbnailSize: thumbnailSize,
-      rowHeight: math.max(thumbnailSize, requiredHeight),
-      contentGap: contentGap,
-      trailingGap: trailingGap,
-      titleGap: titleGap,
-      metadataGap: metadataGap,
-      iconGap: iconGap,
-      titleFontSize: titleFontSize,
-      supportingFontSize: supportingFontSize,
-      metadataIconSize: metadataIconSize,
-      likeIconSize: likeIconSize,
-      trailingMaxWidth: trailingMaxWidth,
-    );
-  }
-
-  final double horizontalPadding;
-  final double verticalPadding;
-  final double thumbnailSize;
-  final double rowHeight;
-  final double contentGap;
-  final double trailingGap;
-  final double titleGap;
-  final double metadataGap;
-  final double iconGap;
-  final double titleFontSize;
-  final double supportingFontSize;
-  final double metadataIconSize;
-  final double likeIconSize;
-  final double trailingMaxWidth;
-}
-
-/// TabBarView 바깥으로 잠시 이동해도 탭의 렌더 트리와 스크롤 상태를 유지한다.
 class _KeepAliveTab extends StatefulWidget {
   const _KeepAliveTab({super.key, required this.child});
 
@@ -2268,7 +2028,7 @@ class _KeepAliveTabState extends State<_KeepAliveTab>
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   _SliverAppBarDelegate(this._tabBar);
 
-  final TabBar _tabBar;
+  final PreferredSizeWidget _tabBar;
 
   @override
   double get minExtent => _tabBar.preferredSize.height;
@@ -2296,39 +2056,55 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-/// 내 정보 태그 줄 끝의 '＋ 태그'.
-class _AddTagChip extends StatelessWidget {
-  const _AddTagChip({super.key, required this.label, required this.onTap});
+/// 활동 탭 필터.
+enum _ActivityFilter { all, posts, reviews, meetups, saved }
 
-  final String label;
-  final VoidCallback onTap;
+/// 친구 버튼 앞 얼굴 3개: 18px 원, 6px 겹침, 2px 흰 테두리. 사진이 없으면 회색 원.
+class _FriendFaces extends StatelessWidget {
+  const _FriendFaces({required this.photos});
+
+  final List<String> photos;
 
   @override
   Widget build(BuildContext context) {
-    return MotionPress(
-      child: Material(
-        color: const Color(0xFFF1F3F5),
-        shape: const StadiumBorder(),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 30),
-            padding: const EdgeInsets.symmetric(horizontal: 11),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    label,
-                    style: tagTextStyle(context, 13.5, FontWeight.w600,
-                        const Color(0xFF3D4651)),
-                  ),
+    const size = 18.0;
+    const step = size - 6;
+    final shown = List<String>.generate(
+        3, (i) => i < photos.length ? photos[i] : '');
+    return SizedBox(
+      width: size + step * 2 + 4,
+      height: size + 4,
+      child: Stack(
+        children: [
+          for (var i = 0; i < shown.length; i++)
+            Positioned(
+              left: step * i,
+              child: Container(
+                width: size + 4,
+                height: size + 4,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
                 ),
-              ],
+                padding: const EdgeInsets.all(2),
+                child: ClipOval(
+                  child: shown[i].isEmpty
+                      ? const ColoredBox(color: WfColors.surface2)
+                      : CachedNetworkImage(
+                          imageUrl: shown[i],
+                          cacheManager: AppImageCacheManager.instance,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 64,
+                          fadeInDuration: Duration.zero,
+                          placeholder: (_, __) =>
+                              const ColoredBox(color: WfColors.surface2),
+                          errorWidget: (_, __, ___) =>
+                              const ColoredBox(color: WfColors.surface2),
+                        ),
+                ),
+              ),
             ),
-          ),
-        ),
+        ],
       ),
     );
   }

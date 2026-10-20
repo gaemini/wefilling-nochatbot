@@ -4,6 +4,7 @@ class SocialProfileData {
   const SocialProfileData({
     this.bio = '',
     this.interests = const <String>[],
+    this.interestTagIds = const <String>[],
     this.preferredActivities = const <String>[],
     this.conversationStarter = '',
     this.friendshipPrompt = '',
@@ -15,6 +16,9 @@ class SocialProfileData {
 
   final String bio;
   final List<String> interests;
+
+  /// 프로필 #태그(최대 8). 문서에 없으면 interests.
+  final List<String> interestTagIds;
   final List<String> preferredActivities;
   final String conversationStarter;
   final String friendshipPrompt;
@@ -36,7 +40,7 @@ class SocialProfileData {
       return value;
     }
 
-    List<String> strings(String key) {
+    List<String> strings(String key, {int max = 5}) {
       final value = data[key];
       if (value is! List) return const <String>[];
       return value
@@ -44,13 +48,16 @@ class SocialProfileData {
           .map((item) => item.trim())
           .where((item) => item.isNotEmpty)
           .toSet()
-          .take(5)
+          .take(max)
           .toList(growable: false);
     }
 
     return SocialProfileData(
       bio: (data['bio'] ?? '').toString().trim(),
       interests: strings('interests'),
+      interestTagIds: data['interestTagIds'] is List
+          ? strings('interestTagIds', max: 8)
+          : strings('interests'),
       preferredActivities: strings('preferredActivities'),
       conversationStarter: conversationStarter(),
       friendshipPrompt: (data['friendshipPrompt'] ?? '').toString().trim(),

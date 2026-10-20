@@ -26,6 +26,9 @@ import '../ui/widgets/group_audience_preview.dart';
 import '../ui/widgets/instagram_embed_preview.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/post_category_selector.dart';
+import '../ui/widgets/content_tag_editor.dart';
+import '../ui/sheets/tag_audience_sheet.dart';
+import '../services/feature_flag_service.dart';
 import '../ui/widgets/shared_link_preview_card.dart';
 import '../ui/widgets/chat_video_tile.dart';
 import '../ui/widgets/video_preparing_dialog.dart';
@@ -56,7 +59,11 @@ class CreatePostScreen extends StatefulWidget {
     this.onSharedPostCreated,
     this.onSharedDraftSave,
     this.stayInAppAfterSharedPost = false,
+    this.initialTagIds = const [],
   });
+
+  /// 태그 페이지에서 열면 그 태그를 미리 붙인다.
+  final List<String> initialTagIds;
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -101,6 +108,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   List<String> _selectedCategoryIds = [];
   bool _showCategoryRequiredHint = false;
   final Set<PostCategory> _selectedPostTags = <PostCategory>{};
+  late List<String> _tagIds = widget.initialTagIds.take(3).toList();
+  bool _tagAudienceFriendsOnly = false;
   bool _showPostTagRequiredHint = false;
   SharedLinkPreview? _sharedLinkPreview;
   bool _sharedLinkRemoved = false;
@@ -1259,6 +1268,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         visibleToCategoryIds: _selectedCategoryIds,
         type: 'text',
         pollOptions: const [],
+        tagIds: _tagIds,
+        audienceFriendsOnly: _tagAudienceFriendsOnly,
         linkPreview: _sharedLinkRemoved ? null : _sharedLinkPreview,
         linkPreviewImageFile: sharedPreviewImage,
         linkPreviewImageSource:
@@ -1640,6 +1651,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   });
                   _checkCanProceed();
                 },
+              ),
+              SizedBox(height: context.rs(20).clamp(16, 22).toDouble()),
+              ContentTagEditor(
+                key: const ValueKey('create_post_tags'),
+                tagIds: _tagIds,
+                enabled: !_isSubmitting,
+                onChanged: (ids) => setState(() {
+                  _tagIds = ids;
+                  // 태그를 다 빼면 '#태그 가진 사람' 공개는 쓸 수 없다.
+                  if (ids.isEmpty && _visibility == 'tag') _visibility = 'public';
+                }),
               ),
               SizedBox(height: context.rs(20).clamp(16, 22).toDouble()),
               if (!_isExternalSocialShare) ...[
@@ -2059,11 +2081,36 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     ? _buildGroupSelectionSection()
                     : null,
               ),
+              if (FeatureFlagService.tagAudienceEnabled) ...[
+                const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
+                TagAudienceOptionTile(
+                  tagIds: _tagIds,
+                  selected: _visibility == 'tag',
+                  onTap: _chooseTagAudience,
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _chooseTagAudience() async {
+    final choice = await showTagAudienceSheet(
+      context,
+      tagIds: _tagIds,
+      friendsOnly: _tagAudienceFriendsOnly,
+    );
+    if (choice == null || !mounted) return;
+    setState(() {
+      _visibility = 'tag';
+      _tagAudienceFriendsOnly = choice.friendsOnly;
+      _isAnonymous = false;
+      _requiresHanyangVerification = false;
+      _selectedCategoryIds = [];
+      _showCategoryRequiredHint = false;
+    });
   }
 
   Widget _buildAnimatedBody() {

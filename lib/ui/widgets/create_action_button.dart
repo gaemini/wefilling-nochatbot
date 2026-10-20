@@ -19,7 +19,7 @@ class CreateActionButton extends StatelessWidget {
     required this.onPressed,
     this.semanticLabel,
     this.tooltip,
-    this.showPlus = true,
+    this.showPlus = false,
     this.enabled = true,
   });
 
@@ -30,7 +30,7 @@ class CreateActionButton extends StatelessWidget {
   final String? semanticLabel;
   final String? tooltip;
 
-  /// false면 `+` 없이 라벨만(예: 공유하기).
+  /// true면 라벨 앞에 `+`. 기본은 라벨만(공유하기·모임 만들기·스낵챗 열기·새 메시지).
   final bool showPlus;
   final bool enabled;
 

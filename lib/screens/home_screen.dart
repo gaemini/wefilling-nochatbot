@@ -7,7 +7,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -32,6 +32,12 @@ import 'review_approval_screen.dart';
 import '../l10n/ui_locale.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/motion_selectable.dart';
+import 'package:provider/provider.dart';
+import '../models/social_profile_data.dart';
+import '../providers/auth_provider.dart';
+import '../services/interest_tag_service.dart';
+import '../ui/widgets/motion_press.dart';
+import '../ui/widgets/tag_chips.dart';
 
 class MeetupHomePage extends StatefulWidget {
   final String? initialMeetupId; // 알림에서 전달받은 모임 ID
@@ -53,6 +59,9 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   DateTime _focusedMonth = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   String _selectedCategoryKey = 'all';
+
+  /// 밋업 목록 #태그 필터(null = 모든 모임).
+  String? _selectedTagFilter;
 
   // 선택한 날짜와 다가오는 밋업을 한 줄기로 보여 주는 목록.
   final ScrollController _agendaController = ScrollController();
@@ -304,11 +313,72 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   }
 
   List<Meetup> _applyCategoryFilter(List<Meetup> meetups) {
-    if (_selectedCategoryKey == 'all') return meetups;
+    final tag = _selectedTagFilter;
+    final byTag = tag == null
+        ? meetups
+        : meetups.where((m) => m.tagIds.contains(tag)).toList();
+    if (_selectedCategoryKey == 'all') return byTag;
     final wantedKey = _firestoreCategoryForKey(_selectedCategoryKey);
-    return meetups
+    return byTag
         .where((m) => _normalizeCategoryKey(m.category) == wantedKey)
         .toList();
+  }
+
+  /// 종류 탭 아래 '모든 모임' + 내 #태그 알약. 내 태그가 없으면 그리지 않는다.
+  // StreamBuilder 콜백 안에서 불리므로 자기 build를 가진 Builder에서 구독한다.
+  Widget _buildTagFilterPills(List<Meetup> upcoming) => Builder(
+        builder: (context) => _tagFilterPills(
+          context,
+          upcoming,
+          SocialProfileData.fromMap(
+            context.select<AuthProvider, Map<String, dynamic>?>(
+                (auth) => auth.userData),
+          ).interestTagIds,
+        ),
+      );
+
+  Widget _tagFilterPills(
+      BuildContext context, List<Meetup> upcoming, List<String> myTags) {
+    if (myTags.isEmpty) return const SizedBox.shrink();
+    if (_selectedTagFilter != null && !myTags.contains(_selectedTagFilter)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _selectedTagFilter = null);
+      });
+    }
+    final service = InterestTagService.instance;
+    service.ensureLoaded(myTags);
+    final language = Localizations.localeOf(context).languageCode;
+    return ListenableBuilder(
+      listenable: service,
+      builder: (context, _) => SizedBox(
+        height: 44,
+        child: ListView(
+          key: const PageStorageKey('meetup_tag_filter'),
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+          children: [
+            _TagFilterPill(
+              key: const ValueKey('meetup_tag_filter_all'),
+              label: AppLocalizations.of(context)!.meetupFilterAll,
+              selected: _selectedTagFilter == null,
+              onTap: () => setState(() => _selectedTagFilter = null),
+            ),
+            for (final id in myTags) ...[
+              const SizedBox(width: 6),
+              _TagFilterPill(
+                key: ValueKey('meetup_tag_filter_$id'),
+                label: '#${service.labelFor(id, language)}',
+                count: upcoming.where((m) => m.tagIds.contains(id)).length,
+                selected: _selectedTagFilter == id,
+                tag: true,
+                onTap: () => setState(() => _selectedTagFilter =
+                    _selectedTagFilter == id ? null : id),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Map<DateTime, List<Meetup>> _groupByDay(List<Meetup> meetups) {
@@ -506,6 +576,9 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
         builder: (context) => CreateMeetupScreen(
           initialDayIndex: dayIndex,
           initialDate: selected,
+          initialTagIds: [
+            if (_selectedTagFilter case final tag?) tag,
+          ],
           onCreateMeetup: (dayIndex, meetup) {
             if (mounted) setState(() {});
           },
@@ -1427,7 +1500,13 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
             text: AppLocalizations.of(context)!.meetupLoadError,
           ));
         } else if (upcoming.isEmpty) {
-          items.add(_AgendaMessage(text: strings.upcomingEmpty));
+          items.add(_AgendaMessage(
+            text: _selectedTagFilter == null
+                ? strings.upcomingEmpty
+                : AppLocalizations.of(context)!.meetupTagEmpty(
+                    InterestTagService.instance.labelFor(_selectedTagFilter!,
+                        Localizations.localeOf(context).languageCode)),
+          ));
         } else {
           DateTime? lastDay;
           for (final meetup in upcoming) {
@@ -1557,8 +1636,9 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                         .toDouble();
                     return Column(
                       children: [
-                        // 상단 고정: 카테고리 칩
+                        // 상단 고정: 카테고리 칩 + 내 #태그 필터
                         _buildCategoryChips(),
+                        _buildTagFilterPills(visibleMeetups),
                         // 날짜 바 + 주간 날짜 줄(접힘) 또는 월 달력(펼침)
                         _buildDateBar(),
                         _buildCalendar(
@@ -1600,7 +1680,11 @@ class MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       // 스낵챗 열기 버튼과 같은 크기·위치(오른쪽 16, 아래 16).
       floatingActionButton: AppFab.createMeetup(
         onPressed: _navigateToCreateMeetup,
-        label: AppLocalizations.of(context)!.createMeetup,
+        label: _selectedTagFilter == null
+            ? AppLocalizations.of(context)!.createMeetup
+            : AppLocalizations.of(context)!.meetupTagCreate(
+                InterestTagService.instance.labelFor(_selectedTagFilter!,
+                    Localizations.localeOf(context).languageCode)),
         heroTag: 'meetup_home_create_fab',
       ),
     );
@@ -2124,5 +2208,76 @@ class _MeetupAgendaStrings {
     if (code == 'ko') return '${day.month}월 ${day.day}일 (${_koWeekdays[index]})';
     if (code == 'zh') return '${day.month}月${day.day}日 周${_zhWeekdays[index]}';
     return '${_enWeekdaysLong[index]}, ${_enMonths[day.month - 1]} ${day.day}';
+  }
+}
+
+class _TagFilterPill extends StatelessWidget {
+  const _TagFilterPill({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.count,
+    this.tag = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final int? count;
+  final bool tag;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = selected
+        ? TagColors.blue
+        : tag
+            ? TagColors.blueSoft
+            : const Color(0xFFF1F3F5);
+    final foreground = selected
+        ? Colors.white
+        : tag
+            ? TagColors.blue
+            : const Color(0xFF3D4651);
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: MotionPress(
+        child: Material(
+          color: background,
+          shape: const StadiumBorder(),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tagTextStyle(
+                          context, 13.5, FontWeight.w600, foreground),
+                    ),
+                  ),
+                  if (count != null && count! > 0) ...[
+                    const SizedBox(width: 5),
+                    Text(
+                      '$count',
+                      style: tagTextStyle(context, 12.5, FontWeight.w700,
+                          selected ? Colors.white70 : TagColors.disabledText),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

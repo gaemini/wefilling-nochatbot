@@ -86,38 +86,6 @@ class _AdShowcaseScreenState extends State<AdShowcaseScreen> {
     }
   }
 
-  Widget _buildLogo() {
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.asset(
-          'assets/icons/app_logo.png',
-          width: 32,
-          height: 32,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF4A90E2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.apps,
-                color: Colors.white,
-                size: 20,
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(

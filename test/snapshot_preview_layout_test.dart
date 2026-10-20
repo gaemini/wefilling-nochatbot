@@ -15,7 +15,7 @@ void main() {
 
       expect(cardWidth, inInclusiveRange(92, 120));
       expect(layout.cardHeight, closeTo(cardWidth * 16 / 9, .001));
-      expect(layout.sectionHeight, layout.cardHeight + 24);
+      expect(layout.sectionHeight, layout.cardHeight + 18);
       expect(layout.myImageHeight, greaterThan(layout.myInfoHeight));
     }
   });

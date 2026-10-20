@@ -1498,24 +1498,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get userSearchIdleDescription => '닉네임이나 이름으로 새로운 친구를 찾아보세요.';
 
   @override
-  String get interestFriendDiscoveryTitle => '관심사로 친구 찾기';
+  String get interestFriendDiscoveryTitle => '태그로 친구 찾기';
 
   @override
   String get interestFriendDiscoveryDescription =>
-      '관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.';
+      '#태그를 고르면 같은 태그를 단 사람을 볼 수 있어요.';
 
   @override
   String interestPeopleTitle(String interest) {
-    return '#$interest에 관심 있는 사람';
+    return '#$interest을 단 사람';
   }
 
   @override
   String interestNoUsersTitle(String interest) {
-    return '아직 #$interest에 관심사를 등록한 사용자가 없어요';
+    return '아직 #$interest을 단 사람이 없어요';
   }
 
   @override
-  String get interestNoUsersDescription => '다른 관심사를 선택해 새로운 친구를 찾아보세요.';
+  String get interestNoUsersDescription => '다른 태그를 골라 새로운 친구를 찾아보세요.';
 
   @override
   String get interestSearchErrorTitle => '관심사 검색을 불러오지 못했어요';
@@ -3475,4 +3475,783 @@ class AppLocalizationsKo extends AppLocalizations {
   String translationOriginalLanguage(String lang) {
     return '원문 언어 $lang';
   }
+
+  @override
+  String get myTags => '내 #태그';
+
+  @override
+  String get myTagsDescription => '같은 태그를 단 사람과 이어져요. 최대 8개';
+
+  @override
+  String get tagPickerTitle => '요즘 어떤 걸 좋아하세요?';
+
+  @override
+  String get tagSearchHint => '태그 찾기 또는 직접 만들기';
+
+  @override
+  String tagCreate(String name) {
+    return '‘#$name’ 새로 만들기';
+  }
+
+  @override
+  String get tagAddToMine => '＋ 내 태그에 추가';
+
+  @override
+  String get tagInMine => '✓ 내 태그';
+
+  @override
+  String tagHolders(int n) {
+    return '$n명이 달았어요';
+  }
+
+  @override
+  String tagHoldersWithFriends(int n, int friends) {
+    return '$n명이 달았어요 · 친구 $friends명';
+  }
+
+  @override
+  String tagFriendsAlso(int n) {
+    return '친구 $n명도 달았어요';
+  }
+
+  @override
+  String tagStats(int people, int posts, int meetups) {
+    return '$people명 · 포스트 $posts · 모임 $meetups';
+  }
+
+  @override
+  String get tagOpenPage => '태그 페이지 보기';
+
+  @override
+  String tagSelectedCount(int n, int max) {
+    return '$n/$max 선택';
+  }
+
+  @override
+  String get tagAdd => '추가';
+
+  @override
+  String get tagAdded => '✓ 추가됨';
+
+  @override
+  String get tagFindOrCreate => '＋ 태그 찾기·만들기';
+
+  @override
+  String get tagAddShort => '＋ 태그';
+
+  @override
+  String get tagSuggestFriends => '친구들이 많이 단 태그';
+
+  @override
+  String get tagSuggestPopular => '요즘 많이 다는 태그';
+
+  @override
+  String get tagDailyLimit => '오늘은 새 태그를 더 만들 수 없어요';
+
+  @override
+  String get tagBlocked => '이 이름으로는 만들 수 없어요';
+
+  @override
+  String get tagInvalid => '2–20자, 글자·숫자·_만 쓸 수 있어요';
+
+  @override
+  String get tagUnavailable => '지금은 쓸 수 없는 태그예요';
+
+  @override
+  String get tagLimitReached => '태그는 8개까지 달 수 있어요';
+
+  @override
+  String get tagSaveFailed => '태그를 저장하지 못했어요. 다시 시도해 주세요';
+
+  @override
+  String get tagLoadFailed => '태그를 불러오지 못했어요';
+
+  @override
+  String get tagNoResults => '찾는 태그가 없어요';
+
+  @override
+  String get tagHideFromList => '태그 사람 목록에서 나를 숨기기';
+
+  @override
+  String get tagHideFromListDescription => '태그는 내 프로필에 그대로 보여요';
+
+  @override
+  String get tagRemoveFromMine => '내 태그에서 빼기';
+
+  @override
+  String get tagAddedToMine => '내 태그에 추가했어요';
+
+  @override
+  String get tagRemovedFromMine => '내 태그에서 뺐어요';
+
+  @override
+  String get tagNotifyOn => '새 글·모임을 알려 드릴게요';
+
+  @override
+  String get tagNotifyOff => '알림을 껐어요';
+
+  @override
+  String get tagNotifyLabel => '태그 알림';
+
+  @override
+  String get tagOfficial => '공식 태그';
+
+  @override
+  String tagPeopleTab(int n) {
+    return '사람 $n';
+  }
+
+  @override
+  String tagPostsTab(int n) {
+    return '포스트 $n';
+  }
+
+  @override
+  String tagMeetupsTab(int n) {
+    return '밋업 $n';
+  }
+
+  @override
+  String get tagFriendsSection => '친구';
+
+  @override
+  String get tagOthersSection => '최근에 단 사람';
+
+  @override
+  String get tagPeopleEmpty => '아직 이 태그를 단 사람이 없어요';
+
+  @override
+  String get tagYou => '나';
+
+  @override
+  String tagActivitiesLine(String items) {
+    return '같이 하고 싶은 것 · $items';
+  }
+
+  @override
+  String get profileTagsTitle => '#태그';
+
+  @override
+  String get postTopic => '주제';
+
+  @override
+  String get contentTagsTitle => '#태그';
+
+  @override
+  String get contentTagsHint => '붙인 태그를 단 사람이 이 글을 찾을 수 있어요';
+
+  @override
+  String get contentTagPickerTitle => '어떤 #태그를 붙일까요?';
+
+  @override
+  String get contentTagLimit => '태그는 3개까지 붙일 수 있어요';
+
+  @override
+  String tagAudienceBadge(String tag) {
+    return '#$tag 가진 사람';
+  }
+
+  @override
+  String tagShareTo(String tag) {
+    return '#$tag에 공유';
+  }
+
+  @override
+  String get tagShareWritePost => '포스트 쓰기';
+
+  @override
+  String get tagShareCreateMeetup => '모임 만들기';
+
+  @override
+  String get tagPostsEmpty => '아직 이 태그가 붙은 글이 없어요';
+
+  @override
+  String get tagMeetupsEmpty => '예정된 모임이 없어요';
+
+  @override
+  String get meetupFilterAll => '모든 모임';
+
+  @override
+  String meetupTagCreate(String tag) {
+    return '#$tag 모임 만들기';
+  }
+
+  @override
+  String meetupTagEmpty(String tag) {
+    return '#$tag 모임이 아직 없어요. 처음으로 열어 보세요';
+  }
+
+  @override
+  String tagLockedPosts(int n) {
+    return '내 태그에 추가하면 이 태그를 단 사람에게만 공유된 글 $n개도 보여요';
+  }
+
+  @override
+  String get audienceTag => '#태그 가진 사람';
+
+  @override
+  String audienceTagDescription(String tags) {
+    return '$tags을 프로필에 단 사람';
+  }
+
+  @override
+  String get audienceTagNeedsTags => '글에 #태그를 먼저 붙여 주세요';
+
+  @override
+  String get audienceTagNote => '누구나 태그를 달 수 있어요. 아는 사람끼리만 보려면 ‘그룹’을 써 주세요.';
+
+  @override
+  String audienceReach(int n) {
+    return '약 $n명에게 보여요 · 앞으로 태그를 다는 사람 포함';
+  }
+
+  @override
+  String audienceReachFriends(int n) {
+    return '친구 $n명에게 보여요';
+  }
+
+  @override
+  String get audienceFriendsOnly => '친구 중에서만';
+
+  @override
+  String get audienceFriendsOnlyDescription => '지금 친구 중 태그를 단 사람만 봐요';
+
+  @override
+  String tagNotifyPosts(String tag, int n) {
+    return '#$tag에 새 글 $n개';
+  }
+
+  @override
+  String tagNotifyMeetups(String tag, int n) {
+    return '#$tag에 새 모임 $n개';
+  }
+
+  @override
+  String get tagExploreTitle => '태그 둘러보기';
+
+  @override
+  String get tagExploreLink => '태그 둘러보기 ›';
+
+  @override
+  String get tagExploreRecommended => '추천';
+
+  @override
+  String get tagExploreFriends => '친구';
+
+  @override
+  String get tagExploreTrending => '뜨는 태그';
+
+  @override
+  String get tagExploreNew => '새 태그';
+
+  @override
+  String get tagExploreEmpty => '아직 보여 줄 태그가 없어요';
+
+  @override
+  String get myTagsNewPosts => '내 #태그 새 글';
+
+  @override
+  String get tagPickerSubtitle =>
+      '고른 #태그가 프로필에 보이고, 같은 태그를 단 사람에게 공유된 글과 모임을 받아요.';
+
+  @override
+  String tagPickerMineMeta(int n, int max) {
+    return '$n/$max · 길게 누르면 숨기기';
+  }
+
+  @override
+  String tagCountPeople(int n) {
+    return '$n명';
+  }
+
+  @override
+  String get tagExploreSearchHint => '#태그 검색';
+
+  @override
+  String get tagExploreCaptionRecommended => '내 태그와 함께 많이 달린 태그';
+
+  @override
+  String get tagExploreCaptionPopular => '많이 단 태그';
+
+  @override
+  String get tagExploreCaptionFriends => '친구들이 단 태그';
+
+  @override
+  String get tagExploreCaptionTrending => '이번 주에 많이 단 태그';
+
+  @override
+  String get tagExploreCaptionNew => '새로 생긴 태그';
+
+  @override
+  String tagReasonFriends(String names) {
+    return '친구 $names';
+  }
+
+  @override
+  String tagReasonWeek(int n) {
+    return '이번 주 +$n';
+  }
+
+  @override
+  String tagReasonWith(String tag) {
+    return '$tag와 함께';
+  }
+
+  @override
+  String get tagReasonToday => '오늘 생김';
+
+  @override
+  String tagReasonDaysAgo(int n) {
+    return '$n일 전 생김';
+  }
+
+  @override
+  String get tagProfileButton => '프로필';
+
+  @override
+  String get tagExchangeStudent => '교환학생';
+
+  @override
+  String get tagMenuCopyLink => '링크 복사';
+
+  @override
+  String get tagMenuReport => '태그 신고';
+
+  @override
+  String get tagLinkCopied => '링크를 복사했어요';
+
+  @override
+  String tagShareText(String tag, String link) {
+    return '위필링에서 #$tag 태그를 같이 달아요 $link';
+  }
+
+  @override
+  String get tagReported => '신고를 접수했어요';
+
+  @override
+  String get audienceSheetTitle => '누가 볼 수 있나요?';
+
+  @override
+  String get audienceSheetSubtitle => '글을 올린 뒤에는 바꿀 수 없어요';
+
+  @override
+  String get audiencePublic => '전체';
+
+  @override
+  String get audiencePublicDescription => '위필링의 모든 사람';
+
+  @override
+  String get audienceFriends => '친구만';
+
+  @override
+  String audienceFriendsDescription(int n) {
+    return '내 친구 $n명';
+  }
+
+  @override
+  String get audienceGroup => '그룹';
+
+  @override
+  String get audienceGroupDescription => '고른 그룹의 친구';
+
+  @override
+  String get audienceAnonymous => '익명으로 전체 공개';
+
+  @override
+  String get audienceAnonymousDescription => '이름과 사진을 숨겨요';
+
+  @override
+  String get audienceHanyang => '한양대학생만';
+
+  @override
+  String get audienceHanyangDescription => '카드는 모두에게 보이고, 인증된 사용자만 내용을 봐요';
+
+  @override
+  String get audienceRowLabel => '공개 범위';
+
+  @override
+  String get postUploadAction => '올리기';
+
+  @override
+  String get tagMoreTags => '더 많은 태그';
+
+  @override
+  String get tagPageLink => '태그 페이지';
+
+  @override
+  String get tagAddedShort => '추가됨';
+
+  @override
+  String get myTagsEmptyHint => '#태그를 달면 같은 태그의 새 글을 여기서 볼 수 있어요';
+
+  @override
+  String get myTagsAddAction => '태그 달기';
+
+  @override
+  String get myTagsButtonLabel => '내 #태그';
+
+  @override
+  String get tagCreateTitle => '새 태그 만들기';
+
+  @override
+  String get tagCreateAction => '만들기';
+
+  @override
+  String get tagCreateNameLabel => '태그 이름';
+
+  @override
+  String get tagCreateNameHint => '예: 한강러닝';
+
+  @override
+  String get tagDescLabel => '어떤 태그인가요?';
+
+  @override
+  String get tagDescHint => '예: 주말마다 한강에서 같이 뛰어요';
+
+  @override
+  String get tagCreateNote => '이름은 나중에 바꿀 수 없어요. 설명은 만든 사람이 언제든 고칠 수 있어요.';
+
+  @override
+  String get tagCreateRowHint => '한 줄 설명을 붙여 만들어요';
+
+  @override
+  String get tagDescEdit => '설명 수정';
+
+  @override
+  String get tagDescAdd => '설명 쓰기';
+
+  @override
+  String get tagDescSave => '저장';
+
+  @override
+  String get tagDescSaved => '설명을 저장했어요';
+
+  @override
+  String tagCreated(String tag) {
+    return '#$tag 태그를 만들었어요';
+  }
+
+  @override
+  String tagWeeklyGain(int n) {
+    return '이번 주 +$n명';
+  }
+
+  @override
+  String tagFriendsAlsoNamed(String names) {
+    return '친구 $names님도 달았어요';
+  }
+
+  @override
+  String get tagAddToMinePlain => '내 태그에 추가';
+
+  @override
+  String get tagUndo => '되돌리기';
+
+  @override
+  String get tagRetryLater => '잠시 후 다시 시도해 주세요';
+
+  @override
+  String tagOverlapGain(int n) {
+    return '+$n명과 겹쳐요';
+  }
+
+  @override
+  String get tagCategoryLabel => '분류';
+
+  @override
+  String get tagCategoryFood => '맛집·카페';
+
+  @override
+  String get tagCategoryCulture => '문화';
+
+  @override
+  String get tagCategoryActive => '활동';
+
+  @override
+  String get tagCategoryLearn => '배움';
+
+  @override
+  String get tagCategoryPlay => '놀이';
+
+  @override
+  String get tagCategoryEtc => '기타';
+
+  @override
+  String get profileTabInterest => '관심';
+
+  @override
+  String get profileTabActivity => '활동';
+
+  @override
+  String get activityFilterReviews => '모임 후기';
+
+  @override
+  String get activityFilterSaved => '저장됨';
+
+  @override
+  String get activityKindPost => '포스트';
+
+  @override
+  String get activityKindReview => '모임 후기';
+
+  @override
+  String get activityEmpty => '아직 활동이 없어요';
+
+  @override
+  String get savedPostsEmpty => '저장한 글이 없어요';
+
+  @override
+  String get savedPrivateHint => '저장됨은 나만 볼 수 있어요';
+
+  @override
+  String get lensMe => '나';
+
+  @override
+  String get lensMeUnit => '개 태그';
+
+  @override
+  String get lensFriends => '친구와 겹침';
+
+  @override
+  String get lensFriendsUnit => '명';
+
+  @override
+  String get lensCommunity => '커뮤니티';
+
+  @override
+  String get lensCommunityUnit => '이번 주 새 태그';
+
+  @override
+  String get interestMapTitle => '관심 지도';
+
+  @override
+  String interestMapCaptionMe(int n) {
+    return '내 태그 $n개 · 글에 많이 붙인 태그일수록 커요';
+  }
+
+  @override
+  String interestMapCaptionFriends(int n) {
+    return '친구 $n명이 내 태그를 같이 달았어요';
+  }
+
+  @override
+  String get interestMapCaptionCommunity => '이번 주 위필링 학생들이 많이 단 태그예요';
+
+  @override
+  String blockPosts(int n) {
+    return '글 $n';
+  }
+
+  @override
+  String blockFriends(int n) {
+    return '친구 $n';
+  }
+
+  @override
+  String get blockSuggest => '추천';
+
+  @override
+  String get overlapTitleAll => '나와 겹치는 사람';
+
+  @override
+  String get overlapTitleFriends => '겹치는 친구';
+
+  @override
+  String get overlapTitleOthers => '새로 알게 될 사람';
+
+  @override
+  String get overlapSeeAll => '모두 보기';
+
+  @override
+  String overlapSameInterests(int n) {
+    return '같은 관심사 $n개';
+  }
+
+  @override
+  String get overlapFriendChip => '친구';
+
+  @override
+  String get overlapAddFriend => '친구 추가';
+
+  @override
+  String get overlapRequested => '요청됨';
+
+  @override
+  String get overlapEmpty => '아직 겹치는 사람이 없어요';
+
+  @override
+  String get interestLoadFailed => '관심 정보를 불러오지 못했어요';
+
+  @override
+  String get completionTitle => '프로필 완성도';
+
+  @override
+  String get completionPhoto => '프로필 사진';
+
+  @override
+  String get completionBio => '자기소개';
+
+  @override
+  String get completionTags => '관심 태그 3개';
+
+  @override
+  String get pickTagsTitle => '관심 태그 고르기';
+
+  @override
+  String pickTagsCaption(int n) {
+    return '3개를 고르면 나와 겹치는 사람을 찾아 드려요 · $n/3';
+  }
+
+  @override
+  String get pickTagsShuffle => '↻ 다른 태그';
+
+  @override
+  String get pickTagsDone => '완료';
+
+  @override
+  String get overlapPlaceholder => '태그를 고르면 여기에 나와 겹치는 사람이 나와요';
+
+  @override
+  String get exploreMyTagsTitle => '내 태그 새 글';
+
+  @override
+  String get exploreEdit => '편집';
+
+  @override
+  String get exploreCaptionRecommended => '내 태그와 함께 **많이 달린 태그**예요';
+
+  @override
+  String get exploreCaptionFriends => '친구들이 **많이 단 태그**예요';
+
+  @override
+  String get exploreCaptionTrending => '이번 주에 **사람이 많이 늘어난 태그**예요';
+
+  @override
+  String get exploreCaptionNew => '최근 **새로 생긴 태그**예요. 먼저 달아 보세요';
+
+  @override
+  String get exploreFriendPrefix => '친구';
+
+  @override
+  String exploreCreateTitle(String name) {
+    return '#$name 새로 만들기';
+  }
+
+  @override
+  String get exploreCreateHint => '아직 없는 태그예요. 만들면 내 태그에 바로 달려요';
+
+  @override
+  String exploreSimilarCount(int n) {
+    return '비슷한 태그 $n개';
+  }
+
+  @override
+  String get exploreSimilarNone => '비슷한 태그가 없어요';
+
+  @override
+  String friendOverlapCaption(int n) {
+    return '나와 겹치는 관심사 $n개 · 겹치는 태그는 진하게 보여요';
+  }
+
+  @override
+  String get friendNoTags => '아직 단 태그가 없어요';
+
+  @override
+  String get peopleNewTitle => '새로 알게 될 사람';
+
+  @override
+  String get peopleSeeAll => '모두 보기';
+
+  @override
+  String get peopleSortHint => '내 관심사와 많이 겹치는 순이에요';
+
+  @override
+  String get peopleAllSub => '나와 관심사가 겹치는 사람들이에요';
+
+  @override
+  String peopleOverlapMany(String a, String b, int n) {
+    return '$a, $b 등 $n개 겹쳐요';
+  }
+
+  @override
+  String peopleOverlapTwo(String a, String b) {
+    return '$a, $b 2개 겹쳐요';
+  }
+
+  @override
+  String peopleOverlapOne(String a) {
+    return '$a 1개 겹쳐요';
+  }
+
+  @override
+  String peopleMetaOverlap(String country, int n) {
+    return '$country · $n개 겹침';
+  }
+
+  @override
+  String peopleMetaOverlapNoCountry(int n) {
+    return '$n개 겹침';
+  }
+
+  @override
+  String peopleTipBoth(String tag) {
+    return '#$tag · 둘 다 관심';
+  }
+
+  @override
+  String get peopleAdd => '친구 추가';
+
+  @override
+  String get peopleAddShort => '추가';
+
+  @override
+  String get peopleRequested => '요청 보냄';
+
+  @override
+  String get peopleRequestedShort => '요청됨';
+
+  @override
+  String get peopleProfile => '프로필';
+
+  @override
+  String get peopleAccept => '수락';
+
+  @override
+  String get peopleHide => '추천에서 숨기기';
+
+  @override
+  String peopleHidden(String name) {
+    return '$name님을 추천에서 숨겼어요';
+  }
+
+  @override
+  String get peopleUndo => '되돌리기';
+
+  @override
+  String get peopleSortLabel => '많이 겹치는 순';
+
+  @override
+  String peopleCount(int n) {
+    return '$n명';
+  }
+
+  @override
+  String get peopleEmpty => '지금은 새로 추천할 사람이 없어요';
+
+  @override
+  String get peopleMoreTagsCta => '관심사 더 고르기 ›';
+
+  @override
+  String get peopleMoreTags => '관심사를 늘리면 추천이 정확해져요';
+
+  @override
+  String get peoplePick => '고르기';
+
+  @override
+  String peopleAllChip(int n) {
+    return '전체 $n';
+  }
+
+  @override
+  String get peopleActionFailed => '잠시 후 다시 시도해 주세요';
 }

@@ -9,7 +9,6 @@ import 'package:intl/intl.dart';
 import '../models/review_post.dart';
 import '../l10n/app_localizations.dart';
 import '../services/review_service.dart';
-import '../services/meetup_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'review_comments_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -39,7 +38,6 @@ class ReviewDetailScreen extends StatefulWidget {
 
 class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   final ReviewService _reviewService = ReviewService();
-  final MeetupService _meetupService = MeetupService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   bool _isLiking = false;
@@ -158,46 +156,6 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       }
     } catch (e) {
       Logger.error('❌ 참여자 로드 오류: $e');
-    }
-  }
-
-  Future<void> _processParticipants(Map<String, dynamic> reviewData) async {
-    final authorId = reviewData['authorId'] as String;
-    final approvedParticipants =
-        List<String>.from(reviewData['approvedParticipants'] ?? []);
-
-    if (Logger.isVerboseEnabled) Logger.log('👥 호스트: $authorId');
-    if (Logger.isVerboseEnabled)
-      Logger.log('👥 수락한 참여자: ${approvedParticipants.length}명');
-    if (Logger.isVerboseEnabled)
-      Logger.log('📋 수락한 참여자 ID 목록: $approvedParticipants');
-
-    // 모든 참여자 ID (호스트 + 수락한 참여자)
-    final allParticipantIds = [authorId, ...approvedParticipants];
-    if (Logger.isVerboseEnabled)
-      Logger.log(
-          '📋 전체 참여자 ID 목록 (${allParticipantIds.length}명): $allParticipantIds');
-
-    // 각 참여자의 정보 가져오기
-    final participantsList = <Map<String, dynamic>>[];
-
-    for (int i = 0; i < allParticipantIds.length; i++) {
-      final userId = allParticipantIds[i];
-      if (Logger.isVerboseEnabled)
-        Logger.log(
-            '🔄 [${i + 1}/${allParticipantIds.length}] 참여자 처리 중: $userId');
-      await _addParticipantInfo(participantsList, userId, userId == authorId);
-    }
-
-    if (mounted) {
-      setState(() {
-        _participants = participantsList;
-      });
-      if (Logger.isVerboseEnabled)
-        Logger.log('✅ 최종 참여자 ${_participants.length}명 로드 완료');
-      if (Logger.isVerboseEnabled)
-        Logger.log(
-            '📋 최종 참여자 목록: ${_participants.map((p) => p['nickname']).toList()}');
     }
   }
 

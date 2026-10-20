@@ -8043,15 +8043,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
         ),
       ),
     );
-    // 반응은 말풍선 밖(옆)에 둔다. 파란 내 말풍선 위에서 하트가 묻히지 않게
+    // 반응은 말풍선 밖(아래)에 둔다. 파란 내 말풍선 위에서 하트가 묻히지 않게
     // DM과 같은 방식으로, 항상 밝은 배경 스타일(isOutgoing: false)로 그린다.
     final hasReactions = message.reactionCounts.values.any((c) => c > 0);
     final reactions = !hasReactions
         ? null
         : ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.sizeOf(context).width < 360 ? 96 : 128,
-            ),
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
             child: SnackChatReactionBar(
               counts: message.reactionCounts,
               myReaction: _myReactions[message.id],
@@ -8069,15 +8067,7 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         if (isMe) _buildOutgoingMessageMeta(message, timeText, showTimeText),
-        if (isMe && reactions != null) ...[
-          reactions,
-          const SizedBox(width: 5),
-        ],
         Flexible(child: bubble),
-        if (!isMe && reactions != null) ...[
-          const SizedBox(width: 5),
-          reactions,
-        ],
         // 선택 항목: 이 메시지 하나만 번역(말풍선 오른쪽, 시간 앞).
         if (_showsSingleTranslateButton(message, isMe) ||
             _singleTranslateLoading.contains(message.id))
@@ -8129,6 +8119,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
             ),
           ),
         row,
+        if (reactions != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: reactions,
+          ),
       ],
     );
     if (!isMe) {

@@ -4,6 +4,8 @@
 // 날짜별 모임 조회 및 필터링
 // 날짜 관련 유틸리티 함수 제공
 
+import 'feature_flag_service.dart';
+import 'interest_tag_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -305,6 +307,26 @@ class MeetupService {
     return x.year == y.year && x.month == y.month && x.day == y.day;
   }
 
+  /// 태그 페이지 '밋업' 탭: 이 태그가 붙은 전체 공개 모임(오늘 이후, 가까운 순).
+  Future<List<Meetup>> fetchPublicTagMeetups(String tagId,
+      {int limit = 30}) async {
+    final now = DateTime.now();
+    final startOfToday = DateTime(now.year, now.month, now.day);
+    final snapshot = await _firestore
+        .collection('meetups')
+        .where('visibility', isEqualTo: 'public')
+        .where('tagIds', arrayContains: tagId)
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfToday))
+        .orderBy('date')
+        .limit(limit)
+        .get();
+    final excluded = await ContentFilterService.getExcludedUserIds();
+    return snapshot.docs
+        .map((doc) => Meetup.fromJson({...doc.data(), 'id': doc.id}))
+        .where((meetup) => !excluded.contains(meetup.userId))
+        .toList(growable: false);
+  }
+
   // 모임 생성
   Future<bool> createMeetup({
     required String title,
@@ -323,6 +345,9 @@ class MeetupService {
     List<String> visibleToCategoryIds = const [], // 특정 카테고리에만 공개
     int? publicDurationHours, // null: 제한 없음, 그 외 1~12시간
     bool requiresHanyangVerification = false,
+    List<String> tagIds = const [],
+    bool audienceFriendsOnly = false,
+    List<String> audienceTagIds = const [],
   }) async {
     try {
       final user = _auth.currentUser;
@@ -335,8 +360,13 @@ class MeetupService {
         return false;
       }
 
-      if (!const {'public', 'friends', 'category'}.contains(visibility)) {
+      if (!const {'public', 'friends', 'category', 'tag'}
+          .contains(visibility)) {
         Logger.error('지원하지 않는 밋업 공개 범위: $visibility');
+        return false;
+      }
+      if (visibility == 'tag' && tagIds.isEmpty) {
+        Logger.error('#태그 공개 모임에 태그가 없습니다.');
         return false;
       }
       final normalizedCategoryIds = visibleToCategoryIds
@@ -408,6 +438,10 @@ class MeetupService {
           'visibleToCategoryIds': normalizedCategoryIds,
           'publicDurationHours': publicDurationHours,
           'requiresHanyangVerification': requiresHanyangVerification,
+          if (tagIds.isNotEmpty) 'tagIds': tagIds.take(3).toList(),
+          if (visibility == 'tag') 'audienceFriendsOnly': audienceFriendsOnly,
+          if (visibility == 'tag' && audienceTagIds.isNotEmpty)
+            'audienceTagIds': audienceTagIds.take(3).toList(),
         }).timeout(const Duration(seconds: 30));
       } catch (error) {
         // 서버가 생성한 뒤 응답만 유실된 경우를 실패/중복으로 처리하지 않는다.
@@ -736,7 +770,41 @@ class MeetupService {
         .where('date', isLessThanOrEqualTo: rangeEnd)
         .orderBy('date', descending: false));
 
-    return _combineMeetupStreams(byDateKeyRange, byTimestampRange);
+    return _combineMeetupStreams(
+      _combineMeetupStreams(byDateKeyRange, byTimestampRange),
+      _tagAudienceMeetups(rangeStart, rangeEnd),
+    );
+  }
+
+  /// 태그 공개 모임은 규칙상 목록 쿼리가 안 되어 서버에서 한 번 받아 합친다.
+  /// 빈 목록을 먼저 내보내 다른 쿼리의 첫 화면을 기다리게 하지 않는다.
+  Stream<List<Meetup>> _tagAudienceMeetups(
+    DateTime from,
+    DateTime to, {
+    bool includePublicationExpired = false,
+  }) async* {
+    yield const <Meetup>[];
+    if (!FeatureFlagService.tagAudienceEnabled ||
+        FrozenAudiencePolicy.viewerTagIds().isEmpty) {
+      return;
+    }
+    try {
+      final page = await InterestTagService.instance.audienceFeed(
+        kind: 'meetups',
+        fromMillis: from.millisecondsSinceEpoch,
+        toMillis: to.millisecondsSinceEpoch,
+      );
+      final meetups = page.items
+          .where((item) => item['id'] is String)
+          .map((item) => Meetup.fromJson(item))
+          .toList(growable: false);
+      yield await _filterVisibleAndBlocked(
+        meetups,
+        includePublicationExpired: includePublicationExpired,
+      );
+    } catch (error) {
+      Logger.error('태그 공개 모임 불러오기 실패: $error');
+    }
   }
 
   /// 과거 달력 카드용 월 범위 스트림입니다.
@@ -771,7 +839,11 @@ class MeetupService {
       includePublicationExpired: true,
     );
 
-    return _combineMeetupStreams(byDateKeyRange, byTimestampRange);
+    return _combineMeetupStreams(
+      _combineMeetupStreams(byDateKeyRange, byTimestampRange),
+      _tagAudienceMeetups(rangeStart, rangeEnd,
+          includePublicationExpired: true),
+    );
   }
 
   /// 내 참여/참가신청(approved/pending) 모임 ID 스트림.
@@ -999,10 +1071,13 @@ class MeetupService {
 
     // 모든 모임 가져오기인 경우
     if (category == '전체') {
-      return _watchAudienceScopedMeetupQuery(_firestore
-          .collection('meetups')
-          .where('date', isGreaterThanOrEqualTo: today)
-          .orderBy('date', descending: false));
+      return _combineMeetupStreams(
+        _watchAudienceScopedMeetupQuery(_firestore
+            .collection('meetups')
+            .where('date', isGreaterThanOrEqualTo: today)
+            .orderBy('date', descending: false)),
+        _tagAudienceMeetups(today, today.add(const Duration(days: 92))),
+      );
     }
 
     // 특정 카테고리 모임 가져오기
@@ -1251,6 +1326,7 @@ class MeetupService {
           ownerId: meetup.userId ?? '',
           visibilityMode: meetup.visibility,
           audienceUserIdsFrozen: meetup.allowedUserIds,
+          audienceTagIds: meetup.audienceTagIds,
         );
         if (!canRead) return false;
         // 화면의 그룹 필터는 sourceGroupIds 표시에만 사용한다. 실제 접근 권한은
@@ -1502,57 +1578,6 @@ class MeetupService {
       return true;
     } catch (e) {
       Logger.error('❌ 참여자 퇴장 처리 실패: $e');
-      return false;
-    }
-  }
-
-  // 기존 leaveMeetup (배열 기반 - 사용 안함, 참고용으로 주석 처리)
-  Future<bool> _leaveMeetupOld(String meetupId) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return false;
-
-      final meetupRef = _firestore.collection('meetups').doc(meetupId);
-
-      // 트랜잭션으로 안전하게 참여자 제거
-      bool success = await _firestore.runTransaction<bool>((transaction) async {
-        final meetupDoc = await transaction.get(meetupRef);
-        if (!meetupDoc.exists) return false;
-
-        final data = meetupDoc.data()!;
-        final List<dynamic> participants =
-            List.from(data['participants'] ?? []);
-
-        // 참여하지 않은 상태인지 확인
-        if (!participants.contains(user.uid)) {
-          if (Logger.isVerboseEnabled) Logger.log('참여하지 않은 모임: $meetupId');
-          return false;
-        }
-
-        // 참여자에서 제거
-        participants.remove(user.uid);
-
-        // 참여자 수 업데이트 (주최자는 제외하고 계산)
-        final currentParticipants = data['currentParticipants'] ?? 1;
-        final newParticipantCount =
-            currentParticipants > 1 ? currentParticipants - 1 : 1;
-
-        transaction.update(meetupRef, {
-          'participants': participants,
-          'currentParticipants': newParticipantCount,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        return true;
-      });
-
-      if (success) {
-        if (Logger.isVerboseEnabled) Logger.log('✅ 모임 참여 취소 성공: $meetupId');
-      }
-
-      return success;
-    } catch (e) {
-      Logger.error('❌ 모임 참여 취소 실패: $e');
       return false;
     }
   }
@@ -2035,6 +2060,7 @@ class MeetupService {
           ownerId: meetup.userId ?? '',
           visibilityMode: meetup.visibility,
           audienceUserIdsFrozen: meetup.allowedUserIds,
+          audienceTagIds: meetup.audienceTagIds,
         );
         if (!canRead) continue;
 

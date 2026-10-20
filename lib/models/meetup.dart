@@ -3,6 +3,7 @@
 // 모임 관련 속성 포함(제목,설명,작성자,작성일,좋아요 수 등)
 // 모임 정보 포맷팅을 위한 유틸리티 메서드 제공
 
+import 'post.dart' show parseTagIdList;
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
@@ -36,6 +37,14 @@ class Meetup {
   final int visibilitySchemaVersion;
   final DateTime? visibilityLockedAt;
   final bool requiresHanyangVerification;
+
+  /// 모임에 붙은 #태그(최대 3).
+  final List<String> tagIds;
+
+  /// visibility == 'tag'일 때 볼 수 있는 태그.
+  final List<String> audienceTagIds;
+
+  bool get isTagAudience => visibility == 'tag';
 
   String? get ownerId => userId;
   String get visibilityMode => visibility;
@@ -80,6 +89,8 @@ class Meetup {
     this.visibilitySchemaVersion = 0,
     this.visibilityLockedAt,
     this.requiresHanyangVerification = false,
+    this.tagIds = const [],
+    this.audienceTagIds = const [],
     this.isCompleted = false, // 기본값: 미완료
     this.hasReview = false, // 기본값: 후기 없음
     this.groupChatEnabled = false, // 기본값: 비활성
@@ -119,6 +130,8 @@ class Meetup {
     int? visibilitySchemaVersion,
     DateTime? visibilityLockedAt,
     bool? requiresHanyangVerification,
+    List<String>? tagIds,
+    List<String>? audienceTagIds,
     bool? isCompleted,
     bool? hasReview,
     bool? groupChatEnabled,
@@ -159,6 +172,8 @@ class Meetup {
       visibilityLockedAt: visibilityLockedAt ?? this.visibilityLockedAt,
       requiresHanyangVerification:
           requiresHanyangVerification ?? this.requiresHanyangVerification,
+      tagIds: tagIds ?? this.tagIds,
+      audienceTagIds: audienceTagIds ?? this.audienceTagIds,
       isCompleted: isCompleted ?? this.isCompleted,
       hasReview: hasReview ?? this.hasReview,
       groupChatEnabled: groupChatEnabled ?? this.groupChatEnabled,
@@ -620,6 +635,8 @@ class Meetup {
           ? null
           : _parseFirestoreDate(json['visibilityLockedAt']),
       requiresHanyangVerification: json['requiresHanyangVerification'] == true,
+      tagIds: parseTagIdList(json['tagIds']),
+      audienceTagIds: parseTagIdList(json['audienceTagIds']),
       isCompleted: json['isCompleted'] ?? false,
       hasReview: json['hasReview'] ?? false,
       groupChatEnabled: json['groupChatEnabled'] ?? false,
@@ -682,6 +699,8 @@ class Meetup {
       'visibilitySchemaVersion': visibilitySchemaVersion,
       if (visibilityLockedAt != null) 'visibilityLockedAt': visibilityLockedAt,
       'requiresHanyangVerification': requiresHanyangVerification,
+      'tagIds': tagIds,
+      'audienceTagIds': audienceTagIds,
       'isCompleted': isCompleted,
       'hasReview': hasReview,
       'groupChatEnabled': groupChatEnabled,

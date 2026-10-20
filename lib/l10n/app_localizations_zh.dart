@@ -1473,23 +1473,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get userSearchIdleDescription => '通过昵称或姓名认识新朋友。';
 
   @override
-  String get interestFriendDiscoveryTitle => '按兴趣找好友';
+  String get interestFriendDiscoveryTitle => '按标签找好友';
 
   @override
-  String get interestFriendDiscoveryDescription => '选择兴趣，认识志趣相投的人。';
+  String get interestFriendDiscoveryDescription => '选择 #标签，看看添加了同一标签的人。';
 
   @override
   String interestPeopleTitle(String interest) {
-    return '对#$interest感兴趣的人';
+    return '添加了 #$interest 的人';
   }
 
   @override
   String interestNoUsersTitle(String interest) {
-    return '还没有人添加#$interest';
+    return '还没有人添加 #$interest';
   }
 
   @override
-  String get interestNoUsersDescription => '选择其他兴趣，发现新朋友。';
+  String get interestNoUsersDescription => '选择其他标签，发现新朋友。';
 
   @override
   String get interestSearchErrorTitle => '加载兴趣搜索结果失败';
@@ -3423,4 +3423,782 @@ class AppLocalizationsZh extends AppLocalizations {
   String translationOriginalLanguage(String lang) {
     return '原文语言 $lang';
   }
+
+  @override
+  String get myTags => '我的 #标签';
+
+  @override
+  String get myTagsDescription => '和添加相同标签的人建立联系，最多8个';
+
+  @override
+  String get tagPickerTitle => '最近喜欢什么？';
+
+  @override
+  String get tagSearchHint => '搜索或创建标签';
+
+  @override
+  String tagCreate(String name) {
+    return '新建「#$name」';
+  }
+
+  @override
+  String get tagAddToMine => '＋ 添加到我的标签';
+
+  @override
+  String get tagInMine => '✓ 我的标签';
+
+  @override
+  String tagHolders(int n) {
+    return '$n人添加了';
+  }
+
+  @override
+  String tagHoldersWithFriends(int n, int friends) {
+    return '$n人添加了 · 好友$friends人';
+  }
+
+  @override
+  String tagFriendsAlso(int n) {
+    return '$n位好友也添加了';
+  }
+
+  @override
+  String tagStats(int people, int posts, int meetups) {
+    return '$people人 · 帖子$posts · 聚会$meetups';
+  }
+
+  @override
+  String get tagOpenPage => '查看标签页';
+
+  @override
+  String tagSelectedCount(int n, int max) {
+    return '已选 $n/$max';
+  }
+
+  @override
+  String get tagAdd => '添加';
+
+  @override
+  String get tagAdded => '✓ 已添加';
+
+  @override
+  String get tagFindOrCreate => '＋ 搜索·创建标签';
+
+  @override
+  String get tagAddShort => '＋ 标签';
+
+  @override
+  String get tagSuggestFriends => '好友常用的标签';
+
+  @override
+  String get tagSuggestPopular => '最近热门标签';
+
+  @override
+  String get tagDailyLimit => '今天不能再创建新标签了';
+
+  @override
+  String get tagBlocked => '不能使用这个名称';
+
+  @override
+  String get tagInvalid => '请使用2–20个字母、数字或_';
+
+  @override
+  String get tagUnavailable => '该标签暂不可用';
+
+  @override
+  String get tagLimitReached => '最多可添加8个标签';
+
+  @override
+  String get tagSaveFailed => '无法保存标签，请重试';
+
+  @override
+  String get tagLoadFailed => '无法加载标签';
+
+  @override
+  String get tagNoResults => '没有找到标签';
+
+  @override
+  String get tagHideFromList => '在标签成员列表中隐藏我';
+
+  @override
+  String get tagHideFromListDescription => '标签仍会显示在你的资料中';
+
+  @override
+  String get tagRemoveFromMine => '从我的标签中移除';
+
+  @override
+  String get tagAddedToMine => '已添加到我的标签';
+
+  @override
+  String get tagRemovedFromMine => '已从我的标签中移除';
+
+  @override
+  String get tagNotifyOn => '有新帖子或聚会时会通知你';
+
+  @override
+  String get tagNotifyOff => '已关闭通知';
+
+  @override
+  String get tagNotifyLabel => '标签通知';
+
+  @override
+  String get tagOfficial => '官方标签';
+
+  @override
+  String tagPeopleTab(int n) {
+    return '成员 $n';
+  }
+
+  @override
+  String tagPostsTab(int n) {
+    return '帖子 $n';
+  }
+
+  @override
+  String tagMeetupsTab(int n) {
+    return '聚会 $n';
+  }
+
+  @override
+  String get tagFriendsSection => '好友';
+
+  @override
+  String get tagOthersSection => '最近添加';
+
+  @override
+  String get tagPeopleEmpty => '还没有人添加这个标签';
+
+  @override
+  String get tagYou => '我';
+
+  @override
+  String tagActivitiesLine(String items) {
+    return '想一起做 · $items';
+  }
+
+  @override
+  String get profileTagsTitle => '#标签';
+
+  @override
+  String get postTopic => '主题';
+
+  @override
+  String get contentTagsTitle => '#标签';
+
+  @override
+  String get contentTagsHint => '添加了这些标签的人可以找到它';
+
+  @override
+  String get contentTagPickerTitle => '要添加哪些 #标签？';
+
+  @override
+  String get contentTagLimit => '最多可添加3个标签';
+
+  @override
+  String tagAudienceBadge(String tag) {
+    return '拥有 #$tag 的人';
+  }
+
+  @override
+  String tagShareTo(String tag) {
+    return '分享到 #$tag';
+  }
+
+  @override
+  String get tagShareWritePost => '写帖子';
+
+  @override
+  String get tagShareCreateMeetup => '创建聚会';
+
+  @override
+  String get tagPostsEmpty => '还没有带这个标签的帖子';
+
+  @override
+  String get tagMeetupsEmpty => '没有即将举行的聚会';
+
+  @override
+  String get meetupFilterAll => '全部聚会';
+
+  @override
+  String meetupTagCreate(String tag) {
+    return '创建 #$tag 聚会';
+  }
+
+  @override
+  String meetupTagEmpty(String tag) {
+    return '还没有 #$tag 聚会，来创建第一个吧';
+  }
+
+  @override
+  String tagLockedPosts(int n) {
+    return '添加此标签后，还能看到仅分享给标签成员的 $n 篇帖子';
+  }
+
+  @override
+  String get audienceTag => '拥有该 #标签 的人';
+
+  @override
+  String audienceTagDescription(String tags) {
+    return '资料中有 $tags 的人';
+  }
+
+  @override
+  String get audienceTagNeedsTags => '请先给内容添加 #标签';
+
+  @override
+  String get audienceTagNote => '任何人都能添加标签。只想给熟人看，请用「分组」。';
+
+  @override
+  String audienceReach(int n) {
+    return '约 $n 人可见 · 包括之后添加标签的人';
+  }
+
+  @override
+  String audienceReachFriends(int n) {
+    return '$n 位好友可见';
+  }
+
+  @override
+  String get audienceFriendsOnly => '仅限好友';
+
+  @override
+  String get audienceFriendsOnlyDescription => '只有添加了该标签的现有好友可见';
+
+  @override
+  String tagNotifyPosts(String tag, int n) {
+    return '#$tag 有 $n 篇新帖子';
+  }
+
+  @override
+  String tagNotifyMeetups(String tag, int n) {
+    return '#$tag 有 $n 个新聚会';
+  }
+
+  @override
+  String get tagExploreTitle => '浏览标签';
+
+  @override
+  String get tagExploreLink => '浏览标签 ›';
+
+  @override
+  String get tagExploreRecommended => '推荐';
+
+  @override
+  String get tagExploreFriends => '好友';
+
+  @override
+  String get tagExploreTrending => '热门';
+
+  @override
+  String get tagExploreNew => '新标签';
+
+  @override
+  String get tagExploreEmpty => '暂时没有可显示的标签';
+
+  @override
+  String get myTagsNewPosts => '我的 #标签 新帖';
+
+  @override
+  String get tagPickerSubtitle => '所选 #标签 会显示在资料中，并能看到分享给该标签的帖子和聚会。';
+
+  @override
+  String tagPickerMineMeta(int n, int max) {
+    return '$n/$max · 长按可隐藏';
+  }
+
+  @override
+  String tagCountPeople(int n) {
+    return '$n人';
+  }
+
+  @override
+  String get tagExploreSearchHint => '搜索 #标签';
+
+  @override
+  String get tagExploreCaptionRecommended => '常与你的标签一起添加';
+
+  @override
+  String get tagExploreCaptionPopular => '添加最多的标签';
+
+  @override
+  String get tagExploreCaptionFriends => '好友添加的标签';
+
+  @override
+  String get tagExploreCaptionTrending => '本周添加最多';
+
+  @override
+  String get tagExploreCaptionNew => '新创建的标签';
+
+  @override
+  String tagReasonFriends(String names) {
+    return '好友 $names';
+  }
+
+  @override
+  String tagReasonWeek(int n) {
+    return '本周 +$n';
+  }
+
+  @override
+  String tagReasonWith(String tag) {
+    return '常与 $tag 一起';
+  }
+
+  @override
+  String get tagReasonToday => '今天新建';
+
+  @override
+  String tagReasonDaysAgo(int n) {
+    return '$n天前新建';
+  }
+
+  @override
+  String get tagProfileButton => '资料';
+
+  @override
+  String get tagExchangeStudent => '交换生';
+
+  @override
+  String get tagMenuCopyLink => '复制链接';
+
+  @override
+  String get tagMenuReport => '举报标签';
+
+  @override
+  String get tagLinkCopied => '已复制链接';
+
+  @override
+  String tagShareText(String tag, String link) {
+    return '在微邻一起添加 #$tag $link';
+  }
+
+  @override
+  String get tagReported => '已提交举报';
+
+  @override
+  String get audienceSheetTitle => '谁可以看到？';
+
+  @override
+  String get audienceSheetSubtitle => '发布后无法更改';
+
+  @override
+  String get audiencePublic => '所有人';
+
+  @override
+  String get audiencePublicDescription => '微邻上的所有人';
+
+  @override
+  String get audienceFriends => '仅好友';
+
+  @override
+  String audienceFriendsDescription(int n) {
+    return '我的 $n 位好友';
+  }
+
+  @override
+  String get audienceGroup => '分组';
+
+  @override
+  String get audienceGroupDescription => '所选分组中的好友';
+
+  @override
+  String get audienceAnonymous => '匿名公开';
+
+  @override
+  String get audienceAnonymousDescription => '隐藏你的名字和头像';
+
+  @override
+  String get audienceHanyang => '仅限汉阳学生';
+
+  @override
+  String get audienceHanyangDescription => '所有人可见卡片，仅认证用户可查看内容';
+
+  @override
+  String get audienceRowLabel => '公开范围';
+
+  @override
+  String get postUploadAction => '发布';
+
+  @override
+  String get tagMoreTags => '更多标签';
+
+  @override
+  String get tagPageLink => '标签页';
+
+  @override
+  String get tagAddedShort => '已添加';
+
+  @override
+  String get myTagsEmptyHint => '添加 #标签 后，可在这里看到相关新帖';
+
+  @override
+  String get myTagsAddAction => '添加标签';
+
+  @override
+  String get myTagsButtonLabel => '我的 #标签';
+
+  @override
+  String get tagCreateTitle => '新建标签';
+
+  @override
+  String get tagCreateAction => '创建';
+
+  @override
+  String get tagCreateNameLabel => '标签名称';
+
+  @override
+  String get tagCreateNameHint => '例如：夜跑';
+
+  @override
+  String get tagDescLabel => '这个标签是做什么的？';
+
+  @override
+  String get tagDescHint => '例如：周末一起在汉江边跑步';
+
+  @override
+  String get tagCreateNote => '名称创建后无法修改，说明可以随时修改。';
+
+  @override
+  String get tagCreateRowHint => '加一句说明来创建';
+
+  @override
+  String get tagDescEdit => '编辑说明';
+
+  @override
+  String get tagDescAdd => '添加说明';
+
+  @override
+  String get tagDescSave => '保存';
+
+  @override
+  String get tagDescSaved => '说明已保存';
+
+  @override
+  String tagCreated(String tag) {
+    return '已创建 #$tag';
+  }
+
+  @override
+  String tagWeeklyGain(int n) {
+    return '本周 +$n人';
+  }
+
+  @override
+  String tagFriendsAlsoNamed(String names) {
+    return '好友 $names 也添加了';
+  }
+
+  @override
+  String get tagAddToMinePlain => '添加到我的标签';
+
+  @override
+  String get tagUndo => '撤销';
+
+  @override
+  String get tagRetryLater => '请稍后再试';
+
+  @override
+  String tagOverlapGain(int n) {
+    return '与 +$n 人重合';
+  }
+
+  @override
+  String get tagCategoryLabel => '分类';
+
+  @override
+  String get tagCategoryFood => '美食';
+
+  @override
+  String get tagCategoryCulture => '文化';
+
+  @override
+  String get tagCategoryActive => '运动';
+
+  @override
+  String get tagCategoryLearn => '学习';
+
+  @override
+  String get tagCategoryPlay => '娱乐';
+
+  @override
+  String get tagCategoryEtc => '其他';
+
+  @override
+  String get profileTabInterest => '兴趣';
+
+  @override
+  String get profileTabActivity => '动态';
+
+  @override
+  String get activityFilterReviews => '聚会回顾';
+
+  @override
+  String get activityFilterSaved => '已收藏';
+
+  @override
+  String get activityKindPost => '动态';
+
+  @override
+  String get activityKindReview => '回顾';
+
+  @override
+  String get activityEmpty => '还没有动态';
+
+  @override
+  String get savedPostsEmpty => '没有收藏的动态';
+
+  @override
+  String get savedPrivateHint => '只有你能看到收藏';
+
+  @override
+  String get lensMe => '我';
+
+  @override
+  String get lensMeUnit => '个标签';
+
+  @override
+  String get lensFriends => '与好友重合';
+
+  @override
+  String get lensFriendsUnit => '人';
+
+  @override
+  String get lensCommunity => '社区';
+
+  @override
+  String get lensCommunityUnit => '本周新标签';
+
+  @override
+  String get interestMapTitle => '兴趣地图';
+
+  @override
+  String interestMapCaptionMe(int n) {
+    return '我的标签 $n 个 · 越常用越大';
+  }
+
+  @override
+  String interestMapCaptionFriends(int n) {
+    return '$n 位好友有相同标签';
+  }
+
+  @override
+  String get interestMapCaptionCommunity => '本周大家最常添加的标签';
+
+  @override
+  String blockPosts(int n) {
+    return '动态 $n';
+  }
+
+  @override
+  String blockFriends(int n) {
+    return '好友 $n';
+  }
+
+  @override
+  String get blockSuggest => '推荐';
+
+  @override
+  String get overlapTitleAll => '和我重合的人';
+
+  @override
+  String get overlapTitleFriends => '重合的好友';
+
+  @override
+  String get overlapTitleOthers => '可能认识的人';
+
+  @override
+  String get overlapSeeAll => '查看全部';
+
+  @override
+  String overlapSameInterests(int n) {
+    return '$n 个共同兴趣';
+  }
+
+  @override
+  String get overlapFriendChip => '好友';
+
+  @override
+  String get overlapAddFriend => '加好友';
+
+  @override
+  String get overlapRequested => '已请求';
+
+  @override
+  String get overlapEmpty => '还没有和你重合的人';
+
+  @override
+  String get interestLoadFailed => '无法加载兴趣信息';
+
+  @override
+  String get completionTitle => '资料完成度';
+
+  @override
+  String get completionPhoto => '头像';
+
+  @override
+  String get completionBio => '自我介绍';
+
+  @override
+  String get completionTags => '3 个兴趣标签';
+
+  @override
+  String get pickTagsTitle => '选择兴趣标签';
+
+  @override
+  String pickTagsCaption(int n) {
+    return '选 3 个，帮你找到志同道合的人 · $n/3';
+  }
+
+  @override
+  String get pickTagsShuffle => '↻ 换一批';
+
+  @override
+  String get pickTagsDone => '完成';
+
+  @override
+  String get overlapPlaceholder => '选择标签后，这里会出现和你重合的人';
+
+  @override
+  String get exploreMyTagsTitle => '我的标签新动态';
+
+  @override
+  String get exploreEdit => '编辑';
+
+  @override
+  String get exploreCaptionRecommended => '常与你的标签**一起添加**';
+
+  @override
+  String get exploreCaptionFriends => '**好友常加**的标签';
+
+  @override
+  String get exploreCaptionTrending => '本周**人数增长最多**的标签';
+
+  @override
+  String get exploreCaptionNew => '最近**新出现的标签**，快来抢先添加';
+
+  @override
+  String get exploreFriendPrefix => '好友';
+
+  @override
+  String exploreCreateTitle(String name) {
+    return '新建 #$name';
+  }
+
+  @override
+  String get exploreCreateHint => '还没有这个标签，创建后会直接加到你的标签';
+
+  @override
+  String exploreSimilarCount(int n) {
+    return '$n 个相似标签';
+  }
+
+  @override
+  String get exploreSimilarNone => '没有相似的标签';
+
+  @override
+  String friendOverlapCaption(int n) {
+    return '与你重合的兴趣 $n 个 · 重合的标签会高亮';
+  }
+
+  @override
+  String get friendNoTags => '还没有标签';
+
+  @override
+  String get peopleNewTitle => '可能认识的人';
+
+  @override
+  String get peopleSeeAll => '查看全部';
+
+  @override
+  String get peopleSortHint => '按共同兴趣排序';
+
+  @override
+  String get peopleAllSub => '和你兴趣相同的人';
+
+  @override
+  String peopleOverlapMany(String a, String b, int n) {
+    return '$a、$b 等 $n 个共同兴趣';
+  }
+
+  @override
+  String peopleOverlapTwo(String a, String b) {
+    return '$a、$b 2 个共同兴趣';
+  }
+
+  @override
+  String peopleOverlapOne(String a) {
+    return '1 个共同兴趣：$a';
+  }
+
+  @override
+  String peopleMetaOverlap(String country, int n) {
+    return '$country · $n 个共同';
+  }
+
+  @override
+  String peopleMetaOverlapNoCountry(int n) {
+    return '$n 个共同';
+  }
+
+  @override
+  String peopleTipBoth(String tag) {
+    return '#$tag · 你们都喜欢';
+  }
+
+  @override
+  String get peopleAdd => '加好友';
+
+  @override
+  String get peopleAddShort => '添加';
+
+  @override
+  String get peopleRequested => '已发送';
+
+  @override
+  String get peopleRequestedShort => '已请求';
+
+  @override
+  String get peopleProfile => '主页';
+
+  @override
+  String get peopleAccept => '接受';
+
+  @override
+  String get peopleHide => '不再推荐';
+
+  @override
+  String peopleHidden(String name) {
+    return '已不再推荐 $name';
+  }
+
+  @override
+  String get peopleUndo => '撤销';
+
+  @override
+  String get peopleSortLabel => '共同最多';
+
+  @override
+  String peopleCount(int n) {
+    return '$n 人';
+  }
+
+  @override
+  String get peopleEmpty => '暂时没有新的推荐';
+
+  @override
+  String get peopleMoreTagsCta => '选择更多兴趣 ›';
+
+  @override
+  String get peopleMoreTags => '添加兴趣，推荐更准确';
+
+  @override
+  String get peoplePick => '选择';
+
+  @override
+  String peopleAllChip(int n) {
+    return '全部 $n';
+  }
+
+  @override
+  String get peopleActionFailed => '请稍后再试';
 }

@@ -95,12 +95,12 @@ void main() {
       expect(ChatMetrics.senderGap, 10);
       expect(ChatMetrics.composerMinHeight, 52);
       expect(ChatMetrics.headerHeight, 52);
-      expect(ChatMetrics.textBubbleWidthFactor, .63);
-      expect(375 * ChatMetrics.textBubbleWidthFactor, closeTo(236, 0.5));
+      expect(ChatMetrics.textBubbleWidthFactor, .72);
+      expect(375 * ChatMetrics.textBubbleWidthFactor, closeTo(270, 0.5));
     });
   });
 
-  testWidgets('말풍선 한 줄 높이 35, 폭은 화면의 0.63 이하', (tester) async {
+  testWidgets('말풍선 한 줄 높이 35, 폭은 화면의 0.72 이하', (tester) async {
     await tester.pumpWidget(_host(const _Bubble('안녕하세요')));
     expect(
       tester.getSize(find.byKey(const ValueKey('bubble'))).height,
@@ -109,7 +109,7 @@ void main() {
     await tester.pumpWidget(_host(_Bubble('긴 메시지 ' * 40)));
     expect(
       tester.getSize(find.byKey(const ValueKey('bubble'))).width,
-      lessThanOrEqualTo(375 * 0.63 + 0.01),
+      lessThanOrEqualTo(375 * 0.72 + 0.01),
     );
   });
 

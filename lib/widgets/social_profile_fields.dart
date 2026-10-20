@@ -7,6 +7,8 @@ import '../l10n/ui_locale.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/motion_selectable.dart';
 import '../ui/widgets/motion_state_icon.dart';
+import '../l10n/app_localizations.dart';
+import '../services/interest_tag_service.dart';
 
 class ProfileSectionHeading extends StatelessWidget {
   const ProfileSectionHeading({
@@ -530,9 +532,11 @@ class SocialProfilePreview extends StatelessWidget {
         if (interests.isNotEmpty) ...[
           const SizedBox(height: 22),
           _PreviewSection(
-            title: (isChineseUi(context) ? '最近感兴趣' : languageCode == 'ko' ? '요즘 관심 있는 것' : 'Into these days'),
+            title: AppLocalizations.of(context)!.myTags,
+            hash: true,
             values: interests
-                .map((id) => label(id, SocialProfileCatalog.interests))
+                .map((id) =>
+                    InterestTagService.instance.labelFor(id, languageCode))
                 .toList(growable: false),
           ),
         ],
@@ -596,10 +600,17 @@ class SocialProfilePreview extends StatelessWidget {
 }
 
 class _PreviewSection extends StatelessWidget {
-  const _PreviewSection({required this.title, required this.values});
+  const _PreviewSection({
+    required this.title,
+    required this.values,
+    this.hash = false,
+  });
 
   final String title;
   final List<String> values;
+
+  /// '#'은 태그에만 붙인다(같이 하고 싶은 것은 '#' 없음).
+  final bool hash;
 
   @override
   Widget build(BuildContext context) {
@@ -623,7 +634,7 @@ class _PreviewSection extends StatelessWidget {
           children: values
               .map(
                 (value) => Text(
-                  '#$value',
+                  hash ? '#$value' : value,
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: ['NotoSansKR'],

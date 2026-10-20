@@ -7,7 +7,6 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/meetup.dart';
-import '../models/app_notification.dart';
 import 'storage_service.dart';
 import 'notification_service.dart';
 import 'auth_service.dart';
@@ -221,7 +220,6 @@ class ReviewNotificationAdapter {
 class ReviewUserAdapter {
   final AuthService _authService = AuthService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   /// 현재 사용자 정보 가져오기 (기존 AuthService 재사용)
   User? get currentUser => _authService.currentUser;

@@ -2,6 +2,7 @@
 // 알림 목록 화면
 // 알림 표시 및 읽음 처리
 
+import '../services/interest_tag_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/app_notification.dart';
@@ -126,8 +127,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
       case 'meetup_participant_joined':
       case 'meetup_participant_left':
       case 'meetup_created':
+      case 'tag_meetup':
         await _navigateToMeetup(notification);
         break;
+      case 'tag_post':
       case 'new_comment':
       case 'comment_reply':
       case 'new_like':
@@ -863,6 +866,22 @@ class _NotificationScreenState extends State<NotificationScreen> {
                     ? '$name님이 $badge 포스트를 올렸습니다: $postTitle'
                     : '$name posted a $badge post: $postTitle');
           }
+        case 'tag_post':
+        case 'tag_meetup':
+          {
+            final tagId = (data['tagId'] ?? '').toString();
+            final count = (data['count'] as num?)?.toInt() ?? 1;
+            if (tagId.isEmpty) return notification.message;
+            final label = InterestTagService.instance.labelFor(
+                tagId, Localizations.localeOf(context).languageCode);
+            final shown = label == tagId
+                ? (data['tagLabel'] ?? tagId).toString()
+                : label;
+            final l10n = AppLocalizations.of(context)!;
+            return notification.type == 'tag_post'
+                ? l10n.tagNotifyPosts(shown, count)
+                : l10n.tagNotifyMeetups(shown, count);
+          }
         case 'post_created':
           {
             final authorName = _getActorName(notification);
@@ -972,7 +991,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
           notification.type == 'comment_reply' ||
           notification.type == 'comment_like' ||
           notification.type == 'post_private' ||
-          notification.type == 'post_created';
+          notification.type == 'post_created' ||
+          notification.type == 'tag_post';
       if (canHavePreview && postId is String && postId.isNotEmpty) {
         previewFuture = _getPostPreviewImageUrl(postId);
       }

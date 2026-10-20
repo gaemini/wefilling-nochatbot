@@ -2959,31 +2959,31 @@ abstract class AppLocalizations {
   /// No description provided for @interestFriendDiscoveryTitle.
   ///
   /// In ko, this message translates to:
-  /// **'관심사로 친구 찾기'**
+  /// **'태그로 친구 찾기'**
   String get interestFriendDiscoveryTitle;
 
   /// No description provided for @interestFriendDiscoveryDescription.
   ///
   /// In ko, this message translates to:
-  /// **'관심사를 선택하면 같은 관심사를 등록한 사람들을 볼 수 있어요.'**
+  /// **'#태그를 고르면 같은 태그를 단 사람을 볼 수 있어요.'**
   String get interestFriendDiscoveryDescription;
 
   /// No description provided for @interestPeopleTitle.
   ///
   /// In ko, this message translates to:
-  /// **'#{interest}에 관심 있는 사람'**
+  /// **'#{interest}을 단 사람'**
   String interestPeopleTitle(String interest);
 
   /// No description provided for @interestNoUsersTitle.
   ///
   /// In ko, this message translates to:
-  /// **'아직 #{interest}에 관심사를 등록한 사용자가 없어요'**
+  /// **'아직 #{interest}을 단 사람이 없어요'**
   String interestNoUsersTitle(String interest);
 
   /// No description provided for @interestNoUsersDescription.
   ///
   /// In ko, this message translates to:
-  /// **'다른 관심사를 선택해 새로운 친구를 찾아보세요.'**
+  /// **'다른 태그를 골라 새로운 친구를 찾아보세요.'**
   String get interestNoUsersDescription;
 
   /// No description provided for @interestSearchErrorTitle.
@@ -6465,6 +6465,1362 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'원문 언어 {lang}'**
   String translationOriginalLanguage(String lang);
+
+  /// No description provided for @myTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 #태그'**
+  String get myTags;
+
+  /// No description provided for @myTagsDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'같은 태그를 단 사람과 이어져요. 최대 8개'**
+  String get myTagsDescription;
+
+  /// No description provided for @tagPickerTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'요즘 어떤 걸 좋아하세요?'**
+  String get tagPickerTitle;
+
+  /// No description provided for @tagSearchHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 찾기 또는 직접 만들기'**
+  String get tagSearchHint;
+
+  /// No description provided for @tagCreate.
+  ///
+  /// In ko, this message translates to:
+  /// **'‘#{name}’ 새로 만들기'**
+  String tagCreate(String name);
+
+  /// No description provided for @tagAddToMine.
+  ///
+  /// In ko, this message translates to:
+  /// **'＋ 내 태그에 추가'**
+  String get tagAddToMine;
+
+  /// No description provided for @tagInMine.
+  ///
+  /// In ko, this message translates to:
+  /// **'✓ 내 태그'**
+  String get tagInMine;
+
+  /// No description provided for @tagHolders.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}명이 달았어요'**
+  String tagHolders(int n);
+
+  /// No description provided for @tagHoldersWithFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}명이 달았어요 · 친구 {friends}명'**
+  String tagHoldersWithFriends(int n, int friends);
+
+  /// No description provided for @tagFriendsAlso.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {n}명도 달았어요'**
+  String tagFriendsAlso(int n);
+
+  /// No description provided for @tagStats.
+  ///
+  /// In ko, this message translates to:
+  /// **'{people}명 · 포스트 {posts} · 모임 {meetups}'**
+  String tagStats(int people, int posts, int meetups);
+
+  /// No description provided for @tagOpenPage.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 페이지 보기'**
+  String get tagOpenPage;
+
+  /// No description provided for @tagSelectedCount.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}/{max} 선택'**
+  String tagSelectedCount(int n, int max);
+
+  /// No description provided for @tagAdd.
+  ///
+  /// In ko, this message translates to:
+  /// **'추가'**
+  String get tagAdd;
+
+  /// No description provided for @tagAdded.
+  ///
+  /// In ko, this message translates to:
+  /// **'✓ 추가됨'**
+  String get tagAdded;
+
+  /// No description provided for @tagFindOrCreate.
+  ///
+  /// In ko, this message translates to:
+  /// **'＋ 태그 찾기·만들기'**
+  String get tagFindOrCreate;
+
+  /// No description provided for @tagAddShort.
+  ///
+  /// In ko, this message translates to:
+  /// **'＋ 태그'**
+  String get tagAddShort;
+
+  /// No description provided for @tagSuggestFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구들이 많이 단 태그'**
+  String get tagSuggestFriends;
+
+  /// No description provided for @tagSuggestPopular.
+  ///
+  /// In ko, this message translates to:
+  /// **'요즘 많이 다는 태그'**
+  String get tagSuggestPopular;
+
+  /// No description provided for @tagDailyLimit.
+  ///
+  /// In ko, this message translates to:
+  /// **'오늘은 새 태그를 더 만들 수 없어요'**
+  String get tagDailyLimit;
+
+  /// No description provided for @tagBlocked.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 이름으로는 만들 수 없어요'**
+  String get tagBlocked;
+
+  /// No description provided for @tagInvalid.
+  ///
+  /// In ko, this message translates to:
+  /// **'2–20자, 글자·숫자·_만 쓸 수 있어요'**
+  String get tagInvalid;
+
+  /// No description provided for @tagUnavailable.
+  ///
+  /// In ko, this message translates to:
+  /// **'지금은 쓸 수 없는 태그예요'**
+  String get tagUnavailable;
+
+  /// No description provided for @tagLimitReached.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그는 8개까지 달 수 있어요'**
+  String get tagLimitReached;
+
+  /// No description provided for @tagSaveFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그를 저장하지 못했어요. 다시 시도해 주세요'**
+  String get tagSaveFailed;
+
+  /// No description provided for @tagLoadFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그를 불러오지 못했어요'**
+  String get tagLoadFailed;
+
+  /// No description provided for @tagNoResults.
+  ///
+  /// In ko, this message translates to:
+  /// **'찾는 태그가 없어요'**
+  String get tagNoResults;
+
+  /// No description provided for @tagHideFromList.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 사람 목록에서 나를 숨기기'**
+  String get tagHideFromList;
+
+  /// No description provided for @tagHideFromListDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그는 내 프로필에 그대로 보여요'**
+  String get tagHideFromListDescription;
+
+  /// No description provided for @tagRemoveFromMine.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그에서 빼기'**
+  String get tagRemoveFromMine;
+
+  /// No description provided for @tagAddedToMine.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그에 추가했어요'**
+  String get tagAddedToMine;
+
+  /// No description provided for @tagRemovedFromMine.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그에서 뺐어요'**
+  String get tagRemovedFromMine;
+
+  /// No description provided for @tagNotifyOn.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 글·모임을 알려 드릴게요'**
+  String get tagNotifyOn;
+
+  /// No description provided for @tagNotifyOff.
+  ///
+  /// In ko, this message translates to:
+  /// **'알림을 껐어요'**
+  String get tagNotifyOff;
+
+  /// No description provided for @tagNotifyLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 알림'**
+  String get tagNotifyLabel;
+
+  /// No description provided for @tagOfficial.
+  ///
+  /// In ko, this message translates to:
+  /// **'공식 태그'**
+  String get tagOfficial;
+
+  /// No description provided for @tagPeopleTab.
+  ///
+  /// In ko, this message translates to:
+  /// **'사람 {n}'**
+  String tagPeopleTab(int n);
+
+  /// No description provided for @tagPostsTab.
+  ///
+  /// In ko, this message translates to:
+  /// **'포스트 {n}'**
+  String tagPostsTab(int n);
+
+  /// No description provided for @tagMeetupsTab.
+  ///
+  /// In ko, this message translates to:
+  /// **'밋업 {n}'**
+  String tagMeetupsTab(int n);
+
+  /// No description provided for @tagFriendsSection.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구'**
+  String get tagFriendsSection;
+
+  /// No description provided for @tagOthersSection.
+  ///
+  /// In ko, this message translates to:
+  /// **'최근에 단 사람'**
+  String get tagOthersSection;
+
+  /// No description provided for @tagPeopleEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 이 태그를 단 사람이 없어요'**
+  String get tagPeopleEmpty;
+
+  /// No description provided for @tagYou.
+  ///
+  /// In ko, this message translates to:
+  /// **'나'**
+  String get tagYou;
+
+  /// No description provided for @tagActivitiesLine.
+  ///
+  /// In ko, this message translates to:
+  /// **'같이 하고 싶은 것 · {items}'**
+  String tagActivitiesLine(String items);
+
+  /// No description provided for @profileTagsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'#태그'**
+  String get profileTagsTitle;
+
+  /// No description provided for @postTopic.
+  ///
+  /// In ko, this message translates to:
+  /// **'주제'**
+  String get postTopic;
+
+  /// No description provided for @contentTagsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'#태그'**
+  String get contentTagsTitle;
+
+  /// No description provided for @contentTagsHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'붙인 태그를 단 사람이 이 글을 찾을 수 있어요'**
+  String get contentTagsHint;
+
+  /// No description provided for @contentTagPickerTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'어떤 #태그를 붙일까요?'**
+  String get contentTagPickerTitle;
+
+  /// No description provided for @contentTagLimit.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그는 3개까지 붙일 수 있어요'**
+  String get contentTagLimit;
+
+  /// No description provided for @tagAudienceBadge.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag} 가진 사람'**
+  String tagAudienceBadge(String tag);
+
+  /// No description provided for @tagShareTo.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag}에 공유'**
+  String tagShareTo(String tag);
+
+  /// No description provided for @tagShareWritePost.
+  ///
+  /// In ko, this message translates to:
+  /// **'포스트 쓰기'**
+  String get tagShareWritePost;
+
+  /// No description provided for @tagShareCreateMeetup.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 만들기'**
+  String get tagShareCreateMeetup;
+
+  /// No description provided for @tagPostsEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 이 태그가 붙은 글이 없어요'**
+  String get tagPostsEmpty;
+
+  /// No description provided for @tagMeetupsEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'예정된 모임이 없어요'**
+  String get tagMeetupsEmpty;
+
+  /// No description provided for @meetupFilterAll.
+  ///
+  /// In ko, this message translates to:
+  /// **'모든 모임'**
+  String get meetupFilterAll;
+
+  /// No description provided for @meetupTagCreate.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag} 모임 만들기'**
+  String meetupTagCreate(String tag);
+
+  /// No description provided for @meetupTagEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag} 모임이 아직 없어요. 처음으로 열어 보세요'**
+  String meetupTagEmpty(String tag);
+
+  /// No description provided for @tagLockedPosts.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그에 추가하면 이 태그를 단 사람에게만 공유된 글 {n}개도 보여요'**
+  String tagLockedPosts(int n);
+
+  /// No description provided for @audienceTag.
+  ///
+  /// In ko, this message translates to:
+  /// **'#태그 가진 사람'**
+  String get audienceTag;
+
+  /// No description provided for @audienceTagDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'{tags}을 프로필에 단 사람'**
+  String audienceTagDescription(String tags);
+
+  /// No description provided for @audienceTagNeedsTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'글에 #태그를 먼저 붙여 주세요'**
+  String get audienceTagNeedsTags;
+
+  /// No description provided for @audienceTagNote.
+  ///
+  /// In ko, this message translates to:
+  /// **'누구나 태그를 달 수 있어요. 아는 사람끼리만 보려면 ‘그룹’을 써 주세요.'**
+  String get audienceTagNote;
+
+  /// No description provided for @audienceReach.
+  ///
+  /// In ko, this message translates to:
+  /// **'약 {n}명에게 보여요 · 앞으로 태그를 다는 사람 포함'**
+  String audienceReach(int n);
+
+  /// No description provided for @audienceReachFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {n}명에게 보여요'**
+  String audienceReachFriends(int n);
+
+  /// No description provided for @audienceFriendsOnly.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 중에서만'**
+  String get audienceFriendsOnly;
+
+  /// No description provided for @audienceFriendsOnlyDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'지금 친구 중 태그를 단 사람만 봐요'**
+  String get audienceFriendsOnlyDescription;
+
+  /// No description provided for @tagNotifyPosts.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag}에 새 글 {n}개'**
+  String tagNotifyPosts(String tag, int n);
+
+  /// No description provided for @tagNotifyMeetups.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag}에 새 모임 {n}개'**
+  String tagNotifyMeetups(String tag, int n);
+
+  /// No description provided for @tagExploreTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 둘러보기'**
+  String get tagExploreTitle;
+
+  /// No description provided for @tagExploreLink.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 둘러보기 ›'**
+  String get tagExploreLink;
+
+  /// No description provided for @tagExploreRecommended.
+  ///
+  /// In ko, this message translates to:
+  /// **'추천'**
+  String get tagExploreRecommended;
+
+  /// No description provided for @tagExploreFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구'**
+  String get tagExploreFriends;
+
+  /// No description provided for @tagExploreTrending.
+  ///
+  /// In ko, this message translates to:
+  /// **'뜨는 태그'**
+  String get tagExploreTrending;
+
+  /// No description provided for @tagExploreNew.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 태그'**
+  String get tagExploreNew;
+
+  /// No description provided for @tagExploreEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 보여 줄 태그가 없어요'**
+  String get tagExploreEmpty;
+
+  /// No description provided for @myTagsNewPosts.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 #태그 새 글'**
+  String get myTagsNewPosts;
+
+  /// No description provided for @tagPickerSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'고른 #태그가 프로필에 보이고, 같은 태그를 단 사람에게 공유된 글과 모임을 받아요.'**
+  String get tagPickerSubtitle;
+
+  /// No description provided for @tagPickerMineMeta.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}/{max} · 길게 누르면 숨기기'**
+  String tagPickerMineMeta(int n, int max);
+
+  /// No description provided for @tagCountPeople.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}명'**
+  String tagCountPeople(int n);
+
+  /// No description provided for @tagExploreSearchHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'#태그 검색'**
+  String get tagExploreSearchHint;
+
+  /// No description provided for @tagExploreCaptionRecommended.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그와 함께 많이 달린 태그'**
+  String get tagExploreCaptionRecommended;
+
+  /// No description provided for @tagExploreCaptionPopular.
+  ///
+  /// In ko, this message translates to:
+  /// **'많이 단 태그'**
+  String get tagExploreCaptionPopular;
+
+  /// No description provided for @tagExploreCaptionFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구들이 단 태그'**
+  String get tagExploreCaptionFriends;
+
+  /// No description provided for @tagExploreCaptionTrending.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주에 많이 단 태그'**
+  String get tagExploreCaptionTrending;
+
+  /// No description provided for @tagExploreCaptionNew.
+  ///
+  /// In ko, this message translates to:
+  /// **'새로 생긴 태그'**
+  String get tagExploreCaptionNew;
+
+  /// No description provided for @tagReasonFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {names}'**
+  String tagReasonFriends(String names);
+
+  /// No description provided for @tagReasonWeek.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주 +{n}'**
+  String tagReasonWeek(int n);
+
+  /// No description provided for @tagReasonWith.
+  ///
+  /// In ko, this message translates to:
+  /// **'{tag}와 함께'**
+  String tagReasonWith(String tag);
+
+  /// No description provided for @tagReasonToday.
+  ///
+  /// In ko, this message translates to:
+  /// **'오늘 생김'**
+  String get tagReasonToday;
+
+  /// No description provided for @tagReasonDaysAgo.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}일 전 생김'**
+  String tagReasonDaysAgo(int n);
+
+  /// No description provided for @tagProfileButton.
+  ///
+  /// In ko, this message translates to:
+  /// **'프로필'**
+  String get tagProfileButton;
+
+  /// No description provided for @tagExchangeStudent.
+  ///
+  /// In ko, this message translates to:
+  /// **'교환학생'**
+  String get tagExchangeStudent;
+
+  /// No description provided for @tagMenuCopyLink.
+  ///
+  /// In ko, this message translates to:
+  /// **'링크 복사'**
+  String get tagMenuCopyLink;
+
+  /// No description provided for @tagMenuReport.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 신고'**
+  String get tagMenuReport;
+
+  /// No description provided for @tagLinkCopied.
+  ///
+  /// In ko, this message translates to:
+  /// **'링크를 복사했어요'**
+  String get tagLinkCopied;
+
+  /// No description provided for @tagShareText.
+  ///
+  /// In ko, this message translates to:
+  /// **'위필링에서 #{tag} 태그를 같이 달아요 {link}'**
+  String tagShareText(String tag, String link);
+
+  /// No description provided for @tagReported.
+  ///
+  /// In ko, this message translates to:
+  /// **'신고를 접수했어요'**
+  String get tagReported;
+
+  /// No description provided for @audienceSheetTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'누가 볼 수 있나요?'**
+  String get audienceSheetTitle;
+
+  /// No description provided for @audienceSheetSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'글을 올린 뒤에는 바꿀 수 없어요'**
+  String get audienceSheetSubtitle;
+
+  /// No description provided for @audiencePublic.
+  ///
+  /// In ko, this message translates to:
+  /// **'전체'**
+  String get audiencePublic;
+
+  /// No description provided for @audiencePublicDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'위필링의 모든 사람'**
+  String get audiencePublicDescription;
+
+  /// No description provided for @audienceFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구만'**
+  String get audienceFriends;
+
+  /// No description provided for @audienceFriendsDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 친구 {n}명'**
+  String audienceFriendsDescription(int n);
+
+  /// No description provided for @audienceGroup.
+  ///
+  /// In ko, this message translates to:
+  /// **'그룹'**
+  String get audienceGroup;
+
+  /// No description provided for @audienceGroupDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'고른 그룹의 친구'**
+  String get audienceGroupDescription;
+
+  /// No description provided for @audienceAnonymous.
+  ///
+  /// In ko, this message translates to:
+  /// **'익명으로 전체 공개'**
+  String get audienceAnonymous;
+
+  /// No description provided for @audienceAnonymousDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'이름과 사진을 숨겨요'**
+  String get audienceAnonymousDescription;
+
+  /// No description provided for @audienceHanyang.
+  ///
+  /// In ko, this message translates to:
+  /// **'한양대학생만'**
+  String get audienceHanyang;
+
+  /// No description provided for @audienceHanyangDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'카드는 모두에게 보이고, 인증된 사용자만 내용을 봐요'**
+  String get audienceHanyangDescription;
+
+  /// No description provided for @audienceRowLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'공개 범위'**
+  String get audienceRowLabel;
+
+  /// No description provided for @postUploadAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'올리기'**
+  String get postUploadAction;
+
+  /// No description provided for @tagMoreTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'더 많은 태그'**
+  String get tagMoreTags;
+
+  /// No description provided for @tagPageLink.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 페이지'**
+  String get tagPageLink;
+
+  /// No description provided for @tagAddedShort.
+  ///
+  /// In ko, this message translates to:
+  /// **'추가됨'**
+  String get tagAddedShort;
+
+  /// No description provided for @myTagsEmptyHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'#태그를 달면 같은 태그의 새 글을 여기서 볼 수 있어요'**
+  String get myTagsEmptyHint;
+
+  /// No description provided for @myTagsAddAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 달기'**
+  String get myTagsAddAction;
+
+  /// No description provided for @myTagsButtonLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 #태그'**
+  String get myTagsButtonLabel;
+
+  /// No description provided for @tagCreateTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 태그 만들기'**
+  String get tagCreateTitle;
+
+  /// No description provided for @tagCreateAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'만들기'**
+  String get tagCreateAction;
+
+  /// No description provided for @tagCreateNameLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그 이름'**
+  String get tagCreateNameLabel;
+
+  /// No description provided for @tagCreateNameHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'예: 한강러닝'**
+  String get tagCreateNameHint;
+
+  /// No description provided for @tagDescLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'어떤 태그인가요?'**
+  String get tagDescLabel;
+
+  /// No description provided for @tagDescHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'예: 주말마다 한강에서 같이 뛰어요'**
+  String get tagDescHint;
+
+  /// No description provided for @tagCreateNote.
+  ///
+  /// In ko, this message translates to:
+  /// **'이름은 나중에 바꿀 수 없어요. 설명은 만든 사람이 언제든 고칠 수 있어요.'**
+  String get tagCreateNote;
+
+  /// No description provided for @tagCreateRowHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'한 줄 설명을 붙여 만들어요'**
+  String get tagCreateRowHint;
+
+  /// No description provided for @tagDescEdit.
+  ///
+  /// In ko, this message translates to:
+  /// **'설명 수정'**
+  String get tagDescEdit;
+
+  /// No description provided for @tagDescAdd.
+  ///
+  /// In ko, this message translates to:
+  /// **'설명 쓰기'**
+  String get tagDescAdd;
+
+  /// No description provided for @tagDescSave.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장'**
+  String get tagDescSave;
+
+  /// No description provided for @tagDescSaved.
+  ///
+  /// In ko, this message translates to:
+  /// **'설명을 저장했어요'**
+  String get tagDescSaved;
+
+  /// No description provided for @tagCreated.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag} 태그를 만들었어요'**
+  String tagCreated(String tag);
+
+  /// No description provided for @tagWeeklyGain.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주 +{n}명'**
+  String tagWeeklyGain(int n);
+
+  /// No description provided for @tagFriendsAlsoNamed.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {names}님도 달았어요'**
+  String tagFriendsAlsoNamed(String names);
+
+  /// No description provided for @tagAddToMinePlain.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그에 추가'**
+  String get tagAddToMinePlain;
+
+  /// No description provided for @tagUndo.
+  ///
+  /// In ko, this message translates to:
+  /// **'되돌리기'**
+  String get tagUndo;
+
+  /// No description provided for @tagRetryLater.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 다시 시도해 주세요'**
+  String get tagRetryLater;
+
+  /// No description provided for @tagOverlapGain.
+  ///
+  /// In ko, this message translates to:
+  /// **'+{n}명과 겹쳐요'**
+  String tagOverlapGain(int n);
+
+  /// No description provided for @tagCategoryLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'분류'**
+  String get tagCategoryLabel;
+
+  /// No description provided for @tagCategoryFood.
+  ///
+  /// In ko, this message translates to:
+  /// **'맛집·카페'**
+  String get tagCategoryFood;
+
+  /// No description provided for @tagCategoryCulture.
+  ///
+  /// In ko, this message translates to:
+  /// **'문화'**
+  String get tagCategoryCulture;
+
+  /// No description provided for @tagCategoryActive.
+  ///
+  /// In ko, this message translates to:
+  /// **'활동'**
+  String get tagCategoryActive;
+
+  /// No description provided for @tagCategoryLearn.
+  ///
+  /// In ko, this message translates to:
+  /// **'배움'**
+  String get tagCategoryLearn;
+
+  /// No description provided for @tagCategoryPlay.
+  ///
+  /// In ko, this message translates to:
+  /// **'놀이'**
+  String get tagCategoryPlay;
+
+  /// No description provided for @tagCategoryEtc.
+  ///
+  /// In ko, this message translates to:
+  /// **'기타'**
+  String get tagCategoryEtc;
+
+  /// No description provided for @profileTabInterest.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심'**
+  String get profileTabInterest;
+
+  /// No description provided for @profileTabActivity.
+  ///
+  /// In ko, this message translates to:
+  /// **'활동'**
+  String get profileTabActivity;
+
+  /// No description provided for @activityFilterReviews.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 후기'**
+  String get activityFilterReviews;
+
+  /// No description provided for @activityFilterSaved.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장됨'**
+  String get activityFilterSaved;
+
+  /// No description provided for @activityKindPost.
+  ///
+  /// In ko, this message translates to:
+  /// **'포스트'**
+  String get activityKindPost;
+
+  /// No description provided for @activityKindReview.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 후기'**
+  String get activityKindReview;
+
+  /// No description provided for @activityEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 활동이 없어요'**
+  String get activityEmpty;
+
+  /// No description provided for @savedPostsEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장한 글이 없어요'**
+  String get savedPostsEmpty;
+
+  /// No description provided for @savedPrivateHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'저장됨은 나만 볼 수 있어요'**
+  String get savedPrivateHint;
+
+  /// No description provided for @lensMe.
+  ///
+  /// In ko, this message translates to:
+  /// **'나'**
+  String get lensMe;
+
+  /// No description provided for @lensMeUnit.
+  ///
+  /// In ko, this message translates to:
+  /// **'개 태그'**
+  String get lensMeUnit;
+
+  /// No description provided for @lensFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구와 겹침'**
+  String get lensFriends;
+
+  /// No description provided for @lensFriendsUnit.
+  ///
+  /// In ko, this message translates to:
+  /// **'명'**
+  String get lensFriendsUnit;
+
+  /// No description provided for @lensCommunity.
+  ///
+  /// In ko, this message translates to:
+  /// **'커뮤니티'**
+  String get lensCommunity;
+
+  /// No description provided for @lensCommunityUnit.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주 새 태그'**
+  String get lensCommunityUnit;
+
+  /// No description provided for @interestMapTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 지도'**
+  String get interestMapTitle;
+
+  /// No description provided for @interestMapCaptionMe.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그 {n}개 · 글에 많이 붙인 태그일수록 커요'**
+  String interestMapCaptionMe(int n);
+
+  /// No description provided for @interestMapCaptionFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {n}명이 내 태그를 같이 달았어요'**
+  String interestMapCaptionFriends(int n);
+
+  /// No description provided for @interestMapCaptionCommunity.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주 위필링 학생들이 많이 단 태그예요'**
+  String get interestMapCaptionCommunity;
+
+  /// No description provided for @blockPosts.
+  ///
+  /// In ko, this message translates to:
+  /// **'글 {n}'**
+  String blockPosts(int n);
+
+  /// No description provided for @blockFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 {n}'**
+  String blockFriends(int n);
+
+  /// No description provided for @blockSuggest.
+  ///
+  /// In ko, this message translates to:
+  /// **'추천'**
+  String get blockSuggest;
+
+  /// No description provided for @overlapTitleAll.
+  ///
+  /// In ko, this message translates to:
+  /// **'나와 겹치는 사람'**
+  String get overlapTitleAll;
+
+  /// No description provided for @overlapTitleFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'겹치는 친구'**
+  String get overlapTitleFriends;
+
+  /// No description provided for @overlapTitleOthers.
+  ///
+  /// In ko, this message translates to:
+  /// **'새로 알게 될 사람'**
+  String get overlapTitleOthers;
+
+  /// No description provided for @overlapSeeAll.
+  ///
+  /// In ko, this message translates to:
+  /// **'모두 보기'**
+  String get overlapSeeAll;
+
+  /// No description provided for @overlapSameInterests.
+  ///
+  /// In ko, this message translates to:
+  /// **'같은 관심사 {n}개'**
+  String overlapSameInterests(int n);
+
+  /// No description provided for @overlapFriendChip.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구'**
+  String get overlapFriendChip;
+
+  /// No description provided for @overlapAddFriend.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 추가'**
+  String get overlapAddFriend;
+
+  /// No description provided for @overlapRequested.
+  ///
+  /// In ko, this message translates to:
+  /// **'요청됨'**
+  String get overlapRequested;
+
+  /// No description provided for @overlapEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 겹치는 사람이 없어요'**
+  String get overlapEmpty;
+
+  /// No description provided for @interestLoadFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 정보를 불러오지 못했어요'**
+  String get interestLoadFailed;
+
+  /// No description provided for @completionTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'프로필 완성도'**
+  String get completionTitle;
+
+  /// No description provided for @completionPhoto.
+  ///
+  /// In ko, this message translates to:
+  /// **'프로필 사진'**
+  String get completionPhoto;
+
+  /// No description provided for @completionBio.
+  ///
+  /// In ko, this message translates to:
+  /// **'자기소개'**
+  String get completionBio;
+
+  /// No description provided for @completionTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 태그 3개'**
+  String get completionTags;
+
+  /// No description provided for @pickTagsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 태그 고르기'**
+  String get pickTagsTitle;
+
+  /// No description provided for @pickTagsCaption.
+  ///
+  /// In ko, this message translates to:
+  /// **'3개를 고르면 나와 겹치는 사람을 찾아 드려요 · {n}/3'**
+  String pickTagsCaption(int n);
+
+  /// No description provided for @pickTagsShuffle.
+  ///
+  /// In ko, this message translates to:
+  /// **'↻ 다른 태그'**
+  String get pickTagsShuffle;
+
+  /// No description provided for @pickTagsDone.
+  ///
+  /// In ko, this message translates to:
+  /// **'완료'**
+  String get pickTagsDone;
+
+  /// No description provided for @overlapPlaceholder.
+  ///
+  /// In ko, this message translates to:
+  /// **'태그를 고르면 여기에 나와 겹치는 사람이 나와요'**
+  String get overlapPlaceholder;
+
+  /// No description provided for @exploreMyTagsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그 새 글'**
+  String get exploreMyTagsTitle;
+
+  /// No description provided for @exploreEdit.
+  ///
+  /// In ko, this message translates to:
+  /// **'편집'**
+  String get exploreEdit;
+
+  /// No description provided for @exploreCaptionRecommended.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 태그와 함께 **많이 달린 태그**예요'**
+  String get exploreCaptionRecommended;
+
+  /// No description provided for @exploreCaptionFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구들이 **많이 단 태그**예요'**
+  String get exploreCaptionFriends;
+
+  /// No description provided for @exploreCaptionTrending.
+  ///
+  /// In ko, this message translates to:
+  /// **'이번 주에 **사람이 많이 늘어난 태그**예요'**
+  String get exploreCaptionTrending;
+
+  /// No description provided for @exploreCaptionNew.
+  ///
+  /// In ko, this message translates to:
+  /// **'최근 **새로 생긴 태그**예요. 먼저 달아 보세요'**
+  String get exploreCaptionNew;
+
+  /// No description provided for @exploreFriendPrefix.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구'**
+  String get exploreFriendPrefix;
+
+  /// No description provided for @exploreCreateTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{name} 새로 만들기'**
+  String exploreCreateTitle(String name);
+
+  /// No description provided for @exploreCreateHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 없는 태그예요. 만들면 내 태그에 바로 달려요'**
+  String get exploreCreateHint;
+
+  /// No description provided for @exploreSimilarCount.
+  ///
+  /// In ko, this message translates to:
+  /// **'비슷한 태그 {n}개'**
+  String exploreSimilarCount(int n);
+
+  /// No description provided for @exploreSimilarNone.
+  ///
+  /// In ko, this message translates to:
+  /// **'비슷한 태그가 없어요'**
+  String get exploreSimilarNone;
+
+  /// No description provided for @friendOverlapCaption.
+  ///
+  /// In ko, this message translates to:
+  /// **'나와 겹치는 관심사 {n}개 · 겹치는 태그는 진하게 보여요'**
+  String friendOverlapCaption(int n);
+
+  /// No description provided for @friendNoTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 단 태그가 없어요'**
+  String get friendNoTags;
+
+  /// No description provided for @peopleNewTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'새로 알게 될 사람'**
+  String get peopleNewTitle;
+
+  /// No description provided for @peopleSeeAll.
+  ///
+  /// In ko, this message translates to:
+  /// **'모두 보기'**
+  String get peopleSeeAll;
+
+  /// No description provided for @peopleSortHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 관심사와 많이 겹치는 순이에요'**
+  String get peopleSortHint;
+
+  /// No description provided for @peopleAllSub.
+  ///
+  /// In ko, this message translates to:
+  /// **'나와 관심사가 겹치는 사람들이에요'**
+  String get peopleAllSub;
+
+  /// No description provided for @peopleOverlapMany.
+  ///
+  /// In ko, this message translates to:
+  /// **'{a}, {b} 등 {n}개 겹쳐요'**
+  String peopleOverlapMany(String a, String b, int n);
+
+  /// No description provided for @peopleOverlapTwo.
+  ///
+  /// In ko, this message translates to:
+  /// **'{a}, {b} 2개 겹쳐요'**
+  String peopleOverlapTwo(String a, String b);
+
+  /// No description provided for @peopleOverlapOne.
+  ///
+  /// In ko, this message translates to:
+  /// **'{a} 1개 겹쳐요'**
+  String peopleOverlapOne(String a);
+
+  /// No description provided for @peopleMetaOverlap.
+  ///
+  /// In ko, this message translates to:
+  /// **'{country} · {n}개 겹침'**
+  String peopleMetaOverlap(String country, int n);
+
+  /// No description provided for @peopleMetaOverlapNoCountry.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}개 겹침'**
+  String peopleMetaOverlapNoCountry(int n);
+
+  /// No description provided for @peopleTipBoth.
+  ///
+  /// In ko, this message translates to:
+  /// **'#{tag} · 둘 다 관심'**
+  String peopleTipBoth(String tag);
+
+  /// No description provided for @peopleAdd.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 추가'**
+  String get peopleAdd;
+
+  /// No description provided for @peopleAddShort.
+  ///
+  /// In ko, this message translates to:
+  /// **'추가'**
+  String get peopleAddShort;
+
+  /// No description provided for @peopleRequested.
+  ///
+  /// In ko, this message translates to:
+  /// **'요청 보냄'**
+  String get peopleRequested;
+
+  /// No description provided for @peopleRequestedShort.
+  ///
+  /// In ko, this message translates to:
+  /// **'요청됨'**
+  String get peopleRequestedShort;
+
+  /// No description provided for @peopleProfile.
+  ///
+  /// In ko, this message translates to:
+  /// **'프로필'**
+  String get peopleProfile;
+
+  /// No description provided for @peopleAccept.
+  ///
+  /// In ko, this message translates to:
+  /// **'수락'**
+  String get peopleAccept;
+
+  /// No description provided for @peopleHide.
+  ///
+  /// In ko, this message translates to:
+  /// **'추천에서 숨기기'**
+  String get peopleHide;
+
+  /// No description provided for @peopleHidden.
+  ///
+  /// In ko, this message translates to:
+  /// **'{name}님을 추천에서 숨겼어요'**
+  String peopleHidden(String name);
+
+  /// No description provided for @peopleUndo.
+  ///
+  /// In ko, this message translates to:
+  /// **'되돌리기'**
+  String get peopleUndo;
+
+  /// No description provided for @peopleSortLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'많이 겹치는 순'**
+  String get peopleSortLabel;
+
+  /// No description provided for @peopleCount.
+  ///
+  /// In ko, this message translates to:
+  /// **'{n}명'**
+  String peopleCount(int n);
+
+  /// No description provided for @peopleEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'지금은 새로 추천할 사람이 없어요'**
+  String get peopleEmpty;
+
+  /// No description provided for @peopleMoreTagsCta.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사 더 고르기 ›'**
+  String get peopleMoreTagsCta;
+
+  /// No description provided for @peopleMoreTags.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심사를 늘리면 추천이 정확해져요'**
+  String get peopleMoreTags;
+
+  /// No description provided for @peoplePick.
+  ///
+  /// In ko, this message translates to:
+  /// **'고르기'**
+  String get peoplePick;
+
+  /// No description provided for @peopleAllChip.
+  ///
+  /// In ko, this message translates to:
+  /// **'전체 {n}'**
+  String peopleAllChip(int n);
+
+  /// No description provided for @peopleActionFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'잠시 후 다시 시도해 주세요'**
+  String get peopleActionFailed;
 }
 
 class _AppLocalizationsDelegate

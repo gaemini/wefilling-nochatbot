@@ -1098,29 +1098,6 @@ class _DMListScreenState extends State<DMListScreen> {
     );
   }
 
-  /// 로딩 상태 빌드
-  Widget _buildLoadingState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const CircularProgressIndicator(color: Color(0xFF344054)),
-          const SizedBox(height: 16),
-          Text(
-            AppLocalizations.of(context)!.loadingMessages,
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF6B7280),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 오류 상태 빌드
   Widget _buildErrorState(String error) {
     return Center(

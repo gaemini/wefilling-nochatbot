@@ -28,10 +28,6 @@ class CommentCacheManager extends BaseCacheManager<CachedComment> {
   @override
   CachePolicy get policy => CachePolicy.comment;
   
-  @override
-  bool _isDiskExpired(CachedComment value) {
-    return DateTime.now().difference(value.cachedAt) > policy.ttl;
-  }
   
   /// 게시글의 댓글 목록 가져오기
   Future<List<Comment>> getComments(String postId) async {

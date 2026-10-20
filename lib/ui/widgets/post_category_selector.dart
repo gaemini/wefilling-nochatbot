@@ -51,7 +51,7 @@ class PostCategorySelector extends StatelessWidget {
         children: [
           if (showHeader) ...[
             Text(
-              (isChineseUi(context) ? '标签' : isKorean ? '태그' : 'Tags'),
+              l10n.postTopic,
               style: TextStyle(
                 fontFamily: uiFontFamily(context, 'Inter'),
                 fontFamilyFallback: const ['NotoSansKR'],
@@ -120,7 +120,6 @@ class PostCategoryTagChip extends StatelessWidget {
     required this.enabled,
     required this.maxWidth,
     required this.onTap,
-    this.showHash = false,
     this.navigates = false,
   });
 
@@ -129,7 +128,6 @@ class PostCategoryTagChip extends StatelessWidget {
   final bool enabled;
   final double maxWidth;
   final VoidCallback onTap;
-  final bool showHash;
 
   /// True for chips that open another screen (board rail): basic press only,
   /// no selection pulse or selected colour is ever left behind. False for the
@@ -148,7 +146,7 @@ class PostCategoryTagChip extends StatelessWidget {
       button: true,
       selected: selected,
       enabled: enabled,
-      label: '#$label',
+      label: label,
       child: _chipMotion(
         child: AnimatedContainer(
           duration: MotionTokens.of(context, MotionTokens.state),
@@ -170,7 +168,8 @@ class PostCategoryTagChip extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!showHash || selected) ...[
+                  // 주제는 '#'을 쓰지 않는다('#'은 #태그 전용). 고른 것만 ✓.
+                  if (selected) ...[
                     MotionStateIcon(
                       selected: selected,
                       inactiveIcon: Icons.tag_rounded,
@@ -193,7 +192,7 @@ class PostCategoryTagChip extends StatelessWidget {
                         color: foreground,
                       ),
                       child: Text(
-                        showHash ? '#$label' : label,
+                        label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

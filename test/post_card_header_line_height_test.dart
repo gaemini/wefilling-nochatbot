@@ -3,7 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wefilling/ui/widgets/post_card_header_line.dart';
 
 void main() {
-  Widget host(Widget? trailing, {double width = 375, double scale = 1}) =>
+  Widget host(Widget? trailing,
+          {double width = 375, double scale = 1, bool reserve = false}) =>
       MaterialApp(
         home: MediaQuery(
           data: MediaQueryData(
@@ -25,6 +26,7 @@ void main() {
                     ),
                     details: const [Text('·')],
                     trailing: trailing,
+                    reserveTrailingHeight: reserve,
                   ),
                   const Text('본문', key: ValueKey('body')),
                 ],
@@ -55,6 +57,26 @@ void main() {
     expect(tester.getSize(find.byKey(const ValueKey('header'))).height,
         plainHeight);
     expect(tester.getTopLeft(find.byKey(const ValueKey('body'))).dy, plainBody);
+  });
+
+  testWidgets('사진이 바로 오는 카드: 버튼 아래까지 비워 두고 이름·버튼 위치는 그대로',
+      (tester) async {
+    await tester.pumpWidget(host(button(() {})));
+    final overlapName = tester.getTopLeft(find.text('summerofgi'));
+    final overlapButton = tester.getRect(find.byKey(const ValueKey('friend')));
+    await tester.pumpWidget(host(button(() {}), reserve: true));
+    final header = tester.getRect(find.byKey(const ValueKey('header')));
+    final friend = tester.getRect(find.byKey(const ValueKey('friend')));
+    expect(tester.getTopLeft(find.text('summerofgi')), overlapName);
+    expect(friend, overlapButton);
+    expect(header.bottom, friend.bottom);
+    expect(tester.getTopLeft(find.byKey(const ValueKey('body'))).dy,
+        greaterThanOrEqualTo(friend.bottom));
+    // 버튼이 없으면 예약해도 높이는 이름 줄 그대로.
+    await tester.pumpWidget(host(null));
+    final plain = tester.getSize(find.byKey(const ValueKey('header'))).height;
+    await tester.pumpWidget(host(null, reserve: true));
+    expect(tester.getSize(find.byKey(const ValueKey('header'))).height, plain);
   });
 
   testWidgets('줄 밖으로 나온 버튼 아랫부분도 눌린다', (tester) async {

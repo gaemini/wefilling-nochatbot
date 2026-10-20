@@ -1,3 +1,4 @@
+import 'content_tag_row.dart';
 import 'package:flutter/material.dart';
 import 'motion_press.dart';
 import 'package:intl/intl.dart';
@@ -272,6 +273,14 @@ class BoardMeetupCard extends StatelessWidget {
                               ],
                             ],
                           ),
+                          if (meetup.isTagAudience) ...[
+                            const SizedBox(height: 6),
+                            TagAudienceBadge(tagIds: meetup.audienceTagIds),
+                          ],
+                          if (meetup.tagIds.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            ContentTagRow(tagIds: meetup.tagIds),
+                          ],
                         ],
                       ),
                     ),

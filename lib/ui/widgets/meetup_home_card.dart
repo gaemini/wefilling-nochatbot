@@ -96,17 +96,27 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
       constraints: BoxConstraints(
         maxWidth: 88,
       ),
-      child: Text(
-        '#$label',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: uiFontFamily(context, 'Inter'),
-          fontFamilyFallback: const ['NotoSansKR'],
-          fontSize: 11.5,
-          fontWeight: FontWeight.w600,
-          height: isChineseUi(context) ? 1.3 : 1.15,
-          color: const Color(0xFF2563EB),
+      // 모임 종류는 '#' 없는 회색 작은 칩('#'은 #태그 전용).
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F3F5),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: uiFontFamily(context, 'Inter'),
+              fontFamilyFallback: const ['NotoSansKR'],
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              height: isChineseUi(context) ? 1.3 : 1.15,
+              color: const Color(0xFF4B5563),
+            ),
+          ),
         ),
       ),
     );

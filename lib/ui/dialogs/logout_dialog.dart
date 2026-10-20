@@ -3,7 +3,6 @@
 
 import 'package:flutter/material.dart';
 import '../motion/logo_handoff.dart';
-import 'package:flutter/services.dart';
 
 import '../../design/tokens.dart';
 import '../../l10n/app_localizations.dart';

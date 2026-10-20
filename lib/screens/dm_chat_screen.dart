@@ -3038,32 +3038,6 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
-  /// 채팅방 보관(삭제) - 서버 플래그 기반
-  Future<void> _archiveConversation() async {
-    try {
-      await _dmService.archiveConversation(_activeConversationId);
-      if (!mounted) return;
-      Navigator.pop(context);
-      final isKo = Localizations.localeOf(context).languageCode == 'ko';
-      AppSnackBar.show(
-        context,
-        message: (isChineseUi(context)
-            ? '此聊天已从列表中移除。'
-            : isKo
-                ? '채팅방이 목록에서 삭제되었습니다'
-                : 'This chat has been removed from your list.'),
-        type: AppSnackBarType.info,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      AppSnackBar.show(
-        context,
-        message: '${AppLocalizations.of(context)!.error}: $e',
-        type: AppSnackBarType.error,
-      );
-    }
-  }
-
   /// 나가기 확인 다이얼로그
   Future<void> _confirmLeaveConversation() async {
     // 중요한 액션임을 알림 (로그아웃 다이얼로그와 동일 UX)
@@ -4358,15 +4332,19 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
-  Widget _buildInlineReactionBar(DMMessage message) {
-    final maxWidth = MediaQuery.sizeOf(context).width < 360 ? 78.0 : 106.0;
-    return ConstrainedBox(
+  /// 반응은 말풍선 아래(내 글은 오른쪽, 상대 글은 왼쪽 정렬)에 둔다.
+  Widget _buildInlineReactionBar(DMMessage message, {required bool isMine}) {
+    final maxWidth = MediaQuery.sizeOf(context).width *
+        ChatMetrics.textBubbleWidthFactor;
+    return Container(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      padding: const EdgeInsets.only(top: 4),
       constraints: BoxConstraints(maxWidth: maxWidth),
       child: ChatReactionBar(
         counts: message.reactionCounts,
         myReaction: _myReactions[message.id],
         animateLocalSelectionOnMount: _reactionMotionEvents.claim(message.id, _myReactions[message.id]),
-        // The reaction lives beside, rather than inside, both bubble colors.
+        // The reaction lives below, rather than inside, both bubble colors.
         isOutgoing: false,
         addLabel: AppLocalizations.of(context)!.chatReactionAdd,
         removeLabel: AppLocalizations.of(context)!.chatReactionRemove,
@@ -4504,12 +4482,16 @@ class _DMChatScreenState extends State<DMChatScreen>
 
       return Padding(
         padding: EdgeInsets.only(
-          left: MediaQuery.sizeOf(context).width < 360 ? 42 : 56,
+          left: MediaQuery.sizeOf(context).width < 360 ? 32 : 40,
           right: 0,
           top: isConsecutive ? ChatMetrics.groupGap : ChatMetrics.senderGap,
           bottom: 0,
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
           mainAxisAlignment: MainAxisAlignment.end,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -4558,16 +4540,16 @@ class _DMChatScreenState extends State<DMChatScreen>
                 pressedScale: .985,
                 child: Container(
                   key: ValueKey('dm_bubble_${message.id}'),
-                  // 텍스트 말풍선은 화면 폭의 0.63, 사진·파일·카드는 0.76까지.
+                  // 텍스트 말풍선은 화면 폭의 0.72, 사진·파일·카드는 0.76까지.
                   constraints: BoxConstraints(maxWidth: bubbleMaxWidth),
                   child: bubbleChild,
                 ),
               ),
             ),
-            if (message.reactionCounts.isNotEmpty) ...[
-              const SizedBox(width: 5),
-              _buildInlineReactionBar(message),
-            ],
+          ],
+        ),
+            if (message.reactionCounts.isNotEmpty)
+              _buildInlineReactionBar(message, isMine: true),
           ],
         ),
       );
@@ -4621,11 +4603,15 @@ class _DMChatScreenState extends State<DMChatScreen>
       return Padding(
         padding: EdgeInsets.only(
           left: 0,
-          right: MediaQuery.sizeOf(context).width < 360 ? 42 : 56,
+          right: MediaQuery.sizeOf(context).width < 360 ? 32 : 40,
           top: isConsecutive ? ChatMetrics.groupGap : ChatMetrics.senderGap,
           bottom: 0,
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -4636,16 +4622,12 @@ class _DMChatScreenState extends State<DMChatScreen>
                 pressedScale: .985,
                 child: Container(
                   key: ValueKey('dm_bubble_${message.id}'),
-                  // 텍스트 말풍선은 화면 폭의 0.63, 사진·파일·카드는 0.76까지.
+                  // 텍스트 말풍선은 화면 폭의 0.72, 사진·파일·카드는 0.76까지.
                   constraints: BoxConstraints(maxWidth: bubbleMaxWidth),
                   child: bubbleChild,
                 ),
               ),
             ),
-            if (message.reactionCounts.isNotEmpty) ...[
-              const SizedBox(width: 5),
-              _buildInlineReactionBar(message),
-            ],
             // 선택 항목: 이 메시지 하나만 번역(말풍선 오른쪽, 시간 앞).
             if (_showsSingleTranslateButton(message) ||
                 _singleTranslateLoading.contains(message.id))
@@ -4669,6 +4651,10 @@ class _DMChatScreenState extends State<DMChatScreen>
                 ),
               ),
             ),
+          ],
+        ),
+            if (message.reactionCounts.isNotEmpty)
+              _buildInlineReactionBar(message, isMine: false),
           ],
         ),
       );

@@ -29,6 +29,11 @@ import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
 import '../ui/widgets/group_list_row.dart';
 import '../l10n/together_strings.dart';
+import '../services/interest_tag_service.dart';
+import '../ui/interest/friend_interest_section.dart';
+import '../ui/interest/profile_tab_bar.dart';
+import '../ui/sheets/tag_preview_sheet.dart';
+import '../ui/widgets/tag_chips.dart';
 import '../services/together_service.dart';
 import 'snack_chat_screen.dart';
 
@@ -58,7 +63,12 @@ class FriendProfileScreen extends StatefulWidget {
 }
 
 class _FriendProfileScreenState extends State<FriendProfileScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+  /// 관심 | 활동(마이페이지와 같은 탭).
+  late final TabController _tabController = TabController(length: 2, vsync: this)
+    ..addListener(() {
+      if (mounted) setState(() {});
+    });
   final UserStatsService _userStatsService = UserStatsService();
   final ReviewService _reviewService = ReviewService();
   final DMService _dmService = DMService();
@@ -96,6 +106,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
   void dispose() {
     ActiveContentRegistry.unregister(this);
     WidgetsBinding.instance.removeObserver(this);
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -354,21 +365,45 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
                                 child: _buildProfileHeader(
                                     isNonFriendPreview: isNonFriendPreview),
                               ),
-                              SliverToBoxAdapter(
-                                child: _buildFriendPreviewSection(),
-                              ),
-                              SliverToBoxAdapter(
-                                child: _buildSocialProfileDetails(
-                                  SocialProfileData.fromMap(_userData),
-                                  showSchoolInfo:
-                                      isHanyangEmailVerified(_userData),
-                                  // 기본 정책: 친구에게만 제안할 수 있다.
-                                  canPropose: isFriends && !isMe,
+                              SliverPersistentHeader(
+                                pinned: true,
+                                delegate: _ProfileTabsDelegate(
+                                  ProfileTabBar(
+                                    controller: _tabController,
+                                    tabs: [
+                                      ProfileTabLabel(l10n.profileTabInterest),
+                                      ProfileTabLabel(l10n.profileTabActivity),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              SliverToBoxAdapter(
-                                child: _buildReviewPreviewSection(),
-                              ),
+                              if (_tabController.index == 0)
+                                SliverToBoxAdapter(
+                                  child: FriendInterestSection(
+                                    key: const ValueKey(
+                                        'friend_interest_section'),
+                                    tags: SocialProfileData.fromMap(_userData)
+                                        .interestTagIds,
+                                  ),
+                                )
+                              else ...[
+                                SliverToBoxAdapter(
+                                  child: _buildFriendPreviewSection(),
+                                ),
+                                SliverToBoxAdapter(
+                                  child: _buildSocialProfileDetails(
+                                    SocialProfileData.fromMap(_userData),
+                                    showSchoolInfo:
+                                        isHanyangEmailVerified(_userData),
+                                    // 기본 정책: 친구에게만 제안할 수 있다.
+                                    canPropose: isFriends && !isMe,
+                                    includeTags: false,
+                                  ),
+                                ),
+                                SliverToBoxAdapter(
+                                  child: _buildReviewPreviewSection(),
+                                ),
+                              ],
                               // 안드로이드 하단 네비게이션 바를 위한 여백 추가
                               SliverToBoxAdapter(
                                 child: SizedBox(
@@ -1076,6 +1111,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
     SocialProfileData profile, {
     required bool showSchoolInfo,
     required bool canPropose,
+    // 관심 탭이 태그를 보여 주면 여기서는 뺀다.
+    bool includeTags = true,
   }) {
     final languageCode = Localizations.localeOf(context).languageCode;
     final zh = isChineseUi(context);
@@ -1098,45 +1135,33 @@ class _FriendProfileScreenState extends State<FriendProfileScreen>
         SocialProfileCatalog.labelFor(id, catalog, languageCode);
 
     final sections = <Widget>[];
-    if (profile.interests.isNotEmpty) {
+    if (includeTags && profile.interestTagIds.isNotEmpty) {
+      InterestTagService.instance.ensureLoaded(profile.interestTagIds);
       sections.add(Padding(
         padding: const EdgeInsets.only(top: 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              zh
-                  ? '最近感兴趣'
-                  : languageCode == 'ko'
-                      ? '요즘 관심 있는 것'
-                      : 'Into these days',
+              AppLocalizations.of(context)!.profileTagsTitle,
               style: style(12, FontWeight.w600, const Color(0xFF707070)),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final id in profile.interests)
-                  // Wrap 안에서 가로로 늘어나지 않도록 alignment 없이 내용 크기로 둔다.
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF2F2F2),
-                      borderRadius: BorderRadius.circular(16),
+            ListenableBuilder(
+              listenable: InterestTagService.instance,
+              builder: (context, _) => Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final id in profile.interestTagIds)
+                    TagChip(
+                      key: ValueKey('friend_tag_$id'),
+                      label: InterestTagService.instance
+                          .labelFor(id, languageCode),
+                      onTap: () => showTagPreviewSheet(context, tagId: id),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 7),
-                      child: Text(
-                        '#${label(id, SocialProfileCatalog.interests)}',
-                        maxLines: 1,
-                        style: style(
-                            13, FontWeight.w500, const Color(0xFF333333),
-                            line: 18),
-                      ),
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -1781,4 +1806,25 @@ class _TogetherChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 고정 탭 바(관심 | 활동).
+class _ProfileTabsDelegate extends SliverPersistentHeaderDelegate {
+  _ProfileTabsDelegate(this.tabBar);
+
+  final ProfileTabBar tabBar;
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(
+          BuildContext context, double shrinkOffset, bool overlapsContent) =>
+      tabBar;
+
+  @override
+  bool shouldRebuild(_ProfileTabsDelegate oldDelegate) => true;
 }

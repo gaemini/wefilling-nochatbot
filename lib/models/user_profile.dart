@@ -17,6 +17,8 @@ class UserProfile {
   final String? university;
   final String? bio;
   final List<String> interests;
+  /// 프로필 #태그(최대 8). 없으면 기존 interests를 쓴다. 서버(setProfileTags)만 쓴다.
+  final List<String> interestTagIds;
   final List<String> preferredActivities;
   final String? conversationStarter;
   final String? friendshipPrompt;
@@ -47,6 +49,7 @@ class UserProfile {
     this.university,
     this.bio,
     this.interests = const <String>[],
+    this.interestTagIds = const <String>[],
     this.preferredActivities = const <String>[],
     this.conversationStarter,
     this.friendshipPrompt,
@@ -74,7 +77,7 @@ class UserProfile {
     final data = doc.data() as Map<String, dynamic>;
     final now = DateTime.now();
 
-    List<String> strings(String key) {
+    List<String> strings(String key, {int max = 5}) {
       final value = data[key];
       return value is List
           ? value
@@ -82,7 +85,7 @@ class UserProfile {
               .map((item) => item.trim())
               .where((item) => item.isNotEmpty)
               .toSet()
-              .take(5)
+              .take(max)
               .toList(growable: false)
           : const <String>[];
     }
@@ -103,6 +106,9 @@ class UserProfile {
       university: data['university'],
       bio: nullableString('bio'),
       interests: strings('interests'),
+      interestTagIds: data['interestTagIds'] is List
+          ? strings('interestTagIds', max: 8)
+          : strings('interests'),
       preferredActivities: strings('preferredActivities'),
       conversationStarter: nullableString('conversationStarter'),
       friendshipPrompt: nullableString('friendshipPrompt'),
@@ -191,6 +197,7 @@ class UserProfile {
     String? university,
     String? bio,
     List<String>? interests,
+    List<String>? interestTagIds,
     List<String>? preferredActivities,
     String? conversationStarter,
     String? friendshipPrompt,
@@ -219,6 +226,7 @@ class UserProfile {
       university: university ?? this.university,
       bio: bio ?? this.bio,
       interests: interests ?? this.interests,
+      interestTagIds: interestTagIds ?? this.interestTagIds,
       preferredActivities: preferredActivities ?? this.preferredActivities,
       conversationStarter: conversationStarter ?? this.conversationStarter,
       friendshipPrompt: friendshipPrompt ?? this.friendshipPrompt,

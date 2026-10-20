@@ -5,7 +5,6 @@ import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../config/app_backend.dart';
@@ -509,6 +508,7 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
       ?..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
+          persist: false, // 버튼이 있어도 시간이 지나면 사라진다.
           content: Text(message),
           action: showSettings
               ? SnackBarAction(

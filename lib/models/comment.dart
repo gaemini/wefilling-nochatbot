@@ -97,7 +97,6 @@ class Comment {
   String getFormattedTime(BuildContext context) {
     final now = DateTime.now();
     final difference = now.difference(createdAt);
-    final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 0) {
       // 지역화 함수 호출 (숫자 전달)

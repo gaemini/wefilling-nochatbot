@@ -101,6 +101,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:pathPrefix="/u/" />
+                <data android:pathPrefix="/t/" />
                 <data android:host="flutterproject3-af322.web.app" />
             </intent-filter>
             <intent-filter>
@@ -110,6 +111,7 @@
                 <data
                     android:scheme="wefilling"
                     android:host="u" />
+                <data android:host="t" />
             </intent-filter>
         </activity>
 

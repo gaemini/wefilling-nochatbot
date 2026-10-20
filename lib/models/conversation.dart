@@ -3,7 +3,6 @@
 // Firestore conversations 컬렉션에 대응
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:math' as math;
 
 class Conversation {
   final String id;

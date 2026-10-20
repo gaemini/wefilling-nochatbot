@@ -2,6 +2,7 @@
 // 성능 최적화된 게시글 카드 위젯
 // const 생성자, 메모이제이션, 이미지 최적화
 
+import 'content_tag_row.dart';
 import 'package:flutter/material.dart';
 import 'motion_press.dart';
 import 'package:flutter/foundation.dart' show listEquals;
@@ -766,12 +767,17 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     theme,
                     colorScheme,
                     showTranslationToggle: hasTranslationSource,
+                    mediaFirst: !hasPrimaryContent && !post.isTagAudience,
                     threadContent: HanyangVerificationGate(
                       locked: isHanyangLocked,
                       compact: true,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (post.isTagAudience) ...[
+                            SizedBox(height: contentTopGap),
+                            TagAudienceBadge(tagIds: post.audienceTagIds),
+                          ],
                           if (hasPrimaryContent) ...[
                             SizedBox(height: contentTopGap),
                             if (hasContent)
@@ -850,6 +856,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           ] else if (standaloneImageUrls.isNotEmpty) ...[
                             SizedBox(height: imageGap),
                             _buildPostImages(standaloneImageUrls),
+                          ],
+                          if (post.tagIds.isNotEmpty) ...[
+                            const SizedBox(height: DesignTokens.s8),
+                            ContentTagRow(tagIds: post.tagIds),
                           ],
                           Padding(
                             padding:
@@ -1006,6 +1016,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     ColorScheme colorScheme, {
     required bool showTranslationToggle,
     required Widget threadContent,
+    bool mediaFirst = false,
   }) {
     // 익명 여부에 따라 작성자 정보 결정
     final bool isAnonymous = post.isAnonymous;
@@ -1228,6 +1239,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         usesLimitedAudienceIdentity:
                             usesLimitedAudienceIdentity,
                       ),
+                      // 글 없이 사진·영상·링크가 바로 오면 버튼 높이를 비워 둔다.
+                      reserveTrailingHeight:
+                          mediaFirst && !showTranslationToggle,
                     ),
                     if (showTranslationToggle) ...[
                       const SizedBox(height: 1),
@@ -1386,15 +1400,16 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 onTap: widget.onCategoryTap == null
                     ? null
                     : () => widget.onCategoryTap!(category),
+                // 주제는 '#' 없이 회색('#'은 #태그 전용).
                 child: Text(
-                  '#${category.label(l10n)}',
+                  category.label(l10n),
                   textAlign: TextAlign.right,
                   style: TextStyle(
                     fontFamily: uiFontFamily(context, 'Inter'),
                     fontFamilyFallback: const ['NotoSansKR'],
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
-                    color: BrandColors.info,
+                    color: const Color(0xFF6B7280),
                     height: isChineseUi(context) ? 1.3 : 1.2,
                     letterSpacing: -0.2,
                   ),
@@ -1476,39 +1491,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     } else {
       return AppLocalizations.of(context)!.justNow ?? "";
     }
-  }
-
-  /// DM 버튼을 표시할지 확인
-  bool _shouldShowDMButton(Post post) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-
-    // 로그인하지 않은 경우
-    if (currentUser == null) return false;
-
-    // 본인 게시글인 경우
-    if (post.userId == currentUser.uid) return false;
-
-    // 익명 게시글인 경우
-    if (post.isAnonymous) return true; // 익명도 DM 가능 (계획 참조)
-
-    // 탈퇴한 계정인 경우
-    if (post.userId == 'deleted' ||
-        post.author.isEmpty ||
-        post.author == 'Deleted' ||
-        post.author == 'DELETED_ACCOUNT') {
-      return false;
-    }
-
-    return true;
-  }
-
-  /// 커스텀 DM 아이콘 (첨부 아이콘 사용, 없으면 기본 아이콘으로 폴백)
-  Widget _buildDMIcon() {
-    // 종이 비행기 아이콘을 45도 기울여 직관적 방향성 부여
-    return Transform.rotate(
-      angle: -math.pi / 4,
-      child: Icon(Icons.send_rounded, size: 18, color: Colors.grey[700]),
-    );
   }
 
   /// DM 대화방 열기

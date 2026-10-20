@@ -1220,6 +1220,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(
+          persist: false, // 버튼이 있어도 시간이 지나면 사라진다.
           content: Text(_copy(
               '숨겼어요. 숨긴 할 일에서 복구할 수 있어요.',
               'Hidden. You can restore it from Hidden tasks.',
@@ -1520,6 +1521,7 @@ class _SemesterTodoScreenState extends State<SemesterTodoScreen>
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
+        persist: false, // 버튼이 있어도 시간이 지나면 사라진다.
         duration: visibleFor,
         content: Text(_copy('완료했어요.', 'Task completed.', '已完成')),
         action: SnackBarAction(

@@ -1536,25 +1536,25 @@ class AppLocalizationsEn extends AppLocalizations {
       'Find new friends by nickname or name.';
 
   @override
-  String get interestFriendDiscoveryTitle => 'Find friends by interest';
+  String get interestFriendDiscoveryTitle => 'Find friends by tag';
 
   @override
   String get interestFriendDiscoveryDescription =>
-      'Choose an interest to meet people who share it.';
+      'Pick a #tag to see people who have it.';
 
   @override
   String interestPeopleTitle(String interest) {
-    return 'People interested in #$interest';
+    return 'People with #$interest';
   }
 
   @override
   String interestNoUsersTitle(String interest) {
-    return 'No one has added #$interest yet';
+    return 'No one has #$interest yet';
   }
 
   @override
   String get interestNoUsersDescription =>
-      'Choose another interest to discover new friends.';
+      'Pick another tag to discover new friends.';
 
   @override
   String get interestSearchErrorTitle => 'Couldn’t load interest results';
@@ -3618,4 +3618,792 @@ class AppLocalizationsEn extends AppLocalizations {
   String translationOriginalLanguage(String lang) {
     return 'Original: $lang';
   }
+
+  @override
+  String get myTags => 'My #tags';
+
+  @override
+  String get myTagsDescription => 'Meet people with the same tags. Up to 8';
+
+  @override
+  String get tagPickerTitle => 'What are you into lately?';
+
+  @override
+  String get tagSearchHint => 'Find or create a tag';
+
+  @override
+  String tagCreate(String name) {
+    return 'Create ‘#$name’';
+  }
+
+  @override
+  String get tagAddToMine => '＋ Add to my tags';
+
+  @override
+  String get tagInMine => '✓ My tag';
+
+  @override
+  String tagHolders(int n) {
+    return '$n people have this';
+  }
+
+  @override
+  String tagHoldersWithFriends(int n, int friends) {
+    return '$n people · $friends friends';
+  }
+
+  @override
+  String tagFriendsAlso(int n) {
+    return '$n friends have it too';
+  }
+
+  @override
+  String tagStats(int people, int posts, int meetups) {
+    return '$people people · $posts posts · $meetups meetups';
+  }
+
+  @override
+  String get tagOpenPage => 'Open tag page';
+
+  @override
+  String tagSelectedCount(int n, int max) {
+    return '$n/$max selected';
+  }
+
+  @override
+  String get tagAdd => 'Add';
+
+  @override
+  String get tagAdded => '✓ Added';
+
+  @override
+  String get tagFindOrCreate => '＋ Find or create tags';
+
+  @override
+  String get tagAddShort => '＋ Tag';
+
+  @override
+  String get tagSuggestFriends => 'Popular with friends';
+
+  @override
+  String get tagSuggestPopular => 'Trending this week';
+
+  @override
+  String get tagDailyLimit => 'You can\'t create more tags today';
+
+  @override
+  String get tagBlocked => 'This name can\'t be used';
+
+  @override
+  String get tagInvalid => 'Use 2–20 letters, numbers or _';
+
+  @override
+  String get tagUnavailable => 'This tag isn\'t available';
+
+  @override
+  String get tagLimitReached => 'You can add up to 8 tags';
+
+  @override
+  String get tagSaveFailed => 'Couldn\'t save tags. Please try again';
+
+  @override
+  String get tagLoadFailed => 'Couldn\'t load this tag';
+
+  @override
+  String get tagNoResults => 'No matching tags';
+
+  @override
+  String get tagHideFromList => 'Hide me from this tag\'s people';
+
+  @override
+  String get tagHideFromListDescription =>
+      'The tag still shows on your profile';
+
+  @override
+  String get tagRemoveFromMine => 'Remove from my tags';
+
+  @override
+  String get tagAddedToMine => 'Added to your tags';
+
+  @override
+  String get tagRemovedFromMine => 'Removed from your tags';
+
+  @override
+  String get tagNotifyOn => 'We\'ll let you know about new posts and meetups';
+
+  @override
+  String get tagNotifyOff => 'Notifications off';
+
+  @override
+  String get tagNotifyLabel => 'Tag notifications';
+
+  @override
+  String get tagOfficial => 'Official tag';
+
+  @override
+  String tagPeopleTab(int n) {
+    return 'People $n';
+  }
+
+  @override
+  String tagPostsTab(int n) {
+    return 'Posts $n';
+  }
+
+  @override
+  String tagMeetupsTab(int n) {
+    return 'Meetups $n';
+  }
+
+  @override
+  String get tagFriendsSection => 'Friends';
+
+  @override
+  String get tagOthersSection => 'Recently added';
+
+  @override
+  String get tagPeopleEmpty => 'No one has this tag yet';
+
+  @override
+  String get tagYou => 'You';
+
+  @override
+  String tagActivitiesLine(String items) {
+    return 'Let\'s do · $items';
+  }
+
+  @override
+  String get profileTagsTitle => '#Tags';
+
+  @override
+  String get postTopic => 'Topic';
+
+  @override
+  String get contentTagsTitle => '#Tags';
+
+  @override
+  String get contentTagsHint => 'People with these tags can find this';
+
+  @override
+  String get contentTagPickerTitle => 'Which #tags fit?';
+
+  @override
+  String get contentTagLimit => 'You can add up to 3 tags';
+
+  @override
+  String tagAudienceBadge(String tag) {
+    return 'People with #$tag';
+  }
+
+  @override
+  String tagShareTo(String tag) {
+    return 'Share to #$tag';
+  }
+
+  @override
+  String get tagShareWritePost => 'Write a post';
+
+  @override
+  String get tagShareCreateMeetup => 'Create a meetup';
+
+  @override
+  String get tagPostsEmpty => 'No posts with this tag yet';
+
+  @override
+  String get tagMeetupsEmpty => 'No upcoming meetups';
+
+  @override
+  String get meetupFilterAll => 'All meetups';
+
+  @override
+  String meetupTagCreate(String tag) {
+    return 'Create a #$tag meetup';
+  }
+
+  @override
+  String meetupTagEmpty(String tag) {
+    return 'No #$tag meetups yet. Start the first one';
+  }
+
+  @override
+  String tagLockedPosts(int n) {
+    return 'Add this tag to also see $n posts shared only with its holders';
+  }
+
+  @override
+  String get audienceTag => 'People with the #tag';
+
+  @override
+  String audienceTagDescription(String tags) {
+    return 'People with $tags on their profile';
+  }
+
+  @override
+  String get audienceTagNeedsTags => 'Add a #tag to your post first';
+
+  @override
+  String get audienceTagNote =>
+      'Anyone can add a tag. Use ‘Groups’ for people you know.';
+
+  @override
+  String audienceReach(int n) {
+    return 'Visible to about $n people, including future tag holders';
+  }
+
+  @override
+  String audienceReachFriends(int n) {
+    return 'Visible to $n friends';
+  }
+
+  @override
+  String get audienceFriendsOnly => 'Friends only';
+
+  @override
+  String get audienceFriendsOnlyDescription =>
+      'Only current friends with the tag can see it';
+
+  @override
+  String tagNotifyPosts(String tag, int n) {
+    return '$n new posts in #$tag';
+  }
+
+  @override
+  String tagNotifyMeetups(String tag, int n) {
+    return '$n new meetups in #$tag';
+  }
+
+  @override
+  String get tagExploreTitle => 'Explore tags';
+
+  @override
+  String get tagExploreLink => 'Explore tags ›';
+
+  @override
+  String get tagExploreRecommended => 'For you';
+
+  @override
+  String get tagExploreFriends => 'Friends';
+
+  @override
+  String get tagExploreTrending => 'Trending';
+
+  @override
+  String get tagExploreNew => 'New';
+
+  @override
+  String get tagExploreEmpty => 'No tags to show yet';
+
+  @override
+  String get myTagsNewPosts => 'New in my #tags';
+
+  @override
+  String get tagPickerSubtitle =>
+      'Your #tags show on your profile, and you\'ll get posts and meetups shared with that tag.';
+
+  @override
+  String tagPickerMineMeta(int n, int max) {
+    return '$n/$max · Long-press to hide';
+  }
+
+  @override
+  String tagCountPeople(int n) {
+    return '$n';
+  }
+
+  @override
+  String get tagExploreSearchHint => 'Search #tags';
+
+  @override
+  String get tagExploreCaptionRecommended => 'Often added with your tags';
+
+  @override
+  String get tagExploreCaptionPopular => 'Most added tags';
+
+  @override
+  String get tagExploreCaptionFriends => 'Tags your friends have';
+
+  @override
+  String get tagExploreCaptionTrending => 'Added most this week';
+
+  @override
+  String get tagExploreCaptionNew => 'Newly created tags';
+
+  @override
+  String tagReasonFriends(String names) {
+    return 'Friends $names';
+  }
+
+  @override
+  String tagReasonWeek(int n) {
+    return '+$n this week';
+  }
+
+  @override
+  String tagReasonWith(String tag) {
+    return 'With $tag';
+  }
+
+  @override
+  String get tagReasonToday => 'New today';
+
+  @override
+  String tagReasonDaysAgo(int n) {
+    return '${n}d ago';
+  }
+
+  @override
+  String get tagProfileButton => 'Profile';
+
+  @override
+  String get tagExchangeStudent => 'Exchange student';
+
+  @override
+  String get tagMenuCopyLink => 'Copy link';
+
+  @override
+  String get tagMenuReport => 'Report tag';
+
+  @override
+  String get tagLinkCopied => 'Link copied';
+
+  @override
+  String tagShareText(String tag, String link) {
+    return 'Join #$tag on Wefilling $link';
+  }
+
+  @override
+  String get tagReported => 'Report submitted';
+
+  @override
+  String get audienceSheetTitle => 'Who can see this?';
+
+  @override
+  String get audienceSheetSubtitle => 'You can\'t change this after posting';
+
+  @override
+  String get audiencePublic => 'Everyone';
+
+  @override
+  String get audiencePublicDescription => 'Everyone on Wefilling';
+
+  @override
+  String get audienceFriends => 'Friends only';
+
+  @override
+  String audienceFriendsDescription(int n) {
+    return 'Your $n friends';
+  }
+
+  @override
+  String get audienceGroup => 'Groups';
+
+  @override
+  String get audienceGroupDescription => 'Friends in chosen groups';
+
+  @override
+  String get audienceAnonymous => 'Everyone, anonymously';
+
+  @override
+  String get audienceAnonymousDescription => 'Your name and photo are hidden';
+
+  @override
+  String get audienceHanyang => 'Hanyang students only';
+
+  @override
+  String get audienceHanyangDescription =>
+      'Everyone sees the card; only verified users see the content';
+
+  @override
+  String get audienceRowLabel => 'Audience';
+
+  @override
+  String get postUploadAction => 'Post';
+
+  @override
+  String get tagMoreTags => 'More tags';
+
+  @override
+  String get tagPageLink => 'Tag page';
+
+  @override
+  String get tagAddedShort => 'Added';
+
+  @override
+  String get myTagsEmptyHint => 'Add #tags to see new posts with them here';
+
+  @override
+  String get myTagsAddAction => 'Add tags';
+
+  @override
+  String get myTagsButtonLabel => 'My #tags';
+
+  @override
+  String get tagCreateTitle => 'New tag';
+
+  @override
+  String get tagCreateAction => 'Create';
+
+  @override
+  String get tagCreateNameLabel => 'Tag name';
+
+  @override
+  String get tagCreateNameHint => 'e.g. riverrun';
+
+  @override
+  String get tagDescLabel => 'What\'s it about?';
+
+  @override
+  String get tagDescHint => 'e.g. Weekend runs along the Han River';
+
+  @override
+  String get tagCreateNote =>
+      'The name can\'t be changed later. You can edit the description anytime.';
+
+  @override
+  String get tagCreateRowHint => 'Add a one-line description';
+
+  @override
+  String get tagDescEdit => 'Edit description';
+
+  @override
+  String get tagDescAdd => 'Add a description';
+
+  @override
+  String get tagDescSave => 'Save';
+
+  @override
+  String get tagDescSaved => 'Description saved';
+
+  @override
+  String tagCreated(String tag) {
+    return 'Created #$tag';
+  }
+
+  @override
+  String tagWeeklyGain(int n) {
+    return '+$n this week';
+  }
+
+  @override
+  String tagFriendsAlsoNamed(String names) {
+    return 'Friends $names also added it';
+  }
+
+  @override
+  String get tagAddToMinePlain => 'Add to my tags';
+
+  @override
+  String get tagUndo => 'Undo';
+
+  @override
+  String get tagRetryLater => 'Please try again in a moment';
+
+  @override
+  String tagOverlapGain(int n) {
+    return 'Overlaps with +$n';
+  }
+
+  @override
+  String get tagCategoryLabel => 'Category';
+
+  @override
+  String get tagCategoryFood => 'Food';
+
+  @override
+  String get tagCategoryCulture => 'Culture';
+
+  @override
+  String get tagCategoryActive => 'Active';
+
+  @override
+  String get tagCategoryLearn => 'Learning';
+
+  @override
+  String get tagCategoryPlay => 'Play';
+
+  @override
+  String get tagCategoryEtc => 'Other';
+
+  @override
+  String get profileTabInterest => 'Interests';
+
+  @override
+  String get profileTabActivity => 'Activity';
+
+  @override
+  String get activityFilterReviews => 'Reviews';
+
+  @override
+  String get activityFilterSaved => 'Saved';
+
+  @override
+  String get activityKindPost => 'Post';
+
+  @override
+  String get activityKindReview => 'Review';
+
+  @override
+  String get activityEmpty => 'No activity yet';
+
+  @override
+  String get savedPostsEmpty => 'No saved posts';
+
+  @override
+  String get savedPrivateHint => 'Only you can see saved posts';
+
+  @override
+  String get lensMe => 'Me';
+
+  @override
+  String get lensMeUnit => 'tags';
+
+  @override
+  String get lensFriends => 'With friends';
+
+  @override
+  String get lensFriendsUnit => 'friends';
+
+  @override
+  String get lensCommunity => 'Community';
+
+  @override
+  String get lensCommunityUnit => 'new this week';
+
+  @override
+  String get interestMapTitle => 'Interest map';
+
+  @override
+  String interestMapCaptionMe(int n) {
+    return '$n tags · bigger means used in more posts';
+  }
+
+  @override
+  String interestMapCaptionFriends(int n) {
+    return '$n friends share your tags';
+  }
+
+  @override
+  String get interestMapCaptionCommunity =>
+      'Tags Wefilling students added most this week';
+
+  @override
+  String blockPosts(int n) {
+    return '$n posts';
+  }
+
+  @override
+  String blockFriends(int n) {
+    return '$n friends';
+  }
+
+  @override
+  String get blockSuggest => 'Suggested';
+
+  @override
+  String get overlapTitleAll => 'People like you';
+
+  @override
+  String get overlapTitleFriends => 'Friends like you';
+
+  @override
+  String get overlapTitleOthers => 'People to meet';
+
+  @override
+  String get overlapSeeAll => 'See all';
+
+  @override
+  String overlapSameInterests(int n) {
+    return '$n shared interests';
+  }
+
+  @override
+  String get overlapFriendChip => 'Friend';
+
+  @override
+  String get overlapAddFriend => 'Add friend';
+
+  @override
+  String get overlapRequested => 'Requested';
+
+  @override
+  String get overlapEmpty => 'No one shares your tags yet';
+
+  @override
+  String get interestLoadFailed => 'Couldn\'t load your interests';
+
+  @override
+  String get completionTitle => 'Profile completion';
+
+  @override
+  String get completionPhoto => 'Profile photo';
+
+  @override
+  String get completionBio => 'Bio';
+
+  @override
+  String get completionTags => '3 interest tags';
+
+  @override
+  String get pickTagsTitle => 'Pick your interests';
+
+  @override
+  String pickTagsCaption(int n) {
+    return 'Pick 3 to find people like you · $n/3';
+  }
+
+  @override
+  String get pickTagsShuffle => '↻ More tags';
+
+  @override
+  String get pickTagsDone => 'Done';
+
+  @override
+  String get overlapPlaceholder =>
+      'Pick tags to see people who share them here';
+
+  @override
+  String get exploreMyTagsTitle => 'New in my tags';
+
+  @override
+  String get exploreEdit => 'Edit';
+
+  @override
+  String get exploreCaptionRecommended =>
+      'Often added **together with your tags**';
+
+  @override
+  String get exploreCaptionFriends => 'Tags **your friends added**';
+
+  @override
+  String get exploreCaptionTrending => 'Tags that **grew most this week**';
+
+  @override
+  String get exploreCaptionNew => '**Brand-new tags**. Be one of the first';
+
+  @override
+  String get exploreFriendPrefix => 'Friends';
+
+  @override
+  String exploreCreateTitle(String name) {
+    return 'Create #$name';
+  }
+
+  @override
+  String get exploreCreateHint =>
+      'This tag doesn\'t exist yet. It joins your tags right away';
+
+  @override
+  String exploreSimilarCount(int n) {
+    return '$n similar tags';
+  }
+
+  @override
+  String get exploreSimilarNone => 'No similar tags';
+
+  @override
+  String friendOverlapCaption(int n) {
+    return '$n shared interests · shared tags are highlighted';
+  }
+
+  @override
+  String get friendNoTags => 'No tags yet';
+
+  @override
+  String get peopleNewTitle => 'People to meet';
+
+  @override
+  String get peopleSeeAll => 'See all';
+
+  @override
+  String get peopleSortHint => 'Sorted by shared interests';
+
+  @override
+  String get peopleAllSub => 'People who share your interests';
+
+  @override
+  String peopleOverlapMany(String a, String b, int n) {
+    return '$a, $b and more · $n in common';
+  }
+
+  @override
+  String peopleOverlapTwo(String a, String b) {
+    return '$a and $b in common';
+  }
+
+  @override
+  String peopleOverlapOne(String a) {
+    return '$a in common';
+  }
+
+  @override
+  String peopleMetaOverlap(String country, int n) {
+    return '$country · $n shared';
+  }
+
+  @override
+  String peopleMetaOverlapNoCountry(int n) {
+    return '$n shared';
+  }
+
+  @override
+  String peopleTipBoth(String tag) {
+    return '#$tag · you both like';
+  }
+
+  @override
+  String get peopleAdd => 'Add friend';
+
+  @override
+  String get peopleAddShort => 'Add';
+
+  @override
+  String get peopleRequested => 'Requested';
+
+  @override
+  String get peopleRequestedShort => 'Sent';
+
+  @override
+  String get peopleProfile => 'Profile';
+
+  @override
+  String get peopleAccept => 'Accept';
+
+  @override
+  String get peopleHide => 'Hide from suggestions';
+
+  @override
+  String peopleHidden(String name) {
+    return '$name hidden from suggestions';
+  }
+
+  @override
+  String get peopleUndo => 'Undo';
+
+  @override
+  String get peopleSortLabel => 'Most in common';
+
+  @override
+  String peopleCount(int n) {
+    return '$n people';
+  }
+
+  @override
+  String get peopleEmpty => 'No new suggestions right now';
+
+  @override
+  String get peopleMoreTagsCta => 'Pick more interests ›';
+
+  @override
+  String get peopleMoreTags => 'Add interests for better matches';
+
+  @override
+  String get peoplePick => 'Pick';
+
+  @override
+  String peopleAllChip(int n) {
+    return 'All $n';
+  }
+
+  @override
+  String get peopleActionFailed => 'Please try again in a moment';
 }

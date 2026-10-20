@@ -4,13 +4,10 @@
 // 새로운 기능에 맞게 래핑하여 호환성 보장
 
 import 'dart:io';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_profile.dart';
 import '../models/post.dart';
 import 'storage_service.dart';
-import 'post_service.dart';
-import 'auth_service.dart';
 import '../repositories/users_repository.dart';
 import 'feature_flag_service.dart';
 import '../utils/logger.dart';
@@ -147,7 +144,6 @@ class ProfileImageAdapter {
 /// 프로필 데이터를 위한 어댑터
 class ProfileDataAdapter {
   final UsersRepository _usersRepository = UsersRepository();
-  final AuthService _authService = AuthService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   /// 사용자 프로필 조회 (기존 UsersRepository 재사용)

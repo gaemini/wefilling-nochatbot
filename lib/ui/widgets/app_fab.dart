@@ -7,7 +7,6 @@ import 'create_action_button.dart';
 import 'package:flutter/services.dart';
 import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
-import '../../l10n/ui_locale.dart';
 import 'motion_press.dart';
 
 /// 통일된 디자인 시스템을 적용한 FAB
@@ -42,7 +41,7 @@ class AppFab extends StatelessWidget {
   /// 확장형 FAB 여부
   final bool extended;
 
-  /// 확장형 버튼에서 아이콘 없이 문구만 표시할지 여부
+  /// 확장형 버튼에서 문구 앞에 + 아이콘을 둘지 여부(기본: 문구만)
   final bool showIcon;
 
   const AppFab({
@@ -56,7 +55,7 @@ class AppFab extends StatelessWidget {
     this.enabled = true,
     this.mini = false,
     this.extended = false,
-    this.showIcon = true,
+    this.showIcon = false,
   }) : assert(!extended || label != null, 'Extended FAB requires a label');
 
   /// 글쓰기 FAB
@@ -120,7 +119,7 @@ class AppFab extends StatelessWidget {
     String? tooltip,
     Object? heroTag,
     bool enabled = true,
-    bool showIcon = true,
+    bool showIcon = false,
   }) {
     return AppFab(
       icon: icon,

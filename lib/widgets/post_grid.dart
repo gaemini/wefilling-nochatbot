@@ -5,7 +5,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/profile_grid_adapter_service.dart';
 import '../services/feature_flag_service.dart';
 import '../utils/logger.dart';
@@ -35,7 +34,6 @@ class _PostGridState extends State<PostGrid> {
   final List<ProfilePost> _posts = [];
   final ScrollController _scrollController = ScrollController();
   
-  DocumentSnapshot? _lastDocument;
   bool _isLoading = false;
   bool _hasMoreData = true;
   static const int _pageSize = 24;

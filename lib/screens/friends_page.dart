@@ -17,7 +17,6 @@ import '../services/cache/app_image_cache_manager.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
 import '../design/tokens.dart';
-import '../constants/app_constants.dart';
 import 'friend_profile_screen.dart';
 import 'create_category_screen.dart';
 import 'friend_categories_screen.dart' show groupsTabIndex;
@@ -29,7 +28,7 @@ import '../utils/nickname_policy.dart';
 import '../utils/responsive_helper.dart';
 import '../ui/widgets/shape_icon.dart';
 import 'requests_page.dart';
-import 'social_tag_explorer_screen.dart';
+import 'unified_search_screen.dart';
 import '../widgets/user_tile.dart';
 import '../l10n/ui_locale.dart';
 import '../ui/widgets/motion_press.dart';
@@ -1137,7 +1136,6 @@ class _FriendsPageState extends State<FriendsPage> {
             // 검색바
             _buildSearchBar(),
 
-            _buildTagFriendFinderShortcut(),
 
             _buildFriendRequestsShortcut(),
 
@@ -1269,73 +1267,11 @@ class _FriendsPageState extends State<FriendsPage> {
     );
   }
 
+  /// 친구 찾기는 검색 화면(이름 검색 + 태그로 친구 찾기)에서 한다.
   void _openTagFriendFinder() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => const SocialTagExplorerScreen(),
-      ),
-    );
-  }
-
-  Widget _buildTagFriendFinderShortcut() {
-    final width = MediaQuery.sizeOf(context).width;
-    final horizontalPadding = width < 360 ? 12.0 : (width < 600 ? 16.0 : 24.0);
-    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
-
-    return MotionPress(
-      pressedScale: .99,
-      child: Material(
-      color: Colors.white,
-      child: InkWell(
-        onTap: _openTagFriendFinder,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 48),
-              padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Color(0xFFEAECF0)),
-                ),
-              ),
-              child: MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.2,
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.tag_rounded,
-                      size: 20,
-                      color: Color(0xFF475467),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        (isChineseUi(context) ? '按标签找好友' : isKorean ? '태그로 친구 찾기' : 'Find friends by tag'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: uiFontFamily(context, 'Inter'),
-                          fontFamilyFallback: const ['NotoSansKR'],
-                          fontSize: context.rf(14).clamp(13, 15).toDouble(),
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF111827),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      size: 20,
-                      color: Color(0xFF98A2B3),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+        builder: (_) => const UnifiedSearchScreen(initialTabIndex: 0),
       ),
     );
   }

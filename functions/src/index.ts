@@ -14,7 +14,17 @@ import {
   withMailSecrets,
 } from './backend';
 import * as admin from 'firebase-admin';
+import {
+  FieldValue as FirestoreFieldValue,
+  Timestamp as FirestoreTimestamp,
+} from 'firebase-admin/firestore';
 import {decorateChatPush} from './chat_push_presentation';
+import {
+  isNewerThanLatest,
+  isVisibleTopLevelComment,
+  latestCommentFields,
+  recomputeLatestCommentIfNeeded,
+} from './latest_comment';
 export {querySnackChatMessages, getSnackChatMessageContext, getSnackChatMentionCandidates, validateSnackChatMentions} from './snack_chat_discovery';
 import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
@@ -116,6 +126,17 @@ export {
 } from './hanyang_verification';
 
 export {translateContentBatch} from './content_translation';
+export {searchTags, createTag, setProfileTags, listTagHolders, getTagSummary, setTagPrefs, getTagSuggestions, getTagAudienceFeed, estimateTagAudience, computeTagTrends, getMyTagNewCounts, exploreTags, updateTagDescription, getMyInterestOverview, getOverlapPeople, setSuggestionHidden} from './interest_tags';
+import {
+  contentAudienceIncludes,
+  signupProfileTagFields,
+  syncLegacyInterestsToTags,
+  tagAudienceAllows,
+  tagNotificationCopy,
+  tagNotifyCandidates,
+  takeTagNotifySlot,
+  viewerTagIds,
+} from './interest_tags';
 import {
   READ_SYNC_DEBOUNCE_MS,
   ReadSyncTarget,
@@ -664,6 +685,12 @@ export const onUserProfileUpdatedPropagateAuthorInfo = triggers()
           error,
         );
       }
+    }
+
+    try {
+      await syncLegacyInterestsToTags(change.after.ref, before, after);
+    } catch (error) {
+      console.error(`onUserProfileUpdatedPropagateAuthorInfo: interest tag sync failed userId=${userId}:`, error);
     }
 
     // 관심 필드 변화가 없으면 스킵
@@ -1654,6 +1681,7 @@ export const finalizePendingRegistration = callables()
         updatedAt: now,
         lastLogin: now,
         ...completedProfileFields(profile),
+        ...signupProfileTagFields(tx, uid, existing, profile.interests),
         pendingHanyangEmail: admin.firestore.FieldValue.delete(),
         pendingHanyangVerificationLinked: admin.firestore.FieldValue.delete(),
         pendingHanyangVerifiedAt: admin.firestore.FieldValue.delete(),
@@ -1854,6 +1882,7 @@ export const finalizeHanyangEmailVerification = callables()
       tx.set(userRef, {
         ...schemaFill,
         ...completedProfileFields(profile),
+        ...signupProfileTagFields(tx, uid, existing, profile.interests),
         hanyangEmail: email,
         hanyangEmailVerified: true,
         hanyangEmailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2092,6 +2121,7 @@ export const finalizeEnglishSocialSignup = callables()
       tx.set(userRef, {
         ...schemaFill,
         ...completedProfileFields(profile),
+        ...signupProfileTagFields(tx, uid, existing, profile.interests),
         uid,
         email: authEmail,
         signupLanguage,
@@ -2572,6 +2602,93 @@ async function commitNotificationCreates(
   return created;
 }
 
+/**
+ * #태그 알림: 태그 알림(종)을 켜고 그 태그를 단 사람에게, 글·모임을 볼 수 있을 때만.
+ * 태그별 하루 3건까지, 문구는 '#러닝에 새 글 n개'(오늘 n번째).
+ */
+async function notifyTagFollowers(
+  kind: 'post' | 'meetup',
+  contentId: string,
+  data: FirebaseFirestore.DocumentData,
+): Promise<number> {
+  const tagIds = toUniqueStringArray(data.tagIds).slice(0, 3);
+  const authorId = normalizeUidLoose(data.userId);
+  if (tagIds.length === 0 || !authorId || data.isHidden === true) return 0;
+  const candidates = await tagNotifyCandidates(tagIds);
+  candidates.delete(authorId);
+  if (candidates.size === 0) return 0;
+
+  const userDocs = await db.getAll(
+    ...Array.from(candidates.keys()).map((uid) => db.collection(COL.users).doc(uid)),
+  );
+  const eligible = new Map<string, {tags: string[]; language: string}>();
+  for (const doc of userDocs) {
+    if (!doc.exists || !isActiveSocialProfile(doc.data(), doc.id)) continue;
+    const held = toUniqueStringArray(doc.get('interestTagIds'));
+    const tags = (candidates.get(doc.id) ?? []).filter((tagId) => held.includes(tagId));
+    if (tags.length === 0 || !contentAudienceIncludes(doc.id, data)) continue;
+    if (data.visibility === 'tag' &&
+        !toUniqueStringArray(data.audienceTagIds).some((tagId) => held.includes(tagId))) continue;
+    eligible.set(doc.id, {
+      tags,
+      language: String(doc.get('languageCode') || doc.get('preferredLanguage') || 'en'),
+    });
+  }
+  let targets = await filterTargetUserIdsByBlockRelationship(authorId, Array.from(eligible.keys()));
+  targets = await filterAudienceByNotificationSettings(
+    targets,
+    kind === 'post' ? 'post_interactions' : 'meetup_alerts',
+    kind === 'post' ? ['post_private'] : ['meetup_alert'],
+  );
+  if (targets.length === 0) return 0;
+
+  const tagDocs = await db.getAll(...tagIds.map((tagId) => db.collection(COL.tags).doc(tagId)));
+  const labelOf = (tagId: string, language: string) => {
+    const doc = tagDocs.find((item) => item.id === tagId);
+    const labels = (doc?.get('labels') ?? {}) as Record<string, string>;
+    const lang = language.startsWith('ko') ? 'ko' : language.startsWith('zh') ? 'zh' : 'en';
+    return labels[lang] || labels.en || String(doc?.get('displayName') || tagId);
+  };
+  const day = new Date().toISOString().slice(0, 10);
+  const type = kind === 'post' ? 'tag_post' : 'tag_meetup';
+  const notifications: Array<{
+    reference: FirebaseFirestore.DocumentReference;
+    data: FirebaseFirestore.DocumentData;
+  }> = [];
+  for (const uid of targets) {
+    const target = eligible.get(uid);
+    if (!target) continue;
+    // 한 글에 태그가 여러 개여도 알림은 한 번, 오늘 한도가 남은 첫 태그로.
+    for (const tagId of target.tags) {
+      const count = await takeTagNotifySlot(uid, tagId, day);
+      if (count == null) continue;
+      const label = labelOf(tagId, target.language);
+      const copy = tagNotificationCopy(target.language, kind, label, count);
+      notifications.push({
+        reference: db.collection('notifications').doc(audienceNotificationId(type, contentId, uid)),
+        data: {
+          userId: uid,
+          title: copy.title,
+          message: copy.message,
+          type,
+          ...(kind === 'post' ? {postId: contentId} : {meetupId: contentId}),
+          actorId: authorId,
+          data: {
+            ...(kind === 'post' ? {postId: contentId} : {meetupId: contentId}),
+            tagId,
+            tagLabel: label,
+            count,
+          },
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          isRead: false,
+        },
+      });
+      break;
+    }
+  }
+  return commitNotificationCreates(notifications);
+}
+
 // 포스트 생성 시 생성 당시 공개 범위 안에 있는 친구에게만 알림 생성.
 // public은 생성 시점 친구 snapshot, category는 선택 그룹의 frozen audience를 쓴다.
 export const onPrivatePostCreated = triggers().firestore
@@ -2580,13 +2697,18 @@ export const onPrivatePostCreated = triggers().firestore
     try {
       const post = snapshot.data();
       const postId = context.params.postId;
+      try {
+        await notifyTagFollowers('post', postId, post);
+      } catch (error) {
+        console.error(`tag notification failed postId=${postId}:`, error);
+      }
       const visibility = post.visibility || 'public';
       const authorId = post.userId;
       const title = post.title || '';
       const content = post.content || '';
       const preview = (typeof content === 'string' ? content : '').slice(0, 80);
 
-      if (visibility !== 'public' && visibility !== 'category') {
+      if (visibility !== 'public' && visibility !== 'category' && visibility !== 'friends') {
         runtimeLogsEnabled && runtimeInfo(`onPrivatePostCreated: 지원하지 않는 공개범위 스킵 (postId=${postId})`);
         return null;
       }
@@ -2601,7 +2723,7 @@ export const onPrivatePostCreated = triggers().firestore
         post.notificationAudienceUserIdsFrozen,
       ).filter((uid) => uid !== authorId);
       if (targetUserIds.length === 0) {
-        targetUserIds = visibility === 'category'
+        targetUserIds = visibility !== 'public'
           ? toUniqueStringArray(
             toInt(post.visibilitySchemaVersion) >= 2
               ? post.audienceUserIdsFrozen
@@ -2797,13 +2919,15 @@ export const resolveMyReadableJoinedMeetupIds = callables()
 
     const readableIds = new Set<string>();
     const orphanParticipantRefs: admin.firestore.DocumentReference[] = [];
+    const hasTagMeetup = Array.from(meetupsById.values())
+      .some((doc) => doc.exists && doc.get('visibility') === 'tag');
+    const myTags = hasTagMeetup ? await viewerTagIds(userId) : [];
     participants.docs.forEach((participant) => {
       const meetupId = normalizeUidLoose(participant.data().meetupId);
       const meetup = meetupsById.get(meetupId);
-      if (meetup?.exists && canReadStoredMeetup(
-        userId,
-        (meetup.data() || {}) as Record<string, any>,
-      )) {
+      const meetupData = (meetup?.data() || {}) as Record<string, any>;
+      if (meetup?.exists && (canReadStoredMeetup(userId, meetupData) ||
+          tagAudienceAllows(myTags, meetupData))) {
         readableIds.add(meetupId);
       } else if (!meetup?.exists) {
         orphanParticipantRefs.push(participant.ref);
@@ -2880,7 +3004,9 @@ export const joinMeetupSecure = callables().https.onCall(async (data, context) =
   }
 
   const resolvedAudience = resolveStoredMeetupAudience(userId, initialData);
-  if (!resolvedAudience.canAccess) {
+  // 태그 공개 모임: 그 태그를 단 사람만 참여할 수 있다.
+  if (!resolvedAudience.canAccess &&
+      !tagAudienceAllows(await viewerTagIds(userId), initialData)) {
     throw new functions.https.HttpsError(
       'permission-denied',
       '이 밋업의 공개 대상에 포함되어 있지 않습니다.'
@@ -3518,6 +3644,8 @@ async function adjustCommentTargetCount(
   targetId: string,
   delta: 1 | -1,
   eventId: string,
+  // 최상위 새 댓글이면 같은 트랜잭션에서 posts.latestComment도 바꾼다.
+  latestComment?: {id: string; data: admin.firestore.DocumentData},
 ): Promise<'post' | 'meetup' | null> {
   const postRef = db.collection('posts').doc(targetId);
   const meetupRef = db.collection('meetups').doc(targetId);
@@ -3535,13 +3663,20 @@ async function adjustCommentTargetCount(
         0,
         (Number.isFinite(current) ? Math.trunc(current) : 0) + delta,
       );
-      transaction.update(postRef, {commentCount: next});
+      const latest = latestComment &&
+        isVisibleTopLevelComment(latestComment.data) &&
+        isNewerThanLatest(post.get('latestComment'), latestComment.data) ?
+        latestCommentFields(latestComment.id, latestComment.data) :
+        null;
+      transaction.update(postRef, latest ?
+        {commentCount: next, latestComment: latest} :
+        {commentCount: next});
       transaction.create(markerRef, {
         targetId,
         delta,
         sourceEventId: eventId,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromMillis(
+        createdAt: FirestoreFieldValue.serverTimestamp(),
+        expiresAt: FirestoreTimestamp.fromMillis(
           Date.now() + 7 * 24 * 60 * 60 * 1000,
         ),
       });
@@ -3553,8 +3688,8 @@ async function adjustCommentTargetCount(
         targetId,
         delta,
         sourceEventId: eventId,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromMillis(
+        createdAt: FirestoreFieldValue.serverTimestamp(),
+        expiresAt: FirestoreTimestamp.fromMillis(
           Date.now() + 7 * 24 * 60 * 60 * 1000,
         ),
       });
@@ -3570,8 +3705,8 @@ async function adjustCommentTargetCount(
       targetId,
       delta,
       sourceEventId: eventId,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      expiresAt: admin.firestore.Timestamp.fromMillis(
+      createdAt: FirestoreFieldValue.serverTimestamp(),
+      expiresAt: FirestoreTimestamp.fromMillis(
         Date.now() + 7 * 24 * 60 * 60 * 1000,
       ),
     });
@@ -3593,7 +3728,10 @@ export const onCommentCreated = triggers().firestore
 
       // posts와 meetups 중 실제 대상 하나만 원자적으로 갱신한다. 문서가
       // 겹치거나 트리거가 재시도돼도 음수 및 잘못된 경로 갱신을 만들지 않는다.
-      await adjustCommentTargetCount(postId, 1, context.eventId);
+      await adjustCommentTargetCount(postId, 1, context.eventId, {
+        id: snapshot.id,
+        data: comment,
+      });
 
       const postDoc = await db.collection('posts').doc(postId).get();
       if (!postDoc.exists) return null;
@@ -3787,6 +3925,12 @@ export const onCommentDeleted = triggers().firestore
       if (comment?.isDeleted !== true) {
         await adjustCommentTargetCount(postId, -1, context.eventId);
       }
+      // 지운 댓글이 카드의 '최근 댓글'이면 다음 댓글로 바꾼다.
+      try {
+        await recomputeLatestCommentIfNeeded(postId, context.params.commentId as string);
+      } catch (e) {
+        console.error('onCommentDeleted: latestComment 재계산 오류(무시):', e);
+      }
 
       // ✅ 부모(최상위) 댓글이 삭제되면, 해당 댓글의 대댓글도 함께 삭제한다.
       // - 클라이언트는 타인의 대댓글을 삭제할 권한이 없을 수 있으므로(Admin SDK로 처리)
@@ -3833,6 +3977,11 @@ export const onCommentSoftDeleted = triggers().firestore
       if (!postId) return null;
 
       await adjustCommentTargetCount(postId, -1, context.eventId);
+      try {
+        await recomputeLatestCommentIfNeeded(postId, context.params.commentId as string);
+      } catch (e) {
+        console.error('onCommentSoftDeleted: latestComment 재계산 오류(무시):', e);
+      }
       return null;
     } catch (error) {
       console.error('onCommentSoftDeleted 오류:', error);
@@ -5060,6 +5209,7 @@ export const createGeneralEmailSignup = callables()
         email: normalizedEmail,
         ...missingSchoolDefaults,
         ...completedProfileFields(profile),
+        ...signupProfileTagFields(transaction, uid, current, profile.interests),
         photoURL: String(current.photoURL || ''),
         photoPath: String(current.photoPath || ''),
         photoAccessToken: String(current.photoAccessToken || ''),
@@ -9160,6 +9310,11 @@ export const onMeetupCreated = triggers().firestore
     try {
       const meetupData = snapshot.data();
       const meetupId = context.params.meetupId;
+      try {
+        await notifyTagFollowers('meetup', meetupId, meetupData);
+      } catch (error) {
+        console.error(`tag notification failed meetupId=${meetupId}:`, error);
+      }
       const hostId = meetupData.userId;
       const visibility = meetupData.visibility || 'public';
       const category = meetupData.category || '기타';

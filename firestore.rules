@@ -236,7 +236,7 @@ service cloud.firestore {
           'sourceGroupIds', 'visibilityLockedAt', 'visibilitySchemaVersion'
         ])
         && data.ownerId is string
-        && data.visibilityMode in ['public', 'friends', 'category']
+        && data.visibilityMode in ['public', 'friends', 'category', 'tag']
         && data.audienceUserIdsFrozen is list
         && data.sourceGroupIds is list
         && data.visibilityLockedAt is timestamp
@@ -261,7 +261,9 @@ service cloud.firestore {
         'visibilityLockedAt', 'visibilitySchemaVersion',
         'isAnonymous',
         'publicDurationHours', 'publicExpiresAt', 'publicExpiredAt',
-        'publicWindowStatus', 'expiredAt'
+        'publicWindowStatus', 'expiredAt',
+        // #태그와 태그 공개 범위는 생성 함수만 정한다.
+        'tagIds', 'audienceTagIds', 'audienceFriendsOnly'
       ]);
     }
 
@@ -309,6 +311,15 @@ service cloud.firestore {
             && request.time < meetupData.publicExpiresAt));
     }
 
+    // 공개 범위 '#태그 가진 사람': 글의 audienceTagIds 중 하나를 내 프로필에 달았으면 읽는다.
+    // 단건 get 전용. 목록은 getTagAudienceFeed(서버)로만 만든다(규칙은 필터가 아님).
+    function tagAudienceCanRead(data) {
+      return data.get('visibility', '') == 'tag'
+        && data.get('audienceTagIds', []).size() > 0
+        && data.get('audienceTagIds', []).hasAny(
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('interestTagIds', []));
+    }
+
     function canReadPostData(postData) {
       return currentUserAccountAllowed()
         && (
@@ -316,6 +327,7 @@ service cloud.firestore {
           || request.auth.uid == postData.get('userId', '')
           || postData.get('visibility', '') == 'public'
           || request.auth.uid in postData.get('allowedUserIds', [])
+          || tagAudienceCanRead(postData)
         );
     }
 
@@ -332,6 +344,7 @@ service cloud.firestore {
           || request.auth.uid == meetupData.get('userId', '')
           || meetupData.get('visibility', '') == 'public'
           || request.auth.uid in meetupData.get('allowedUserIds', [])
+          || tagAudienceCanRead(meetupData)
         );
     }
 
@@ -339,7 +352,7 @@ service cloud.firestore {
       return meetupData.keys().hasAll([
           'userId', 'visibility', 'visibleToCategoryIds'
         ])
-        && meetupData.visibility in ['public', 'friends', 'category']
+        && meetupData.visibility in ['public', 'friends', 'category', 'tag']
         && meetupData.visibleToCategoryIds is list
         && (
           (
@@ -360,6 +373,15 @@ service cloud.firestore {
             && (meetupData.visibility != 'category'
               || meetupData.visibleToCategoryIds.size() > 0)
           )
+          || (
+            meetupData.visibility == 'tag'
+            && meetupData.keys().hasAny(['allowedUserIds'])
+            && meetupData.allowedUserIds is list
+            && meetupData.userId in meetupData.allowedUserIds
+            && meetupData.get('audienceTagIds', []) is list
+            && meetupData.get('audienceTagIds', []).size() > 0
+            && meetupData.get('audienceTagIds', []).size() <= 3
+          )
         );
     }
 
@@ -376,6 +398,24 @@ service cloud.firestore {
       }
     }
     match /nicknamePolicyState/{document} {
+      allow read, write: if false;
+    }
+    // #관심 태그. 만들기·개수는 Cloud Functions만 쓴다.
+    match /tags/{tagId} {
+      allow read: if currentUserAccountAllowed()
+        && resource.data.get('status', '') == 'active';
+      allow write: if false;
+    }
+    // 뜨는 태그(하루 한 번 서버가 계산). 일별 기록은 서버 전용.
+    match /tags_trending/{docId} {
+      allow read: if currentUserAccountAllowed();
+      allow write: if false;
+    }
+    match /tags_daily/{day} {
+      allow read, write: if false;
+    }
+    // 태그 설정(숨김·알림)과 하루 만들기 횟수는 서버 전용.
+    match /users_private/{userId}/{document=**} {
       allow read, write: if false;
     }
 
@@ -489,7 +529,9 @@ service cloud.firestore {
           'notificationUnreadReconciledAt',
           'friendsCount',
           'nickname', 'nicknameKey', 'nicknameSearchTokens',
-          'nicknameUpdatedAt'
+          'nicknameUpdatedAt',
+          // #태그는 setProfileTags만 바꾼다(태그 존재·개수 검증).
+          'interestTagIds'
         ]);
       allow delete: if false; // 사용자 삭제는 금지
       
@@ -940,7 +982,8 @@ service cloud.firestore {
         // 클라이언트가 게시 후 임의 URL/썸네일로 교체할 수 없다.
         // snackChatId는 createPostSnackChatSecure(Admin SDK)만 쓴다. 작성자도
         // 포스트를 다른 방에 연결하거나 연결을 지울 수 없다.
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkPreview', 'video', 'snackChatId'])) &&
+        // latestComment(카드의 최근 댓글 한 줄)는 댓글 트리거만 쓴다.
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['linkPreview', 'video', 'snackChatId', 'latestComment'])) &&
         visibilityFieldsUnchanged() &&
         (request.auth.uid == resource.data.userId ||
          (directContentOwnerBlockFree(resource.data.get('userId', '')) && (

@@ -26,6 +26,9 @@ const Color _snackTrayBackground = Colors.white;
 const double _snackCardSpacing = 8;
 const double _snackVerticalPadding = 12;
 
+/// 스낵 줄 아래 여백(바로 밑 광고와의 간격을 줄인다).
+const double _snackBottomPadding = 6;
+
 /// The tray width comes from its parent, not the device's full screen width.
 /// The information area grows with the measured, locale-aware My Snack label.
 class SnackPreviewLayout {
@@ -39,7 +42,8 @@ class SnackPreviewLayout {
   final double cardHeight;
   final double myInfoHeight;
   double get myImageHeight => cardHeight - myInfoHeight;
-  double get sectionHeight => cardHeight + _snackVerticalPadding * 2;
+  double get sectionHeight =>
+      cardHeight + _snackVerticalPadding + _snackBottomPadding;
 
   static double widthFor(double availableWidth, double horizontalPadding) {
     final preferred = (availableWidth * .265).clamp(92.0, 120.0).toDouble();
@@ -680,7 +684,7 @@ class _SnapshotTodaySectionState extends State<SnapshotTodaySection>
                       horizontal,
                       _snackVerticalPadding,
                       horizontal,
-                      _snackVerticalPadding,
+                      _snackBottomPadding,
                     ),
                     itemCount: 1 +
                         (loading ? 3 : visibleItems.length) +

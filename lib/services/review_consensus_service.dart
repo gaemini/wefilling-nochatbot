@@ -4,10 +4,8 @@
 
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/review_request.dart';
 import '../models/review_consensus.dart';
-import '../models/meetup.dart';
 import 'feature_flag_service.dart';
 import 'review_adapter_service.dart';
 import '../utils/logger.dart';
@@ -19,7 +17,6 @@ class ReviewConsensusService {
   ReviewConsensusService._internal();
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FeatureFlagService _featureFlag = FeatureFlagService();
   
   // 어댑터 서비스들

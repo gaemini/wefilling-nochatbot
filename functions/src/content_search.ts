@@ -3,6 +3,7 @@ import * as functions from 'firebase-functions';
 import {callables, triggers} from './backend';
 import * as admin from 'firebase-admin';
 import {COL} from './firestore_paths';
+import {syncContentTagCounts, tagAudienceAllows, viewerTagIds} from './interest_tags';
 
 /**
  * Search data deliberately lives outside the canonical content documents.
@@ -277,6 +278,7 @@ export const onPostSearchSourceWritten = triggers().firestore
   .onWrite(async (change, context) => {
     const before = change.before.exists ? change.before.data() : undefined;
     const after = change.after.exists ? change.after.data() : undefined;
+    await syncContentTagCounts('postCount', before, after);
     // Likes, views, comments and poll votes still invoke an onWrite trigger at
     // the platform level, but return here without any Firestore read/write.
     if (!contentSearchSourceChanged('post', before, after)) return null;
@@ -289,6 +291,7 @@ export const onMeetupSearchSourceWritten = triggers().firestore
   .onWrite(async (change, context) => {
     const before = change.before.exists ? change.before.data() : undefined;
     const after = change.after.exists ? change.after.data() : undefined;
+    await syncContentTagCounts('meetupCount', before, after);
     // Participant, view, comment and publication-state updates never rewrite
     // the text index.
     if (!contentSearchSourceChanged('meetup', before, after)) return null;
@@ -330,7 +333,12 @@ function canonicalOwner(data: SourceData): string {
   return frozen.valid ? frozen.ownerId : stringValue(data.userId).trim();
 }
 
-export function contentAudienceAllows(uid: string, data: SourceData): boolean {
+export function contentAudienceAllows(
+  uid: string,
+  data: SourceData,
+  viewerTags: readonly string[] = [],
+): boolean {
+  if (tagAudienceAllows(viewerTags, data)) return true;
   const frozen = frozenAudienceState(data);
   if (frozen.valid) {
     return uid === frozen.ownerId || frozen.visibility === 'public' ||
@@ -682,11 +690,14 @@ export const searchPostsSecure = callables()
     const snapshots = await db.getAll(...candidates.ids.map((id) =>
       db.collection(COL.posts).doc(id),
     ));
+    const viewerTags = snapshots.some((snapshot) => snapshot.get('visibility') === 'tag')
+      ? await viewerTagIds(uid)
+      : [];
     let readable = snapshots
       .filter((snapshot) => snapshot.exists)
       .map((snapshot) => ({id: snapshot.id, data: snapshot.data() ?? {}}))
       .filter(({data}) => postIsSearchable(data) &&
-        contentAudienceAllows(uid, data) &&
+        contentAudienceAllows(uid, data, viewerTags) &&
         contentMatchesQuery(postSearchFields(data), request.query) &&
         (!request.category ||
           stringList(data.categoryKeys).includes(request.category) ||
@@ -730,11 +741,14 @@ export const searchMeetupsSecure = callables()
     const snapshots = await db.getAll(...candidates.ids.map((id) =>
       db.collection(COL.meetups).doc(id),
     ));
+    const viewerTags = snapshots.some((snapshot) => snapshot.get('visibility') === 'tag')
+      ? await viewerTagIds(uid)
+      : [];
     let readable = snapshots
       .filter((snapshot) => snapshot.exists)
       .map((snapshot) => ({id: snapshot.id, data: snapshot.data() ?? {}}))
       .filter(({data}) => meetupIsFutureAndPublished(data, nowMillis) &&
-        contentAudienceAllows(uid, data) &&
+        contentAudienceAllows(uid, data, viewerTags) &&
         contentMatchesQuery(meetupSearchFields(data), request.query) &&
         (!request.category ||
           normalizeContentSearchText(data.category) ===

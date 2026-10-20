@@ -6,13 +6,15 @@
 
 ---
 
-## 📱 주요 기능
+## 📱 핵심 기능
 
-- **게시판** - 게시글 작성, 댓글, 공개범위 설정
-- **모임** - 스터디, 식사, 취미, 문화 모임 생성 및 참여
-- **친구** - 친구 요청, 카테고리별 친구 관리
-- **알림** - FCM 실시간 푸시 알림
-- **프로필** - 사용자 프로필, 리뷰 시스템
+- **포스트와 댓글** - 카드 위에서 바로 댓글, 채팅형 댓글·사진 댓글, 공개 범위(친구·그룹·#태그 가진 사람)
+- **실시간 번역 스낵챗·DM** - 어떤 언어로 써도 읽는 사람의 언어로, 스낵(오늘의 사진·영상)
+- **밋업** - 모임 만들기·참여·후기, 날짜·#태그로 찾기
+- **#태그** - 관심사 태그, 태그 페이지, 마이페이지 관심 지도와 '새로 알게 될 사람'
+
+보조 기능(로그인, 한양메일 인증, 친구, 알림, 기관 계정 등)과 각 기능의 코드 위치는
+**[docs/FEATURES.md](docs/FEATURES.md)** 에 정리돼 있어요.
 
 ---
 
@@ -195,18 +197,18 @@ ios/Runner/GoogleService-Info.plist (프로덕션)
 
 ### 앱 서명
 
-자세한 내용은 [KEYSTORE_SETUP_GUIDE.md](./KEYSTORE_SETUP_GUIDE.md) 참조
+자세한 내용은 [docs/keystore_setup.md](./docs/keystore_setup.md) 참조
 
 ---
 
 ## 📚 문서
 
 ### 배포 관련
-- [배포 체크리스트](./DEPLOYMENT_CHECKLIST.md) - 상세 배포 준비 체크리스트
-- [배포 가이드](./DEPLOYMENT_READY_GUIDE.md) - 실전 배포 가이드
-- [배포 요약](./DEPLOYMENT_SUMMARY.md) - 빠른 배포 상태 확인
-- [Keystore 상태](./KEYSTORE_STATUS.md) - Android 서명 설정 완료
-- [iOS 배포 준비](./IOS_DEPLOYMENT_READY_REPORT.md) - iOS 배포 준비 완료
+- [배포 체크리스트](./docs/archive/DEPLOYMENT_CHECKLIST.md) - 상세 배포 준비 체크리스트
+- [배포 가이드](./docs/archive/DEPLOYMENT_READY_GUIDE.md) - 실전 배포 가이드
+- [배포 요약](./docs/archive/DEPLOYMENT_SUMMARY.md) - 빠른 배포 상태 확인
+- [Keystore 상태](./docs/archive/KEYSTORE_STATUS.md) - Android 서명 설정 완료
+- [iOS 배포 준비](./docs/archive/IOS_DEPLOYMENT_READY_REPORT.md) - iOS 배포 준비 완료
 
 ### 개발 가이드
 - [의존성 관리](./docs/dependencies.md) - 패키지 관리 가이드

@@ -7,7 +7,6 @@ import 'create_action_button.dart';
 import 'package:flutter/services.dart';
 import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
-import '../../l10n/ui_locale.dart';
 import 'motion_press.dart';
 
 /// 통일된 디자인 시스템을 적용한 FAB

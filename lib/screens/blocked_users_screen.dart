@@ -6,8 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/report.dart';
 import '../l10n/app_localizations.dart';
 import '../services/report_service.dart';
-import '../services/auth_service.dart';
-import '../design/tokens.dart';
 import '../ui/widgets/empty_state.dart';
 import '../utils/logger.dart';
 import '../l10n/ui_locale.dart';
@@ -27,7 +25,6 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
-  final AuthService _authService = AuthService();
 
   @override
   void initState() {

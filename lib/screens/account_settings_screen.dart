@@ -5,11 +5,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart' as app_provider;
 import 'package:url_launcher/url_launcher.dart';
-import '../services/auth_service.dart';
 import 'terms_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'blocked_users_screen.dart';
@@ -35,9 +33,7 @@ class AccountSettingsScreen extends StatefulWidget {
 
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final AuthService _authService = AuthService();
-  bool _isLoading = false;
+  final bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -472,79 +468,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   Future<void> _showTranslationLanguageDialog(BuildContext context) async {
     final selected = await showTranslationLanguageSheet(context);
     if (selected != null && mounted) setState(() {});
-  }
-
-  // 비밀번호 재설정 이메일 전송 다이얼로그
-  void _showResetPasswordDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)!.resetPassword),
-        content: Text(AppLocalizations.of(context)!.sendResetEmailConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(AppLocalizations.of(context)!.cancel),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              setState(() => _isLoading = true);
-
-              try {
-                await _auth.sendPasswordResetEmail(
-                  email: _auth.currentUser?.email ?? '',
-                );
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content:
-                            Text(AppLocalizations.of(context)!.resetEmailSent)),
-                  );
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content: Text(
-                            '${AppLocalizations.of(context)!.error}: ${e.toString()}')),
-                  );
-                }
-              } finally {
-                setState(() => _isLoading = false);
-              }
-            },
-            child: Text(AppLocalizations.of(context)!.confirm),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 이메일 인증 메일 전송
-  Future<void> _sendEmailVerification(BuildContext context) async {
-    setState(() => _isLoading = true);
-
-    try {
-      await _auth.currentUser?.sendEmailVerification();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text(AppLocalizations.of(context)!.verificationEmailSent)),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(
-            content: Text(
-                '${AppLocalizations.of(context)!.error}: ${e.toString()}')));
-      }
-    } finally {
-      setState(() => _isLoading = false);
-    }
   }
 
   // 계정 삭제 확인 다이얼로그

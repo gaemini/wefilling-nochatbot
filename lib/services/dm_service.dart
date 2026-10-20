@@ -242,20 +242,6 @@ class DMService {
     }
   }
 
-  /// 친구 확인
-  Future<bool> _isFriend(String userId1, String userId2) async {
-    try {
-      final sorted = [userId1, userId2]..sort();
-      final pairId = '${sorted[0]}__${sorted[1]}';
-
-      final doc = await _firestore.collection('friendships').doc(pairId).get();
-      return doc.exists;
-    } catch (e) {
-      Logger.error('친구 확인 오류: $e');
-      return false;
-    }
-  }
-
   /// DM 전송 가능 여부 확인 (차단 여부만 확인)
   Future<bool> canSendDM(String otherUserId, {String? postId}) async {
     if (Logger.isVerboseEnabled)

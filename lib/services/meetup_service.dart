@@ -1582,57 +1582,6 @@ class MeetupService {
     }
   }
 
-  // 기존 leaveMeetup (배열 기반 - 사용 안함, 참고용으로 주석 처리)
-  Future<bool> _leaveMeetupOld(String meetupId) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return false;
-
-      final meetupRef = _firestore.collection('meetups').doc(meetupId);
-
-      // 트랜잭션으로 안전하게 참여자 제거
-      bool success = await _firestore.runTransaction<bool>((transaction) async {
-        final meetupDoc = await transaction.get(meetupRef);
-        if (!meetupDoc.exists) return false;
-
-        final data = meetupDoc.data()!;
-        final List<dynamic> participants =
-            List.from(data['participants'] ?? []);
-
-        // 참여하지 않은 상태인지 확인
-        if (!participants.contains(user.uid)) {
-          if (Logger.isVerboseEnabled) Logger.log('참여하지 않은 모임: $meetupId');
-          return false;
-        }
-
-        // 참여자에서 제거
-        participants.remove(user.uid);
-
-        // 참여자 수 업데이트 (주최자는 제외하고 계산)
-        final currentParticipants = data['currentParticipants'] ?? 1;
-        final newParticipantCount =
-            currentParticipants > 1 ? currentParticipants - 1 : 1;
-
-        transaction.update(meetupRef, {
-          'participants': participants,
-          'currentParticipants': newParticipantCount,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        return true;
-      });
-
-      if (success) {
-        if (Logger.isVerboseEnabled) Logger.log('✅ 모임 참여 취소 성공: $meetupId');
-      }
-
-      return success;
-    } catch (e) {
-      Logger.error('❌ 모임 참여 취소 실패: $e');
-      return false;
-    }
-  }
-
   //모임 삭제
   Future<bool> deleteMeetup(String meetupId) async {
     try {

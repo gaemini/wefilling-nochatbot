@@ -21,7 +21,6 @@ import 'create_category_screen.dart';
 import 'create_snack_chat_screen.dart';
 import 'snack_chat_tab_view.dart';
 import '../l10n/app_localizations.dart';
-import '../utils/logger.dart';
 import '../l10n/ui_locale.dart';
 
 /// Stable internal tab mapping used by direct-entry routes.
@@ -642,31 +641,4 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     );
   }
 
-  Future<void> _createDefaultCategoriesIfNeeded() async {
-    try {
-      final success = await _categoryService.createDefaultCategories();
-      if (success) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  AppLocalizations.of(context)!.defaultCategoryCreated ?? ""),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      Logger.error('기본 카테고리 생성 UI 오류: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                Text(AppLocalizations.of(context)!.defaultCategoryFailed ?? ""),
-            backgroundColor: BrandColors.error,
-          ),
-        );
-      }
-    }
-  }
 }

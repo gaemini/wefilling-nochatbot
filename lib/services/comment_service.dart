@@ -12,7 +12,6 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../config/app_backend.dart';
 import '../models/comment.dart';
 import '../models/snapshot.dart' show isValidSnapshotCommentGifHeader;
-import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'content_hide_service.dart';
 import 'report_service.dart';
@@ -20,7 +19,6 @@ import 'cache/comment_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
 import 'firebase_app_check_service.dart';
 import 'comment_gif_upload.dart';
-import 'meetup_service.dart';
 import '../utils/logger.dart';
 import '../utils/profile_photo_policy.dart';
 import '../utils/comment_gif_input.dart';
@@ -30,9 +28,7 @@ import 'storage_service.dart';
 class CommentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final NotificationService _notificationService = NotificationService();
   final CommentCacheManager _cache = CommentCacheManager();
-  final MeetupService _meetupService = MeetupService();
 
   bool _isValidCommentTargetId(String postId) {
     final normalized = postId.trim();
@@ -440,22 +436,6 @@ class CommentService {
       }
     } catch (e) {
       Logger.error('댓글 수 업데이트 오류: $e');
-    }
-  }
-
-  // 모임 댓글수 업데이트 헬퍼 메서드
-  Future<void> _updateMeetupCommentCount(String postId) async {
-    try {
-      // postId가 모임 ID인지 확인 (meetups 컬렉션에 해당 문서가 있는지 확인)
-      final meetupDoc =
-          await _firestore.collection('meetups').doc(postId).get();
-      if (meetupDoc.exists) {
-        // 모임이 존재하면 댓글수 업데이트
-        await _meetupService.updateCommentCount(postId);
-      }
-    } catch (e) {
-      // 모임 댓글수 업데이트 실패는 무시 (일반 게시글일 수 있음)
-      if (Logger.isVerboseEnabled) Logger.log('모임 댓글수 업데이트 시도 (실패 무시): $e');
     }
   }
 

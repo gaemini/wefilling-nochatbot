@@ -27,14 +27,8 @@ class AppTheme {
   static const Color _accentRed = AppColors.accentRed; // Red-500
 
   // Enhanced backgrounds
-  static const Color _backgroundPrimary = AppColors.backgroundPrimary;
-  static const Color _backgroundSecondary = AppColors.backgroundSecondary;
 
   // Dark mode backgrounds (Future Dusk Enhanced)
-  static const Color _darkBackgroundPrimary = AppColors.darkBackgroundPrimary;
-  static const Color _darkBackgroundSecondary =
-      AppColors.darkBackgroundSecondary;
-  static const Color _darkBackgroundTertiary = AppColors.darkBackgroundTertiary;
 
   // High contrast colors (WCAG compliance)
   static const Color _highContrastLight = Color(0xFF000000); // Pure black

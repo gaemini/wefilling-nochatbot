@@ -1493,39 +1493,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     }
   }
 
-  /// DM 버튼을 표시할지 확인
-  bool _shouldShowDMButton(Post post) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-
-    // 로그인하지 않은 경우
-    if (currentUser == null) return false;
-
-    // 본인 게시글인 경우
-    if (post.userId == currentUser.uid) return false;
-
-    // 익명 게시글인 경우
-    if (post.isAnonymous) return true; // 익명도 DM 가능 (계획 참조)
-
-    // 탈퇴한 계정인 경우
-    if (post.userId == 'deleted' ||
-        post.author.isEmpty ||
-        post.author == 'Deleted' ||
-        post.author == 'DELETED_ACCOUNT') {
-      return false;
-    }
-
-    return true;
-  }
-
-  /// 커스텀 DM 아이콘 (첨부 아이콘 사용, 없으면 기본 아이콘으로 폴백)
-  Widget _buildDMIcon() {
-    // 종이 비행기 아이콘을 45도 기울여 직관적 방향성 부여
-    return Transform.rotate(
-      angle: -math.pi / 4,
-      child: Icon(Icons.send_rounded, size: 18, color: Colors.grey[700]),
-    );
-  }
-
   /// DM 대화방 열기
   Future<void> _openDM(Post post) async {
     final currentUser = FirebaseAuth.instance.currentUser;

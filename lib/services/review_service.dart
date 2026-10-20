@@ -215,27 +215,6 @@ class ReviewService {
     }
   }
 
-  // PrivacyLevel 파싱 헬퍼 메서드
-  PrivacyLevel _parsePrivacyLevel(dynamic value) {
-    if (value == null) return PrivacyLevel.friends;
-
-    try {
-      switch (value.toString()) {
-        case 'private':
-          return PrivacyLevel.private;
-        case 'public':
-          return PrivacyLevel.public;
-        case 'school':
-          return PrivacyLevel.school;
-        case 'friends':
-        default:
-          return PrivacyLevel.friends;
-      }
-    } catch (e) {
-      return PrivacyLevel.friends;
-    }
-  }
-
   // 후기 게시글 추가
   Future<bool> addReview(ReviewPost review) async {
     try {

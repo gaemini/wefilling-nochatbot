@@ -3038,32 +3038,6 @@ class _DMChatScreenState extends State<DMChatScreen>
     );
   }
 
-  /// 채팅방 보관(삭제) - 서버 플래그 기반
-  Future<void> _archiveConversation() async {
-    try {
-      await _dmService.archiveConversation(_activeConversationId);
-      if (!mounted) return;
-      Navigator.pop(context);
-      final isKo = Localizations.localeOf(context).languageCode == 'ko';
-      AppSnackBar.show(
-        context,
-        message: (isChineseUi(context)
-            ? '此聊天已从列表中移除。'
-            : isKo
-                ? '채팅방이 목록에서 삭제되었습니다'
-                : 'This chat has been removed from your list.'),
-        type: AppSnackBarType.info,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      AppSnackBar.show(
-        context,
-        message: '${AppLocalizations.of(context)!.error}: $e',
-        type: AppSnackBarType.error,
-      );
-    }
-  }
-
   /// 나가기 확인 다이얼로그
   Future<void> _confirmLeaveConversation() async {
     // 중요한 액션임을 알림 (로그아웃 다이얼로그와 동일 UX)

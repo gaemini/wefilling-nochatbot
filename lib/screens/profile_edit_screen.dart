@@ -13,7 +13,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../providers/auth_provider.dart';
 import '../services/storage_service.dart';
-import '../services/post_service.dart';
 import '../constants/app_constants.dart';
 import '../utils/country_flag_helper.dart';
 import '../l10n/app_localizations.dart';
@@ -88,7 +87,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   bool? _isNicknameAvailable;
   String? _nicknameCheckedKey;
   String? _nicknameAvailabilityError;
-  bool _isForceUpdating = false;
   bool _nicknameLocked = false;
   bool _nationalityLocked = false;
   int? _nicknameRemainingDays;
@@ -754,127 +752,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             _isSubmitting = false;
           });
         }
-      }
-    }
-  }
-
-  // 강제로 모든 콘텐츠 업데이트 (PostService 직접 사용)
-  Future<void> _forceUpdateAllContent() async {
-    // 확인 다이얼로그
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)!.updateAllPosts),
-        content: Text(
-          '현재 프로필 정보(이름, 사진)를 모든 과거 게시글과 모임에 반영합니다.\n\n이 작업은 시간이 걸릴 수 있습니다.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context)!.cancel),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-            ),
-            child: Text(AppLocalizations.of(context)!.update,
-                style: const TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() {
-      _isForceUpdating = true;
-    });
-
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final user = authProvider.user;
-
-      if (user == null) {
-        throw Exception(
-            AppLocalizations.of(context)!.loginRequired ?? '로그인이 필요합니다.');
-      }
-
-      // 현재 프로필 정보 가져오기
-      final userData = authProvider.userData;
-      final nickname = userData?['nickname'] ?? '익명';
-      final photoURL = userData?['photoURL'];
-
-      if (Logger.isVerboseEnabled)
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      if (Logger.isVerboseEnabled) Logger.log('🔥 수동 게시물 업데이트 시작');
-      if (Logger.isVerboseEnabled) Logger.log('   - User ID: ${user.uid}');
-      if (Logger.isVerboseEnabled) Logger.log('   - Nickname: $nickname');
-      if (Logger.isVerboseEnabled)
-        Logger.log('   - PhotoURL: ${photoURL ?? "없음"}');
-      if (Logger.isVerboseEnabled)
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-      // 1단계: users 컬렉션의 displayName을 nickname과 동기화
-      try {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .update({
-          'displayName': nickname,
-        });
-        if (Logger.isVerboseEnabled)
-          Logger.log('✅ users 컬렉션의 displayName 동기화 완료: $nickname');
-      } catch (e) {
-        Logger.error('⚠️ displayName 동기화 실패: $e');
-      }
-
-      // 2단계: PostService를 사용하여 게시물 업데이트
-      final postService = PostService();
-      final postsSuccess = await postService.updateAuthorInfoInAllPosts(
-        user.uid,
-        nickname,
-        photoURL,
-      );
-
-      if (mounted) {
-        if (postsSuccess) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  Text(AppLocalizations.of(context)!.applyProfileToAllPosts),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.error),
-              backgroundColor: Colors.red,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-      }
-    } catch (e, stackTrace) {
-      Logger.error('❌ 수동 업데이트 오류: $e');
-      if (Logger.isVerboseEnabled) Logger.log('스택 트레이스: $stackTrace');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 4),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isForceUpdating = false;
-        });
       }
     }
   }

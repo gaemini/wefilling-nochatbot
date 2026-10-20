@@ -141,7 +141,6 @@ class ReviewPost {
   String getFormattedTime(BuildContext context) {
     final now = DateTime.now();
     final difference = now.difference(createdAt);
-    final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 7) {
       return '${createdAt.year}.${createdAt.month.toString().padLeft(2, '0')}.${createdAt.day.toString().padLeft(2, '0')}';

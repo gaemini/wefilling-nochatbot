@@ -1428,28 +1428,6 @@ class _MyPageScreenState extends State<MyPageScreen>
     }
   }
 
-  String _getTimeAgo(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-    final l10n = AppLocalizations.of(context);
-
-    if (difference.inDays > 0) {
-      return difference.inDays == 1
-          ? '1${l10n!.dayAgo}'
-          : l10n!.daysAgoCount(difference.inDays);
-    } else if (difference.inHours > 0) {
-      return difference.inHours == 1
-          ? '1${l10n!.hourAgo}'
-          : l10n!.hoursAgoCount(difference.inHours);
-    } else if (difference.inMinutes > 0) {
-      return difference.inMinutes == 1
-          ? '1${l10n!.minuteAgo}'
-          : l10n!.minutesAgoCount(difference.inMinutes);
-    } else {
-      return l10n?.justNowTime ?? "";
-    }
-  }
-
   void _openReviewDetail(ReviewPost review) {
     Navigator.push(
       context,
@@ -1635,86 +1613,6 @@ class _MyPageScreenState extends State<MyPageScreen>
   }
   */
 
-  void _showSettingsBottomSheet(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(20),
-        ),
-      ),
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(20),
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD1D5DB),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                // 내 게시글 메뉴 숨김 처리 (기존 UserPostsScreen 페이지 제거됨)
-                _buildMenuItem(
-                    context,
-                    AppLocalizations.of(context)!.notificationSettings,
-                    Icons.notifications_rounded, () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const NotificationSettingsScreen(),
-                    ),
-                  );
-                }),
-                _buildMenuItem(
-                    context,
-                    AppLocalizations.of(context)!.accountSettings,
-                    Icons.settings_rounded, () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AccountSettingsScreen(),
-                    ),
-                  );
-                }),
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  height: 1,
-                  color: const Color(0xFFE5E7EB),
-                ),
-                _buildMenuItem(context, AppLocalizations.of(context)!.logout,
-                    Icons.logout_rounded, () async {
-                  // 햅틱 피드백 - 중요한 액션임을 알림
-                  HapticFeedback.lightImpact();
-                  Navigator.pop(context);
-                  // 로그아웃 확인 다이얼로그 표시
-                  _showLogoutConfirmDialog(context, authProvider);
-                }, color: const Color(0xFFEF4444)),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildMenuItem(
     BuildContext context,
     String title,
@@ -1722,7 +1620,6 @@ class _MyPageScreenState extends State<MyPageScreen>
     VoidCallback onTap, {
     Color? color,
   }) {
-    final isLogout = color != null;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1808,10 +1705,6 @@ class _MyPageScreenState extends State<MyPageScreen>
 
 
 
-  void _showLogoutConfirmDialog(
-      BuildContext context, AuthProvider authProvider) {
-    showLogoutConfirmDialog(context, authProvider: authProvider);
-  }
 }
 
 /// 마이페이지 설정 시트 (상단 앱바/내 프로필 어디서든 재사용 가능)

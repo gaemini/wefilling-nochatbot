@@ -3471,75 +3471,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  // 기존 댓글 삭제 (호환성 유지)
-  Future<void> _deleteComment(String commentId) async {
-    try {
-      final success = await _commentService.deleteComment(
-        commentId,
-        widget.post.id,
-      );
-
-      if (success && mounted) {
-        // 대댓글까지 함께 지워지는 경우의 정확한 수는 서버 집계가 뒤이어 확정한다.
-        _postService.adjustCachedCommentCount(widget.post.id, -1);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(
-            content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")));
-      } else if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(
-            content:
-                Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e')));
-      }
-    }
-  }
-
-  // 알림 시간 포맷팅
-  String _formatNotificationTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-    final locale = Localizations.localeOf(context).languageCode;
-    if (locale == 'zh') {
-      final l10n = AppLocalizations.of(context)!;
-      if (difference.inDays > 0) return l10n.daysAgo(difference.inDays);
-      if (difference.inHours > 0) return l10n.hoursAgo(difference.inHours);
-      if (difference.inMinutes > 0)
-        return l10n.minutesAgo(difference.inMinutes);
-      return l10n.justNow;
-    }
-
-    if (difference.inDays > 0) {
-      if (locale == 'ko') {
-        return '${difference.inDays}${AppLocalizations.of(context)!.daysAgo}';
-      } else {
-        return '${difference.inDays}${difference.inDays == 1 ? ' day ago' : ' days ago'}';
-      }
-    } else if (difference.inHours > 0) {
-      if (locale == 'ko') {
-        return '${difference.inHours}${AppLocalizations.of(context)!.hoursAgo}';
-      } else {
-        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)!.hoursAgo}';
-      }
-    } else if (difference.inMinutes > 0) {
-      if (locale == 'ko') {
-        return '${difference.inMinutes}${AppLocalizations.of(context)!.minutesAgo}';
-      } else {
-        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)!.minutesAgo}';
-      }
-    } else {
-      return AppLocalizations.of(context)!.justNow ?? "";
-    }
-  }
-
   // 디버그용: 이미지 URL 로깅
   void _logImageUrls() {
     // 로깅 제거 (필요시 디버거 사용)
@@ -4597,22 +4528,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // 아바타 색상 생성 헬퍼 메서드
-  Color _getAvatarColor(String text) {
-    if (text.isEmpty) return Colors.grey;
-    final colors = [
-      Colors.blue.shade700,
-      Colors.purple.shade700,
-      Colors.green.shade700,
-      Colors.orange.shade700,
-      Colors.pink.shade700,
-      Colors.teal.shade700,
-    ];
-
-    // 이름의 첫 글자 아스키 코드를 기준으로 색상 결정
-    final index = text.codeUnitAt(0) % colors.length;
-    return colors[index];
-  }
 }
 
 @immutable

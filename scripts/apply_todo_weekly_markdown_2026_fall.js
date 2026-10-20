@@ -21,9 +21,9 @@ const rollbackIndex = process.argv.indexOf('--rollback');
 const rollbackPath = rollbackIndex >= 0 ? process.argv[rollbackIndex + 1] : null;
 const repoRoot = path.resolve(__dirname, '..');
 const sourceFiles = {
-  ko: path.join(repoRoot, 'Wefilling_Todo_Weekly_KO.md'),
-  en: path.join(repoRoot, 'Wefilling_Todo_Weekly_EN.md'),
-  zh: path.join(repoRoot, 'Wefilling_Todo_Weekly_ZH.md'),
+  ko: path.join(repoRoot, 'docs', 'todo', 'Wefilling_Todo_Weekly_KO.md'),
+  en: path.join(repoRoot, 'docs', 'todo', 'Wefilling_Todo_Weekly_EN.md'),
+  zh: path.join(repoRoot, 'docs', 'todo', 'Wefilling_Todo_Weekly_ZH.md'),
 };
 const managedFields = [
   'sourceTaskId',

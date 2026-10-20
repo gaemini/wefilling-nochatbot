@@ -12,10 +12,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 import '../config/app_backend.dart';
@@ -2447,111 +2445,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       // 오류가 발생해도 프로필 업데이트는 성공으로 처리
       // (사용자 경험을 위해)
-    }
-  }
-
-  // 🔥 하이브리드 동기화: 사용자의 모든 대화방에서 participantNames 업데이트
-  Future<void> _updateAllConversationsForUser(
-      String nickname, String? photoURL) async {
-    if (_user == null) return;
-
-    try {
-      if (Logger.isVerboseEnabled)
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      if (Logger.isVerboseEnabled)
-        Logger.log('🔄 대화방 participantNames 업데이트 시작');
-      if (Logger.isVerboseEnabled) Logger.log('  - 사용자: ${_user!.uid}');
-      if (Logger.isVerboseEnabled) Logger.log('  - 새 닉네임: $nickname');
-      if (Logger.isVerboseEnabled)
-        Logger.log('  - 새 photoURL: ${photoURL ?? "없음"}');
-
-      // 내가 참여한 모든 대화방 조회
-      final conversations = await _firestore
-          .collection('conversations')
-          .where('participants', arrayContains: _user!.uid)
-          .get();
-
-      if (Logger.isVerboseEnabled)
-        Logger.log('  - 대상 대화방: ${conversations.docs.length}개');
-
-      if (conversations.docs.isEmpty) {
-        if (Logger.isVerboseEnabled) Logger.log('  - 업데이트할 대화방 없음');
-        if (Logger.isVerboseEnabled)
-          Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        return;
-      }
-
-      // ✅ 배치 커밋은 500 제한/재사용 불가이므로, 청크로 나누어 처리한다.
-      const int chunkSize = 450; // 여유 있게
-      int updated = 0;
-
-      final docs = conversations.docs;
-      for (var i = 0; i < docs.length; i += chunkSize) {
-        final end = (i + chunkSize > docs.length) ? docs.length : i + chunkSize;
-        final chunk = docs.sublist(i, end);
-
-        final batch = _firestore.batch();
-        int ops = 0;
-
-        for (final doc in chunk) {
-          try {
-            final data = doc.data();
-            // 익명 대화방에는 실제 이름·사진을 쓰지 않는다(익명 작성자 노출 방지).
-            final anonymousMap = data['isAnonymous'];
-            if (doc.id.startsWith('anon_') ||
-                (anonymousMap is Map && anonymousMap[_user!.uid] == true)) {
-              continue;
-            }
-            final participants =
-                List<String>.from(data['participants'] ?? const []);
-
-            // displayTitle은 1:1 대화방에서만 갱신 (그 외는 유지)
-            String? newDisplayTitle;
-            if (participants.length == 2) {
-              final otherUserId = participants.firstWhere(
-                (id) => id != _user!.uid,
-                orElse: () => '',
-              );
-              if (otherUserId.isNotEmpty) {
-                final otherUserName =
-                    data['participantNames']?[otherUserId] ?? 'User';
-                newDisplayTitle = '$nickname ↔ $otherUserName';
-              }
-            }
-
-            final updateData = <String, dynamic>{
-              'participantNames.${_user!.uid}': nickname,
-              'participantPhotos.${_user!.uid}': (photoURL ?? '').toString(),
-              'participantNamesUpdatedAt': FieldValue.serverTimestamp(),
-              // 버전은 없을 수도 있어 안전하게 증가 (없으면 1부터)
-              'participantNamesVersion': FieldValue.increment(1),
-            };
-            if (newDisplayTitle != null) {
-              updateData['displayTitle'] = newDisplayTitle;
-            }
-
-            batch.update(doc.reference, updateData);
-            ops++;
-            updated++;
-          } catch (e) {
-            Logger.error('  - 대화방 업데이트 실패 (건너뜀): ${doc.id} - $e');
-          }
-        }
-
-        if (ops > 0) {
-          await batch.commit();
-          if (Logger.isVerboseEnabled)
-            Logger.log(
-                '  - 청크 커밋: ${end.clamp(0, docs.length)}/${docs.length} (누적 업데이트 $updated개)');
-        }
-      }
-
-      if (Logger.isVerboseEnabled) Logger.log('✅ 대화방 업데이트 완료: $updated개');
-      if (Logger.isVerboseEnabled)
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    } catch (e) {
-      Logger.error('❌ 대화방 업데이트 실패: $e');
-      // 실패해도 프로필 업데이트는 완료된 상태이므로 계속 진행
     }
   }
 

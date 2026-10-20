@@ -18,6 +18,7 @@ import 'person_avatar.dart';
 import 'shared_tag_tile.dart';
 import 'stagger_in.dart';
 import 'tag_palette.dart';
+import 'wf_list_row.dart';
 import 'wf_colors.dart';
 
 /// '모두 보기'(v6): 관심사 칩으로 거르기 · '{n}명 / 많이 겹치는 순' · 한 줄 목록 · 20명씩 무한 스크롤.
@@ -424,7 +425,7 @@ class _Chip extends StatelessWidget {
   }
 }
 
-/// 한 줄: 아바타 52 · 이름 16/w800 + '캐나다 · 4개 겹침'(메타만 말줄임) / 이모지 타일 · 버튼.
+/// 한 줄(공용 WfListRow): 아바타 52(국기) · '이름  캐나다 · 4개 겹침' / 이모지 타일 · '추가'.
 class _PersonRow extends StatelessWidget {
   const _PersonRow({
     super.key,
@@ -448,72 +449,30 @@ class _PersonRow extends StatelessWidget {
     final name = person.name.isEmpty ? l10n.user : person.name;
     final country = countryNameOf(person.country, language);
     final n = person.overlapTagIds.length;
-    final meta = country.isEmpty
-        ? l10n.peopleMetaOverlapNoCountry(n)
-        : l10n.peopleMetaOverlap(country, n);
-    return InkWell(
+    return WfListRow(
       onTap: onOpen,
       onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: Row(
-          children: [
-            PersonAvatar(
-              uid: person.uid,
-              name: name,
-              photoUrl: person.photoURL,
-              nationality: person.country,
-              size: 52,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      // 이름은 줄이지 않는다(너무 길면 그때만 말줄임).
-                      Flexible(
-                        flex: 3,
-                        child: Text(name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: tagTextStyle(
-                                context, 16, FontWeight.w800, WfColors.ink)),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        flex: 2,
-                        child: Text(meta,
-                            key: const ValueKey('overlap-row-meta'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: tagTextStyle(
-                                context, 13, FontWeight.w500, WfColors.ink4)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  SharedTagTiles(
-                    tagIds: person.overlapTagIds,
-                    size: SharedTileSize.list,
-                    highlightTagId: highlightTagId,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            FriendRequestButton(
-              uid: person.uid,
-              relation: relation,
-              size: PeopleButtonSize.list,
-              onOpenProfile: onOpen,
-            ),
-          ],
-        ),
+      leading: PersonAvatar(
+        uid: person.uid,
+        name: name,
+        photoUrl: person.photoURL,
+        nationality: person.country,
+        size: 52,
+      ),
+      title: name,
+      meta: country.isEmpty
+          ? l10n.peopleMetaOverlapNoCountry(n)
+          : l10n.peopleMetaOverlap(country, n),
+      second: SharedTagTiles(
+        tagIds: person.overlapTagIds,
+        size: SharedTileSize.list,
+        highlightTagId: highlightTagId,
+      ),
+      trailing: FriendRequestButton(
+        uid: person.uid,
+        relation: relation,
+        size: PeopleButtonSize.list,
+        onOpenProfile: onOpen,
       ),
     );
   }

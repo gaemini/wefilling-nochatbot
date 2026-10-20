@@ -200,7 +200,7 @@ void main() {
         AppLocalizations.of(tester.element(find.byType(TagPickerScreen)))!;
 
     expect(find.text(l10n.tagPickerTitle), findsOneWidget);
-    expect(find.text('#영화'), findsOneWidget);
+    expect(find.text('🎬 영화'), findsOneWidget);
     expect(find.text(l10n.tagPickerSubtitle), findsOneWidget);
     expect(find.text(l10n.tagPickerMineMeta(1, 8)), findsOneWidget);
     expect(find.text(l10n.tagSuggestFriends), findsOneWidget);
@@ -296,9 +296,24 @@ void main() {
     // 친구 하늘은 친구 줄에만(최근에 단 사람 줄에서 빠짐), 그 사람의 태그가 보조 줄.
     expect(find.byKey(const ValueKey('tag_friend_f1')), findsOneWidget);
     expect(find.byKey(const ValueKey('tag_person_f1')), findsNothing);
-    expect(find.text('#러닝 #kpop'), findsOneWidget);
+    // 그 사람의 태그는 이모지 타일 줄, 메타에 교환학생, 친구는 '프로필' 버튼.
+    final friendRow = find.byKey(const ValueKey('tag_friend_f1'));
+    expect(
+        find.descendant(
+            of: friendRow,
+            matching: find.byKey(const ValueKey('shared-tile-running'))),
+        findsOneWidget);
+    expect(
+        find.descendant(
+            of: friendRow,
+            matching: find.byKey(const ValueKey('shared-tile-kpop'))),
+        findsOneWidget);
     expect(find.textContaining(l10n.tagExchangeStudent), findsOneWidget);
-    expect(find.text(l10n.tagProfileButton), findsWidgets);
+    expect(
+        find.descendant(
+            of: find.byKey(const ValueKey('friend-request-f1')),
+            matching: find.text(l10n.peopleProfile)),
+        findsOneWidget);
     expect(find.text(l10n.tagShareTo('러닝')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tag_page_more')));

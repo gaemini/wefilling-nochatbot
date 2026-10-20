@@ -106,20 +106,20 @@ void main() {
       myTags: ['running', 'kpop', 'movie', 'music'],
     ));
     await tester.pump();
-    expect(find.text('＋ #러닝'), findsOneWidget);
+    expect(find.text('＋ 🏃 러닝'), findsOneWidget);
     expect(find.text('0/3'), findsOneWidget);
-    await tester.tap(find.text('＋ #러닝'));
+    await tester.tap(find.text('＋ 🏃 러닝'));
     await tester.pump();
     expect(tags, ['running']);
-    expect(find.text('#러닝'), findsOneWidget);
+    expect(find.text('🏃 러닝'), findsOneWidget);
     await tester.tap(find.text('＋ #K-POP'));
     await tester.pump();
-    await tester.tap(find.text('＋ #영화'));
+    await tester.tap(find.text('＋ 🎬 영화'));
     await tester.pump();
     expect(tags, ['running', 'kpop', 'movie']);
     expect(find.text('3/3'), findsOneWidget);
     // 3개가 차면 내 태그 제안은 사라진다.
-    expect(find.text('＋ #음악'), findsNothing);
+    expect(find.text('＋ 🎧 음악'), findsNothing);
   });
 
   testWidgets('주제 칩에는 #이 없다', (tester) async {

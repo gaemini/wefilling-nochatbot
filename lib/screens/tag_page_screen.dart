@@ -442,6 +442,7 @@ class _TagPageScreenState extends State<TagPageScreen> {
               itemBuilder: (_, i) => TagPersonRow(
                   key: ValueKey('tag_friend_${friends[i].uid}'),
                   person: friends[i],
+                  isFriend: true,
                   onOpen: () => _openPerson(friends[i])),
             ),
           ],

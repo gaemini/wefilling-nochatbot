@@ -1,6 +1,7 @@
 // lib/screens/unified_search_screen.dart
 // 통합 검색 화면 - 탭별(이름/게시글/모임)로 검색 결과 분리
 
+import '../ui/interest/tag_palette.dart';
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1311,6 +1312,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                     TagFilterChip(
                       key: ValueKey('search_tag_$id'),
                       label: _tagLabel(id, languageCode),
+                      emoji: TagChipColors.emojiOf(InterestTagService.instance.cached(id), id),
                       selected: id == selected,
                       onTap: () => _selectInterest(id),
                     ),

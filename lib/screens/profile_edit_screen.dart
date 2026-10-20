@@ -2,6 +2,7 @@
 // 사용자 프로필 편집 화면
 // 닉네임 및 국적 정보 수정 기능 제공
 
+import '../ui/interest/tag_palette.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
@@ -817,6 +818,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                 SelectedTagChip(
                   key: ValueKey('profile_tag_$id'),
                   label: InterestTagService.instance.labelFor(id, language),
+                  emoji: TagChipColors.emojiOf(InterestTagService.instance.cached(id), id),
                   onRemove: () => _removeTag(id),
                   onLongPress: () => showTagSettingsSheet(
                     context,
@@ -842,6 +844,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   SuggestTagChip(
                     key: ValueKey('profile_tag_suggest_${tag.id}'),
                     label: tag.labelFor(language),
+                    emoji: TagChipColors.emojiOf(tag),
                     meta: AppLocalizations.of(context)!
                         .tagCountPeople(tag.holderCount),
                     onTap: () => _addTag(tag.id),

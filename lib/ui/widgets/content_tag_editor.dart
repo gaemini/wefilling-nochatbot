@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../interest/tag_palette.dart';
 import 'package:provider/provider.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -92,6 +93,7 @@ class ContentTagEditor extends StatelessWidget {
                 SelectedTagChip(
                   key: ValueKey('content_tag_$id'),
                   label: service.labelFor(id, language),
+                  emoji: TagChipColors.emojiOf(service.cached(id), id),
                   onRemove: () {
                     if (enabled) onChanged([...tagIds]..remove(id));
                   },
@@ -101,6 +103,7 @@ class ContentTagEditor extends StatelessWidget {
                   SuggestTagChip(
                     key: ValueKey('content_tag_suggest_$id'),
                     label: service.labelFor(id, language),
+                    emoji: TagChipColors.emojiOf(service.cached(id), id),
                     plus: true,
                     onTap: enabled ? () => _add(context, id) : null,
                   ),

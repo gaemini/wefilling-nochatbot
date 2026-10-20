@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../ui/interest/tag_palette.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
@@ -281,6 +282,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
                             SelectedTagChip(
                               key: ValueKey('tag_picker_selected_$id'),
                               label: _label(id),
+                              emoji: TagChipColors.emojiOf(_service.cached(id), id),
                               onRemove: () => _toggle(id),
                               onLongPress: widget._isProfile
                                   ? () => showTagSettingsSheet(
@@ -336,6 +338,7 @@ class _TagPickerScreenState extends State<TagPickerScreen> {
             SuggestTagChip(
               key: ValueKey('tag_picker_suggest_${tag.id}'),
               label: tag.label(context),
+              emoji: TagChipColors.emojiOf(tag),
               meta: meta,
               onTap: () => _toggle(tag.id),
             ),

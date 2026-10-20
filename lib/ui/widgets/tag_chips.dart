@@ -106,17 +106,28 @@ class ToggleTagChip extends StatelessWidget {
 
 /// 고르는 태그 필터(검색 '태그로 친구 찾기'): 높이 32 알약, '#러닝'.
 /// 기본 연회색 바탕 + 진회색 글자, 고르면 파랑 채움 + 흰 글자.
+/// 칩 글자: 이모지가 있으면 '☕ 카페', 없으면 '#카페'('새로 알게 될 사람' 칩과 같게).
+String tagChipText(String label, String? emoji) =>
+    emoji == null || emoji.isEmpty ? '#$label' : '$emoji $label';
+
+/// 칩 공통 모양: 높이 36, 회색 면(#F3F4F6) / 고르면 ink 바탕 흰 글자, 14/w700.
+const _chipSurface = Color(0xFFF3F4F6);
+const _chipInk = Color(0xFF111827);
+const _chipText = Color(0xFF374151);
+
 class TagFilterChip extends StatelessWidget {
   const TagFilterChip({
     super.key,
     required this.label,
     required this.selected,
     required this.onTap,
+    this.emoji,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final String? emoji;
 
   @override
   Widget build(BuildContext context) {
@@ -127,27 +138,27 @@ class TagFilterChip extends StatelessWidget {
       excludeSemantics: true,
       child: MotionPress(
         child: Material(
-          color: selected ? TagColors.blue : const Color(0xFFF2F4F7),
+          color: selected ? _chipInk : _chipSurface,
           shape: const StadiumBorder(),
           child: InkWell(
             customBorder: const StadiumBorder(),
             onTap: onTap,
             child: Container(
-              constraints: const BoxConstraints(minHeight: 32),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              constraints: const BoxConstraints(minHeight: 36),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Flexible(
                     child: Text(
-                      '#$label',
+                      tagChipText(label, emoji),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tagTextStyle(
                         context,
-                        13.5,
-                        selected ? FontWeight.w700 : FontWeight.w600,
-                        selected ? Colors.white : const Color(0xFF344054),
+                        14,
+                        FontWeight.w700,
+                        selected ? Colors.white : _chipText,
                       ),
                     ),
                   ),
@@ -216,11 +227,13 @@ class SelectedTagChip extends StatelessWidget {
     required this.label,
     required this.onRemove,
     this.onLongPress,
+    this.emoji,
   });
 
   final String label;
   final VoidCallback onRemove;
   final VoidCallback? onLongPress;
+  final String? emoji;
 
   @override
   Widget build(BuildContext context) {
@@ -230,25 +243,25 @@ class SelectedTagChip extends StatelessWidget {
       excludeSemantics: true,
       child: MotionPress(
         child: Material(
-          color: TagColors.blue,
+          color: _chipInk,
           shape: const StadiumBorder(),
           child: InkWell(
             customBorder: const StadiumBorder(),
             onTap: onRemove,
             onLongPress: onLongPress,
             child: Container(
-              constraints: const BoxConstraints(minHeight: 32),
-              padding: const EdgeInsets.only(left: 12, right: 8),
+              constraints: const BoxConstraints(minHeight: 36),
+              padding: const EdgeInsets.only(left: 14, right: 10),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Flexible(
                     child: Text(
-                      hashText(label),
+                      tagChipText(label, emoji),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tagTextStyle(
-                          context, 13.5, FontWeight.w700, Colors.white),
+                          context, 14, FontWeight.w700, Colors.white),
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -273,10 +286,14 @@ class SuggestTagChip extends StatelessWidget {
     this.meta,
     this.plus = false,
     this.hash = true,
+    this.emoji,
   });
 
   final String label;
   final VoidCallback? onTap;
+
+  /// 있으면 '☕ 카페 8명'처럼 앞에 이모지(# 없이).
+  final String? emoji;
 
   /// 오른쪽 회색 보조 글자(예: '8명', '+34').
   final String? meta;
@@ -287,7 +304,8 @@ class SuggestTagChip extends StatelessWidget {
   /// false면 '#' 없이(예: '＋ 태그 찾기·만들기').
   final bool hash;
 
-  String get _text => '${plus ? '＋ ' : ''}${hash ? hashText(label) : label}';
+  String get _text => '${plus ? '＋ ' : ''}'
+      '${emoji != null && emoji!.isNotEmpty ? '$emoji $label' : hash ? hashText(label) : label}';
 
   @override
   Widget build(BuildContext context) {
@@ -299,14 +317,14 @@ class SuggestTagChip extends StatelessWidget {
       child: MotionPress(
         enabled: enabled,
         child: Material(
-          color: const Color(0xFFF2F4F7),
+          color: _chipSurface,
           shape: const StadiumBorder(),
           child: InkWell(
             customBorder: const StadiumBorder(),
             onTap: onTap,
             child: Container(
-              constraints: const BoxConstraints(minHeight: 32),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              constraints: const BoxConstraints(minHeight: 36),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -317,19 +335,18 @@ class SuggestTagChip extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: tagTextStyle(
                           context,
-                          13.5,
-                          FontWeight.w600,
-                          enabled
-                              ? const Color(0xFF344054)
-                              : TagColors.disabledText),
+                          14,
+                          FontWeight.w700,
+                          enabled ? _chipText : TagColors.disabledText),
                     ),
                   ),
                   if (meta != null && meta!.isNotEmpty) ...[
                     const SizedBox(width: 5),
                     Text(
                       meta!,
-                      style: tagTextStyle(context, 12, FontWeight.w500,
-                          const Color(0xFF98A2B3)),
+                      // 숫자는 w600, 글자색의 60%('새로 알게 될 사람' 칩과 같게).
+                      style: tagTextStyle(context, 13, FontWeight.w600,
+                          _chipText.withValues(alpha: .6)),
                     ),
                   ],
                 ],

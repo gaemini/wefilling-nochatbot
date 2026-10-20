@@ -212,13 +212,13 @@ class _FriendRequestButtonState extends State<FriendRequestButton>
               child: AnimatedContainer(
                 duration:
                     MotionTokens.of(context, const Duration(milliseconds: 250)),
-                height: card ? 40 : 36,
+                height: card ? 40 : 38,
                 width: card ? double.infinity : null,
                 padding: EdgeInsets.symmetric(horizontal: card ? 12 : 14),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: background,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(card ? 12 : 10),
                 ),
                 child: ClipRect(
                   child: AnimatedSwitcher(

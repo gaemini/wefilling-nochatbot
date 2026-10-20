@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../widgets/tag_chips.dart' show tagTextStyle;
-import 'add_check_button.dart';
 import 'interest_block_tile.dart' show CircleRevealClipper;
 import 'tag_palette.dart';
 import 'wf_colors.dart';
+import 'wf_list_row.dart';
 
 /// 태그 둘러보기 줄(패딩 12×20, 구분선 없음).
 /// 타일 52(내 태그면 분류 light) / '#이름'(16/w800) + 사람 수 / 설명 한 줄 / 필터별 셋째 줄
@@ -65,6 +65,8 @@ class _ExploreTagRowState extends State<ExploreTagRow>
   late final AnimationController _tail = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 1900));
   int _gain = 0;
+  final _tailPortal = OverlayPortalController();
+  final _tailLink = LayerLink();
 
   bool get _reduce => MotionTokens.reduceMotion(context);
 
@@ -78,6 +80,7 @@ class _ExploreTagRowState extends State<ExploreTagRow>
     if (oldWidget.mine && !widget.mine) {
       _reveal.value = 0;
       _tail.value = 0;
+      if (_tailPortal.isShowing) _tailPortal.hide();
     }
     final gain = widget.gain;
     if (gain != null && gain != oldWidget.gain) _showTail(gain);
@@ -86,7 +89,10 @@ class _ExploreTagRowState extends State<ExploreTagRow>
   void _showTail(int gain) {
     if (gain <= 0 || _reduce) return;
     setState(() => _gain = gain);
-    _tail.forward(from: 0);
+    _tailPortal.show();
+    _tail.forward(from: 0).whenComplete(() {
+      if (mounted && _tailPortal.isShowing) _tailPortal.hide();
+    });
   }
 
   @override
@@ -112,159 +118,119 @@ class _ExploreTagRowState extends State<ExploreTagRow>
     final mine = widget.mine;
     final light = TagPalette.light(widget.category);
     final dark = TagPalette.dark(widget.category);
-    return Semantics(
-      button: true,
-      label: '#${widget.label}',
-      child: InkWell(
-        onTap: widget.onOpen,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Row(
-            children: [
-              SizedBox.square(
-                dimension: 52,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: AnimatedBuilder(
-                    animation: Listenable.merge([_reveal, _bounce]),
-                    builder: (context, _) {
-                      final revealing = mine && _reveal.isAnimating;
-                      final v = _bounce.value;
-                      final up = math.sin(v * math.pi) * (1 - v * .3);
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          ColoredBox(
-                              color: mine && !revealing
-                                  ? light
-                                  : WfColors.surface),
-                          if (revealing)
-                            ClipPath(
-                              clipper: CircleRevealClipper(
-                                  MotionTokens.emphasized
-                                      .transform(_reveal.value),
-                                  const Offset(26, 26)),
-                              child: ColoredBox(color: light),
-                            ),
-                          Center(
-                            child: Transform.translate(
-                              offset: Offset(0, -9 * up),
-                              child: Transform.rotate(
-                                angle: -8 * math.pi / 180 * up,
-                                child: Transform.scale(
-                                  scale: 1 + .18 * up,
-                                  child: Text(
-                                      widget.emoji.isEmpty ? '#' : widget.emoji,
-                                      style: TextStyle(
-                                          fontSize: 24,
-                                          height: 1,
-                                          fontWeight: FontWeight.w800,
-                                          color: mine ? dark : WfColors.ink)),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
+    final tile = SizedBox.square(
+      dimension: 52,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedBuilder(
+          animation: Listenable.merge([_reveal, _bounce]),
+          builder: (context, _) {
+            final revealing = mine && _reveal.isAnimating;
+            final v = _bounce.value;
+            final up = math.sin(v * math.pi) * (1 - v * .3);
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(
+                    color: mine && !revealing ? light : WfColors.surface),
+                if (revealing)
+                  ClipPath(
+                    clipper: CircleRevealClipper(
+                        MotionTokens.emphasized.transform(_reveal.value),
+                        const Offset(26, 26)),
+                    child: ColoredBox(color: light),
                   ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Flexible(
-                          child: Text('#${widget.label}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: tagTextStyle(context, 16, FontWeight.w800,
-                                  mine ? dark : WfColors.ink)),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(widget.count,
-                            key: ValueKey('tag_row_count_${widget.tagId}'),
-                            maxLines: 1,
-                            style: tagTextStyle(
-                                context, 13, FontWeight.w600, WfColors.ink4)),
-                      ],
-                    ),
-                    if (widget.description.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(widget.description,
-                          key: ValueKey('tag_row_description_${widget.tagId}'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: tagTextStyle(
-                              context, 13.5, FontWeight.w500, WfColors.ink3)),
-                    ],
-                    if (widget.meta != null) ...[
-                      const SizedBox(height: 5),
-                      widget.meta!,
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  AddCheckButton(
-                    key: ValueKey('tag_row_add_${widget.tagId}'),
-                    size: 38,
-                    added: mine,
-                    checkedColor: dark,
-                    semanticLabel: '#${widget.label}',
-                    onPressed: _onButton,
-                  ),
-                  Positioned(
-                    top: 44,
-                    right: 0,
-                    child: IgnorePointer(
-                      child: AnimatedBuilder(
-                        animation: _tail,
-                        builder: (context, child) {
-                          if (_tail.value == 0 || _gain == 0) {
-                            return const SizedBox.shrink();
-                          }
-                          final v = _tail.value;
-                          final show =
-                              v < .1 ? v / .1 : v > .9 ? (1 - v) / .1 : 1.0;
-                          return Opacity(
-                            opacity: show.clamp(0, 1),
-                            child: Transform.translate(
-                                offset: Offset(0, 6 * (1 - show)),
-                                child: child),
-                          );
-                        },
-                        child: Container(
-                          key: ValueKey('tag_row_tail_${widget.tagId}'),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: WfColors.ink,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(l10n.tagOverlapGain(_gain),
-                              maxLines: 1,
-                              style: tagTextStyle(context, 11.5,
-                                  FontWeight.w700, Colors.white)),
-                        ),
+                Center(
+                  child: Transform.translate(
+                    offset: Offset(0, -9 * up),
+                    child: Transform.rotate(
+                      angle: -8 * math.pi / 180 * up,
+                      child: Transform.scale(
+                        scale: 1 + .18 * up,
+                        child: Text(widget.emoji.isEmpty ? '#' : widget.emoji,
+                            textScaler: TextScaler.noScaling,
+                            style: TextStyle(
+                                fontSize: 24,
+                                height: 1,
+                                fontWeight: FontWeight.w800,
+                                color: mine ? dark : WfColors.ink)),
                       ),
                     ),
                   ),
-                ],
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+    // '+n명과 겹쳐요'는 버튼 바로 위 오버레이(줄에 가려지지 않게).
+    final button = OverlayPortal(
+      controller: _tailPortal,
+      overlayChildBuilder: (context) => CompositedTransformFollower(
+        link: _tailLink,
+        targetAnchor: Alignment.topRight,
+        followerAnchor: Alignment.bottomRight,
+        offset: const Offset(0, 4),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: IgnorePointer(
+            child: AnimatedBuilder(
+              animation: _tail,
+              builder: (context, child) {
+                final v = _tail.value;
+                final show = v < .1 ? v / .1 : v > .9 ? (1 - v) / .1 : 1.0;
+                return Opacity(
+                  opacity: show.clamp(0, 1),
+                  child: Transform.translate(
+                      offset: Offset(0, 6 * (1 - show)), child: child),
+                );
+              },
+              child: Container(
+                key: ValueKey('tag_row_tail_${widget.tagId}'),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: WfColors.ink,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(l10n.tagOverlapGain(_gain),
+                    maxLines: 1,
+                    style: tagTextStyle(
+                        context, 11.5, FontWeight.w700, Colors.white)),
               ),
-            ],
+            ),
           ),
         ),
+      ),
+      child: CompositedTransformTarget(
+        link: _tailLink,
+        child: WfAddPill(
+          key: ValueKey('tag_row_add_${widget.tagId}'),
+          added: mine,
+          addLabel: l10n.tagAdd,
+          addedLabel: l10n.tagAddedShort,
+          onPressed: _onButton,
+        ),
+      ),
+    );
+    return Semantics(
+      label: '#${widget.label}',
+      child: WfListRow(
+        onTap: widget.onOpen,
+        leading: tile,
+        title: '#${widget.label}',
+        meta: widget.count,
+        second: widget.description.isEmpty
+            ? null
+            : Text(widget.description,
+                key: ValueKey('tag_row_description_${widget.tagId}'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    tagTextStyle(context, 13.5, FontWeight.w500, WfColors.ink2)),
+        third: widget.meta,
+        trailing: button,
       ),
     );
   }

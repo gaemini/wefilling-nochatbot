@@ -188,8 +188,8 @@ class _SharedTagTileState extends State<SharedTagTile>
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final card = widget.size == SharedTileSize.card;
-    final dimension = card ? 40.0 : 26.0;
-    final radius = card ? 13.0 : 8.0;
+    final dimension = card ? 40.0 : 28.0;
+    final radius = card ? 13.0 : 9.0;
     final id = widget.tagId;
     final service = InterestTagService.instance;
     final category =
@@ -216,7 +216,7 @@ class _SharedTagTileState extends State<SharedTagTile>
           : Text(emoji.isEmpty ? '#' : emoji,
               textScaler: TextScaler.noScaling,
               style: TextStyle(
-                  fontSize: card ? 19 : 14,
+                  fontSize: card ? 19 : 15,
                   height: 1,
                   fontWeight: FontWeight.w800,
                   color: TagPalette.dark(category))),

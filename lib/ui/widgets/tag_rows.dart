@@ -3,8 +3,16 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/interest_tag.dart';
 import '../../services/interest_tag_service.dart';
+import 'package:provider/provider.dart';
+
+import '../../providers/relationship_provider.dart';
+import '../interest/friend_request_button.dart';
+import '../interest/person_avatar.dart';
+import '../interest/shared_tag_tile.dart';
+import '../interest/tag_palette.dart';
+import '../interest/wf_colors.dart';
+import '../interest/wf_list_row.dart';
 import 'tag_chips.dart';
-import 'user_avatar.dart';
 
 /// #태그 화면 공통 검색창(연회색, 모서리 12).
 class TagSearchField extends StatelessWidget {
@@ -90,8 +98,8 @@ class TagSectionTitle extends StatelessWidget {
   }
 }
 
-/// 태그 한 줄: '#이름 · 24명'(15/700 + 13) / 한 줄 설명 / 필터 이유(파랑, 있을 때만)
-/// + 오른쪽 [추가]/[추가됨]. 설명이 없으면 이름과 사람 수만.
+/// 태그 한 줄(공용 WfListRow, '새로 알게 될 사람' 목록과 같은 모양):
+/// 이모지 타일 52 · '#이름  24명' / 설명 한 줄 / 이유(있을 때) · 오른쪽 '추가'/'추가됨'.
 class TagListRow extends StatelessWidget {
   const TagListRow({
     super.key,
@@ -116,65 +124,49 @@ class TagListRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final description = tag.descriptionOf(context);
-    return InkWell(
+    final colors = TagChipColors.of(tag);
+    final emoji = TagChipColors.emojiOf(tag);
+    return WfListRow(
+      padding: const EdgeInsets.symmetric(vertical: 10),
       onTap: onTap ?? onAction,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Flexible(
-                        child: Text('#${tag.label(context)}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: tagTextStyle(
-                                context, 15, FontWeight.w700, TagColors.ink)),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(l10n.tagCountPeople(tag.holderCount),
-                          key: ValueKey('tag_row_count_${tag.id}'),
-                          maxLines: 1,
-                          style: tagTextStyle(
-                              context, 13, FontWeight.w500, TagColors.muted)),
-                    ],
-                  ),
-                  if (description.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(description,
-                        key: ValueKey('tag_row_description_${tag.id}'),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: tagTextStyle(context, 13.5, FontWeight.w400,
-                            const Color(0xFF4B5563))),
-                  ],
-                  if (reason != null && reason!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(reason!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tagTextStyle(
-                            context, 12.5, FontWeight.w600, TagColors.blue)),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            TagRowActionButton(
-              key: ValueKey('tag_row_add_${tag.id}'),
-              added: added,
-              busy: busy,
-              onPressed: onAction,
-            ),
-          ],
+      leading: Container(
+        width: 52,
+        height: 52,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: colors.surface(mine: added),
+          borderRadius: BorderRadius.circular(16),
         ),
+        child: Text(emoji.isEmpty ? '#' : emoji,
+            textScaler: TextScaler.noScaling,
+            style: TextStyle(
+                fontSize: 24,
+                height: 1,
+                fontWeight: FontWeight.w800,
+                color: colors.text(mine: added))),
+      ),
+      title: '#${tag.label(context)}',
+      meta: l10n.tagCountPeople(tag.holderCount),
+      second: description.isEmpty
+          ? null
+          : Text(description,
+              key: ValueKey('tag_row_description_${tag.id}'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tagTextStyle(context, 13.5, FontWeight.w500, WfColors.ink2)),
+      third: reason == null || reason!.isEmpty
+          ? null
+          : Text(reason!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tagTextStyle(context, 12.5, FontWeight.w600, WfColors.brand)),
+      trailing: WfAddPill(
+        key: ValueKey('tag_row_add_${tag.id}'),
+        added: added,
+        busy: busy,
+        addLabel: l10n.tagAdd,
+        addedLabel: l10n.tagAddedShort,
+        onPressed: onAction,
       ),
     );
   }
@@ -252,12 +244,32 @@ class TagCreateRow extends StatelessWidget {
   }
 }
 
-/// 태그 페이지 사람 줄: 아바타 + 이름 + 그 사람의 태그(또는 '교환학생 · #태그') + [프로필].
+/// 태그 페이지 사람 줄(공용 WfListRow): 아바타 52(국기) · '이름  캐나다 · 교환학생'
+/// / 그 사람의 #태그 이모지 타일 · 오른쪽 친구 버튼(친구면 '프로필').
 class TagPersonRow extends StatelessWidget {
-  const TagPersonRow({super.key, required this.person, required this.onOpen});
+  const TagPersonRow({
+    super.key,
+    required this.person,
+    required this.onOpen,
+    this.isFriend = false,
+  });
 
   final TagPerson person;
   final VoidCallback onOpen;
+  final bool isFriend;
+
+  /// RelationshipProvider가 없으면(테스트 등) 보낸·받은 요청 없음으로 본다.
+  static (Set<String>, Set<String>) _requests(BuildContext context) {
+    try {
+      final relations = context.watch<RelationshipProvider>();
+      return (
+        relations.outgoingRequests.map((r) => r.toUid).toSet(),
+        relations.incomingRequests.map((r) => r.fromUid).toSet(),
+      );
+    } on ProviderNotFoundException {
+      return (const <String>{}, const <String>{});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -265,64 +277,34 @@ class TagPersonRow extends StatelessWidget {
     final service = InterestTagService.instance;
     service.ensureLoaded(person.tags);
     final language = Localizations.localeOf(context).languageCode;
-    return ListenableBuilder(
-      listenable: service,
-      builder: (context, _) {
-        final tags =
-            person.tags.map((id) => '#${service.labelFor(id, language)}');
-        final subtitle = [
-          if (person.studentType == 'exchange') l10n.tagExchangeStudent,
-          if (tags.isNotEmpty)
-            tags.take(person.studentType == 'exchange' ? 2 : 3).join(' '),
-        ].join(' · ');
-        return InkWell(
-          onTap: onOpen,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
-            child: Row(
-              children: [
-                UserAvatar(
-                  uid: person.uid,
-                  photoUrl: person.photoURL,
-                  photoVersion: 0,
-                  isAnonymous: false,
-                  size: 40,
-                  placeholderColor: const Color(0xFFF2F4F7),
-                  placeholderIcon: Icons.person_outline_rounded,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(person.nickname,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: tagTextStyle(
-                              context, 15, FontWeight.w700, TagColors.ink)),
-                      if (subtitle.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: tagTextStyle(
-                                context, 13, FontWeight.w500, TagColors.muted)),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TagSecondaryButton(
-                  label: l10n.tagProfileButton,
-                  height: 32,
-                  onPressed: onOpen,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    final (outgoing, incoming) = _requests(context);
+    final country = countryNameOf(person.nationality, language);
+    final meta = [
+      if (country.isNotEmpty) country,
+      if (person.studentType == 'exchange') l10n.tagExchangeStudent,
+    ].join(' · ');
+    final name = person.nickname.isEmpty ? l10n.user : person.nickname;
+    return WfListRow(
+      onTap: onOpen,
+      leading: PersonAvatar(
+        uid: person.uid,
+        name: name,
+        photoUrl: person.photoURL,
+        nationality: person.nationality,
+        size: 52,
+      ),
+      title: name,
+      meta: meta,
+      second: person.tags.isEmpty
+          ? null
+          : SharedTagTiles(tagIds: person.tags, size: SharedTileSize.list),
+      trailing: FriendRequestButton(
+        uid: person.uid,
+        relation: peopleRelationOf(person.uid,
+            isFriend: isFriend, outgoing: outgoing, incoming: incoming),
+        size: PeopleButtonSize.list,
+        onOpenProfile: onOpen,
+      ),
     );
   }
 }

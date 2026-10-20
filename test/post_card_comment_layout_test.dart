@@ -24,7 +24,7 @@ Post _post() => Post(
     );
 
 /// 넘침 검사: 폭 320/375/430 × 글자 배율 1.0/1.3 × ko/en/zh,
-/// 상태: 기본(최근 댓글) · 반응 중(고리 최대) · 문구 2·3 · 시트 빈 상태(추천 문장)
+/// 상태: 기본(최근 댓글) · 반응 중(고리 최대) · 문구 2·3 · 입력 시작
 /// · 시트 입력 중(미리보기) · 보낸 뒤.
 void main() {
   setUp(() {
@@ -87,8 +87,7 @@ void main() {
               find.byKey(const ValueKey('post-card-comment-invite:p1')));
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull, reason: 'sheet $locale');
-          await tester.tap(
-              find.byKey(const ValueKey('post-card-comment-suggestion-0')));
+          await tester.enterText(find.byType(TextField), '수업 화이팅! 같이 공부해요');
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull, reason: 'preview $locale');
           await tester

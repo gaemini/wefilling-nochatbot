@@ -15,7 +15,7 @@
 | 무엇 | 앱 | 서버 |
 |---|---|---|
 | 피드 | `lib/screens/board_screen.dart`, `lib/ui/widgets/optimized_post_card.dart` | `createPostSecure`(`functions/src/content_creation.ts`) |
-| 카드 위 댓글 입력: 최근 댓글 한 줄, 화면에 들어올 때 한 번 반응, 추천 문장, 번역 미리보기 | `lib/ui/widgets/post_card_comment_invite.dart`, `comment_suggestions.dart`, `lib/services/comment_invite_nudge_gate.dart` | `posts.latestComment`(`functions/src/latest_comment.ts`, 댓글 트리거) |
+| 카드 위 댓글 입력: 최근 댓글 한 줄, 화면에 들어올 때 한 번 반응, 번역 미리보기 | `lib/ui/widgets/post_card_comment_invite.dart`, `lib/services/comment_invite_nudge_gate.dart` | `posts.latestComment`(`functions/src/latest_comment.ts`, 댓글 트리거) |
 | 상세: 채팅형 댓글, 사진 댓글, 밀어서 답장, 두 번 눌러 좋아요 | `lib/screens/post_detail_screen.dart`, `lib/ui/widgets/post_chat_*` | `onCommentCreated` / `onCommentDeleted` / `onCommentSoftDeleted`(`index.ts`) |
 | 글쓰기·공개 범위(전체·친구·그룹·#태그 가진 사람·익명) | `lib/screens/create_post_screen.dart`, `lib/ui/sheets/tag_audience_sheet.dart` | `resolveTagAudience`(`interest_tags.ts`) |
 | 글·댓글 번역 | `lib/ui/widgets/translatable_content.dart`, `lib/services/content_translation_service.dart` | `content_translation.ts` |

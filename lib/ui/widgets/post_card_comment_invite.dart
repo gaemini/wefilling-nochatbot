@@ -29,8 +29,6 @@ import '../../services/post_service.dart';
 import '../../services/user_info_cache_service.dart';
 import '../../utils/responsive_helper.dart';
 import '../../utils/text_language_guess.dart';
-import '../interest/stagger_in.dart';
-import 'comment_suggestions.dart';
 import 'motion_press.dart';
 import 'post_translation_feed.dart';
 import 'translatable_content.dart';
@@ -102,9 +100,6 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
   final FocusNode _focusNode = FocusNode(debugLabel: 'post-card-comment');
   bool _sending = false;
   bool _failed = false;
-
-  /// 추천 문장으로 채웠으면 그 문장(미리보기에 작성자 언어 버전을 바로 쓴다).
-  CommentSuggestion? _suggestion;
 
   @override
   void initState() {
@@ -245,17 +240,6 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
     });
   }
 
-  /// 추천 문장: 바로 보내지 않고 입력칸에 채운 뒤 커서를 끝에 둔다.
-  void _useSuggestion(CommentSuggestion suggestion, String text) {
-    HapticFeedback.selectionClick();
-    _suggestion = suggestion;
-    _controller.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-    _focusNode.requestFocus();
-  }
-
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (_sending || text.isEmpty) return;
@@ -286,7 +270,6 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
     }
     HapticFeedback.lightImpact();
     _controller.clear();
-    _suggestion = null;
     _focusNode.unfocus();
     setState(() {
       _sending = false;
@@ -325,10 +308,6 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
     final theirName = strings.languageName(theirs);
     final showPreview =
         hasText && theirs.isNotEmpty && theirs != mine && theirName != null;
-    final suggestion = _suggestion;
-    final translated = suggestion != null && typed == suggestion.forUi(mine)
-        ? suggestion.inLanguage(theirs)
-        : null;
     final previewName =
         widget.post.isAnonymous || widget.post.author.trim().isEmpty
             ? strings.theAuthor
@@ -442,7 +421,7 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
               ),
             )
           else if (showPreview)
-            // '{작성자}에게는 {언어}로 보여요 · {번역}'(언어 이름만 brand 굵게).
+            // '{작성자}에게는 {언어}로 보여요'(언어 이름만 brand 굵게).
             Padding(
               padding: const EdgeInsets.only(bottom: 6, right: 10),
               child: Text.rich(
@@ -457,7 +436,6 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
                               fontWeight: FontWeight.w700, color: _brand)
                           : null,
                     ),
-                  if (translated != null) TextSpan(text: ' · $translated'),
                 ]),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -539,38 +517,6 @@ class _PostCardCommentInviteState extends State<PostCardCommentInvite>
                     color: const Color(0xFF9CA3AF),
                   ),
                 ),
-              ),
-            ),
-          // 추천 문장 3개: 쓰기 시작했고 비어 있을 때만 입력칸 바로 위 한 줄.
-          if (_editing && _controller.text.trim().isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 34, bottom: 8),
-              child: SizedBox(
-                height: 32,
-                child: Builder(builder: (context) {
-                  final mine = Localizations.localeOf(context).languageCode;
-                  final suggestions =
-                      commentSuggestionsFor(widget.post.categoryKey);
-                  return ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: suggestions.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 6),
-                    itemBuilder: (context, index) {
-                      final text = suggestions[index].forUi(mine);
-                      return StaggerIn(
-                        index: index,
-                        offset: 6,
-                        step: const Duration(milliseconds: 50),
-                        duration: const Duration(milliseconds: 360),
-                        child: _SuggestionChip(
-                          key: ValueKey('post-card-comment-suggestion-$index'),
-                          label: text,
-                          onTap: () => _useSuggestion(suggestions[index], text),
-                        ),
-                      );
-                    },
-                  );
-                }),
               ),
             ),
           VisibilityDetector(
@@ -811,42 +757,6 @@ class _PopFrom extends Curve {
   double transformInternal(double t) {
     final eased = MotionTokens.springOut.transform(t);
     return from + (1 - from) * eased;
-  }
-}
-
-/// 추천 문장 칩: 높이 32, 모서리 16, #F3F4F6, 13.5/w600.
-class _SuggestionChip extends StatelessWidget {
-  const _SuggestionChip({super.key, required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFF3F4F6),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            maxLines: 1,
-            style: TextStyle(
-              fontFamily: uiFontFamily(context, 'Inter'),
-              fontFamilyFallback: const ['NotoSansKR'],
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF344054),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 

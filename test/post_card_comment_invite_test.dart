@@ -250,35 +250,25 @@ void main() {
             matching: find.byType(AnimatedScale)))
         .scale;
 
-    testWidgets('분류별 추천 문장, 누르면 채우기만(전송 없음), 보내기 버튼 등장', (tester) async {
+    testWidgets('추천 문장은 없고, 보내기 버튼은 글자가 있을 때만', (tester) async {
       await tester.pumpWidget(sheetHost(category: 'academic_study'));
       await open(tester);
-      expect(find.text('수업 화이팅!'), findsOneWidget);
-      expect(find.text('무슨 수업이에요?'), findsOneWidget);
+      expect(find.byKey(const ValueKey('post-card-comment-suggestion-0')),
+          findsNothing);
+      expect(find.text('수업 화이팅!'), findsNothing);
       expect(sendScale(tester), 0);
-      await tester.tap(find.byKey(const ValueKey('post-card-comment-suggestion-1')));
+      await tester.enterText(find.byType(TextField), '무슨 수업이에요?');
       await tester.pumpAndSettle();
-      final field = tester.widget<TextField>(find.byType(TextField));
-      expect(field.controller!.text, '무슨 수업이에요?');
-      expect(field.controller!.selection.baseOffset, '무슨 수업이에요?'.length);
       expect(sent, 0);
       expect(sendScale(tester), 1);
-      // 글자가 생기면 추천 문장은 사라진다.
-      expect(find.text('수업 화이팅!'), findsNothing);
       await tester.enterText(find.byType(TextField), '');
       await tester.pumpAndSettle();
       expect(sendScale(tester), 0);
     });
 
-    testWidgets('미리보기: 추천 문장은 작성자 언어 버전을 번역 호출 없이', (tester) async {
+    testWidgets('미리보기: 작성자 언어가 다르면 언어 안내(번역 호출 없음)', (tester) async {
       await tester.pumpWidget(sheetHost(locale: const Locale('en')));
       await open(tester);
-      await tester.tap(find.text('Nice!'));
-      await tester.pumpAndSettle();
-      expect(
-          find.text('jaemin sees it in Korean · 좋네요!', findRichText: true),
-          findsOneWidget);
-      // 직접 쓴 글은 언어 안내까지만(목표 언어 번역 경로가 없다).
       await tester.enterText(find.byType(TextField), 'Where is this place?');
       await tester.pumpAndSettle();
       expect(find.text('jaemin sees it in Korean', findRichText: true),

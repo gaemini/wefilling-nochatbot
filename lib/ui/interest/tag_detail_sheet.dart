@@ -57,7 +57,9 @@ Future<void> removeTagWithUndo(BuildContext context, String tagId) async {
   messenger.hideCurrentSnackBar();
   messenger.showSnackBar(SnackBar(
     content: Text(l10n.tagRemovedFromMine),
-    duration: const Duration(seconds: 4),
+    // 되돌리기가 있어도 2초 뒤 자동으로 사라진다(최신 Flutter는 action이 있으면 기본 유지).
+    duration: const Duration(seconds: 2),
+    persist: false,
     behavior: SnackBarBehavior.floating,
     action: SnackBarAction(
       label: l10n.tagUndo,

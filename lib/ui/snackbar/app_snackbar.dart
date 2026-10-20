@@ -48,6 +48,8 @@ class AppSnackBar {
         backgroundColor: background,
         elevation: 0,
         duration: duration,
+        // 되돌리기 같은 버튼이 있어도 duration이 지나면 사라진다.
+        persist: false,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),

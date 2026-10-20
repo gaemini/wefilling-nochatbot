@@ -282,6 +282,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text(l10n.tagOverlapGain(7)), findsOneWidget);
+    // 꼬리표는 블록 밖, 버튼 바로 위에 뜬다(잘리거나 이름을 가리지 않게).
+    final tailRect = tester.getRect(
+        find.byKey(const ValueKey('interest_block_tail_travel')));
+    final buttonRect = tester.getRect(add);
+    expect(tailRect.bottom, lessThanOrEqualTo(buttonRect.top + 8));
     int count(String name) => calls.where((c) => c.$1 == name).length;
     final peopleBefore = count('getOverlapPeople');
     await tester.pumpAndSettle();

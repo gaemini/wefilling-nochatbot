@@ -215,6 +215,7 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
 
           messenger.showSnackBar(
             SnackBar(
+              persist: false, // 버튼이 있어도 시간이 지나면 사라진다.
               content: Row(
                 children: [
                   const Icon(Icons.check_circle, color: Colors.white),

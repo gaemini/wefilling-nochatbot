@@ -231,7 +231,7 @@ void main() {
       expect(calls.where((c) => c == 'setProfileTags'), isEmpty);
     });
 
-    testWidgets('빼기는 확인 없이, 4초 동안 되돌리기', (tester) async {
+    testWidgets('빼기는 확인 없이, 되돌리기로 원래 자리', (tester) async {
       saveResult = Completer<Object?>();
       final auth = _Auth(['cafe', 'restaurants']);
       saveResult.complete({
@@ -256,6 +256,24 @@ void main() {
         ['cafe', 'restaurants'],
       ]);
       await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('뺐다는 알림은 되돌리기가 있어도 2초 뒤 저절로 사라진다', (tester) async {
+      saveResult = Completer<Object?>();
+      final auth = _Auth(['cafe', 'restaurants']);
+      saveResult.complete({'tagIds': <String>['cafe'], 'gain': {}});
+      await tester.pumpWidget(host(auth));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final l10n =
+          AppLocalizations.of(tester.element(find.byType(TagDetailSheet)))!;
+      await tester.tap(find.byKey(const ValueKey('tag_detail_remove')));
+      auth.tags = ['cafe'];
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.tagRemovedFromMine), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 2500));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.tagRemovedFromMine), findsNothing);
     });
   });
 }

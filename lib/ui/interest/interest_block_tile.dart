@@ -105,6 +105,8 @@ class _InterestBlockTileState extends State<InterestBlockTile>
       vsync: this, duration: const Duration(milliseconds: 600));
   late final AnimationController _bounce = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 620));
+  final _tailPortal = OverlayPortalController();
+  final _tailLink = LayerLink();
   late final AnimationController _tail = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 1900));
   AnimationController? _breath;
@@ -129,6 +131,7 @@ class _InterestBlockTileState extends State<InterestBlockTile>
     if (oldWidget.mine && !widget.mine) {
       _reveal.value = 0;
       _tail.value = 0;
+      if (_tailPortal.isShowing) _tailPortal.hide();
     }
     _syncBreath();
   }
@@ -169,7 +172,10 @@ class _InterestBlockTileState extends State<InterestBlockTile>
     if (!mounted || gain == null) return;
     if (gain > 0 && !_reduce) {
       setState(() => _gain = gain);
-      _tail.forward(from: 0);
+      _tailPortal.show();
+      _tail.forward(from: 0).whenComplete(() {
+        if (mounted && _tailPortal.isShowing) _tailPortal.hide();
+      });
     }
   }
 
@@ -286,48 +292,64 @@ class _InterestBlockTileState extends State<InterestBlockTile>
                 Positioned(
                   top: inset - 7,
                   right: inset - 7,
-                  child: _breathing(
-                    AddCheckButton(
-                      key: ValueKey('interest_block_add_${data.tagId}'),
-                      size: button,
-                      added: mine,
-                      idleColor: Colors.white,
-                      checkedColor: dark,
-                      semanticLabel: '#${data.label}',
-                      onPressed: _onButton,
-                    ),
-                  ),
-                ),
-                // 꼬리표: 버튼 아래에서 떠올랐다가 1.5초 뒤 사라진다.
-                Positioned(
-                  top: inset + button + 6,
-                  right: 8,
-                  child: IgnorePointer(
-                    child: AnimatedBuilder(
-                      animation: _tail,
-                      builder: (context, child) {
-                        if (_tail.value == 0 || _gain == 0) {
-                          return const SizedBox.shrink();
-                        }
-                        final v = _tail.value;
-                        final show = v < .1 ? v / .1 : v > .9 ? (1 - v) / .1 : 1.0;
-                        return Opacity(
-                          opacity: show.clamp(0, 1),
-                          child: Transform.translate(
-                              offset: Offset(0, 6 * (1 - show)), child: child),
-                        );
-                      },
-                      child: Container(
-                        key: ValueKey('interest_block_tail_${data.tagId}'),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: WfColors.ink,
-                          borderRadius: BorderRadius.circular(8),
+                  // 꼬리표는 블록 밖(버튼 바로 위)에 띄워 잘리거나 이름을 가리지 않게.
+                  child: OverlayPortal(
+                    controller: _tailPortal,
+                    overlayChildBuilder: (context) =>
+                        CompositedTransformFollower(
+                      link: _tailLink,
+                      targetAnchor: Alignment.topRight,
+                      followerAnchor: Alignment.bottomRight,
+                      offset: const Offset(-4, 2),
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: IgnorePointer(
+                          child: AnimatedBuilder(
+                            animation: _tail,
+                            builder: (context, child) {
+                              final v = _tail.value;
+                              final show = v < .1
+                                  ? v / .1
+                                  : v > .9
+                                      ? (1 - v) / .1
+                                      : 1.0;
+                              return Opacity(
+                                opacity: show.clamp(0, 1),
+                                child: Transform.translate(
+                                    offset: Offset(0, 6 * (1 - show)),
+                                    child: child),
+                              );
+                            },
+                            child: Container(
+                              key: ValueKey(
+                                  'interest_block_tail_${data.tagId}'),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: WfColors.ink,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(l10n.tagOverlapGain(_gain),
+                                  maxLines: 1,
+                                  style: tagTextStyle(context, 11.5,
+                                      FontWeight.w700, Colors.white)),
+                            ),
+                          ),
                         ),
-                        child: Text(l10n.tagOverlapGain(_gain),
-                            style: tagTextStyle(
-                                context, 11.5, FontWeight.w700, Colors.white)),
+                      ),
+                    ),
+                    child: CompositedTransformTarget(
+                      link: _tailLink,
+                      child: _breathing(
+                        AddCheckButton(
+                          key: ValueKey('interest_block_add_${data.tagId}'),
+                          size: button,
+                          added: mine,
+                          idleColor: Colors.white,
+                          checkedColor: dark,
+                          semanticLabel: '#${data.label}',
+                          onPressed: _onButton,
+                        ),
                       ),
                     ),
                   ),

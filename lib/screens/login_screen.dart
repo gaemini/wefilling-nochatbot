@@ -1061,6 +1061,7 @@ class _LoginScreenState extends State<LoginScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            persist: false, // 버튼이 있어도 시간이 지나면 사라진다.
             content: Text(errorMessage + errorDetail),
             backgroundColor: Colors.red.shade700,
             duration: const Duration(seconds: 6),
